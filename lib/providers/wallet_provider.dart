@@ -34,15 +34,56 @@ class WalletData {
   }
 }
 
+class TransactionData {
+  final String id;
+  final double amount; // positive = income, negative = expense
+  final String description;
+  final String createdAt;
+
+  const TransactionData({
+    required this.id,
+    required this.amount,
+    required this.description,
+    required this.createdAt,
+  });
+
+  factory TransactionData.fromJson(Map<String, dynamic> json) {
+    final raw = WalletData._parseDouble(json['amount']);
+    final type = json['type']?.toString() ?? '';
+    // Nếu backend dùng type field thay vì signed amount
+    final signed = type == 'EXPENSE' || type == 'TRANSFER_OUT' ? -raw.abs() : raw;
+    return TransactionData(
+      id: json['id']?.toString() ?? '',
+      amount: signed,
+      description: json['description']?.toString() ??
+          json['reason']?.toString() ??
+          type,
+      createdAt: json['createdAt']?.toString() ?? '',
+    );
+  }
+}
+
 class WalletProvider extends ChangeNotifier {
   List<WalletData> _wallets = [];
+  List<TransactionData> _transactions = [];
   bool _loading = false;
   String? _error;
 
   List<WalletData> get wallets => _wallets;
-  bool get loading => _loading;
+  List<TransactionData> get transactions => _transactions;
+  bool get isLoading => _loading;
   String? get error => _error;
-  double get totalBalance => _wallets.fold(0, (sum, w) => sum + w.balance);
+
+  double get totalBalance => _wallets.fold(0, (s, w) => s + w.balance);
+
+  // Ví chung gia đình (JOINT) hoặc ví đầu tiên
+  WalletData? get familyWallet =>
+      _wallets.where((w) => w.type == 'JOINT').firstOrNull ??
+      _wallets.firstOrNull;
+
+  // Ví thành viên cá nhân (không phải JOINT)
+  List<WalletData> get memberWallets =>
+      _wallets.where((w) => w.type != 'JOINT').toList();
 
   Future<void> fetchWallets() async {
     _loading = true;
@@ -59,6 +100,8 @@ class WalletProvider extends ChangeNotifier {
           .whereType<Map>()
           .map((e) => WalletData.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+      // Fetch transactions sau khi có wallets
+      await _fetchTransactions();
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -67,24 +110,45 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> deposit(
-      String walletId, double amount, String description) async {
+  Future<void> _fetchTransactions() async {
+    try {
+      final data = await ApiClient.instance.get('/wallets/transactions');
+      final list = data is List
+          ? data
+          : data is Map && data['items'] is List
+              ? data['items'] as List
+              : data is Map && data['transactions'] is List
+                  ? data['transactions'] as List
+                  : <dynamic>[];
+      _transactions = list
+          .whereType<Map>()
+          .map((e) => TransactionData.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      // Graceful fallback — endpoint chưa có hoặc lỗi, giữ list rỗng
+      _transactions = [];
+    }
+  }
+
+  // Nạp tiền vào familyWallet
+  Future<void> deposit(double amount, {String description = 'Nạp tiền'}) async {
+    final wallet = familyWallet;
+    if (wallet == null) throw Exception('Không có ví gia đình');
     await ApiClient.instance.post('/wallets/deposit', {
-      'walletId': walletId,
+      'walletId': wallet.id,
       'amount': amount,
       'description': description,
     });
     await fetchWallets();
   }
 
+  // Chuyển tiền từ familyWallet sang ví khác
   Future<void> transfer(
-    String fromWalletId,
-    String toWalletId,
-    double amount,
-    String description,
-  ) async {
+      String toWalletId, double amount, String description) async {
+    final wallet = familyWallet;
+    if (wallet == null) throw Exception('Không có ví nguồn');
     await ApiClient.instance.post('/wallets/transfer', {
-      'fromWalletId': fromWalletId,
+      'fromWalletId': wallet.id,
       'toWalletId': toWalletId,
       'amount': amount,
       'description': description,

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
 
 class SOSScreen extends StatefulWidget {
@@ -11,7 +13,8 @@ class SOSScreen extends StatefulWidget {
 }
 
 class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMixin {
-  bool _sent = false;
+  bool _sent     = false;
+  bool _sending  = false;
   int? _countdown;
   Timer? _countTimer;
   late AnimationController _pulseCtrl;
@@ -35,11 +38,14 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
 
   void _onPressStart() {
     _pulseCtrl.stop();
-    setState(() { _countdown = 3; });
+    setState(() => _countdown = 3);
     _countTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       setState(() {
         _countdown = (_countdown ?? 3) - 1;
-        if ((_countdown ?? 0) <= 0) { t.cancel(); _triggerSOS(); }
+        if ((_countdown ?? 0) <= 0) {
+          t.cancel();
+          _triggerSOS();
+        }
       });
     });
   }
@@ -50,37 +56,75 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     _pulseCtrl.repeat(reverse: true);
   }
 
-  void _triggerSOS() {
+  Future<void> _triggerSOS() async {
     _countTimer?.cancel();
-    setState(() { _sent = true; _countdown = null; });
+    setState(() { _sending = true; _countdown = null; });
+    try {
+      await context.read<SosProvider>().sendSos(message: 'SOS khẩn cấp');
+      if (mounted) setState(() { _sent = true; _sending = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _sending = false);
+        _pulseCtrl.repeat(reverse: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Không gửi được SOS: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _cancelSOS() async {
+    final sosState = context.read<SosProvider>();
+    final latestId = sosState.alerts.isNotEmpty ? sosState.alerts.first.id : null;
+    if (latestId != null) {
+      try {
+        await sosState.updateAlert(latestId, 'CANCELLED');
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _sent = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_sent) return _sentScreen(context);
+    if (_sending) return _loadingScreen();
+    if (_sent)    return _sentScreen(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
         child: Stack(
           children: [
-            // Radial glow
-            Positioned.fill(child: Center(child: Container(width: 200, height: 200, decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.sos.withOpacity(0.12))))),
-
+            Positioned.fill(
+              child: Center(
+                child: Container(
+                  width: 200, height: 200,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.sos.withOpacity(0.12)),
+                ),
+              ),
+            ),
             Column(
               children: [
-                // Header
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   child: Row(
                     children: [
-                      GestureDetector(onTap: () => context.pop(), child: Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)), alignment: Alignment.center, child: const Text('←', style: TextStyle(fontSize: 20, color: Colors.white)))),
+                      GestureDetector(
+                        onTap: () => context.pop(),
+                        child: Container(
+                          width: 40, height: 40,
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
+                          alignment: Alignment.center,
+                          child: const Text('←', style: TextStyle(fontSize: 20, color: Colors.white)),
+                        ),
+                      ),
                       Expanded(child: Center(child: Text('Khẩn cấp', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white54)))),
                       const SizedBox(width: 40),
                     ],
                   ),
                 ),
-
-                // SOS button area
                 Expanded(
                   child: AnimatedBuilder(
                     animation: _pulseCtrl,
@@ -90,10 +134,9 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
                         Transform.scale(scale: _ring3.value, child: Container(width: 290, height: 290, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withOpacity(0.3), width: 1)))),
                         Transform.scale(scale: _ring2.value, child: Container(width: 240, height: 240, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withOpacity(0.3), width: 1)))),
                         Transform.scale(scale: _ring1.value, child: Container(width: 190, height: 190, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withOpacity(0.3), width: 1)))),
-
                         GestureDetector(
                           onTapDown: (_) => _onPressStart(),
-                          onTapUp: (_) => _onPressEnd(),
+                          onTapUp:   (_) => _onPressEnd(),
                           onTapCancel: _onPressEnd,
                           child: Container(
                             width: 130, height: 130,
@@ -108,8 +151,6 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
                     ),
                   ),
                 ),
-
-                // Instructions
                 Padding(
                   padding: const EdgeInsets.only(bottom: 32),
                   child: _countdown != null
@@ -119,8 +160,6 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
                           Text('Giữ 3 giây để gửi SOS', style: GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
                         ]),
                 ),
-
-                // Emergency numbers
                 Padding(
                   padding: const EdgeInsets.only(bottom: 80),
                   child: Row(
@@ -144,7 +183,22 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     );
   }
 
+  Widget _loadingScreen() => Scaffold(
+    backgroundColor: const Color(0xFF0F172A),
+    body: Center(
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        const CircularProgressIndicator(color: AppColors.sos, strokeWidth: 3),
+        const SizedBox(height: 24),
+        Text('Đang gửi SOS...', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white)),
+        const SizedBox(height: 8),
+        Text('Vui lòng chờ', style: GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
+      ]),
+    ),
+  );
+
   Widget _sentScreen(BuildContext context) {
+    final sosState    = context.watch<SosProvider>();
+    final latestAlert = sosState.alerts.isNotEmpty ? sosState.alerts.first : null;
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
@@ -155,19 +209,25 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
               const Text('🚨', style: TextStyle(fontSize: 80)),
               Text('SOS đã gửi!', style: GoogleFonts.inter(fontSize: 32, fontWeight: FontWeight.w700, color: Colors.white)),
               const SizedBox(height: 8),
-              Text('Đang liên hệ thành viên gia đình…', style: GoogleFonts.inter(fontSize: 14, color: Colors.white60)),
-              const SizedBox(height: 32),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _contactCard('BA', AppColors.avatarBlue, 'Ba'),
-                  const SizedBox(width: 20),
-                  _contactCard('ME', AppColors.avatarPurple, 'Mẹ'),
-                ],
+              Text(
+                latestAlert != null
+                    ? 'Gửi lúc ${latestAlert.createdAt}'
+                    : 'Đang liên hệ thành viên gia đình…',
+                style: GoogleFonts.inter(fontSize: 14, color: Colors.white60),
               ),
+              const SizedBox(height: 32),
+              if (latestAlert != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(color: AppColors.sos.withOpacity(0.2), borderRadius: BorderRadius.circular(999)),
+                  child: Text(
+                    'Trạng thái: ${latestAlert.status}',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.sos),
+                  ),
+                ),
               const SizedBox(height: 40),
               GestureDetector(
-                onTap: () => setState(() => _sent = false),
+                onTap: _cancelSOS,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
                   decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), border: Border.all(color: AppColors.danger, width: 2)),
@@ -179,14 +239,5 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
         ),
       ),
     );
-  }
-
-  Widget _contactCard(String init, Color color, String name) {
-    return Column(children: [
-      Container(width: 60, height: 60, decoration: BoxDecoration(shape: BoxShape.circle, color: color), alignment: Alignment.center, child: Text(init, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white))),
-      const SizedBox(height: 8),
-      Text(name, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
-      Text('Đang gọi…', style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
-    ]);
   }
 }
