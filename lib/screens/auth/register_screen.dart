@@ -13,11 +13,51 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _nameCtrl   = TextEditingController();
-  final _emailCtrl  = TextEditingController();
-  final _passCtrl   = TextEditingController();
-  final _famCtrl    = TextEditingController();
-  UserRole _role    = UserRole.manager;
+  final _nameCtrl  = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl  = TextEditingController();
+  final _famCtrl   = TextEditingController();
+  UserRole _role   = UserRole.manager;
+  bool _loading    = false;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _famCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final name   = _nameCtrl.text.trim();
+    final email  = _emailCtrl.text.trim();
+    final pass   = _passCtrl.text;
+    final family = _famCtrl.text.trim();
+
+    if (name.isEmpty || email.isEmpty || pass.isEmpty || family.isEmpty) {
+      _showError('Vui lòng điền đầy đủ thông tin');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await context.read<AuthProvider>().register(email, pass, name, family);
+    } catch (e) {
+      if (mounted) _showError(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: const Color(0xFFDC2626),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,14 +122,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           backgroundColor: AppColors.link,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        onPressed: () {
-                          context.read<AuthProvider>().login(
-                            _role,
-                            _nameCtrl.text.isEmpty ? 'Người dùng' : _nameCtrl.text,
-                            familyName: _famCtrl.text.isEmpty ? 'Nguyễn' : _famCtrl.text,
-                          );
-                        },
-                        child: Text('Đăng ký', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                        onPressed: _loading ? null : _submit,
+                        child: _loading
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : Text('Đăng ký', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                       ),
                     ),
                   ],

@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _showPass = false;
+  bool _loading  = false;
 
   @override
   void dispose() {
@@ -24,8 +25,35 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _loginAs(UserRole role, String name) {
+  Future<void> _submit() async {
+    final email    = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    if (email.isEmpty || password.isEmpty) {
+      _showError('Vui lòng nhập email và mật khẩu');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await context.read<AuthProvider>().signIn(email, password);
+    } catch (e) {
+      if (mounted) _showError(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _loginDemo(UserRole role, String name) {
     context.read<AuthProvider>().login(role, name);
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: const Color(0xFFDC2626),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -49,7 +77,6 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
                 children: [
-                  // Logo
                   Column(
                     children: [
                       Image.asset(
@@ -66,7 +93,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 32),
 
-                  // Card
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -113,8 +139,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               backgroundColor: AppColors.link,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
-                            onPressed: () => _loginAs(UserRole.manager, 'Trưởng nhóm'),
-                            child: Text('Đăng nhập', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                            onPressed: _loading ? null : _submit,
+                            child: _loading
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  )
+                                : Text('Đăng nhập', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -131,23 +162,22 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Demo roles based on new requirements
                         _demoButton(
                           emoji: '👑', label: 'Trưởng nhóm', role: 'Family Manager',
                           bg: const Color(0xFFEFF6FF), textColor: AppColors.link,
-                          onTap: () => _loginAs(UserRole.manager, 'Ba Nguyễn'),
+                          onTap: () => _loginDemo(UserRole.manager, 'Ba Nguyễn'),
                         ),
                         const SizedBox(height: 10),
                         _demoButton(
                           emoji: '🛡️', label: 'Phó nhóm', role: 'Deputy',
                           bg: const Color(0xFFF0FDF4), textColor: const Color(0xFF16A34A),
-                          onTap: () => _loginAs(UserRole.deputy, 'Mẹ Nguyễn'),
+                          onTap: () => _loginDemo(UserRole.deputy, 'Mẹ Nguyễn'),
                         ),
                         const SizedBox(height: 10),
                         _demoButton(
                           emoji: '🧒', label: 'Thành viên', role: 'Member',
                           bg: const Color(0xFFFFF7ED), textColor: const Color(0xFFEA580C),
-                          onTap: () => _loginAs(UserRole.member, 'An Nguyễn'),
+                          onTap: () => _loginDemo(UserRole.member, 'An Nguyễn'),
                         ),
                       ],
                     ),
