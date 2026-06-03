@@ -25,6 +25,8 @@ class ApiClient {
 
   Future<dynamic> get(String path) => _send(() => http.get(_uri(path), headers: _headers()));
 
+  Future<dynamic> delete(String path) => _send(() => http.delete(_uri(path), headers: _headers()));
+
   Uri _uri(String path) => Uri.parse('$_kBase$path');
 
   Map<String, String> _headers() => {

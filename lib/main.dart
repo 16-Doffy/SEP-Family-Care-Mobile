@@ -7,6 +7,7 @@ import 'providers/wallet_provider.dart';
 import 'providers/task_provider.dart';
 import 'providers/gps_provider.dart';
 import 'providers/sos_provider.dart';
+import 'providers/family_provider.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 
@@ -20,6 +21,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => TaskProvider()),
         ChangeNotifierProvider(create: (_) => GpsProvider()),
         ChangeNotifierProvider(create: (_) => SosProvider()),
+        ChangeNotifierProvider(create: (_) => FamilyProvider()),
       ],
       child: const FamilyCareApp(),
     ),

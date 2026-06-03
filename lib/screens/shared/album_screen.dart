@@ -63,6 +63,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         ]),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'album_fab',
         onPressed: () {},
         backgroundColor: AppColors.link,
         child: const Icon(Icons.camera_alt_rounded, color: Colors.white),

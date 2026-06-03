@@ -112,6 +112,10 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     if (_sending) return _loadingScreen();
     if (_sent)    return _sentScreen(context);
 
+    // UC51 — Hiển thị SOS alert đến từ thành viên khác
+    final activeAlerts = context.watch<SosProvider>().activeAlerts;
+    if (activeAlerts.isNotEmpty) return _incomingAlertsScreen(context, activeAlerts);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
@@ -199,6 +203,140 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // UC51 — Màn hình nhận cảnh báo SOS từ thành viên khác
+  Widget _incomingAlertsScreen(BuildContext context, List<SosAlert> alerts) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
+      body: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => context.pop(),
+                child: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.1)),
+                  alignment: Alignment.center,
+                  child: const Text('←', style: TextStyle(fontSize: 20, color: Colors.white)),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text('Cảnh báo khẩn cấp 🚨',
+                      style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.sos)),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => context.read<SosProvider>().fetchAlerts(),
+                child: const Icon(Icons.refresh_rounded, color: Colors.white54, size: 20),
+              ),
+            ]),
+          ),
+
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              itemCount: alerts.length,
+              itemBuilder: (_, i) {
+                final alert = alerts[i];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.sos.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.sos.withValues(alpha: 0.5), width: 1.5),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Container(
+                        width: 44, height: 44,
+                        decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.sos),
+                        alignment: Alignment.center,
+                        child: const Text('🚨', style: TextStyle(fontSize: 22)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(alert.senderName,
+                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                          Text(alert.createdAt,
+                              style: GoogleFonts.inter(fontSize: 12, color: Colors.white38)),
+                        ]),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(color: AppColors.sos, borderRadius: BorderRadius.circular(8)),
+                        child: Text(alert.status,
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                      ),
+                    ]),
+                    const SizedBox(height: 12),
+                    Text(alert.message,
+                        style: GoogleFonts.inter(fontSize: 14, color: Colors.white70)),
+                    if (alert.address.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        const Icon(Icons.location_on_rounded, size: 14, color: Colors.white38),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(alert.address,
+                              style: GoogleFonts.inter(fontSize: 12, color: Colors.white38)),
+                        ),
+                      ]),
+                    ],
+                    const SizedBox(height: 14),
+                    Row(children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () async {
+                            await context.read<SosProvider>().updateAlert(alert.id, 'ACKNOWLEDGED');
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                content: Text('Đã phản hồi SOS ✅'),
+                                backgroundColor: AppColors.success,
+                              ));
+                            }
+                          },
+                          child: Container(
+                            height: 42,
+                            decoration: BoxDecoration(color: AppColors.success, borderRadius: BorderRadius.circular(12)),
+                            alignment: Alignment.center,
+                            child: Text('✅ Tôi đang đến',
+                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () async {
+                            await context.read<SosProvider>().updateAlert(alert.id, 'RESOLVED');
+                          },
+                          child: Container(
+                            height: 42,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text('Đã xử lý',
+                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white60)),
+                          ),
+                        ),
+                      ),
+                    ]),
+                  ]),
+                );
+              },
+            ),
+          ),
+        ]),
       ),
     );
   }

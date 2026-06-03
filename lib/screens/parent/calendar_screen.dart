@@ -426,6 +426,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ]),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'calendar_fab',
         onPressed: _showAddEvent,
         backgroundColor: AppColors.link,
         child: const Icon(Icons.add_rounded, color: Colors.white),

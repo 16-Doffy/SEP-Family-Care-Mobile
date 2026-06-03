@@ -202,17 +202,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   // ── Quick Actions ───────────────────────────────
                   Row(
                     children: [
-                      _quickCard('➕', 'Nạp',
-                          () => context.push('/manager/wallet')),
-                      const SizedBox(width: 12),
                       _quickCard('📋', 'Tasks',
                           () => context.push('/manager/tasks')),
                       const SizedBox(width: 12),
+                      _quickCard('👨‍👩‍👧', 'Thành viên',
+                          () => context.push('/manager/members')),
+                      const SizedBox(width: 12),
+                      _quickCard('🫙', 'Ngân sách',
+                          () => context.push('/manager/finance-model')),
+                      const SizedBox(width: 12),
                       _quickCard('👥', 'Mời',
                           () => context.push('/manager/invite')),
-                      const SizedBox(width: 12),
-                      _quickCard('⭐', 'Gói',
-                          () => context.push('/manager/subscription')),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -285,7 +285,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: _card(
+                        child: GestureDetector(
+                          onTap: () => context.push('/manager/members'),
+                          child: _card(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -335,6 +337,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                               ),
                             ],
                           ),
+                        ),
                         ),
                       ),
                     ],

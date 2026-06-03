@@ -26,9 +26,12 @@ import '../screens/shared/profile_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
 
-// New screens (UC01, UC14, UC15, UC16)
+// New screens
 import '../screens/parent/subscription_screen.dart';
 import '../screens/parent/invite_member_screen.dart';
+import '../screens/parent/member_list_screen.dart';
+import '../screens/parent/finance_model_screen.dart';
+import '../screens/auth/join_family_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
 
 // Shells
@@ -121,7 +124,15 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/manager/tasks',         builder: (_, __) => const TaskManagementScreen()),
       GoRoute(path: '/manager/subscription',  builder: (_, __) => const SubscriptionScreen()),
       GoRoute(path: '/manager/invite',        builder: (_, __) => const InviteMemberScreen()),
+      GoRoute(path: '/manager/members',       builder: (_, __) => const MemberListScreen()),
+      GoRoute(path: '/manager/finance-model', builder: (_, __) => const FinanceModelScreen()),
       GoRoute(path: '/profile/edit',          builder: (_, __) => const EditProfileScreen()),
+      GoRoute(
+        path: '/join',
+        builder: (_, state) => JoinFamilyScreen(
+          initialCode: state.uri.queryParameters['code'],
+        ),
+      ),
     ],
   );
 }

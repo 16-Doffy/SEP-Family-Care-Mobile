@@ -5,6 +5,14 @@ import '../services/api_client.dart';
 // UC39 = RECURRING (định kỳ có khung giờ, bắt buộc có người thực hiện)
 enum TaskType { adHoc, recurring }
 
+// UC46/47 — Trạng thái thanh toán phần thưởng
+// PENDING       = chưa duyệt xong
+// AWAITING      = đã duyệt, chờ manager xác nhận đã trả thưởng
+// SETTLED       = đã thanh toán (manager xác nhận)
+// CONFIRMED     = member xác nhận nhận được thưởng
+// DISPUTED      = member báo chưa nhận được
+enum RewardStatus { pending, awaiting, settled, confirmed, disputed }
+
 class TaskItem {
   final String id;
   final String title;
@@ -12,8 +20,9 @@ class TaskItem {
   final String assigneeName;
   final String assigneeId;
   final double reward;
-  final TaskType type;       // ad-hoc vs recurring
-  final String? schedule;   // VD: "07:00–07:30 hàng ngày"
+  final TaskType type;
+  final String? schedule;
+  final RewardStatus rewardStatus;
 
   const TaskItem({
     required this.id,
@@ -24,12 +33,12 @@ class TaskItem {
     this.reward = 0,
     this.type = TaskType.adHoc,
     this.schedule,
+    this.rewardStatus = RewardStatus.pending,
   });
 
   bool get isRecurring => type == TaskType.recurring;
 
   factory TaskItem.fromJson(Map<String, dynamic> json) {
-    // Backend có thể gửi: 'AD_HOC' | 'RECURRING' | 'adhoc' | 'recurring'
     final typeStr = (json['type'] as String? ?? '').toUpperCase();
     final taskType = typeStr.contains('RECURRING')
         ? TaskType.recurring
@@ -38,6 +47,15 @@ class TaskItem {
     final assignee = json['assignee'] is Map
         ? (json['assignee'] as Map)
         : <String, dynamic>{};
+
+    final rsStr = (json['rewardStatus'] as String? ?? '').toUpperCase();
+    final rs = switch (rsStr) {
+      'AWAITING'  => RewardStatus.awaiting,
+      'SETTLED'   => RewardStatus.settled,
+      'CONFIRMED' => RewardStatus.confirmed,
+      'DISPUTED'  => RewardStatus.disputed,
+      _           => RewardStatus.pending,
+    };
 
     return TaskItem(
       id: json['id']?.toString() ?? '',
@@ -49,6 +67,7 @@ class TaskItem {
       reward: _parseDouble(json['reward'] ?? json['rewardAmount']),
       type: taskType,
       schedule: json['schedule']?.toString() ?? json['timeSlot']?.toString(),
+      rewardStatus: rs,
     );
   }
 
@@ -132,8 +151,34 @@ class TaskProvider extends ChangeNotifier {
   Future<void> reassignTask(String taskId, String newAssigneeId) async {
     await ApiClient.instance.patch('/tasks/$taskId', {
       'assigneeId': newAssigneeId,
-      'status': 'TODO', // reset về todo sau khi reassign
+      'status': 'TODO',
     });
     await fetchTasks();
   }
+
+  // UC46 — Manager xác nhận đã thanh toán thưởng ngoài hệ thống
+  Future<void> markRewardSettled(String taskId) async {
+    await ApiClient.instance.patch('/tasks/$taskId', {'rewardStatus': 'SETTLED'});
+    await fetchTasks();
+  }
+
+  // UC47 — Member xác nhận đã nhận thưởng
+  Future<void> confirmRewardReceived(String taskId) async {
+    await ApiClient.instance.patch('/tasks/$taskId', {'rewardStatus': 'CONFIRMED'});
+    await fetchTasks();
+  }
+
+  // UC48 — Member báo chưa nhận được thưởng
+  Future<void> disputeReward(String taskId) async {
+    await ApiClient.instance.patch('/tasks/$taskId', {'rewardStatus': 'DISPUTED'});
+    await fetchTasks();
+  }
+
+  // Các task DONE có reward > 0 chưa được settle (manager cần xử lý)
+  List<TaskItem> get pendingRewardTasks => _tasks
+      .where((t) =>
+          t.status == 'DONE' &&
+          t.reward > 0 &&
+          (t.rewardStatus == RewardStatus.pending || t.rewardStatus == RewardStatus.disputed))
+      .toList();
 }

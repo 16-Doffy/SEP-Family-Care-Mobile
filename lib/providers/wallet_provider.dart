@@ -155,4 +155,31 @@ class WalletProvider extends ChangeNotifier {
     });
     await fetchWallets();
   }
+
+  // UC27 — Ghi nhận thu/chi cá nhân thực tế
+  // UC28 — Ghi nhận chi phí chung gia đình
+  Future<void> recordTransaction({
+    required double amount,    // dương = thu, âm = chi
+    required String description,
+    String category = '',
+    bool isShared = false,     // true = UC28 (chi phí chung)
+  }) async {
+    await ApiClient.instance.post('/wallets/transactions', {
+      'amount': amount,
+      'description': description,
+      if (category.isNotEmpty) 'category': category,
+      'type': amount >= 0 ? 'INCOME' : 'EXPENSE',
+      'scope': isShared ? 'SHARED' : 'PERSONAL',
+    });
+    await fetchWallets();
+  }
+
+  // UC-FIN-01/02 — Lưu mô hình tài chính + cấu hình jars
+  Future<void> saveFinanceModel(
+      String model, List<Map<String, dynamic>> jars) async {
+    await ApiClient.instance.post('/finance/model', {
+      'model': model,
+      'jars': jars,
+    });
+  }
 }

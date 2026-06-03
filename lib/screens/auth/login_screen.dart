@@ -194,6 +194,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  // UC13 — Tham gia gia đình qua lời mời
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => context.push('/join'),
+                      child: Text('Có mã mời? Tham gia gia đình →',
+                          style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted,
+                              decoration: TextDecoration.underline)),
+                    ),
+                  ),
                 ],
               ),
             ),

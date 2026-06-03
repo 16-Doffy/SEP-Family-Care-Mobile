@@ -10,22 +10,26 @@ class _Task {
   final String title;
   final String category;
   final String reward;
+  final double rewardAmount; // UC47 — số tiền thực để kiểm tra > 0
   final String due;
   final int xp;
-  final bool isRecurring; // UC39 — task định kỳ
-  final String? schedule; // "07:00–07:30 hàng ngày"
-  String status; // pending | submitted | approved | rejected | unavailable
+  final bool isRecurring;
+  final String? schedule;
+  String status;
+  bool rewardConfirmed; // UC47 — local state xác nhận nhận thưởng
 
   _Task({
     required this.id,
     required this.title,
     required this.category,
     required this.reward,
+    this.rewardAmount = 0,
     required this.due,
     required this.xp,
     this.isRecurring = false,
     this.schedule,
     this.status = 'pending',
+    this.rewardConfirmed = false,
   });
 }
 
@@ -37,55 +41,14 @@ class ChildTasksScreen extends StatefulWidget {
 
 class _ChildTasksScreenState extends State<ChildTasksScreen> {
   final _tasks = [
-    _Task(
-        id: '1',
-        title: 'Dọn phòng ngủ',
-        category: 'Nhà cửa',
-        reward: '20,000 ₫',
-        due: 'Hôm nay',
-        xp: 50),
-    _Task(
-        id: '2',
-        title: 'Làm bài tập toán trang 45-48',
-        category: 'Học tập',
-        reward: '30,000 ₫',
-        due: 'Hôm nay',
-        xp: 80),
-    // UC39 — Task định kỳ
-    _Task(
-        id: '3',
-        title: 'Đổ rác buổi sáng',
-        category: 'Nhà cửa',
-        reward: '10,000 ₫',
-        due: 'Hôm nay 06:30',
-        xp: 30,
-        isRecurring: true,
-        schedule: '06:30 – 06:45 mỗi ngày'),
-    _Task(
-        id: '4',
-        title: 'Đọc sách 30 phút',
-        category: 'Học tập',
-        reward: '15,000 ₫',
-        due: 'Ngày mai',
-        xp: 40),
-    _Task(
-        id: '5',
-        title: 'Rửa chén sau bữa tối',
-        category: 'Nhà cửa',
-        reward: '20,000 ₫',
-        due: 'Tối nay',
-        xp: 50,
-        isRecurring: true,
-        schedule: '19:00 – 19:30 mỗi tối',
-        status: 'submitted'),
-    _Task(
-        id: '6',
-        title: 'Ôn bài kiểm tra cuối tuần',
-        category: 'Học tập',
-        reward: '50,000 ₫',
-        due: 'Thứ 7',
-        xp: 120,
-        status: 'approved'),
+    _Task(id: '1', title: 'Dọn phòng ngủ',              category: 'Nhà cửa',  reward: '20,000 ₫', rewardAmount: 20000, due: 'Hôm nay',          xp: 50),
+    _Task(id: '2', title: 'Làm bài tập toán trang 45-48', category: 'Học tập',  reward: '30,000 ₫', rewardAmount: 30000, due: 'Hôm nay',          xp: 80),
+    _Task(id: '3', title: 'Đổ rác buổi sáng',            category: 'Nhà cửa',  reward: '10,000 ₫', rewardAmount: 10000, due: 'Hôm nay 06:30',    xp: 30,
+          isRecurring: true, schedule: '06:30 – 06:45 mỗi ngày'),
+    _Task(id: '4', title: 'Đọc sách 30 phút',            category: 'Học tập',  reward: '15,000 ₫', rewardAmount: 15000, due: 'Ngày mai',         xp: 40),
+    _Task(id: '5', title: 'Rửa chén sau bữa tối',        category: 'Nhà cửa',  reward: '20,000 ₫', rewardAmount: 20000, due: 'Tối nay',          xp: 50,
+          isRecurring: true, schedule: '19:00 – 19:30 mỗi tối', status: 'submitted'),
+    _Task(id: '6', title: 'Ôn bài kiểm tra cuối tuần',  category: 'Học tập',  reward: '50,000 ₫', rewardAmount: 50000, due: 'Thứ 7',           xp: 120, status: 'done'),
   ];
 
   String _filter = 'Tất cả';
@@ -98,7 +61,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
       case 'Đã nộp':
         return _tasks.where((t) => t.status == 'submitted').toList();
       case 'Hoàn thành':
-        return _tasks.where((t) => t.status == 'approved').toList();
+        return _tasks.where((t) => t.status == 'done' || t.status == 'approved').toList();
       default:
         return _tasks;
     }
@@ -449,6 +412,49 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                           ]),
                         ),
                       ),
+
+                    // UC47 — Xác nhận nhận thưởng (khi task DONE + có reward)
+                    if (t.status == 'done' && t.rewardAmount > 0)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                              color: const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(10)),
+                          child: Row(children: [
+                            const Text('🎁', style: TextStyle(fontSize: 16)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Phần thưởng: ${(t.rewardAmount / 1000).toStringAsFixed(0)}K ₫ — Đã nhận chưa?',
+                                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() => t.rewardConfirmed = true);
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                  content: Text('Đã xác nhận nhận thưởng ✅'),
+                                  backgroundColor: AppColors.safe,
+                                ));
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: t.rewardConfirmed ? AppColors.safe : AppColors.link,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  t.rewardConfirmed ? '✅ Đã nhận' : 'Nhận rồi',
+                                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ),
                   ]),
                 );
               },
@@ -459,67 +465,121 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     );
   }
 
-  // ── Nộp nhiệm vụ ──────────────────────────────────────────────────────────
+  // ── UC43 — Nộp nhiệm vụ kèm bằng chứng (note + ảnh đính kèm) ────────────
   void _submitTask(_Task t) {
+    final noteCtrl   = TextEditingController();
+    bool hasProof    = false;
+    String proofName = '';
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(24),
-        decoration: const BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Nộp nhiệm vụ',
-              style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary)),
-          const SizedBox(height: 8),
-          Text(t.title,
-              style: GoogleFonts.inter(
-                  fontSize: 14, color: AppColors.textSecondary)),
-          const SizedBox(height: 20),
-          TextField(
-            maxLines: 3,
-            decoration: InputDecoration(
-              hintText: 'Thêm ghi chú cho Ba/Mẹ...',
-              hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
-              filled: true,
-              fillColor: AppColors.background,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none),
-              contentPadding: const EdgeInsets.all(16),
-            ),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('Nộp nhiệm vụ',
+                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 4),
+              Text(t.title,
+                  style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
+              const SizedBox(height: 20),
+
+              // Note field
+              TextField(
+                controller: noteCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Thêm ghi chú cho Ba/Mẹ...',
+                  hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.all(16),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // UC43 — Đính kèm ảnh bằng chứng
+              GestureDetector(
+                onTap: () {
+                  // Simulate chọn ảnh — thực tế cần image_picker
+                  setSheet(() {
+                    hasProof  = true;
+                    proofName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                  });
+                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                    content: Text('📷 Ảnh được đính kèm (demo)'),
+                    duration: Duration(seconds: 1),
+                  ));
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: hasProof ? const Color(0xFFDCFCE7) : AppColors.background,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: hasProof ? AppColors.success : const Color(0xFFE5E7EB),
+                    ),
+                  ),
+                  child: Row(children: [
+                    Icon(
+                      hasProof ? Icons.check_circle_rounded : Icons.camera_alt_rounded,
+                      color: hasProof ? AppColors.success : AppColors.textMuted,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        hasProof ? '📷 $proofName' : 'Đính kèm ảnh bằng chứng (tuỳ chọn)',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: hasProof ? AppColors.success : AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                    if (hasProof)
+                      GestureDetector(
+                        onTap: () => setSheet(() { hasProof = false; proofName = ''; }),
+                        child: const Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
+                      ),
+                  ]),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.safe,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  onPressed: () {
+                    setState(() => t.status = 'submitted');
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(hasProof
+                          ? 'Đã nộp kèm ảnh bằng chứng! Chờ Ba/Mẹ duyệt 🎉'
+                          : 'Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'),
+                      backgroundColor: AppColors.safe,
+                    ));
+                  },
+                  child: Text('Xác nhận nộp${hasProof ? ' + Ảnh 📷' : ''}',
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ]),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.safe,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14))),
-              onPressed: () {
-                setState(() => t.status = 'submitted');
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'),
-                    backgroundColor: AppColors.safe));
-              },
-              child: Text('Xác nhận nộp',
-                  style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white)),
-            ),
-          ),
-          const SizedBox(height: 8),
-        ]),
+        ),
       ),
     );
   }
