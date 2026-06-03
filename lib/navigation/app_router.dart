@@ -26,6 +26,11 @@ import '../screens/shared/profile_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
 
+// New screens (UC01, UC14, UC15, UC16)
+import '../screens/parent/subscription_screen.dart';
+import '../screens/parent/invite_member_screen.dart';
+import '../screens/shared/edit_profile_screen.dart';
+
 // Shells
 import 'manager_shell.dart';
 import 'member_shell.dart';
@@ -112,8 +117,11 @@ GoRouter createRouter(AuthProvider auth) {
       ),
 
       // ── Manager Specific Routes ───────────────────────────
-      GoRoute(path: '/manager/wallet',  builder: (_, __) => const WalletScreen()),
-      GoRoute(path: '/manager/tasks',   builder: (_, __) => const TaskManagementScreen()),
+      GoRoute(path: '/manager/wallet',        builder: (_, __) => const WalletScreen()),
+      GoRoute(path: '/manager/tasks',         builder: (_, __) => const TaskManagementScreen()),
+      GoRoute(path: '/manager/subscription',  builder: (_, __) => const SubscriptionScreen()),
+      GoRoute(path: '/manager/invite',        builder: (_, __) => const InviteMemberScreen()),
+      GoRoute(path: '/profile/edit',          builder: (_, __) => const EditProfileScreen()),
     ],
   );
 }

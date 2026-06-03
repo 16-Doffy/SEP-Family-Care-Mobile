@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
 
@@ -23,6 +25,10 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
+    // Cập nhật vị trí gia đình để lấy lat/lng của user hiện tại
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<GpsProvider>().fetchFamilyLocations();
+    });
     _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat(reverse: true);
     _ring1 = Tween<double>(begin: 1.0, end: 1.08).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
     _ring2 = Tween<double>(begin: 1.0, end: 1.06).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
@@ -60,7 +66,21 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     _countTimer?.cancel();
     setState(() { _sending = true; _countdown = null; });
     try {
-      await context.read<SosProvider>().sendSos(message: 'SOS khẩn cấp');
+      // Lấy vị trí GPS của user từ GpsProvider (nếu có)
+      final myId = context.read<AuthProvider>().user?.id ?? '';
+      final gps  = context.read<GpsProvider>();
+      final myLocation = gps.shares
+          .where((s) => s.userId == myId && s.latitude != null)
+          .firstOrNull;
+
+      await context.read<SosProvider>().sendSos(
+        message:   'SOS khẩn cấp từ ứng dụng Family Care',
+        address:   myLocation != null
+            ? 'GPS: ${myLocation.latitude?.toStringAsFixed(5)}, ${myLocation.longitude?.toStringAsFixed(5)}'
+            : 'Vị trí đang cập nhật...',
+        latitude:  myLocation?.latitude,
+        longitude: myLocation?.longitude,
+      );
       if (mounted) setState(() { _sent = true; _sending = false; });
     } catch (e) {
       if (mounted) {

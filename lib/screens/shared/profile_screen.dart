@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../models/user.dart';
@@ -13,6 +14,11 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
+
+    // Local helpers capturing context
+    Widget section(String title, List<Widget> items) => _section(title, items);
+    Widget tile(String icon, String label, {required VoidCallback onTap}) =>
+        _tile(icon, label, onTap: onTap);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -40,15 +46,18 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 32),
 
             _section('Tài khoản', [
-              _tile('👤', 'Hồ sơ cá nhân', onTap: () {}),
+              _tile('👤', 'Chỉnh sửa hồ sơ',
+                  onTap: () => context.push('/profile/edit')),
               _tile('🔒', 'Bảo mật', onTap: () {}),
               _tile('🔔', 'Thông báo', onTap: () {}),
             ]),
             const SizedBox(height: 16),
 
             _section('Gia đình', [
-              _tile('👨‍👩‍👧', 'Quản lý thành viên', onTap: () {}),
-              _tile('⚙️', 'Cài đặt gia đình', onTap: () {}),
+              _tile('👥', 'Mời thành viên',
+                  onTap: () => context.push('/manager/invite')),
+              _tile('⚙️', 'Gói đăng ký',
+                  onTap: () => context.push('/manager/subscription')),
             ]),
             const SizedBox(height: 16),
 

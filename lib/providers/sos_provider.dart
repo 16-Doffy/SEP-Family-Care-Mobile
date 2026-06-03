@@ -68,14 +68,20 @@ class SosProvider extends ChangeNotifier {
   }
 
   Future<void> sendSos({
-    String message = 'SOS from Flutter mobile',
+    String message = 'SOS khẩn cấp',
     String address = 'Mobile app',
+    double? latitude,
+    double? longitude,
   }) async {
     _sending = true;
     notifyListeners();
     try {
-      await ApiClient.instance
-          .post('/sos', {'message': message, 'address': address});
+      await ApiClient.instance.post('/sos', {
+        'message': message,
+        'address': address,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
+      });
       await fetchAlerts();
     } finally {
       _sending = false;

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/task_provider.dart';
+// ignore: unused_import (TaskType dùng cho _createType)
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
@@ -19,12 +20,18 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   bool _submitting = false;
   final _titleCtrl = TextEditingController();
 
+  TaskType _createType = TaskType.adHoc;
+  final _scheduleCtrl  = TextEditingController();
+  final _assigneeCtrl  = TextEditingController(); // tên / ID người được giao
+  final _rewardCtrl    = TextEditingController(); // phần thưởng (₫)
+
   static const _statusCfg = {
-    'TODO':      (label: 'Chờ làm',    bg: Color(0xFFF3F4F6), color: Color(0xFF6B7280)),
-    'DOING':     (label: 'Đang làm',   bg: Color(0xFFFEF3C7), color: Color(0xFFD97706)),
-    'SUBMITTED': (label: 'Chờ duyệt',  bg: Color(0xFFEFF6FF), color: AppColors.planned),
-    'DONE':      (label: 'Hoàn thành', bg: Color(0xFFDCFCE7), color: Color(0xFF16A34A)),
-    'REJECTED':  (label: 'Từ chối',    bg: Color(0xFFFEE2E2), color: Color(0xFFDC2626)),
+    'TODO':        (label: 'Chờ làm',       bg: Color(0xFFF3F4F6), color: Color(0xFF6B7280)),
+    'DOING':       (label: 'Đang làm',      bg: Color(0xFFFEF3C7), color: Color(0xFFD97706)),
+    'SUBMITTED':   (label: 'Chờ duyệt',     bg: Color(0xFFEFF6FF), color: AppColors.planned),
+    'DONE':        (label: 'Hoàn thành',    bg: Color(0xFFDCFCE7), color: Color(0xFF16A34A)),
+    'REJECTED':    (label: 'Từ chối',       bg: Color(0xFFFEE2E2), color: Color(0xFFDC2626)),
+    'UNAVAILABLE': (label: 'Cần phân công', bg: Color(0xFFFFF7ED), color: Color(0xFFEA580C)),
   };
 
   @override
@@ -38,6 +45,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   @override
   void dispose() {
     _titleCtrl.dispose();
+    _scheduleCtrl.dispose();
+    _assigneeCtrl.dispose();
+    _rewardCtrl.dispose();
     super.dispose();
   }
 
@@ -101,10 +111,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   children: [
-                    _filterChip(null,        'Tất cả'),
-                    _filterChip('SUBMITTED', 'Chờ duyệt', badge: submitted),
-                    _filterChip('DOING',     'Đang làm'),
-                    _filterChip('DONE',      'Hoàn thành'),
+                    _filterChip(null,          'Tất cả'),
+                    _filterChip('SUBMITTED',   'Chờ duyệt', badge: submitted),
+                    _filterChip('DOING',       'Đang làm'),
+                    _filterChip('DONE',        'Hoàn thành'),
+                    _filterChip('UNAVAILABLE', '🚫 Chờ phân công',
+                        badge: tasks.where((t) => t.status == 'UNAVAILABLE').length),
                   ],
                 ),
               ),
@@ -119,9 +131,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       ..._filtered(tasks).map((task) {
                         final st = _statusCfg[task.status] ?? _statusCfg['TODO']!;
                         return GestureDetector(
-                          onTap: () => task.status == 'SUBMITTED'
-                              ? setState(() => _approveTask = task)
-                              : null,
+                          onTap: () {
+                            if (task.status == 'SUBMITTED') {
+                              setState(() => _approveTask = task);
+                            } else if (task.status == 'UNAVAILABLE') {
+                              _showReassignSheet(context, task);
+                            }
+                          },
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(14),
@@ -148,10 +164,14 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                           ),
                                       ]),
                                       const SizedBox(height: 8),
-                                      Wrap(spacing: 6, children: [
+                                      Wrap(spacing: 6, runSpacing: 4, children: [
                                         _chip(st.label, st.bg, st.color),
+                                        if (task.isRecurring)
+                                          _chip('🔁 Định kỳ', const Color(0xFFF0F9FF), const Color(0xFF0369A1)),
                                         if (task.reward > 0)
                                           _chip('💰 ${(task.reward / 1000).toStringAsFixed(0)}K', const Color(0xFFDCFCE7), const Color(0xFF16A34A)),
+                                        if (task.status == 'UNAVAILABLE')
+                                          _chip('Tap để phân công →', const Color(0xFFFFF7ED), const Color(0xFFEA580C)),
                                       ]),
                                     ],
                                   ),
@@ -258,66 +278,301 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   }
 
   Widget _createSheet(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(28, 28, 28, 40),
-      decoration: const BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('📋  Tạo task mới', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 16),
-          Text('Tên task', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-          const SizedBox(height: 6),
-          Container(
-            height: 52,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5), borderRadius: BorderRadius.circular(14)),
-            child: TextField(
-              controller: _titleCtrl,
-              decoration: InputDecoration(
-                hintText: 'VD: Dọn phòng khách',
-                border: InputBorder.none,
-                hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+    return StatefulBuilder(
+      builder: (ctx, setSheetState) => Container(
+        padding: EdgeInsets.fromLTRB(
+            28, 28, 28, MediaQuery.of(context).viewInsets.bottom + 40),
+        decoration: const BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('📋  Tạo task mới',
+                style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary)),
+            const SizedBox(height: 16),
+
+            // ── Loại task toggle (UC38 vs UC39) ──
+            Row(
+              children: [
+                _typeToggle(
+                    label: '⚡ Tự phát',
+                    selected: _createType == TaskType.adHoc,
+                    onTap: () => setState(() => _createType = TaskType.adHoc)),
+                const SizedBox(width: 8),
+                _typeToggle(
+                    label: '🔁 Định kỳ',
+                    selected: _createType == TaskType.recurring,
+                    onTap: () =>
+                        setState(() => _createType = TaskType.recurring)),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            Text('Tên task',
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            _inputBox(_titleCtrl, 'VD: Dọn phòng khách, Đưa con đi học...'),
+            const SizedBox(height: 12),
+
+            // Khung giờ — chỉ cho recurring
+            if (_createType == TaskType.recurring) ...[
+              Text('Khung giờ thực hiện',
+                  style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              _inputBox(_scheduleCtrl, 'VD: 07:00–07:30 hàng ngày'),
+              const SizedBox(height: 12),
+            ],
+
+            // ── Giao cho (assignee) ───────────────────────────
+            Text('Giao cho',
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            _inputBox(_assigneeCtrl, 'Tên thành viên hoặc ID (để trống = chưa giao)'),
+            const SizedBox(height: 12),
+
+            // ── Phần thưởng ───────────────────────────────────
+            Text('Phần thưởng (₫)',
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                  border: Border.all(
+                      color: const Color(0xFFE5E7EB), width: 1.5),
+                  borderRadius: BorderRadius.circular(14)),
+              child: TextField(
+                controller: _rewardCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: false),
+                decoration: InputDecoration(
+                  hintText: 'VD: 20000  (để trống nếu không có thưởng)',
+                  border: InputBorder.none,
+                  hintStyle:
+                      GoogleFonts.inter(color: AppColors.textMuted),
+                  suffixText: '₫',
+                  suffixStyle: GoogleFonts.inter(
+                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w600),
+                ),
+                style: GoogleFonts.inter(
+                    fontSize: 15, color: AppColors.textPrimary),
               ),
-              style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
             ),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.link,
-              minimumSize: const Size.fromHeight(54),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            const SizedBox(height: 20),
+
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.link,
+                minimumSize: const Size.fromHeight(54),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: _submitting
+                  ? null
+                  : () async {
+                      if (_titleCtrl.text.isEmpty) return;
+                      setState(() => _submitting = true);
+                      try {
+                        await context.read<TaskProvider>().createTask(
+                              title:      _titleCtrl.text.trim(),
+                              type:       _createType,
+                              schedule:   _scheduleCtrl.text.trim().isEmpty
+                                  ? null : _scheduleCtrl.text.trim(),
+                              assigneeId: _assigneeCtrl.text.trim(),
+                              reward:     double.tryParse(
+                                  _rewardCtrl.text.trim()) ?? 0,
+                            );
+                        if (mounted) {
+                          _titleCtrl.clear();
+                          _scheduleCtrl.clear();
+                          _assigneeCtrl.clear();
+                          _rewardCtrl.clear();
+                          setState(() {
+                            _showCreate = false;
+                            _submitting = false;
+                          });
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          setState(() => _submitting = false);
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(e.toString()),
+                              backgroundColor: AppColors.danger));
+                        }
+                      }
+                    },
+              child: _submitting
+                  ? const CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2)
+                  : Text('Tạo task',
+                      style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
             ),
-            onPressed: _submitting ? null : () async {
-              if (_titleCtrl.text.isEmpty) return;
-              setState(() => _submitting = true);
-              try {
-                await context.read<TaskProvider>().createTask(title: _titleCtrl.text.trim());
-                if (mounted) {
-                  _titleCtrl.clear();
-                  setState(() { _showCreate = false; _submitting = false; });
-                }
-              } catch (e) {
-                if (mounted) {
-                  setState(() => _submitting = false);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-                }
-              }
-            },
-            child: _submitting
-                ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                : Text('Tạo task', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
-          ),
-          TextButton(
-            onPressed: () => setState(() => _showCreate = false),
-            child: Center(child: Text('Hủy', style: GoogleFonts.inter(fontSize: 15, color: AppColors.textMuted))),
-          ),
-        ],
+            TextButton(
+              onPressed: () => setState(() => _showCreate = false),
+              child: Center(
+                  child: Text('Hủy',
+                      style: GoogleFonts.inter(
+                          fontSize: 15, color: AppColors.textMuted))),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  // UC42 — Reassign task định kỳ khi member báo không thể làm
+  void _showReassignSheet(BuildContext context, TaskItem task) {
+    final assigneeCtrl = TextEditingController();
+    bool submitting = false;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              28, 28, 28, MediaQuery.of(ctx).viewInsets.bottom + 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('🔄  Phân công lại',
+                  style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              const SizedBox(height: 4),
+              Text(task.title,
+                  style: GoogleFonts.inter(
+                      fontSize: 14, color: AppColors.textSecondary)),
+              const SizedBox(height: 4),
+              Text(
+                '${task.assigneeName} đã báo không thể thực hiện.',
+                style: GoogleFonts.inter(
+                    fontSize: 12, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 16),
+              Text('ID thành viên mới',
+                  style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              _inputBox(assigneeCtrl, 'Nhập Member ID hoặc tên thành viên'),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.link,
+                    minimumSize: const Size.fromHeight(54),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14))),
+                onPressed: submitting
+                    ? null
+                    : () async {
+                        if (assigneeCtrl.text.isEmpty) return;
+                        setSheet(() => submitting = true);
+                        try {
+                          await context
+                              .read<TaskProvider>()
+                              .reassignTask(task.id, assigneeCtrl.text.trim());
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Đã phân công lại ✅'),
+                                  backgroundColor: AppColors.success),
+                            );
+                          }
+                        } catch (e) {
+                          setSheet(() => submitting = false);
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                                content: Text(e.toString()),
+                                backgroundColor: AppColors.danger));
+                          }
+                        }
+                      },
+                child: submitting
+                    ? const CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2)
+                    : Text('Xác nhận phân công',
+                        style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _typeToggle(
+      {required String label,
+      required bool selected,
+      required VoidCallback onTap}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.link : const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _inputBox(TextEditingController ctrl, String hint) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+            border:
+                Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
+            borderRadius: BorderRadius.circular(14)),
+        child: TextField(
+          controller: ctrl,
+          decoration: InputDecoration(
+            hintText: hint,
+            border: InputBorder.none,
+            hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+          ),
+          style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
+        ),
+      );
 
   Widget _errorView(String msg, VoidCallback onRetry) => Center(
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [

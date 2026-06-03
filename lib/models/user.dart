@@ -59,10 +59,11 @@ class AppUser {
     return parts.take(2).map((e) => e[0].toUpperCase()).join();
   }
 
+  // Deputy dùng cùng màu Manager (#2563EB / planned) — theo Design System Section 1
   static int colorForRole(UserRole role) => switch (role) {
         UserRole.manager => 0xFF2563EB,
-        UserRole.deputy => 0xFF16A34A,
-        UserRole.member => 0xFFEA580C,
+        UserRole.deputy  => 0xFF2563EB,  // planned — khớp FAMILY_CARE_SYSTEM.md
+        UserRole.member  => 0xFFEA580C,
       };
 
   bool get isAdministrative => role == UserRole.manager || role == UserRole.deputy;
