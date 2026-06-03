@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Wear OS companion feature declaration -->
+    <uses-feature android:name="android.hardware.type.watch" android:required="false" />
+
     <application
         android:label="family_care"
         android:name="${applicationName}"
