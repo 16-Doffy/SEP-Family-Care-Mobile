@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
 // UC15 — Mời thành viên vào gia đình
@@ -18,26 +19,65 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
 
-  // Mock: mã 6 ký tự (không dùng O/0, I/1, l)
-  // TODO: lấy từ API GET /family/invite-code
-  final String _inviteCode = 'A7X-9P2';
-  final String _inviteLink =
-      'https://familycare.app/join?code=A7X-9P2&exp=24h';
+  String _inviteToken = '';
+  String get _inviteCode => _inviteToken.length > 7
+      ? _inviteToken.substring(0, 7).toUpperCase()
+      : _inviteToken.toUpperCase();
+  String get _inviteLink =>
+      'http://103.110.84.66/join?token=$_inviteToken';
+
   bool _codeCopied = false;
   bool _linkCopied = false;
+  bool _creatingInvite = false;
 
-  // UC16 — Danh sách lời mời đang chờ
-  final _pendingInvites = [
-    _InviteData(
-        email: 'me@example.com', sentAt: '02/06 14:30', status: 'pending'),
-    _InviteData(
-        email: 'gra@example.com', sentAt: '01/06 09:15', status: 'pending'),
-  ];
+  List<_InviteData> _pendingInvites = [];
 
   @override
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _createInvite();
+      _fetchPendingInvites();
+    });
+  }
+
+  Future<void> _createInvite() async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) return;
+    setState(() => _creatingInvite = true);
+    try {
+      final data = await ApiClient.instance.post(
+        '/families/$familyId/invitations',
+        {'familyRole': 'MEMBER', 'relationship': 'other'},
+      );
+      final token = data['token']?.toString() ?? data['id']?.toString() ?? '';
+      if (mounted) setState(() => _inviteToken = token);
+    } catch (_) {
+      // Fallback: hiện placeholder
+      if (mounted) setState(() => _inviteToken = 'PENDING');
+    } finally {
+      if (mounted) setState(() => _creatingInvite = false);
+    }
+  }
+
+  Future<void> _fetchPendingInvites() async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) return;
+    try {
+      // BE chưa có GET /families/{id}/invitations — dùng empty list
+      // TODO: gọi khi BE bổ sung endpoint list invitations
+    } catch (_) {}
+  }
+
+  Future<void> _cancelInvite(String inviteId, int idx) async {
+    // BE chưa có DELETE /invitations/{id} — local remove only
+    setState(() => _pendingInvites.removeAt(idx));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Đã huỷ lời mời'),
+          backgroundColor: AppColors.danger));
+    }
   }
 
   @override
@@ -243,12 +283,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
                 elevation: 0),
-            onPressed: () {
-              // TODO: refresh QR / call API generate new code
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Đã tạo QR Code mới ✅'),
-                  backgroundColor: AppColors.success));
-            },
+            onPressed: _creatingInvite ? null : _createInvite,
             icon: const Icon(Icons.refresh_rounded,
                 size: 18, color: Colors.white),
             label: Text('Tạo QR mới',
@@ -519,13 +554,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
                       ]),
                 ),
                 GestureDetector(
-                  onTap: () {
-                    // TODO: API cancel invite
-                    setState(() => _pendingInvites.removeAt(entry.key));
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Đã huỷ lời mời'),
-                        backgroundColor: AppColors.danger));
-                  },
+                  onTap: () => _cancelInvite(inv.email, entry.key),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 5),

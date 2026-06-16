@@ -469,7 +469,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                                             .textPrimary),
                                                   ),
                                                   Text(
-                                                    tx.createdAt,
+                                                    tx.entryDate,
                                                     style: GoogleFonts.inter(
                                                         fontSize: 12,
                                                         color:

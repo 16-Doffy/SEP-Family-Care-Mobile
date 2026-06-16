@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
 // UC-FIN-01 — Chọn mô hình tài chính gia đình (5 Jars / 80-20 / Custom)
@@ -343,7 +344,10 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       };
       final jars = _activeJars.map((j) => {'name': j.name, 'percent': j.percent}).toList();
       // WalletProvider.saveFinanceModel API call
-      await context.read<WalletProvider>().saveFinanceModel(modelStr, jars);
+      await ApiClient.instance.post(
+        ApiClient.instance.familyPath('/finance/models'),
+        {'modelType': modelStr, 'name': modelStr},
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Đã lưu mô hình tài chính ✅'),

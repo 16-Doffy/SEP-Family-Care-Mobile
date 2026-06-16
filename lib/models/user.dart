@@ -3,7 +3,9 @@ enum UserRole { manager, deputy, member }
 class AppUser {
   final String id;
   final String name;
+  final String email;
   final String familyName;
+  final String? familyId;
   final UserRole role;
   final String avatarInitials;
   final int avatarColor;
@@ -13,7 +15,9 @@ class AppUser {
   const AppUser({
     required this.id,
     required this.name,
+    required this.email,
     required this.familyName,
+    this.familyId,
     required this.role,
     required this.avatarInitials,
     required this.avatarColor,
@@ -25,25 +29,40 @@ class AppUser {
     Map<String, dynamic> json, {
     String? accessToken,
     String? refreshToken,
+    String? familyId,
+    String? familyName,
+    String? familyRole,
   }) {
-    final roleStr = (json['role'] as String? ?? '').toUpperCase();
-    final role = roleStr.contains('PARENT') ||
-            roleStr.contains('MANAGER') ||
-            roleStr.contains('ADMIN')
+    // Role ưu tiên: từ familyMember.familyRole (context gia đình) > json.role (account level)
+    final roleStr = (familyRole ?? json['familyRole'] as String? ??
+            json['role'] as String? ?? '')
+        .toUpperCase();
+    final role = roleStr.contains('MANAGER') || roleStr.contains('ADMIN')
         ? UserRole.manager
         : roleStr.contains('DEPUTY')
             ? UserRole.deputy
             : UserRole.member;
 
-    final name = json['displayName'] as String? ?? 'User';
-    final member = json['familyMember'] as Map<String, dynamic>?;
-    final family = member?['family'] as Map<String, dynamic>?;
-    final familyName = family?['name'] as String? ?? '';
+    final name = json['fullName'] as String? ??
+        json['displayName'] as String? ??
+        'User';
+
+    // familyName: ưu tiên từ tham số truyền vào (sau khi gọi /families/my)
+    final fName = familyName ??
+        (json['familyMember'] is Map
+            ? ((json['familyMember'] as Map)['family'] is Map
+                ? ((json['familyMember'] as Map)['family'] as Map)['name']
+                    ?.toString()
+                : null)
+            : null) ??
+        '';
 
     return AppUser(
       id: json['id']?.toString() ?? '',
       name: name,
-      familyName: familyName,
+      email: json['email']?.toString() ?? '',
+      familyName: fName,
+      familyId: familyId,
       role: role,
       avatarInitials: _initials(name),
       avatarColor: colorForRole(role),
@@ -59,10 +78,9 @@ class AppUser {
     return parts.take(2).map((e) => e[0].toUpperCase()).join();
   }
 
-  // Deputy dùng cùng màu Manager (#2563EB / planned) — theo Design System Section 1
   static int colorForRole(UserRole role) => switch (role) {
         UserRole.manager => 0xFF2563EB,
-        UserRole.deputy  => 0xFF2563EB,  // planned — khớp FAMILY_CARE_SYSTEM.md
+        UserRole.deputy  => 0xFF2563EB,
         UserRole.member  => 0xFFEA580C,
       };
 

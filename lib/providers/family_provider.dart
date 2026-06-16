@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
 class FamilyMember {
-  final String id;
+  final String id;       // familyMember.id (membership record)
+  final String userId;   // user.id
   final String name;
   final String email;
-  final String role; // MANAGER | DEPUTY | MEMBER
+  final String role;     // MANAGER | DEPUTY | MEMBER
   final String relation;
   final int avatarColor;
 
   const FamilyMember({
     required this.id,
+    required this.userId,
     required this.name,
     required this.email,
     required this.role,
@@ -21,31 +23,35 @@ class FamilyMember {
   String get avatarInitials =>
       name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase();
 
-  String get roleLabel {
-    switch (role.toUpperCase()) {
-      case 'MANAGER': return 'Trưởng nhóm';
-      case 'DEPUTY':  return 'Phó nhóm';
-      default:        return 'Thành viên';
-    }
-  }
+  String get roleLabel => switch (role.toUpperCase()) {
+        'MANAGER' => 'Trưởng nhóm',
+        'DEPUTY'  => 'Phó nhóm',
+        _         => 'Thành viên',
+      };
 
-  Color get roleColor {
-    switch (role.toUpperCase()) {
-      case 'MANAGER': return const Color(0xFF2563EB);
-      case 'DEPUTY':  return const Color(0xFF2563EB);
-      default:        return const Color(0xFF6B7280);
-    }
-  }
+  Color get roleColor => switch (role.toUpperCase()) {
+        'MANAGER' || 'DEPUTY' => const Color(0xFF2563EB),
+        _                     => const Color(0xFF6B7280),
+      };
 
   factory FamilyMember.fromJson(Map<String, dynamic> json) {
     final colors = [0xFF3B82F6, 0xFFA78BFA, 0xFFFB923C, 0xFF2DD4BF, 0xFFEC4899];
-    final idx    = (json['id']?.toString() ?? '').hashCode.abs() % colors.length;
+    // BE trả về member record: { id, userId, familyRole, relationship, user: { id, fullName, email } }
+    final userMap = json['user'] is Map
+        ? json['user'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final userId = userMap['id']?.toString() ?? json['userId']?.toString() ?? '';
+    final idx    = userId.hashCode.abs() % colors.length;
+    final name   = userMap['fullName']?.toString() ??
+                   userMap['displayName']?.toString() ??
+                   json['displayName']?.toString() ?? '';
     return FamilyMember(
       id:          json['id']?.toString() ?? '',
-      name:        json['displayName']?.toString() ?? json['name']?.toString() ?? '',
-      email:       json['email']?.toString() ?? '',
-      role:        json['role']?.toString() ?? 'MEMBER',
-      relation:    json['relation']?.toString() ?? '',
+      userId:      userId,
+      name:        name,
+      email:       userMap['email']?.toString() ?? json['email']?.toString() ?? '',
+      role:        json['familyRole']?.toString() ?? json['role']?.toString() ?? 'MEMBER',
+      relation:    json['relationship']?.toString() ?? json['relation']?.toString() ?? '',
       avatarColor: json['avatarColor'] is int ? json['avatarColor'] as int : colors[idx],
     );
   }
@@ -53,26 +59,26 @@ class FamilyMember {
 
 class FamilyProvider extends ChangeNotifier {
   List<FamilyMember> _members = [];
+  String _familyName = '';
   bool _loading = false;
   String? _error;
 
   List<FamilyMember> get members => _members;
+  String get familyName => _familyName;
   bool get isLoading => _loading;
   String? get error => _error;
 
+  // UC20 — Lấy danh sách thành viên: GET /families/{familyId}
   Future<void> fetchMembers() async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) return;
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      final data = await ApiClient.instance.get('/family/members');
-      final list = data is List
-          ? data
-          : data is Map && data['members'] is List
-              ? data['members'] as List
-              : data is Map && data['items'] is List
-                  ? data['items'] as List
-                  : <dynamic>[];
+      final data = await ApiClient.instance.get('/families/$familyId');
+      _familyName = (data as Map<String, dynamic>)['name']?.toString() ?? '';
+      final list  = data['members'] as List? ?? [];
       _members = list
           .whereType<Map>()
           .map((e) => FamilyMember.fromJson(Map<String, dynamic>.from(e)))
@@ -85,20 +91,21 @@ class FamilyProvider extends ChangeNotifier {
     }
   }
 
-  // UC17 — Thay đổi role thành viên
-  Future<void> updateRole(String memberId, String newRole) async {
-    await ApiClient.instance.patch('/family/members/$memberId', {'role': newRole});
-    await fetchMembers();
-  }
-
-  // UC18 — Cấp / Thu quyền Phó nhóm
-  Future<void> grantDeputy(String memberId) => updateRole(memberId, 'DEPUTY');
-  Future<void> revokeDeputy(String memberId) => updateRole(memberId, 'MEMBER');
-
-  // UC19 — Xoá thành viên
-  Future<void> removeMember(String memberId) async {
-    await ApiClient.instance.delete('/family/members/$memberId');
-    _members.removeWhere((m) => m.id == memberId);
+  // UC19 — Xoá thành viên: DELETE /families/{familyId}/members/{userId}
+  Future<void> removeMember(String userId) async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) throw Exception('Chưa có familyId');
+    await ApiClient.instance.delete('/families/$familyId/members/$userId');
+    _members.removeWhere((m) => m.userId == userId);
     notifyListeners();
   }
+
+  // UC17/18 — Thay đổi role: chờ BE-04
+  // Backend hiện chỉ có admin endpoint cho việc này
+  Future<void> updateRole(String memberId, String newRole) async {
+    throw Exception('Tính năng thay đổi quyền đang được cập nhật từ phía server.');
+  }
+
+  Future<void> grantDeputy(String memberId)  => updateRole(memberId, 'DEPUTY');
+  Future<void> revokeDeputy(String memberId) => updateRole(memberId, 'MEMBER');
 }

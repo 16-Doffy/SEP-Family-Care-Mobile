@@ -41,7 +41,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     setState(() => _loading = true);
     try {
-      await context.read<AuthProvider>().register(email, pass, name, family);
+      await context.read<AuthProvider>().register(email, pass, name);
     } catch (e) {
       if (mounted) _showError(e.toString().replaceFirst('Exception: ', ''));
     } finally {

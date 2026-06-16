@@ -37,34 +37,32 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     super.dispose();
   }
 
+  // GET /invitations/{token} — xem thông tin gia đình trước khi accept
   Future<void> _lookupCode() async {
-    final code = _codeCtrl.text.trim().toUpperCase();
-    if (code.length < 6) return;
+    final token = _codeCtrl.text.trim();
+    if (token.length < 6) return;
     setState(() { _loading = true; _error = null; _preview = null; });
     try {
-      final data = await ApiClient.instance.get('/family/invite/$code');
+      final data = await ApiClient.instance.get('/invitations/$token');
       if (!mounted) return;
       setState(() => _preview = data is Map ? Map<String, dynamic>.from(data) : null);
     } catch (e) {
-      setState(() => _error = 'Mã không hợp lệ hoặc đã hết hạn');
+      if (mounted) setState(() => _error = 'Mã không hợp lệ hoặc đã hết hạn');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  // POST /invitations/{token}/accept — chấp nhận lời mời
   Future<void> _joinFamily() async {
-    final code = _codeCtrl.text.trim().toUpperCase();
-    if (code.isEmpty) return;
+    final token = _codeCtrl.text.trim();
+    if (token.isEmpty) return;
     setState(() { _loading = true; _error = null; });
     try {
-      final data = await ApiClient.instance.post('/family/join', {'inviteCode': code});
-      // Cập nhật token mới nếu có
-      final token = (data as Map<String, dynamic>?)?['accessToken'] as String?;
-      if (token != null) ApiClient.instance.setToken(token);
-      // Điều hướng về login để re-authenticate với gia đình mới
+      await ApiClient.instance.post('/invitations/$token/accept', {});
       if (mounted) context.go('/login');
-    } catch (_) {
-      // Nếu không re-login được, thử reload user
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -134,27 +132,25 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                 Expanded(
                   child: TextField(
                     controller: _codeCtrl,
-                    textCapitalization: TextCapitalization.characters,
+                    textCapitalization: TextCapitalization.none,
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-                      LengthLimitingTextInputFormatter(6),
+                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-_]')),
                     ],
                     style: GoogleFonts.inter(
-                        fontSize: 28,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 6,
+                        letterSpacing: 2,
                         color: AppColors.textPrimary),
                     decoration: InputDecoration(
-                      hintText: 'ABC123',
+                      hintText: 'Nhập token lời mời...',
                       hintStyle: GoogleFonts.inter(
-                          fontSize: 28, fontWeight: FontWeight.w700,
-                          letterSpacing: 6, color: AppColors.textMuted),
+                          fontSize: 15, color: AppColors.textMuted),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(vertical: 18),
                     ),
                     onChanged: (v) {
                       setState(() { _error = null; _preview = null; });
-                      if (v.length == 6) _lookupCode();
+                      if (v.trim().length >= 6) _lookupCode();
                     },
                   ),
                 ),
@@ -190,11 +186,12 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(
-                        _preview!['familyName']?.toString() ?? 'Gia đình',
+                        (_preview!['family'] as Map?)?['name']?.toString() ??
+                            _preview!['familyName']?.toString() ?? 'Gia đình',
                         style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
                       ),
                       Text(
-                        '${_preview!['memberCount'] ?? '?'} thành viên · Mã hợp lệ',
+                        'Mời bởi: ${(_preview!['inviter'] as Map?)?['fullName']?.toString() ?? 'Quản trị viên'} · Token hợp lệ',
                         style: GoogleFonts.inter(fontSize: 12, color: AppColors.success),
                       ),
                     ]),

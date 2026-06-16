@@ -1,43 +1,95 @@
 import 'package:flutter/material.dart';
+import '../services/api_client.dart';
 import '../models/money_request.dart';
 
 class MoneyProvider extends ChangeNotifier {
-  final List<MoneyRequest> _requests = [
-    MoneyRequest(
-      id: '1',
-      senderId: 'child_1',
-      senderName: 'An',
-      senderAvatarInitial: 'AN',
-      senderAvatarColor: 0xFFEA580C,
-      amount: 50000,
-      reason: 'Mua sách tham khảo Toán',
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-    ),
-    MoneyRequest(
-      id: '2',
-      senderId: 'child_2',
-      senderName: 'Bi',
-      senderAvatarInitial: 'BI',
-      senderAvatarColor: 0xFF9333EA,
-      amount: 30000,
-      reason: 'Tiền ăn sáng thứ 2',
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-    ),
-  ];
+  List<MoneyRequest> _requests = [];
+  bool _loading = false;
+  String? _error;
 
   List<MoneyRequest> get requests => _requests;
-  List<MoneyRequest> get pendingRequests => _requests.where((r) => r.status == MoneyRequestStatus.pending).toList();
+  List<MoneyRequest> get pendingRequests =>
+      _requests.where((r) => r.status == MoneyRequestStatus.pending).toList();
+  bool get isLoading => _loading;
+  String? get error => _error;
 
-  void addRequest(MoneyRequest request) {
-    _requests.insert(0, request);
+  // UC34 — Lấy danh sách yêu cầu: GET /families/{familyId}/finance/support-requests
+  Future<void> fetchRequests() async {
+    if (ApiClient.instance.familyId == null) return;
+    _loading = true;
+    _error = null;
     notifyListeners();
-  }
-
-  void updateStatus(String requestId, MoneyRequestStatus status) {
-    final index = _requests.indexWhere((r) => r.id == requestId);
-    if (index != -1) {
-      _requests[index].status = status;
+    try {
+      final data = await ApiClient.instance.get(
+        ApiClient.instance.familyPath('/finance/support-requests'),
+      );
+      final list = data is List
+          ? data
+          : data is Map && data['items'] is List
+              ? data['items'] as List
+              : data is Map && data['data'] is List
+                  ? data['data'] as List
+                  : <dynamic>[];
+      _requests = list
+          .whereType<Map>()
+          .map((e) => MoneyRequest.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (e) {
+      _error = e.toString();
+    } finally {
+      _loading = false;
       notifyListeners();
     }
+  }
+
+  // UC34 — Tạo yêu cầu: POST /families/{familyId}/finance/support-requests
+  // CreateSpendingSupportRequestDto: { amount, categoryId?, purpose }
+  Future<void> addRequest(MoneyRequest request) async {
+    if (ApiClient.instance.familyId == null) {
+      // Fallback offline nếu chưa có familyId
+      _requests.insert(0, request);
+      notifyListeners();
+      return;
+    }
+    await ApiClient.instance.post(
+      ApiClient.instance.familyPath('/finance/support-requests'),
+      {
+        'amount':  request.amount,
+        'purpose': request.reason,
+      },
+    );
+    await fetchRequests();
+  }
+
+  // UC35 — Duyệt/từ chối: PATCH .../support-requests/{id}/review
+  // ReviewSpendingSupportRequestDto: { decision: APPROVED|REJECTED, decisionNote?, occurredAt? }
+  Future<void> updateStatus(String requestId, MoneyRequestStatus status) async {
+    if (ApiClient.instance.familyId == null) {
+      // Fallback local
+      final idx = _requests.indexWhere((r) => r.id == requestId);
+      if (idx != -1) {
+        _requests[idx].status = status;
+        notifyListeners();
+      }
+      return;
+    }
+    final decision = status == MoneyRequestStatus.approved ? 'APPROVED' : 'REJECTED';
+    await ApiClient.instance.patch(
+      ApiClient.instance.familyPath('/finance/support-requests/$requestId/review'),
+      {
+        'decision':    decision,
+        'occurredAt':  DateTime.now().toIso8601String(),
+      },
+    );
+    await fetchRequests();
+  }
+
+  // UC35 — Huỷ yêu cầu (bởi người tạo): PATCH .../support-requests/{id}/cancel
+  Future<void> cancelRequest(String requestId) async {
+    await ApiClient.instance.patch(
+      ApiClient.instance.familyPath('/finance/support-requests/$requestId/cancel'),
+      {},
+    );
+    await fetchRequests();
   }
 }

@@ -258,7 +258,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(tx.description, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                  Text(tx.createdAt,   style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                  Text(tx.entryDate,   style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
                 ])),
                 Text(
                   '${isPos ? '+' : ''}${_fmt(tx.amount.round())}',
@@ -371,7 +371,13 @@ class _WalletScreenState extends State<WalletScreen> {
                 final amount = double.tryParse(amountCtrl.text);
                 if (amount == null || amount <= 0 || targetWalletId == null) return;
                 try {
-                  await context.read<WalletProvider>().transfer(targetWalletId, amount, noteCtrl.text);
+                  await context.read<WalletProvider>().recordEntry(
+  amount: amount,
+  description: noteCtrl.text.isNotEmpty ? noteCtrl.text : 'Chuyển tiền nội bộ',
+  isIncome: false,
+  sourceType: 'TRANSFER',
+  sourceId: targetWalletId,
+);
                   if (ctx.mounted) Navigator.pop(ctx);
                 } catch (e) {
                   if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));

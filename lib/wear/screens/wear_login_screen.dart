@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../models/user.dart';
@@ -44,7 +45,7 @@ class WearLoginScreen extends StatelessWidget {
   Widget _roleBtn(BuildContext ctx, String emoji, String label,
       UserRole role, String name) {
     return GestureDetector(
-      onTap: () => ctx.read<AuthProvider>().login(role, name),
+      onTap: () => ctx.go('/login'),
       child: Container(
         height: 36,
         decoration: BoxDecoration(
