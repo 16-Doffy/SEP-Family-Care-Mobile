@@ -35,7 +35,7 @@ class WaffleChart extends StatelessWidget {
         cells.add(seg.color);
       }
     }
-    while (cells.length < 100) cells.add(const Color(0xFFE5E7EB));
+    while (cells.length < 100) { cells.add(const Color(0xFFE5E7EB)); }
 
     final side = cellSize + cellGap * 2;
     return SizedBox(

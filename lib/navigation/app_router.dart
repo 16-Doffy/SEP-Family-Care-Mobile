@@ -60,35 +60,35 @@ GoRouter createRouter(AuthProvider auth) {
     },
     routes: [
       // ── Auth ──────────────────────────────────────────────
-      GoRoute(path: '/login',    builder: (_, __) => const LoginScreen()),
-      GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(path: '/login',    builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
 
       // ── Shared overlays (full-screen) ──────────────────────
-      GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
-      GoRoute(path: '/ai',            builder: (_, __) => const AIAssistantScreen()),
+      GoRoute(path: '/notifications', builder: (_, _) => const NotificationsScreen()),
+      GoRoute(path: '/ai',            builder: (_, _) => const AIAssistantScreen()),
 
       // ── Manager/Deputy Shell ──────────────────────────────
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, __, shell) => ManagerShell(navigationShell: shell),
+        builder: (_, _, shell) => ManagerShell(navigationShell: shell),
         branches: [
           StatefulShellBranch(navigatorKey: _managerKey, routes: [
-            GoRoute(path: '/manager/home',  builder: (_, __) => const HomeDashboardScreen()),
+            GoRoute(path: '/manager/home',  builder: (_, _) => const HomeDashboardScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/chat',  builder: (_, __) => const ChatScreen()),
+            GoRoute(path: '/manager/chat',  builder: (_, _) => const ChatScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/calendar', builder: (_, __) => const CalendarScreen()),
+            GoRoute(path: '/manager/calendar', builder: (_, _) => const CalendarScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/sos',   builder: (_, __) => const SOSScreen()),
+            GoRoute(path: '/manager/sos',   builder: (_, _) => const SOSScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/album', builder: (_, __) => const AlbumScreen()),
+            GoRoute(path: '/manager/album', builder: (_, _) => const AlbumScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/profile', builder: (_, __) => const ProfileScreen()),
+            GoRoute(path: '/manager/profile', builder: (_, _) => const ProfileScreen()),
           ]),
         ],
       ),
@@ -96,37 +96,37 @@ GoRouter createRouter(AuthProvider auth) {
       // ── Member Shell ──────────────────────────────────────
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, __, shell) => MemberShell(navigationShell: shell),
+        builder: (_, _, shell) => MemberShell(navigationShell: shell),
         branches: [
           StatefulShellBranch(navigatorKey: _memberKey, routes: [
-            GoRoute(path: '/member/home',   builder: (_, __) => const ChildHomeScreen()),
+            GoRoute(path: '/member/home',   builder: (_, _) => const ChildHomeScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/member/tasks',  builder: (_, __) => const ChildTasksScreen()),
+            GoRoute(path: '/member/tasks',  builder: (_, _) => const ChildTasksScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/member/wallet', builder: (_, __) => const ChildWalletScreen()),
+            GoRoute(path: '/member/wallet', builder: (_, _) => const ChildWalletScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/member/sos',    builder: (_, __) => const SOSScreen()),
+            GoRoute(path: '/member/sos',    builder: (_, _) => const SOSScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/member/chat',   builder: (_, __) => const ChatScreen()),
+            GoRoute(path: '/member/chat',   builder: (_, _) => const ChatScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/member/profile', builder: (_, __) => const ProfileScreen()),
+            GoRoute(path: '/member/profile', builder: (_, _) => const ProfileScreen()),
           ]),
         ],
       ),
 
       // ── Manager Specific Routes ───────────────────────────
-      GoRoute(path: '/manager/wallet',        builder: (_, __) => const WalletScreen()),
-      GoRoute(path: '/manager/tasks',         builder: (_, __) => const TaskManagementScreen()),
-      GoRoute(path: '/manager/subscription',  builder: (_, __) => const SubscriptionScreen()),
-      GoRoute(path: '/manager/invite',        builder: (_, __) => const InviteMemberScreen()),
-      GoRoute(path: '/manager/members',       builder: (_, __) => const MemberListScreen()),
-      GoRoute(path: '/manager/finance-model', builder: (_, __) => const FinanceModelScreen()),
-      GoRoute(path: '/profile/edit',          builder: (_, __) => const EditProfileScreen()),
+      GoRoute(path: '/manager/wallet',        builder: (_, _) => const WalletScreen()),
+      GoRoute(path: '/manager/tasks',         builder: (_, _) => const TaskManagementScreen()),
+      GoRoute(path: '/manager/subscription',  builder: (_, _) => const SubscriptionScreen()),
+      GoRoute(path: '/manager/invite',        builder: (_, _) => const InviteMemberScreen()),
+      GoRoute(path: '/manager/members',       builder: (_, _) => const MemberListScreen()),
+      GoRoute(path: '/manager/finance-model', builder: (_, _) => const FinanceModelScreen()),
+      GoRoute(path: '/profile/edit',          builder: (_, _) => const EditProfileScreen()),
       GoRoute(
         path: '/join',
         builder: (_, state) => JoinFamilyScreen(

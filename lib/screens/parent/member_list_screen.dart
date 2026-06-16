@@ -75,7 +75,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
                             child: ListView.separated(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               itemCount: provider.members.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              separatorBuilder: (_, _) => const SizedBox(height: 10),
                               itemBuilder: (_, i) => _memberCard(context, provider.members[i], me?.id, isAdmin),
                             ),
                           ),

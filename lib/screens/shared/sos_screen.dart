@@ -125,7 +125,7 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
               child: Center(
                 child: Container(
                   width: 200, height: 200,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.sos.withOpacity(0.12)),
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.sos.withValues(alpha: 0.12)),
                 ),
               ),
             ),
@@ -139,7 +139,7 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
                         onTap: () => context.pop(),
                         child: Container(
                           width: 40, height: 40,
-                          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.1)),
                           alignment: Alignment.center,
                           child: const Text('←', style: TextStyle(fontSize: 20, color: Colors.white)),
                         ),
@@ -152,12 +152,12 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
                 Expanded(
                   child: AnimatedBuilder(
                     animation: _pulseCtrl,
-                    builder: (_, __) => Stack(
+                    builder: (_, _) => Stack(
                       alignment: Alignment.center,
                       children: [
-                        Transform.scale(scale: _ring3.value, child: Container(width: 290, height: 290, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withOpacity(0.3), width: 1)))),
-                        Transform.scale(scale: _ring2.value, child: Container(width: 240, height: 240, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withOpacity(0.3), width: 1)))),
-                        Transform.scale(scale: _ring1.value, child: Container(width: 190, height: 190, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withOpacity(0.3), width: 1)))),
+                        Transform.scale(scale: _ring3.value, child: Container(width: 290, height: 290, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withValues(alpha: 0.3), width: 1)))),
+                        Transform.scale(scale: _ring2.value, child: Container(width: 240, height: 240, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withValues(alpha: 0.3), width: 1)))),
+                        Transform.scale(scale: _ring1.value, child: Container(width: 190, height: 190, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withValues(alpha: 0.3), width: 1)))),
                         GestureDetector(
                           onTapDown: (_) => _onPressStart(),
                           onTapUp:   (_) => _onPressEnd(),
@@ -377,7 +377,7 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
               if (latestAlert != null)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(color: AppColors.sos.withOpacity(0.2), borderRadius: BorderRadius.circular(999)),
+                  decoration: BoxDecoration(color: AppColors.sos.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(999)),
                   child: Text(
                     'Trạng thái: ${latestAlert.status}',
                     style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.sos),

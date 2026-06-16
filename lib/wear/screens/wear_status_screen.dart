@@ -158,7 +158,7 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
                   child: Switch(
                     value: _fallEnabled,
                     onChanged: _toggleFall,
-                    activeColor: const Color(0xFF16A34A),
+                    activeThumbColor: const Color(0xFF16A34A),
                   ),
                 ),
               ]),

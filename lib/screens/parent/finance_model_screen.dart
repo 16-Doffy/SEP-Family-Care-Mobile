@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
-import '../../providers/wallet_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
@@ -342,7 +340,6 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         FinanceModel.eightTwenty => 'EIGHTY_TWENTY',
         FinanceModel.custom      => 'CUSTOM',
       };
-      final jars = _activeJars.map((j) => {'name': j.name, 'percent': j.percent}).toList();
       // WalletProvider.saveFinanceModel API call
       await ApiClient.instance.post(
         ApiClient.instance.familyPath('/finance/models'),

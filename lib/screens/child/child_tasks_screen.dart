@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
-import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
 
 // ── Local demo model (vẫn giữ khi API chưa sẵn sàng) ──────────────────────
@@ -16,7 +14,7 @@ class _Task {
   final bool isRecurring;
   final String? schedule;
   String status;
-  bool rewardConfirmed; // UC47 — local state xác nhận nhận thưởng
+  bool rewardConfirmed = false;
 
   _Task({
     required this.id,
@@ -29,7 +27,6 @@ class _Task {
     this.isRecurring = false,
     this.schedule,
     this.status = 'pending',
-    this.rewardConfirmed = false,
   });
 }
 
@@ -122,7 +119,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                    color: AppColors.safe.withOpacity(0.12),
+                    color: AppColors.safe.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999)),
                 child: Text('$done/$total hoàn thành',
                     style: GoogleFonts.inter(
@@ -176,7 +173,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                             borderRadius: BorderRadius.circular(999),
                             boxShadow: [
                               BoxShadow(
-                                  color: Colors.black.withOpacity(0.06),
+                                  color: Colors.black.withValues(alpha: 0.06),
                                   blurRadius: 8)
                             ],
                           ),
@@ -208,7 +205,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                            color: Colors.black.withOpacity(0.06),
+                            color: Colors.black.withValues(alpha: 0.06),
                             blurRadius: 16,
                             offset: const Offset(0, 4))
                       ]),
@@ -287,7 +284,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                               horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                               color: AppColors.income
-                                                  .withOpacity(0.1),
+                                                  .withValues(alpha: 0.1),
                                               borderRadius:
                                                   BorderRadius.circular(999)),
                                           child: Text(t.reward,
@@ -300,7 +297,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                               horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                               color: AppColors.planned
-                                                  .withOpacity(0.1),
+                                                  .withValues(alpha: 0.1),
                                               borderRadius:
                                                   BorderRadius.circular(999)),
                                           child: Text('+${t.xp} XP',
@@ -316,7 +313,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                   horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                   color:
-                                      _statusColor(t.status).withOpacity(0.1),
+                                      _statusColor(t.status).withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(999)),
                               child: Text(_statusLabel(t.status),
                                   style: GoogleFonts.inter(

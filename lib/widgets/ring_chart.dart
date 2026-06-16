@@ -38,7 +38,7 @@ class RingChart extends StatelessWidget {
               strokeWidth: strokeWidth,
             ),
           ),
-          if (child != null) child!,
+          ?child,
         ],
       ),
     );

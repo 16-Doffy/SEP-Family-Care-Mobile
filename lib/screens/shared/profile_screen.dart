@@ -15,11 +15,6 @@ class ProfileScreen extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
 
-    // Local helpers capturing context
-    Widget section(String title, List<Widget> items) => _section(title, items);
-    Widget tile(String icon, String label, {required VoidCallback onTap}) =>
-        _tile(icon, label, onTap: onTap);
-
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -30,14 +25,14 @@ class ProfileScreen extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  AvatarWidget(initial: user?.avatarInitials ?? 'BA', color: Color(user?.avatarColor ?? AppColors.avatarBlue.value), size: 80),
+                  AvatarWidget(initial: user?.avatarInitials ?? 'BA', color: Color(user?.avatarColor ?? AppColors.avatarBlue.toARGB32()), size: 80),
                   const SizedBox(height: 12),
                   Text(user?.name ?? 'Ba Nguyễn', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                   Text('Gia đình ${user?.familyName ?? "Nguyễn"}', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(color: AppColors.link.withOpacity(0.1), borderRadius: BorderRadius.circular(999)),
+                    decoration: BoxDecoration(color: AppColors.link.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
                     child: Text(_getRoleName(user?.role), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.link)),
                   ),
                 ],
@@ -102,7 +97,7 @@ class ProfileScreen extends StatelessWidget {
       children: [
         Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(title, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
         Container(
-          decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+          decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
           child: Column(children: items),
         ),
       ],

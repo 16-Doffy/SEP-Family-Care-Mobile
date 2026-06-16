@@ -97,7 +97,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               decoration: BoxDecoration(
                                 color: m.isMe ? AppColors.link : AppColors.white,
                                 borderRadius: BorderRadius.only(topLeft: const Radius.circular(18), topRight: const Radius.circular(18), bottomLeft: Radius.circular(m.isMe ? 18 : 4), bottomRight: Radius.circular(m.isMe ? 4 : 18)),
-                                boxShadow: m.isMe ? [] : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                                boxShadow: m.isMe ? [] : [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
                               ),
                               child: Text(m.text, style: GoogleFonts.inter(fontSize: 15, color: m.isMe ? Colors.white : AppColors.textPrimary)),
                             ),

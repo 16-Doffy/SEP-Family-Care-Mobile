@@ -98,7 +98,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.white,
                       borderRadius: BorderRadius.circular(24),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -248,7 +248,7 @@ class _LoginScreenState extends State<LoginScreen> {
               style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
             ),
           ),
-          if (suffix != null) suffix,
+          ?suffix,
         ],
       ),
     );
@@ -276,7 +276,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
             ),
             const Spacer(),
-            Icon(Icons.arrow_forward_ios_rounded, size: 14, color: textColor.withOpacity(0.5)),
+            Icon(Icons.arrow_forward_ios_rounded, size: 14, color: textColor.withValues(alpha: 0.5)),
           ],
         ),
       ),

@@ -80,17 +80,17 @@ class LedgerEntry {
 }
 
 // Alias để không cần sửa các screen cũ ngay
-typedef WalletData        = _OverviewData;
+typedef WalletData        = OverviewData;
 typedef TransactionData   = LedgerEntry;
 
-class _OverviewData {
+class OverviewData {
   final String id;
   final String name;
   final String type;
   final double balance;
   final String ownerName;
 
-  const _OverviewData({
+  const OverviewData({
     required this.id,
     required this.name,
     required this.type,
@@ -100,13 +100,13 @@ class _OverviewData {
 }
 
 class WalletProvider extends ChangeNotifier {
-  _OverviewData? _familyOverview;
+  OverviewData? _familyOverview;
   List<LedgerEntry> _entries = [];
   List<JarData> _jars = [];
   bool _loading = false;
   String? _error;
 
-  List<_OverviewData> get wallets =>
+  List<OverviewData> get wallets =>
       _familyOverview != null ? [_familyOverview!] : [];
   List<LedgerEntry> get transactions => _entries;
   List<JarData> get jars => _jars;
@@ -114,8 +114,8 @@ class WalletProvider extends ChangeNotifier {
   String? get error => _error;
 
   double get totalBalance => _familyOverview?.balance ?? 0;
-  _OverviewData? get familyWallet => _familyOverview;
-  List<_OverviewData> get memberWallets => [];
+  OverviewData? get familyWallet => _familyOverview;
+  List<OverviewData> get memberWallets => [];
 
   // GET /families/{familyId}/finance/overview + /finance/ledger/entries
   Future<void> fetchWallets() async {
@@ -143,7 +143,7 @@ class WalletProvider extends ChangeNotifier {
       ApiClient.instance.familyPath('/finance/overview'),
     );
     if (data is Map) {
-      _familyOverview = _OverviewData(
+      _familyOverview = OverviewData(
         id:        data['familyId']?.toString() ?? '',
         name:      'Quỹ gia đình',
         type:      'JOINT',
@@ -210,9 +210,9 @@ class WalletProvider extends ChangeNotifier {
         'description': description,
         'entryDate':   DateTime.now().toIso8601String(),
         if (note != null && note.isNotEmpty) 'note': note,
-        if (categoryId != null) 'categoryId': categoryId,
-        if (sourceType != null) 'sourceType': sourceType,
-        if (sourceId != null)   'sourceId':   sourceId,
+        'categoryId': ?categoryId,
+        'sourceType': ?sourceType,
+        'sourceId':   ?sourceId,
       },
     );
     await fetchWallets();

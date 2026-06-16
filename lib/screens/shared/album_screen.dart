@@ -41,7 +41,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               const Spacer(),
               GestureDetector(
                 onTap: () {},
-                child: Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10)]), alignment: Alignment.center, child: const Icon(Icons.add_rounded, color: AppColors.link, size: 20)),
+                child: Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10)]), alignment: Alignment.center, child: const Icon(Icons.add_rounded, color: AppColors.link, size: 20)),
               ),
             ]),
           ),
@@ -77,7 +77,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
       onTap: () => setState(() => _tab = idx),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(color: active ? AppColors.link : AppColors.white, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10)]),
+        decoration: BoxDecoration(color: active ? AppColors.link : AppColors.white, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10)]),
         child: Text(label, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: active ? Colors.white : AppColors.textSecondary)),
       ),
     );
@@ -95,12 +95,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
           child: Container(
             decoration: BoxDecoration(
               color: AppColors.white, borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 4))],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, 4))],
             ),
             child: Column(children: [
               Expanded(
                 child: Container(
-                  decoration: BoxDecoration(color: a.color.withOpacity(0.2), borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
+                  decoration: BoxDecoration(color: a.color.withValues(alpha: 0.2), borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
                   alignment: Alignment.center,
                   child: Text(a.emoji, style: const TextStyle(fontSize: 48)),
                 ),

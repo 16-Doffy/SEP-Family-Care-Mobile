@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
-import '../wear_utils.dart';
 
 // UC57 — Trigger SOS từ Wearable (hold 2 giây)
 
@@ -132,7 +131,7 @@ class _WearSosScreenState extends State<WearSosScreen>
               onTapCancel: _onHoldEnd,
               child: AnimatedBuilder(
                 animation: _pulse,
-                builder: (_, __) => Transform.scale(
+                builder: (_, _) => Transform.scale(
                   scale: _holding ? 1.06 : _scale.value,
                   child: Stack(
                     alignment: Alignment.center,

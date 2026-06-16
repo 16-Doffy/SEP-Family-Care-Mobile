@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/gps_provider.dart';
 import '../providers/sos_provider.dart';
-import '../services/api_client.dart';
 import 'screens/wear_login_screen.dart';
 import 'screens/wear_home_screen.dart';
 

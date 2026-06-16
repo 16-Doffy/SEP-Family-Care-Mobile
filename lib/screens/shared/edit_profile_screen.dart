@@ -71,7 +71,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       // Khôi phục avatarColor index
       final colorVal = user.avatarColor;
       _avatarColorIdx = _avatarColors.indexWhere(
-          (c) => c.color.value == colorVal);
+          (c) => c.color.toARGB32() == colorVal);
       if (_avatarColorIdx < 0) _avatarColorIdx = 0;
     }
   }
@@ -135,9 +135,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     final avatarColor = _avatarColors[_avatarColorIdx].color;
-    final initials    = _nameCtrl.text.trim().isEmpty
-        ? (user?.avatarInitials ?? '?')
-        : _initials(_nameCtrl.text.trim());
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -205,10 +202,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 // ── Avatar preview + color picker ────────────────
                 Center(
                   child: Column(children: [
-                    AvatarWidget(
-                        initial: initials,
-                        color: avatarColor,
-                        size: 84),
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _nameCtrl,
+                      builder: (context, value, _) {
+                        final initials = value.text.trim().isEmpty
+                            ? (user?.avatarInitials ?? '?')
+                            : _initials(value.text.trim());
+                        return AvatarWidget(
+                            initial: initials,
+                            color: avatarColor,
+                            size: 84);
+                      },
+                    ),
                     const SizedBox(height: 16),
                     Text('Màu avatar',
                         style: GoogleFonts.inter(
@@ -260,7 +265,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     label: 'Họ và tên hiển thị',
                     hint: 'VD: Nguyễn Văn An',
                     icon: Icons.person_outline_rounded,
-                    onChanged: (_) => setState(() {}), // rebuild avatar
+                    onChanged: null,
                   ),
                 ]),
                 const SizedBox(height: 16),

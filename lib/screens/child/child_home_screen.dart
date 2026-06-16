@@ -95,7 +95,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
                     ]),
                     const Spacer(),
                     Stack(children: [
-                      Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.15)), alignment: Alignment.center, child: const Text('🔔', style: TextStyle(fontSize: 20))),
+                      Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.15)), alignment: Alignment.center, child: const Text('🔔', style: TextStyle(fontSize: 20))),
                       Positioned(top: 6, right: 6, child: Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.danger))),
                     ]),
                   ],
@@ -105,7 +105,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
                 // Bar chart with animation
                 Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(16)),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(16)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -113,7 +113,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
                       const SizedBox(height: 10),
                       AnimatedBuilder(
                         animation: _barCtrl,
-                        builder: (_, __) => SizedBox(
+                        builder: (_, _) => SizedBox(
                           height: 80,
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
@@ -222,7 +222,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
                 ].map((r) => Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+                  decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
                   child: Row(children: [
                     Text(r.$1, style: const TextStyle(fontSize: 24)),
                     const SizedBox(width: 12),
@@ -253,7 +253,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
         color: AppColors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border(left: BorderSide(color: task.categoryColor, width: 4)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
       ),
       child: Row(
         children: [

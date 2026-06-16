@@ -117,7 +117,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                 borderRadius: BorderRadius.circular(21),
                                 boxShadow: [
                                   BoxShadow(
-                                      color: Colors.black.withOpacity(0.06),
+                                      color: Colors.black.withValues(alpha: 0.06),
                                       blurRadius: 20,
                                       offset: const Offset(0, 4))
                                 ],
@@ -156,7 +156,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withOpacity(0.22),
+                              color: Colors.black.withValues(alpha: 0.22),
                               blurRadius: 44,
                               offset: const Offset(0, 18))
                         ],
@@ -354,7 +354,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withOpacity(0.06),
+                              color: Colors.black.withValues(alpha: 0.06),
                               blurRadius: 20,
                               offset: const Offset(0, 4))
                         ],
@@ -515,7 +515,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 20,
                   offset: const Offset(0, 4))
             ],
@@ -545,7 +545,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 20,
               offset: const Offset(0, 4))
         ],

@@ -73,7 +73,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     onTap: () => context.pop(),
                     child: Container(
                       width: 40, height: 40,
-                      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20)]),
+                      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)]),
                       child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
                     ),
                   ),
@@ -144,7 +144,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                             decoration: BoxDecoration(
                               color: AppColors.white,
                               borderRadius: BorderRadius.circular(20),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
                             ),
                             child: Row(
                               children: [
@@ -233,14 +233,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                 onPressed: _submitting ? null : () async {
                   setState(() => _submitting = true);
+                  final messenger = ScaffoldMessenger.of(context);
                   try {
                     await context.read<TaskProvider>().approveTask(t.id, approved: true);
                     if (mounted) setState(() { _approveTask = null; _submitting = false; });
                   } catch (e) {
-                    if (mounted) {
-                      setState(() => _submitting = false);
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-                    }
+                    if (mounted) setState(() => _submitting = false);
+                    messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                   }
                 },
                 child: _submitting
@@ -254,14 +253,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                 onPressed: _submitting ? null : () async {
                   setState(() => _submitting = true);
+                  final messenger = ScaffoldMessenger.of(context);
                   try {
                     await context.read<TaskProvider>().approveTask(t.id, approved: false);
                     if (mounted) setState(() { _approveTask = null; _submitting = false; });
                   } catch (e) {
-                    if (mounted) {
-                      setState(() => _submitting = false);
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-                    }
+                    if (mounted) setState(() => _submitting = false);
+                    messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                   }
                 },
                 child: Text('✕  Từ chối', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
@@ -389,6 +387,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   : () async {
                       if (_titleCtrl.text.isEmpty) return;
                       setState(() => _submitting = true);
+                      final messenger = ScaffoldMessenger.of(context);
                       try {
                         await context.read<TaskProvider>().createTask(
                               title:      _titleCtrl.text.trim(),
@@ -410,12 +409,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                           });
                         }
                       } catch (e) {
-                        if (mounted) {
-                          setState(() => _submitting = false);
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(e.toString()),
-                              backgroundColor: AppColors.danger));
-                        }
+                        if (mounted) setState(() => _submitting = false);
+                        messenger.showSnackBar(SnackBar(
+                            content: Text(e.toString()),
+                            backgroundColor: AppColors.danger));
                       }
                     },
               child: _submitting
@@ -493,18 +490,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     : () async {
                         if (assigneeCtrl.text.isEmpty) return;
                         setSheet(() => submitting = true);
+                        final messenger = ScaffoldMessenger.of(context);
                         try {
                           await context
                               .read<TaskProvider>()
                               .reassignTask(task.id, assigneeCtrl.text.trim());
                           if (ctx.mounted) Navigator.pop(ctx);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Đã phân công lại ✅'),
-                                  backgroundColor: AppColors.success),
-                            );
-                          }
+                          messenger.showSnackBar(
+                            const SnackBar(
+                                content: Text('Đã phân công lại ✅'),
+                                backgroundColor: AppColors.success),
+                          );
                         } catch (e) {
                           setSheet(() => submitting = false);
                           if (ctx.mounted) {
@@ -587,7 +583,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   Widget _summaryCard(int val, String label, Color color) => Expanded(
     child: Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
       child: Column(children: [
         Text('$val', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w700, color: color)),
         Text(label,  style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
@@ -606,7 +602,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         decoration: BoxDecoration(
           color: active ? AppColors.link : AppColors.white,
           borderRadius: BorderRadius.circular(999),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

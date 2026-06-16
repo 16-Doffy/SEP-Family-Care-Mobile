@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
 
 // UC01 — Quản lý gói đăng ký (3 tiers: Free / Family / Premium)
@@ -129,7 +126,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                            color: Colors.black.withOpacity(0.06),
+                            color: Colors.black.withValues(alpha: 0.06),
                             blurRadius: 20)
                       ]),
                   child: const Icon(Icons.arrow_back_ios_new_rounded,
@@ -189,7 +186,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                          color: const Color(0xFF2563EB).withOpacity(0.1),
+                          color: const Color(0xFF2563EB).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(999)),
                       child: Text('Đang dùng',
                           style: GoogleFonts.inter(
@@ -283,7 +280,7 @@ class _PlanCard extends StatelessWidget {
             : Border.all(color: const Color(0xFFF3F4F6), width: 1.5),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(isCurrent ? 0.08 : 0.04),
+              color: Colors.black.withValues(alpha: isCurrent ? 0.08 : 0.04),
               blurRadius: 24,
               offset: const Offset(0, 6)),
         ],

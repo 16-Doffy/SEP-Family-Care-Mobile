@@ -80,11 +80,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> with SingleTicker
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight),
                 borderRadius: BorderRadius.circular(24),
-                boxShadow: [BoxShadow(color: AppColors.primary500.withOpacity(0.35), blurRadius: 20, offset: const Offset(0, 8))],
+                boxShadow: [BoxShadow(color: AppColors.primary500.withValues(alpha: 0.35), blurRadius: 20, offset: const Offset(0, 8))],
               ),
               child: AnimatedBuilder(
                 animation: _ctrl,
-                builder: (_, __) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                builder: (_, _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Số dư hiện tại', style: GoogleFonts.inter(fontSize: 13, color: Colors.white70)),
                   const SizedBox(height: 4),
                   Text('${_bal.value.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} ₫',
@@ -108,11 +108,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> with SingleTicker
             // Spending gauge
             Container(
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+              decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
               child: Row(children: [
                 AnimatedBuilder(
                   animation: _ring,
-                  builder: (_, __) => SizedBox(width: 80, height: 80, child: Stack(alignment: Alignment.center, children: [
+                  builder: (_, _) => SizedBox(width: 80, height: 80, child: Stack(alignment: Alignment.center, children: [
                     RingChart(progress: _ring.value, color: AppColors.planned, size: 80),
                     Column(mainAxisSize: MainAxisSize.min, children: [
                       Text('${(_ring.value * 100).round()}%', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
@@ -157,7 +157,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> with SingleTicker
             ..._txns.map((t) => Container(
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))]),
+              decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))]),
               child: Row(children: [
                 Container(width: 44, height: 44, decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)), alignment: Alignment.center, child: Text(t.icon, style: const TextStyle(fontSize: 22))),
                 const SizedBox(width: 12),
@@ -196,7 +196,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> with SingleTicker
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2))]),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))]),
       child: Row(children: [
         Container(width: 44, height: 44, decoration: const BoxDecoration(color: Color(0xFFF3F4F6), shape: BoxShape.circle), alignment: Alignment.center, child: const Text('📨', style: TextStyle(fontSize: 20))),
         const SizedBox(width: 12),
@@ -206,7 +206,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> with SingleTicker
         ])),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
           child: Text(statusText, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: statusColor)),
         ),
       ]),

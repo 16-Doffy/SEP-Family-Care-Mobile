@@ -30,7 +30,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
   bool _linkCopied = false;
   bool _creatingInvite = false;
 
-  List<_InviteData> _pendingInvites = [];
+  final List<_InviteData> _pendingInvites = [];
 
   @override
   void initState() {
@@ -132,7 +132,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                            color: Colors.black.withOpacity(0.06),
+                            color: Colors.black.withValues(alpha: 0.06),
                             blurRadius: 20)
                       ]),
                   child: const Icon(Icons.arrow_back_ios_new_rounded,
@@ -161,7 +161,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
                 borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 20,
                       offset: const Offset(0, 4))
                 ]),
@@ -229,7 +229,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
+                    color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 30,
                     offset: const Offset(0, 8))
               ]),
@@ -425,7 +425,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
+                    color: Colors.black.withValues(alpha: 0.08),
                     blurRadius: 30,
                     offset: const Offset(0, 8))
               ]),
@@ -496,7 +496,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: Colors.black.withValues(alpha: 0.06),
               blurRadius: 20,
               offset: const Offset(0, -4))
         ],
@@ -515,7 +515,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                  color: AppColors.link.withOpacity(0.1),
+                  color: AppColors.link.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(999)),
               child: Text('${_pendingInvites.length}',
                   style: GoogleFonts.inter(

@@ -79,8 +79,8 @@ class SosProvider extends ChangeNotifier {
       await ApiClient.instance.post('/sos', {
         'message': message,
         'address': address,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
+        'latitude': ?latitude,
+        'longitude': ?longitude,
       });
       await fetchAlerts();
     } finally {

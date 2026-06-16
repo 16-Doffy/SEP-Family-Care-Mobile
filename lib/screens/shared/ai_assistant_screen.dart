@@ -64,7 +64,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                     decoration: BoxDecoration(
                       color: m.isMe ? AppColors.link : AppColors.white,
                       borderRadius: BorderRadius.only(topLeft: const Radius.circular(18), topRight: const Radius.circular(18), bottomLeft: Radius.circular(m.isMe ? 18 : 4), bottomRight: Radius.circular(m.isMe ? 4 : 18)),
-                      boxShadow: m.isMe ? [] : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+                      boxShadow: m.isMe ? [] : [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
                     ),
                     child: Text(m.text, style: GoogleFonts.inter(fontSize: 15, color: m.isMe ? Colors.white : AppColors.textPrimary)),
                   ),
@@ -82,7 +82,7 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
               children: ['💰 Chi tiêu tháng này', '📋 Tình hình tasks', '💡 Mẹo tiết kiệm', '📅 Lịch tuần này'].map((q) =>
                 GestureDetector(
                   onTap: () { _inputCtrl.text = q.substring(3); _send(); },
-                  child: Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10)]), child: Text(q, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary))),
+                  child: Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(999), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10)]), child: Text(q, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary))),
                 ),
               ).toList(),
             ),

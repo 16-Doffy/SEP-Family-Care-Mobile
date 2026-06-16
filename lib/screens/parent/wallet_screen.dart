@@ -73,7 +73,7 @@ class _WalletScreenState extends State<WalletScreen> {
                               decoration: BoxDecoration(
                                 color: AppColors.white,
                                 borderRadius: BorderRadius.circular(20),
-                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
                               ),
                               child: Row(
                                 children: [
@@ -283,7 +283,7 @@ class _WalletScreenState extends State<WalletScreen> {
     return pending.map((req) => Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
       child: Row(children: [
         AvatarWidget(initial: req.senderAvatarInitial, color: Color(req.senderAvatarColor), size: 44),
         const SizedBox(width: 12),
@@ -405,7 +405,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _sectionCard({required String title, required Widget child}) => Container(
     padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+    decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       if (title.isNotEmpty) ...[Text(title, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)), const SizedBox(height: 4)],
       child,
@@ -508,7 +508,7 @@ class _WalletScreenState extends State<WalletScreen> {
     onTap: () => ctx.pop(),
     child: Container(
       width: 40, height: 40,
-      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
       child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
     ),
   );
