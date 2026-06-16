@@ -106,6 +106,13 @@ class WalletProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
 
+  // Monthly aggregates from /finance/overview (more accurate than summing entries)
+  double _monthlyIncome  = 0;
+  double _monthlyExpense = 0;
+
+  // Report data from /finance/reports/overview
+  Map<String, dynamic>? _report;
+
   List<OverviewData> get wallets =>
       _familyOverview != null ? [_familyOverview!] : [];
   List<LedgerEntry> get transactions => _entries;
@@ -113,7 +120,15 @@ class WalletProvider extends ChangeNotifier {
   bool get isLoading => _loading;
   String? get error => _error;
 
-  double get totalBalance => _familyOverview?.balance ?? 0;
+  double get totalBalance   => _familyOverview?.balance ?? 0;
+  double get monthlyIncome  => _monthlyIncome  > 0 ? _monthlyIncome  : _calcIncome;
+  double get monthlyExpense => _monthlyExpense > 0 ? _monthlyExpense : _calcExpense;
+  Map<String, dynamic>? get report => _report;
+
+  // Fallback: calc from ledger entries using signedAmount (correct sign)
+  double get _calcIncome  => _entries.where((t) => t.signedAmount > 0).fold(0.0, (s, t) => s + t.signedAmount);
+  double get _calcExpense => _entries.where((t) => t.signedAmount < 0).fold(0.0, (s, t) => s + t.signedAmount.abs());
+
   OverviewData? get familyWallet => _familyOverview;
   List<OverviewData> get memberWallets => [];
 
@@ -129,6 +144,7 @@ class WalletProvider extends ChangeNotifier {
         _fetchOverview(),
         _fetchEntries(),
         _fetchJars(),
+        _fetchReport(),
       ]);
     } catch (e) {
       _error = e.toString();
@@ -139,18 +155,48 @@ class WalletProvider extends ChangeNotifier {
   }
 
   Future<void> _fetchOverview() async {
+    final now = DateTime.now();
     final data = await ApiClient.instance.get(
-      ApiClient.instance.familyPath('/finance/overview'),
+      '${ApiClient.instance.familyPath('/finance/overview')}?month=${now.month}&year=${now.year}',
     );
     if (data is Map) {
       _familyOverview = OverviewData(
         id:        data['familyId']?.toString() ?? '',
         name:      'Quỹ gia đình',
         type:      'JOINT',
-        balance:   JarData._d(data['totalBalance'] ?? data['balance'] ?? data['totalIncome'] ?? 0),
+        balance:   JarData._d(data['totalBalance'] ?? data['balance'] ?? 0),
         ownerName: data['familyName']?.toString() ?? '',
       );
+      // Extract monthly aggregates if API provides them
+      _monthlyIncome  = JarData._d(data['totalIncome']  ?? data['monthlyIncome']  ?? data['income']  ?? 0);
+      _monthlyExpense = JarData._d(data['totalExpense'] ?? data['monthlyExpense'] ?? data['expense'] ?? 0);
     }
+  }
+
+  Future<void> _fetchReport() async {
+    try {
+      final now   = DateTime.now();
+      final start = '${now.year}-${now.month.toString().padLeft(2,'0')}-01';
+      final end   = '${now.year}-${now.month.toString().padLeft(2,'0')}-${_lastDay(now)}';
+      final data  = await ApiClient.instance.get(
+        '${ApiClient.instance.familyPath('/finance/reports/overview')}?periodStart=$start&periodEnd=$end&includeBreakdown=true&includeAlerts=true&includeGoals=false',
+      );
+      if (data is Map) {
+        _report = Map<String, dynamic>.from(data);
+        // Override monthly totals with report data if more accurate
+        final ri = JarData._d(data['totalIncome']  ?? data['income']  ?? 0);
+        final re = JarData._d(data['totalExpense'] ?? data['expense'] ?? 0);
+        if (ri > 0) _monthlyIncome  = ri;
+        if (re > 0) _monthlyExpense = re;
+      }
+    } catch (_) {
+      _report = null;
+    }
+  }
+
+  static String _lastDay(DateTime d) {
+    final last = DateTime(d.year, d.month + 1, 0);
+    return last.day.toString().padLeft(2, '0');
   }
 
   Future<void> _fetchEntries() async {

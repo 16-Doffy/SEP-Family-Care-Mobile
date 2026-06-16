@@ -119,8 +119,8 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _buildHeroCard(BuildContext context, WalletProvider state) {
     final family   = state.familyWallet;
-    final totalIn  = state.transactions.where((t) => t.amount > 0).fold(0.0, (s, t) => s + t.amount);
-    final totalOut = state.transactions.where((t) => t.amount < 0).fold(0.0, (s, t) => s + t.amount).abs();
+    final totalIn  = state.monthlyIncome;
+    final totalOut = state.monthlyExpense;
 
     return Container(
       padding: const EdgeInsets.all(22),
@@ -155,8 +155,8 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   List<Widget> _buildOverview(BuildContext context, WalletProvider state) {
-    final income    = state.transactions.where((t) => t.amount > 0).fold(0.0, (s, t) => s + t.amount);
-    final expense   = state.transactions.where((t) => t.amount < 0).fold(0.0, (s, t) => s + t.amount).abs();
+    final income  = state.monthlyIncome;
+    final expense = state.monthlyExpense;
     final remaining = income - expense;
     final spentRatio = income > 0 ? expense / income : 0.0;
     final bufferPct  = income > 0 ? ((remaining / income) * 100).round() : 0;
@@ -256,7 +256,8 @@ class _WalletScreenState extends State<WalletScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: state.transactions.map((tx) {
-            final isPos = tx.amount > 0;
+            final signed = tx.signedAmount;
+            final isPos  = signed >= 0;
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(children: [
@@ -267,7 +268,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   Text(tx.entryDate,   style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
                 ])),
                 Text(
-                  '${isPos ? '+' : ''}${_fmt(tx.amount.round())}',
+                  '${isPos ? '+' : ''}${_fmt(signed.abs().round())}',
                   style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: isPos ? AppColors.success : AppColors.danger),
                 ),
               ]),
