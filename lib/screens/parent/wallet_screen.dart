@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,23 @@ import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/ring_chart.dart';
 import '../../widgets/waffle_chart.dart';
+
+// Tự động thêm dấu phẩy khi nhập số: 4000 → 4,000
+class _ThousandsSeparatorFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(',', '');
+    if (digits.isEmpty) return newValue.copyWith(text: '');
+    if (double.tryParse(digits) == null) return oldValue;
+    final formatted = digits.replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+    return newValue.copyWith(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 String _fmt(int n) => '${n.toString().replaceAllMapped(
       RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"),
@@ -320,9 +338,14 @@ class _WalletScreenState extends State<WalletScreen> {
           TextField(
             controller: amountCtrl,
             keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              _ThousandsSeparatorFormatter(),
+            ],
             decoration: InputDecoration(
               labelText: 'Số tiền (₫)',
-              hintText: 'VD: 500000',
+              hintText: 'VD: 500,000',
+              suffixText: '₫',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             ),
           ),
