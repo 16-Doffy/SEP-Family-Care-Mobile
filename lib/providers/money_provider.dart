@@ -27,9 +27,7 @@ class MoneyProvider extends ChangeNotifier {
           ? data
           : data is Map && data['items'] is List
               ? data['items'] as List
-              : data is Map && data['data'] is List
-                  ? data['data'] as List
-                  : <dynamic>[];
+              : <dynamic>[];
       _requests = list
           .whereType<Map>()
           .map((e) => MoneyRequest.fromJson(Map<String, dynamic>.from(e)))

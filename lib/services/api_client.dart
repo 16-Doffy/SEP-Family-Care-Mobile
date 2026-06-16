@@ -59,6 +59,11 @@ class ApiClient {
           : 'Request failed (${response.statusCode})';
       throw Exception(msg);
     }
+    // BE luôn bọc response trong { success, message, data }
+    // Trả thẳng data để caller không cần unwrap
+    if (body is Map && body.containsKey('success') && body.containsKey('data')) {
+      return body['data'];
+    }
     return body;
   }
 }

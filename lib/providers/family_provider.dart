@@ -76,8 +76,8 @@ class FamilyProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final data = await ApiClient.instance.get('/families/$familyId');
-      _familyName = (data as Map<String, dynamic>)['name']?.toString() ?? '';
+      final data = await ApiClient.instance.get('/families/$familyId') as Map<String, dynamic>;
+      _familyName = data['name']?.toString() ?? '';
       final list  = data['members'] as List? ?? [];
       _members = list
           .whereType<Map>()

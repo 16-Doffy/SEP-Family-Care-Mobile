@@ -61,11 +61,11 @@ class AuthProvider extends ChangeNotifier {
 
   // Sau login/register: set token → gọi /families/my để lấy familyId + role trong gia đình
   Future<void> _applySession(Map<String, dynamic> data) async {
+    // ApiClient đã unwrap { success, data } → data trực tiếp
     final token        = data['accessToken'] as String;
     final refreshToken = data['refreshToken'] as String? ?? '';
     ApiClient.instance.setToken(token);
 
-    // User cơ bản từ response auth
     final userJson = data['user'] as Map<String, dynamic>? ?? data;
 
     // Lấy family context
@@ -74,18 +74,11 @@ class AuthProvider extends ChangeNotifier {
     String? familyRole;
     try {
       final families = await ApiClient.instance.get('/families/my');
-      final list = families is List
-          ? families
-          : families is Map && families['families'] is List
-              ? families['families'] as List
-              : families is Map && families['data'] is List
-                  ? families['data'] as List
-                  : <dynamic>[];
+      final list = families is List ? families : <dynamic>[];
       if (list.isNotEmpty) {
         final f = list.first as Map<String, dynamic>;
         familyId   = f['id']?.toString();
         familyName = f['name']?.toString();
-        // familyRole: từ members[] tìm member khớp userId
         final members = f['members'] as List? ?? [];
         final myId    = userJson['id']?.toString();
         final me = members.whereType<Map>().firstWhere(
@@ -131,10 +124,7 @@ class AuthProvider extends ChangeNotifier {
     if (!isLoggedIn) return;
     try {
       final families = await ApiClient.instance.get('/families/my');
-      final list = families is List ? families
-          : families is Map && families['families'] is List ? families['families'] as List
-          : families is Map && families['data'] is List ? families['data'] as List
-          : <dynamic>[];
+      final list = families is List ? families : <dynamic>[];
       if (list.isNotEmpty) {
         final f        = list.first as Map<String, dynamic>;
         final familyId = f['id']?.toString();

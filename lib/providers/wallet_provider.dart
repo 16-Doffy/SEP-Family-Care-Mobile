@@ -147,7 +147,7 @@ class WalletProvider extends ChangeNotifier {
         id:        data['familyId']?.toString() ?? '',
         name:      'Quỹ gia đình',
         type:      'JOINT',
-        balance:   JarData._d(data['totalBalance'] ?? data['balance'] ?? data['totalIncome']),
+        balance:   JarData._d(data['totalBalance'] ?? data['balance'] ?? data['totalIncome'] ?? 0),
         ownerName: data['familyName']?.toString() ?? '',
       );
     }
@@ -162,9 +162,7 @@ class WalletProvider extends ChangeNotifier {
           ? data
           : data is Map && data['items'] is List
               ? data['items'] as List
-              : data is Map && data['data'] is List
-                  ? data['data'] as List
-                  : <dynamic>[];
+              : <dynamic>[];
       _entries = list
           .whereType<Map>()
           .map((e) => LedgerEntry.fromJson(Map<String, dynamic>.from(e)))
@@ -181,11 +179,9 @@ class WalletProvider extends ChangeNotifier {
       );
       final list = data is List
           ? data
-          : data is Map && data['jars'] is List
-              ? data['jars'] as List
-              : data is Map && data['items'] is List
-                  ? data['items'] as List
-                  : <dynamic>[];
+          : data is Map && data['items'] is List
+              ? data['items'] as List
+              : <dynamic>[];
       _jars = list
           .whereType<Map>()
           .map((e) => JarData.fromJson(Map<String, dynamic>.from(e)))
