@@ -23,16 +23,21 @@ class FamilyMember {
   String get avatarInitials =>
       name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase();
 
-  String get roleLabel => switch (role.toUpperCase()) {
-        'MANAGER' => 'Trưởng nhóm',
-        'DEPUTY'  => 'Phó nhóm',
-        _         => 'Thành viên',
-      };
+  bool get isManager => role.toUpperCase().contains('MANAGER');
+  bool get isDeputy  => role.toUpperCase().contains('DEPUTY');
 
-  Color get roleColor => switch (role.toUpperCase()) {
-        'MANAGER' || 'DEPUTY' => const Color(0xFF2563EB),
-        _                     => const Color(0xFF6B7280),
-      };
+  String get roleLabel {
+    final r = role.toUpperCase();
+    if (r.contains('MANAGER')) return 'Trưởng nhóm';
+    if (r.contains('DEPUTY'))  return 'Phó nhóm';
+    return 'Thành viên';
+  }
+
+  Color get roleColor {
+    final r = role.toUpperCase();
+    if (r.contains('MANAGER') || r.contains('DEPUTY')) return const Color(0xFF2563EB);
+    return const Color(0xFF6B7280);
+  }
 
   factory FamilyMember.fromJson(Map<String, dynamic> json) {
     final colors = [0xFF3B82F6, 0xFFA78BFA, 0xFFFB923C, 0xFF2DD4BF, 0xFFEC4899];

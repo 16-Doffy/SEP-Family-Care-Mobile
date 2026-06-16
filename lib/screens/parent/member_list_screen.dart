@@ -86,7 +86,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
   }
 
   Widget _memberCard(BuildContext ctx, FamilyMember m, String? myId, bool isAdmin) {
-    final isMe = m.id == myId;
+    final isMe = m.userId == myId;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -142,7 +142,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
 
   void _showManageSheet(BuildContext ctx, FamilyMember m) {
     final provider = ctx.read<FamilyProvider>();
-    final isDeputy = m.role.toUpperCase() == 'DEPUTY';
+    final isDeputy = m.isDeputy;
 
     showModalBottomSheet(
       context: ctx,
