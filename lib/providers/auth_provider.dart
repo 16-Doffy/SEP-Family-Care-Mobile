@@ -124,6 +124,59 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // GET /auth/me — refresh user profile (phone, name, etc.)
+  Future<void> refreshMe() async {
+    if (!isLoggedIn) return;
+    try {
+      final data = await ApiClient.instance.get('/auth/me');
+      final userJson = data is Map ? data as Map<String, dynamic> : <String, dynamic>{};
+      _user = AppUser.fromJson(
+        userJson,
+        accessToken:  _user!.accessToken,
+        refreshToken: _user!.refreshToken,
+        familyId:     _user!.familyId,
+        familyName:   _user!.familyName,
+        familyRole:   _user!.role.name.toUpperCase(),
+        phone:        userJson['phone']?.toString() ?? userJson['phoneNumber']?.toString(),
+      );
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  // POST or PUT /families/{id}/finance/monthly-finances/me
+  Future<void> saveMonthlyFinance({
+    required double expectedIncome,
+    required double expectedExpense,
+    String incomeVisibility = 'PRIVATE',
+    String expenseVisibility = 'PRIVATE',
+    String? note,
+  }) async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    final now = DateTime.now();
+    final body = {
+      'periodMonth':             now.month,
+      'periodYear':              now.year,
+      'expectedIncome':          expectedIncome,
+      'expectedPersonalExpense': expectedExpense,
+      'incomeVisibility':        incomeVisibility,
+      'expenseVisibility':       expenseVisibility,
+      if (note != null && note.isNotEmpty) 'note': note,
+    };
+    // Try PUT first (update existing), fall back to POST (create)
+    try {
+      await ApiClient.instance.put(
+        ApiClient.instance.familyPath('/finance/monthly-finances/me'),
+        body,
+      );
+    } catch (_) {
+      await ApiClient.instance.post(
+        ApiClient.instance.familyPath('/finance/monthly-finances/me'),
+        body,
+      );
+    }
+  }
+
   // POST /auth/logout
   Future<void> logout() async {
     try {

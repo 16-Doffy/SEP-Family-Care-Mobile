@@ -4,6 +4,7 @@ class AppUser {
   final String id;
   final String name;
   final String email;
+  final String? phone;
   final String familyName;
   final String? familyId;
   final UserRole role;
@@ -16,6 +17,7 @@ class AppUser {
     required this.id,
     required this.name,
     required this.email,
+    this.phone,
     required this.familyName,
     this.familyId,
     required this.role,
@@ -32,6 +34,7 @@ class AppUser {
     String? familyId,
     String? familyName,
     String? familyRole,
+    String? phone,
   }) {
     // Role ưu tiên: từ familyMember.familyRole (context gia đình) > json.role (account level)
     final roleStr = (familyRole ?? json['familyRole'] as String? ??
@@ -57,17 +60,22 @@ class AppUser {
             : null) ??
         '';
 
+    final resolvedPhone = phone
+        ?? json['phone']?.toString()
+        ?? json['phoneNumber']?.toString();
+
     return AppUser(
-      id: json['id']?.toString() ?? '',
-      name: name,
-      email: json['email']?.toString() ?? '',
-      familyName: fName,
-      familyId: familyId,
-      role: role,
+      id:             json['id']?.toString() ?? '',
+      name:           name,
+      email:          json['email']?.toString() ?? '',
+      phone:          resolvedPhone,
+      familyName:     fName,
+      familyId:       familyId,
+      role:           role,
       avatarInitials: _initials(name),
-      avatarColor: colorForRole(role),
-      accessToken: accessToken,
-      refreshToken: refreshToken,
+      avatarColor:    colorForRole(role),
+      accessToken:    accessToken,
+      refreshToken:   refreshToken,
     );
   }
 
