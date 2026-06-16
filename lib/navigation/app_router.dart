@@ -32,6 +32,7 @@ import '../screens/parent/invite_member_screen.dart';
 import '../screens/parent/member_list_screen.dart';
 import '../screens/parent/finance_model_screen.dart';
 import '../screens/auth/join_family_screen.dart';
+import '../screens/auth/family_setup_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
 
 // Shells
@@ -48,20 +49,30 @@ GoRouter createRouter(AuthProvider auth) {
     initialLocation: '/login',
     refreshListenable: auth,
     redirect: (context, state) {
-      final loggedIn = auth.isLoggedIn;
-      final onAuth = state.matchedLocation == '/login' || state.matchedLocation == '/register';
+      final loggedIn  = auth.isLoggedIn;
+      final hasFamily = auth.hasFamily;
+      final loc       = state.matchedLocation;
+      final onAuth    = loc == '/login' || loc == '/register';
+      final onSetup   = loc == '/family-setup';
 
       if (!loggedIn && !onAuth) return '/login';
-      if (loggedIn && onAuth) {
-        // Trưởng/Phó nhóm vào luồng quản lý, Thành viên vào luồng riêng
-        return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
+
+      if (loggedIn) {
+        // Đã đăng nhập nhưng chưa có gia đình → bắt buộc vào setup
+        if (!hasFamily && !onSetup) return '/family-setup';
+
+        // Đã có gia đình, không cần ở auth/setup nữa
+        if (onAuth || onSetup) {
+          return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
+        }
       }
       return null;
     },
     routes: [
       // ── Auth ──────────────────────────────────────────────
-      GoRoute(path: '/login',    builder: (_, _) => const LoginScreen()),
-      GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
+      GoRoute(path: '/login',        builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/register',     builder: (_, _) => const RegisterScreen()),
+      GoRoute(path: '/family-setup', builder: (_, _) => const FamilySetupScreen()),
 
       // ── Shared overlays (full-screen) ──────────────────────
       GoRoute(path: '/notifications', builder: (_, _) => const NotificationsScreen()),

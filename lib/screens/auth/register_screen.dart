@@ -14,7 +14,6 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _nameCtrl  = TextEditingController();
-  final _famCtrl   = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passCtrl  = TextEditingController();
@@ -24,7 +23,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _famCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _passCtrl.dispose();
@@ -32,13 +30,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _submit() async {
-    final name   = _nameCtrl.text.trim();
-    final family = _famCtrl.text.trim();
-    final email  = _emailCtrl.text.trim();
-    final phone  = _phoneCtrl.text.trim();
-    final pass   = _passCtrl.text;
+    final name  = _nameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+    final pass  = _passCtrl.text;
 
-    if (name.isEmpty || family.isEmpty || email.isEmpty || pass.isEmpty) {
+    if (name.isEmpty || email.isEmpty || pass.isEmpty) {
       _showError('Vui lòng điền đầy đủ thông tin bắt buộc');
       return;
     }
@@ -58,8 +55,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         pass,
         name,
         phone: phone.isNotEmpty ? phone : null,
-        familyName: family,
       );
+      if (mounted) context.go('/family-setup');
     } catch (e) {
       if (mounted) _showError(e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -122,12 +119,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     icon: Icons.person_outline_rounded,
                   ),
                   _field(
-                    ctrl: _famCtrl,
-                    label: 'Tên gia đình',
-                    hint: 'Gia đình Nguyễn',
-                    icon: Icons.home_outlined,
-                  ),
-                  _field(
                     ctrl: _emailCtrl,
                     label: 'Email',
                     hint: 'email@example.com',
@@ -158,7 +149,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Người đăng ký đầu tiên sẽ là Trưởng nhóm gia đình. Các thành viên khác tham gia qua link / QR / mã mời.',
+                          'Sau khi đăng ký, bạn sẽ tạo hoặc tham gia gia đình ở bước tiếp theo.',
                           style: GoogleFonts.inter(
                               fontSize: 12,
                               color: AppColors.link,

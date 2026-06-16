@@ -7,6 +7,7 @@ class AuthProvider extends ChangeNotifier {
 
   AppUser? get user => _user;
   bool get isLoggedIn => _user != null;
+  bool get hasFamily  => _user?.familyId != null;
 
   // POST /auth/login
   Future<void> signIn(String email, String password) async {
@@ -17,14 +18,13 @@ class AuthProvider extends ChangeNotifier {
     await _applySession(data);
   }
 
-  // POST /auth/register — schema: { email, password, fullName, phone?, avatarUrl? }
-  // familyName: dùng sau khi register để tự động tạo family (gọi POST /families)
+  // POST /auth/register — schema: { email, password, fullName, phone? }
+  // Không tự tạo gia đình — user sẽ chọn tạo mới hoặc join ở FamilySetupScreen
   Future<void> register(
     String email,
     String password,
     String fullName, {
     String? phone,
-    String? familyName,
   }) async {
     final data = await ApiClient.instance.post('/auth/register', {
       'email': email.trim(),
@@ -33,30 +33,25 @@ class AuthProvider extends ChangeNotifier {
       if (phone != null && phone.isNotEmpty) 'phone': phone.trim(),
     });
     await _applySession(data);
+  }
 
-    // Tự động tạo gia đình nếu user cung cấp tên gia đình
-    if (familyName != null && familyName.isNotEmpty) {
-      try {
-        final family = await ApiClient.instance.post('/families', {
-          'name': familyName.trim(),
-        });
-        final fid = family['id']?.toString() ?? family['family']?['id']?.toString();
-        if (fid != null) {
-          ApiClient.instance.setFamilyId(fid);
-          _user = AppUser.fromJson(
-            {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
-            accessToken:  _user!.accessToken,
-            refreshToken: _user!.refreshToken,
-            familyId:     fid,
-            familyName:   familyName.trim(),
-            familyRole:   'MANAGER',
-          );
-          notifyListeners();
-        }
-      } catch (_) {
-        // Tạo family thất bại — user có thể tạo sau
-      }
-    }
+  // POST /families — tạo gia đình mới, creator thành MANAGER
+  Future<void> createFamily(String name) async {
+    final family = await ApiClient.instance.post('/families', {
+      'name': name.trim(),
+    });
+    final fid = family['id']?.toString() ?? family['family']?['id']?.toString();
+    if (fid == null) throw Exception('Không lấy được ID gia đình');
+    ApiClient.instance.setFamilyId(fid);
+    _user = AppUser.fromJson(
+      {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
+      accessToken:  _user!.accessToken,
+      refreshToken: _user!.refreshToken,
+      familyId:     fid,
+      familyName:   name.trim(),
+      familyRole:   'MANAGER',
+    );
+    notifyListeners();
   }
 
   // Sau login/register: set token → gọi /families/my để lấy familyId + role trong gia đình
