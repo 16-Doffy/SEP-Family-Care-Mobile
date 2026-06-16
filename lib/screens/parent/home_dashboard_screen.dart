@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
@@ -21,6 +22,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<WalletProvider>().fetchWallets();
       context.read<TaskProvider>().fetchTasks();
+      context.read<FamilyProvider>().fetchMembers();
     });
   }
 
@@ -288,54 +290,63 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         child: GestureDetector(
                           onTap: () => context.push('/manager/members'),
                           child: _card(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(children: [
-                                const Icon(Icons.people_outline,
-                                    size: 16,
-                                    color: AppColors.textPrimary),
-                                const SizedBox(width: 8),
-                                Text(
-                                  '${walletState.memberWallets.length} thành viên',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary),
-                                ),
-                              ]),
-                              const SizedBox(height: 4),
-                              Text('Trong gia đình',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: AppColors.textMuted)),
-                              const SizedBox(height: 8),
-                              Row(
+                          child: Consumer<FamilyProvider>(
+                            builder: (_, familyState, _) {
+                              final members = familyState.members;
+                              final colors = [
+                                AppColors.avatarPurple,
+                                AppColors.avatarOrange,
+                                AppColors.avatarBlue,
+                                AppColors.avatarTeal,
+                              ];
+                              final shown = members.take(3).toList();
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  AvatarWidget(
-                                      initial: 'M',
-                                      color: AppColors.avatarPurple,
-                                      size: 28,
-                                      showPresence: true),
-                                  Transform.translate(
-                                    offset: const Offset(-10, 0),
-                                    child: AvatarWidget(
-                                        initial: 'A',
-                                        color: AppColors.avatarOrange,
-                                        size: 28,
-                                        showPresence: true),
-                                  ),
-                                  Transform.translate(
-                                    offset: const Offset(-20, 0),
-                                    child: AvatarWidget(
-                                        initial: 'B',
-                                        color: AppColors.avatarBlue,
-                                        size: 28,
-                                        showPresence: true),
-                                  ),
+                                  Row(children: [
+                                    const Icon(Icons.people_outline,
+                                        size: 16, color: AppColors.textPrimary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '${members.length} thành viên',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.textPrimary),
+                                    ),
+                                  ]),
+                                  const SizedBox(height: 4),
+                                  Text('Trong gia đình',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          color: AppColors.textMuted)),
+                                  const SizedBox(height: 8),
+                                  if (shown.isEmpty)
+                                    Text('Chưa có thành viên',
+                                        style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            color: AppColors.textMuted))
+                                  else
+                                    Row(
+                                      children: shown.asMap().entries.map((e) {
+                                        final offset = e.key * -10.0;
+                                        final initial = (e.value.name.isNotEmpty
+                                            ? e.value.name[0]
+                                            : '?').toUpperCase();
+                                        return Transform.translate(
+                                          offset: Offset(offset, 0),
+                                          child: AvatarWidget(
+                                            initial: initial,
+                                            color: colors[e.key % colors.length],
+                                            size: 28,
+                                            showPresence: true,
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
                                 ],
-                              ),
-                            ],
+                              );
+                            },
                           ),
                         ),
                         ),
