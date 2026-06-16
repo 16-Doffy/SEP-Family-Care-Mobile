@@ -16,14 +16,37 @@ class HomeDashboardScreen extends StatefulWidget {
 }
 
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+  // StatefulShellRoute.indexedStack pre-builds all branches before login,
+  // so initState may run when familyId is still null.
+  // We keep a listener on AuthProvider to re-fetch once familyId is available.
+  AuthProvider? _authListener;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<WalletProvider>().fetchWallets();
-      context.read<TaskProvider>().fetchTasks();
-      context.read<FamilyProvider>().fetchMembers();
+      _fetchAll();
+      _authListener = context.read<AuthProvider>()..addListener(_onAuthChanged);
     });
+  }
+
+  void _onAuthChanged() {
+    if (mounted && (context.read<AuthProvider>().hasFamily)) {
+      _fetchAll();
+    }
+  }
+
+  void _fetchAll() {
+    if (!mounted) return;
+    context.read<WalletProvider>().fetchWallets();
+    context.read<TaskProvider>().fetchTasks();
+    context.read<FamilyProvider>().fetchMembers();
+  }
+
+  @override
+  void dispose() {
+    _authListener?.removeListener(_onAuthChanged);
+    super.dispose();
   }
 
   String _fmtBalance(double v) {
