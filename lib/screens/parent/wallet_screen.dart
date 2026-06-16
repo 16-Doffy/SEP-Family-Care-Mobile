@@ -126,9 +126,9 @@ class _WalletScreenState extends State<WalletScreen> {
           const SizedBox(height: 18),
           Row(
             children: [
-              Expanded(child: GestureDetector(onTap: () => _showRecordSheet(context, isIncome: true),  child: _heroBtn('📥', 'Ghi Thu'))),
+              Expanded(child: GestureDetector(onTap: () => _showRecordSheet(context, isIncome: true),  child: _heroBtn('📥', 'Thu'))),
               Container(width: 1, height: 36, color: Colors.white30),
-              Expanded(child: GestureDetector(onTap: () => _showRecordSheet(context, isIncome: false), child: _heroBtn('📤', 'Ghi Chi'))),
+              Expanded(child: GestureDetector(onTap: () => _showRecordSheet(context, isIncome: false), child: _heroBtn('📤', 'Chi'))),
             ],
           ),
         ],
