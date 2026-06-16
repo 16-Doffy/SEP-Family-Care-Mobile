@@ -55,17 +55,22 @@ GoRouter createRouter(AuthProvider auth) {
       final onAuth    = loc == '/login' || loc == '/register';
       final onSetup   = loc == '/family-setup';
 
+      // Chưa đăng nhập → login
       if (!loggedIn && !onAuth) return '/login';
 
       if (loggedIn) {
-        // Chưa có gia đình và không ở setup → bắt về setup
-        if (!hasFamily && !onSetup) return '/family-setup';
-
-        // Đã có gia đình, không cần ở auth/setup nữa → vào home
-        if (hasFamily && (onAuth || onSetup)) {
+        // Đã đăng nhập, đang ở auth screen → home (dựa theo role + family)
+        if (onAuth) {
+          if (!hasFamily) return '/family-setup';
           return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
         }
+
+        // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
+        // (covers deep-link hoặc manual URL vào các route cần family)
+        if (!hasFamily && !onSetup) return '/family-setup';
       }
+      // Các trường hợp còn lại (onSetup với mọi trạng thái family) — không redirect.
+      // FamilySetupScreen tự gọi context.go() sau khi tạo/join xong.
       return null;
     },
     routes: [
