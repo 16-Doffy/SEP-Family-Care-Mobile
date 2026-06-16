@@ -50,13 +50,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     setState(() => _loading = true);
     try {
+      // Router redirect tự điều hướng sang /family-setup khi notifyListeners() fire
       await context.read<AuthProvider>().register(
         email,
         pass,
         name,
         phone: phone.isNotEmpty ? phone : null,
       );
-      if (mounted) context.go('/family-setup');
     } catch (e) {
       if (mounted) _showError(e.toString().replaceFirst('Exception: ', ''));
     } finally {

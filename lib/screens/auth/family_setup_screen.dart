@@ -49,8 +49,8 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
     setState(() => _creating = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
+      // Router redirect tự điều hướng sang /manager/home khi notifyListeners() fire
       await context.read<AuthProvider>().createFamily(name);
-      if (mounted) context.go('/manager/home');
     } catch (e) {
       messenger.showSnackBar(SnackBar(
         content: Text(e.toString().replaceFirst('Exception: ', '')),
@@ -85,8 +85,8 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
     final auth = context.read<AuthProvider>();
     try {
       await ApiClient.instance.post('/invitations/$token/accept', {});
+      // Router redirect tự điều hướng sang /member/home khi refreshFamilyContext notifyListeners()
       await auth.refreshFamilyContext();
-      if (mounted) context.go('/member/home');
     } catch (e) {
       if (mounted) setState(() => _joinError = e.toString().replaceFirst('Exception: ', ''));
     } finally {
