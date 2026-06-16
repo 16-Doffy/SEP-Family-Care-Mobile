@@ -62,6 +62,7 @@ class AuthProvider extends ChangeNotifier {
     ApiClient.instance.setToken(token);
 
     final userJson = data['user'] as Map<String, dynamic>? ?? data;
+    final myId     = userJson['id']?.toString();
 
     // Lấy family context
     String? familyId;
@@ -74,13 +75,37 @@ class AuthProvider extends ChangeNotifier {
         final f = list.first as Map<String, dynamic>;
         familyId   = f['id']?.toString();
         familyName = f['name']?.toString();
-        final members = f['members'] as List? ?? [];
-        final myId    = userJson['id']?.toString();
-        final me = members.whereType<Map>().firstWhere(
-          (m) => m['userId']?.toString() == myId || m['user']?['id']?.toString() == myId,
-          orElse: () => {},
-        );
-        familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
+
+        // 1. Try role directly on the family item (some APIs embed currentUserRole)
+        familyRole = f['currentMemberRole']?.toString()
+            ?? f['myRole']?.toString()
+            ?? f['userRole']?.toString()
+            ?? f['role']?.toString();
+
+        // 2. Try from embedded members array (if present)
+        if (familyRole == null) {
+          final members = f['members'] as List? ?? [];
+          final me = members.whereType<Map>().firstWhere(
+            (m) => m['userId']?.toString() == myId
+                || m['user']?['id']?.toString() == myId,
+            orElse: () => {},
+          );
+          familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
+        }
+
+        // 3. Fallback: fetch family detail which includes full members list
+        if ((familyRole == null || familyRole.isEmpty) && familyId != null) {
+          try {
+            final detail  = await ApiClient.instance.get('/families/$familyId');
+            final dMems   = (detail['members'] as List? ?? []);
+            final me = dMems.whereType<Map>().firstWhere(
+              (m) => m['userId']?.toString() == myId
+                  || m['user']?['id']?.toString() == myId,
+              orElse: () => {},
+            );
+            familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
+          } catch (_) {}
+        }
       }
     } catch (_) {
       // User chưa có gia đình — vẫn để đăng nhập bình thường
@@ -121,15 +146,37 @@ class AuthProvider extends ChangeNotifier {
       final families = await ApiClient.instance.get('/families/my');
       final list = families is List ? families : <dynamic>[];
       if (list.isNotEmpty) {
-        final f        = list.first as Map<String, dynamic>;
-        final familyId = f['id']?.toString();
+        final f          = list.first as Map<String, dynamic>;
+        final familyId   = f['id']?.toString();
         final familyName = f['name']?.toString() ?? '';
-        final members  = f['members'] as List? ?? [];
-        final me = members.whereType<Map>().firstWhere(
-          (m) => m['userId']?.toString() == _user!.id || m['user']?['id']?.toString() == _user!.id,
-          orElse: () => {},
-        );
-        final familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
+        final myId       = _user!.id;
+
+        String? familyRole = f['currentMemberRole']?.toString()
+            ?? f['myRole']?.toString()
+            ?? f['userRole']?.toString()
+            ?? f['role']?.toString();
+
+        if (familyRole == null) {
+          final members = f['members'] as List? ?? [];
+          final me = members.whereType<Map>().firstWhere(
+            (m) => m['userId']?.toString() == myId || m['user']?['id']?.toString() == myId,
+            orElse: () => {},
+          );
+          familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
+        }
+
+        if ((familyRole == null || familyRole.isEmpty) && familyId != null) {
+          try {
+            final detail = await ApiClient.instance.get('/families/$familyId');
+            final dMems  = (detail['members'] as List? ?? []);
+            final me = dMems.whereType<Map>().firstWhere(
+              (m) => m['userId']?.toString() == myId || m['user']?['id']?.toString() == myId,
+              orElse: () => {},
+            );
+            familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
+          } catch (_) {}
+        }
+
         if (familyId != null) ApiClient.instance.setFamilyId(familyId);
         _user = AppUser.fromJson(
           {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
