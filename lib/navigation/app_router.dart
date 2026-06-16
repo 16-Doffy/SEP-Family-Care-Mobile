@@ -58,11 +58,11 @@ GoRouter createRouter(AuthProvider auth) {
       if (!loggedIn && !onAuth) return '/login';
 
       if (loggedIn) {
-        // Đã đăng nhập nhưng chưa có gia đình → bắt buộc vào setup
+        // Chưa có gia đình và không ở setup → bắt về setup
         if (!hasFamily && !onSetup) return '/family-setup';
 
-        // Đã có gia đình, không cần ở auth/setup nữa
-        if (onAuth || onSetup) {
+        // Đã có gia đình, không cần ở auth/setup nữa → vào home
+        if (hasFamily && (onAuth || onSetup)) {
           return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
         }
       }
