@@ -43,7 +43,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _loginDemo(UserRole role, String name) {
-    context.read<AuthProvider>().login(role, name);
+    context.read<AuthProvider>().loginDemo(role, name);
   }
 
   void _showError(String msg) {

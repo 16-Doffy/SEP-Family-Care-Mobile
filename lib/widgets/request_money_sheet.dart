@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../models/money_request.dart';
-import '../providers/auth_provider.dart';
 import '../providers/money_provider.dart';
 import '../theme/app_colors.dart';
 
@@ -92,22 +90,13 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
     // Capture refs TRƯỚC khi pop — context bị unmount sau pop
     final messenger = ScaffoldMessenger.of(context);
     final money = context.read<MoneyProvider>();
-    final user = context.read<AuthProvider>().user;
     final amount = _parsed;
     final reason = _reasonCtrl.text.trim().isEmpty
         ? 'Không có lý do'
         : _reasonCtrl.text.trim();
 
-    money.addRequest(MoneyRequest(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderId: user?.id ?? 'anon',
-      senderName: user?.name ?? 'Thành viên',
-      senderAvatarInitial: user?.avatarInitials ?? 'TV',
-      senderAvatarColor: user?.avatarColor ?? 0xFFEA580C,
-      amount: amount.toDouble(),
-      reason: reason,
-      createdAt: DateTime.now(),
-    ));
+    // Gửi request lên BE — không await để không block UX
+    money.addRequest(amount: amount.toDouble(), purpose: reason).catchError((_) {});
 
     Navigator.pop(context);
 

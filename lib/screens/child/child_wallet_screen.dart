@@ -191,6 +191,10 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> with SingleTicker
         statusColor = AppColors.danger;
         statusText = 'Từ chối';
         break;
+      case MoneyRequestStatus.canceled:
+        statusColor = AppColors.textMuted;
+        statusText = 'Đã hủy';
+        break;
     }
 
     return Container(

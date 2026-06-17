@@ -15,8 +15,23 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => MoneyProvider()),
-        ChangeNotifierProvider(create: (_) => WalletProvider()),
+        // WalletProvider và MoneyProvider nhận familyId từ AuthProvider
+        ChangeNotifierProxyProvider<AuthProvider, WalletProvider>(
+          create: (_) => WalletProvider(),
+          update: (_, auth, wallet) {
+            final fid = auth.familyId;
+            if (fid != null) wallet!.familyId = fid;
+            return wallet!;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, MoneyProvider>(
+          create: (_) => MoneyProvider(),
+          update: (_, auth, money) {
+            final fid = auth.familyId;
+            if (fid != null) money!.familyId = fid;
+            return money!;
+          },
+        ),
         ChangeNotifierProvider(create: (_) => TaskProvider()),
         ChangeNotifierProvider(create: (_) => GpsProvider()),
         ChangeNotifierProvider(create: (_) => SosProvider()),

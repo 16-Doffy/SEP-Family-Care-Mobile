@@ -370,11 +370,10 @@ class _WalletScreenState extends State<WalletScreen> {
               onPressed: () async {
                 final amount = double.tryParse(amountCtrl.text);
                 if (amount == null || amount <= 0 || targetWalletId == null) return;
-                try {
-                  await context.read<WalletProvider>().transfer(targetWalletId, amount, noteCtrl.text);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                } catch (e) {
-                  if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                // Tính năng chuyển tiền nội bộ chưa được hỗ trợ bởi BE hiện tại
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Tính năng chuyển tiền chưa khả dụng')));
+                  Navigator.pop(ctx);
                 }
               },
               child: Text('Xác nhận chuyển', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),

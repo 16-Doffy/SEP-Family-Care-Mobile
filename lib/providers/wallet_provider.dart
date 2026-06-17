@@ -15,23 +15,6 @@ class WalletData {
     required this.balance,
     required this.ownerName,
   });
-
-  factory WalletData.fromJson(Map<String, dynamic> json) => WalletData(
-        id: json['id']?.toString() ?? '',
-        name: json['name']?.toString() ??
-            json['type']?.toString() ??
-            'Ví gia đình',
-        type: json['type']?.toString() ?? '',
-        balance: _parseDouble(json['balance']),
-        ownerName: json['owner'] is Map
-            ? (json['owner'] as Map)['displayName']?.toString() ?? ''
-            : '',
-      );
-
-  static double _parseDouble(dynamic v) {
-    if (v is num) return v.toDouble();
-    return double.tryParse(v?.toString() ?? '') ?? 0;
-  }
 }
 
 class TransactionData {
@@ -46,24 +29,11 @@ class TransactionData {
     required this.description,
     required this.createdAt,
   });
-
-  factory TransactionData.fromJson(Map<String, dynamic> json) {
-    final raw = WalletData._parseDouble(json['amount']);
-    final type = json['type']?.toString() ?? '';
-    // Nếu backend dùng type field thay vì signed amount
-    final signed = type == 'EXPENSE' || type == 'TRANSFER_OUT' ? -raw.abs() : raw;
-    return TransactionData(
-      id: json['id']?.toString() ?? '',
-      amount: signed,
-      description: json['description']?.toString() ??
-          json['reason']?.toString() ??
-          type,
-      createdAt: json['createdAt']?.toString() ?? '',
-    );
-  }
 }
 
 class WalletProvider extends ChangeNotifier {
+  String? _familyId;
+
   List<WalletData> _wallets = [];
   List<TransactionData> _transactions = [];
   bool _loading = false;
@@ -76,32 +46,27 @@ class WalletProvider extends ChangeNotifier {
 
   double get totalBalance => _wallets.fold(0, (s, w) => s + w.balance);
 
-  // Ví chung gia đình (JOINT) hoặc ví đầu tiên
   WalletData? get familyWallet =>
       _wallets.where((w) => w.type == 'JOINT').firstOrNull ??
       _wallets.firstOrNull;
 
-  // Ví thành viên cá nhân (không phải JOINT)
   List<WalletData> get memberWallets =>
       _wallets.where((w) => w.type != 'JOINT').toList();
 
+  set familyId(String id) {
+    if (_familyId != id) {
+      _familyId = id;
+      fetchWallets();
+    }
+  }
+
   Future<void> fetchWallets() async {
+    if (_familyId == null) return;
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      final data = await ApiClient.instance.get('/wallets');
-      final list = data is List
-          ? data
-          : data is Map && data['wallets'] is List
-              ? data['wallets'] as List
-              : <dynamic>[];
-      _wallets = list
-          .whereType<Map>()
-          .map((e) => WalletData.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      // Fetch transactions sau khi có wallets
-      await _fetchTransactions();
+      await Future.wait([_fetchOverview(), _fetchEntries()]);
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -110,49 +75,95 @@ class WalletProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _fetchTransactions() async {
-    try {
-      final data = await ApiClient.instance.get('/wallets/transactions');
-      final list = data is List
-          ? data
-          : data is Map && data['items'] is List
-              ? data['items'] as List
-              : data is Map && data['transactions'] is List
-                  ? data['transactions'] as List
-                  : <dynamic>[];
-      _transactions = list
-          .whereType<Map>()
-          .map((e) => TransactionData.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-    } catch (_) {
-      // Graceful fallback — endpoint chưa có hoặc lỗi, giữ list rỗng
-      _transactions = [];
+  Future<void> _fetchOverview() async {
+    final data = await ApiClient.instance.get('/families/$_familyId/finance/overview');
+    if (data is! Map) return;
+
+    final totalIncome  = _parseMoney(data['totalIncome']);
+    final totalExpense = _parseMoney(data['totalExpense']);
+    final balance      = _parseMoney(data['balance']);
+
+    final ledger = data['ledger'] as Map<String, dynamic>?;
+    _wallets = [
+      WalletData(
+        id: ledger?['id']?.toString() ?? _familyId!,
+        name: ledger?['ledgerName']?.toString() ?? 'Sổ chung gia đình',
+        type: 'JOINT',
+        balance: balance,
+        ownerName: '',
+      ),
+    ];
+
+    // Derive income/expense as synthetic "member wallets" for the overview ring
+    if (totalIncome > 0) {
+      _wallets.add(WalletData(
+        id: 'income',
+        name: 'Thu nhập',
+        type: 'INCOME',
+        balance: totalIncome,
+        ownerName: '',
+      ));
+    }
+    if (totalExpense > 0) {
+      _wallets.add(WalletData(
+        id: 'expense',
+        name: 'Chi tiêu',
+        type: 'EXPENSE',
+        balance: totalExpense,
+        ownerName: '',
+      ));
     }
   }
 
-  // Nạp tiền vào familyWallet
+  Future<void> _fetchEntries() async {
+    final data = await ApiClient.instance.get('/families/$_familyId/finance/ledger/entries');
+    final list = data is List
+        ? data
+        : data is Map && data['items'] is List
+            ? data['items'] as List
+            : <dynamic>[];
+
+    _transactions = list.whereType<Map>().map((e) {
+      final json    = Map<String, dynamic>.from(e);
+      final raw     = _parseMoney(json['amount']);
+      final type    = json['entryType']?.toString() ?? '';
+      final isIncome = type == 'INCOME' || type == 'CONTRIBUTION';
+      return TransactionData(
+        id: json['id']?.toString() ?? '',
+        amount: isIncome ? raw : -raw.abs(),
+        description: json['description']?.toString() ?? type,
+        createdAt: json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
+      );
+    }).toList();
+  }
+
+  // Tạo giao dịch thu nhập vào sổ chung (thay thế deposit cũ)
   Future<void> deposit(double amount, {String description = 'Nạp tiền'}) async {
-    final wallet = familyWallet;
-    if (wallet == null) throw Exception('Không có ví gia đình');
-    await ApiClient.instance.post('/wallets/deposit', {
-      'walletId': wallet.id,
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.post('/families/$_familyId/finance/ledger/entries', {
+      'entryType': 'INCOME',
       'amount': amount,
       'description': description,
+      'entryDate': DateTime.now().toIso8601String().substring(0, 10),
     });
     await fetchWallets();
   }
 
-  // Chuyển tiền từ familyWallet sang ví khác
-  Future<void> transfer(
-      String toWalletId, double amount, String description) async {
-    final wallet = familyWallet;
-    if (wallet == null) throw Exception('Không có ví nguồn');
-    await ApiClient.instance.post('/wallets/transfer', {
-      'fromWalletId': wallet.id,
-      'toWalletId': toWalletId,
+  // Tạo giao dịch chi tiêu
+  Future<void> addExpense(double amount, {required String description, String? categoryId}) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.post('/families/$_familyId/finance/ledger/entries', {
+      'entryType': 'EXPENSE',
       'amount': amount,
       'description': description,
+      'entryDate': DateTime.now().toIso8601String().substring(0, 10),
+      if (categoryId != null) 'categoryId': categoryId,
     });
     await fetchWallets();
+  }
+
+  static double _parseMoney(dynamic v) {
+    if (v is num) return v.toDouble();
+    return double.tryParse(v?.toString() ?? '') ?? 0;
   }
 }
