@@ -3,21 +3,41 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/wallet_provider.dart';
+import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
-class HomeDashboardScreen extends StatelessWidget {
+String _fmt(double n) => '${n.round().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} ₫';
+
+class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
+  @override
+  State<HomeDashboardScreen> createState() => _HomeDashboardScreenState();
+}
+
+class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WalletProvider>().fetchWallets();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().user;
+    final user    = context.watch<AuthProvider>().user;
+    final wallet  = context.watch<WalletProvider>();
+    final finance = context.watch<FinanceProvider>();
 
-    final transactions = [
-      _TxData(emoji: '🏆', title: 'Thưởng task · An', sub: 'Dọn phòng · 09:41', amount: '+20,000 ₫', positive: true),
-      _TxData(emoji: '🛒', title: 'Siêu thị gia đình', sub: 'Chi chung · 08:10', amount: '-420,000 ₫', positive: false),
-      _TxData(emoji: '🍦', title: 'Ăn tối gia đình', sub: 'Chi chung · 19:30', amount: '-280,000 ₫', positive: false),
-    ];
+    final balance  = wallet.familyWallet?.balance ?? 0;
+    final txs      = wallet.transactions.take(3).toList();
+    final newAlerts = finance.newAlerts.length;
+
+    final weekdays = ['', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
+    final today    = weekdays[DateTime.now().weekday];
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -40,7 +60,7 @@ class HomeDashboardScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Xin chào, ${user?.name ?? "Ba"} 👋', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                          Text('Gia đình ${user?.familyName ?? "Nguyễn"} · Thứ Tư', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                          Text('Gia đình ${user?.familyName ?? "Nguyễn"} · $today', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
                         ],
                       ),
                     ),
@@ -48,9 +68,14 @@ class HomeDashboardScreen extends StatelessWidget {
                       onTap: () => context.push('/notifications'),
                       child: Stack(
                         children: [
-                          Container(width: 42, height: 42, decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(21), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))]),
-                            child: const Icon(Icons.notifications_outlined, size: 20, color: AppColors.textPrimary)),
-                          Positioned(top: 8, right: 8, child: Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.notification))),
+                          Container(
+                            width: 42, height: 42,
+                            decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(21),
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))]),
+                            child: const Icon(Icons.notifications_outlined, size: 20, color: AppColors.textPrimary),
+                          ),
+                          if (newAlerts > 0)
+                            Positioned(top: 8, right: 8, child: Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.notification))),
                         ],
                       ),
                     ),
@@ -66,18 +91,23 @@ class HomeDashboardScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(colors: [AppColors.heroOrange, AppColors.heroPurple], begin: Alignment.centerLeft, end: Alignment.centerRight),
                       borderRadius: BorderRadius.circular(24),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.22), blurRadius: 44, offset: const Offset(0, 18))],
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.22), blurRadius: 44, offset: const Offset(0, 18))],
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Quỹ Gia Đình', style: GoogleFonts.inter(fontSize: 12, color: Colors.white)),
-                        const SizedBox(height: 8),
-                        Text('12,500,000 ₫', style: GoogleFonts.inter(fontSize: 36, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: -0.5)),
-                        const SizedBox(height: 8),
-                        Text('↑ +3.2M vs tháng trước', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFFDCFCE7))),
-                      ],
-                    ),
+                    child: wallet.isLoading
+                        ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Quỹ Gia Đình', style: GoogleFonts.inter(fontSize: 12, color: Colors.white70)),
+                              const SizedBox(height: 8),
+                              Text(_fmt(balance), style: GoogleFonts.inter(fontSize: 36, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: -0.5)),
+                              const SizedBox(height: 4),
+                              Text(
+                                '↑ ${_fmt(wallet.transactions.where((t) => t.amount > 0).fold(0.0, (s, t) => s + t.amount))} thu tháng này',
+                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFFDCFCE7)),
+                              ),
+                            ],
+                          ),
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -96,35 +126,28 @@ class HomeDashboardScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
 
-                // Stats row
+                // Stats row — goals + alerts
                 Row(
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => context.push('/manager/tasks'),
+                        onTap: () => context.push('/manager/wallet'),
                         child: _card(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(children: [const Icon(Icons.assignment_outlined, size: 16, color: AppColors.textPrimary), const SizedBox(width: 8), Text('Tasks', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary))]),
+                              Row(children: [const Icon(Icons.flag_outlined, size: 16, color: AppColors.textPrimary), const SizedBox(width: 8), Text('Mục tiêu', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary))]),
                               const SizedBox(height: 4),
-                              Text('3 / 5 hoàn thành', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                              Text('${finance.goals.length} mục tiêu đang theo dõi', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
                               const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(999),
-                                      child: LinearProgressIndicator(
-                                        value: 0.6, minHeight: 8,
-                                        backgroundColor: AppColors.progressTrack,
-                                        valueColor: const AlwaysStoppedAnimation(AppColors.success),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text('60%', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.success)),
-                                ],
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(999),
+                                child: LinearProgressIndicator(
+                                  value: finance.goals.isEmpty ? 0 : (finance.goals.where((g) => g.progressPercent != null && g.progressPercent! >= 100).length / finance.goals.length),
+                                  minHeight: 8,
+                                  backgroundColor: AppColors.progressTrack,
+                                  valueColor: const AlwaysStoppedAnimation(AppColors.success),
+                                ),
                               ),
                             ],
                           ),
@@ -137,16 +160,17 @@ class HomeDashboardScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(children: [const Icon(Icons.people_outline, size: 16, color: AppColors.textPrimary), const SizedBox(width: 8), Text('3 online', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary))]),
+                            Row(children: [const Icon(Icons.warning_amber_outlined, size: 16, color: AppColors.textPrimary), const SizedBox(width: 8), Text('Cảnh báo', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary))]),
                             const SizedBox(height: 4),
-                            Text('Đang ở nhà', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                            Text(newAlerts > 0 ? '$newAlerts cảnh báo mới' : 'Không có cảnh báo', style: GoogleFonts.inter(fontSize: 12, color: newAlerts > 0 ? AppColors.danger : AppColors.textMuted)),
                             const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                AvatarWidget(initial: 'M', color: AppColors.avatarPurple, size: 28, showPresence: true),
-                                Transform.translate(offset: const Offset(-10, 0), child: AvatarWidget(initial: 'A', color: AppColors.avatarOrange, size: 28, showPresence: true)),
-                                Transform.translate(offset: const Offset(-20, 0), child: AvatarWidget(initial: 'B', color: AppColors.avatarBlue, size: 28, showPresence: true)),
-                              ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: newAlerts > 0 ? const Color(0xFFFEE2E2) : const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(newAlerts > 0 ? 'Cần xử lý' : 'Ổn định', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: newAlerts > 0 ? AppColors.danger : AppColors.success)),
                             ),
                           ],
                         ),
@@ -164,7 +188,7 @@ class HomeDashboardScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: const Color(0xFFF0FDF4),
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
                     ),
                     child: Row(
                       children: [
@@ -186,7 +210,7 @@ class HomeDashboardScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
 
-                // Transactions
+                // Recent transactions (real data)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -196,22 +220,37 @@ class HomeDashboardScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 _card(
-                  child: Column(
-                    children: transactions.map((tx) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      child: Row(
-                        children: [
-                          Container(width: 38, height: 38, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFF3F4F6)), alignment: Alignment.center, child: Text(tx.emoji, style: const TextStyle(fontSize: 18))),
-                          const SizedBox(width: 12),
-                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(tx.title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                            Text(tx.sub, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-                          ])),
-                          Text(tx.amount, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: tx.positive ? AppColors.success : AppColors.danger)),
-                        ],
-                      ),
-                    )).toList(),
-                  ),
+                  child: wallet.isLoading
+                      ? const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
+                      : txs.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text('Chưa có giao dịch nào', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted), textAlign: TextAlign.center),
+                            )
+                          : Column(
+                              children: txs.map((tx) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 38, height: 38,
+                                      decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFF3F4F6)),
+                                      alignment: Alignment.center,
+                                      child: Text(tx.amount > 0 ? '💰' : '💸', style: const TextStyle(fontSize: 18)),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      Text(tx.description, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                      Text(tx.createdAt.length >= 10 ? tx.createdAt.substring(0, 10) : tx.createdAt, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                                    ])),
+                                    Text(
+                                      '${tx.amount > 0 ? '+' : ''}${_fmt(tx.amount.abs())}',
+                                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: tx.amount > 0 ? AppColors.success : AppColors.danger),
+                                    ),
+                                  ],
+                                ),
+                              )).toList(),
+                            ),
                 ),
                 const SizedBox(height: 110),
               ],
@@ -231,7 +270,7 @@ class HomeDashboardScreen extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.white,
             borderRadius: BorderRadius.circular(20),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -252,15 +291,9 @@ class HomeDashboardScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20, offset: const Offset(0, 4))],
       ),
       child: child,
     );
   }
-}
-
-class _TxData {
-  final String emoji, title, sub, amount;
-  final bool positive;
-  const _TxData({required this.emoji, required this.title, required this.sub, required this.amount, required this.positive});
 }

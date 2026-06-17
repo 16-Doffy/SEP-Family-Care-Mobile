@@ -102,6 +102,32 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> updateProfile({String? fullName, String? phone, String? avatarUrl}) async {
+    final body = <String, dynamic>{
+      if (fullName != null && fullName.isNotEmpty) 'fullName': fullName,
+      if (phone != null) 'phone': phone,
+      if (avatarUrl != null) 'avatarUrl': avatarUrl,
+    };
+    final data = await ApiClient.instance.patch('/auth/me', body);
+    if (_user != null) {
+      final raw = data is Map<String, dynamic> ? data : <String, dynamic>{};
+      _user = AppUser.fromJson(
+        {'id': _user!.id, 'role': _user!.role.name, ..._userJson(), ...raw},
+        accessToken: _user!.accessToken,
+        refreshToken: _user!.refreshToken,
+        familyId: _user!.familyId,
+      );
+      notifyListeners();
+    }
+  }
+
+  Map<String, dynamic> _userJson() => {
+        'fullName': _user!.name,
+        'familyMember': _user!.familyId != null
+            ? {'familyId': _user!.familyId, 'family': {'id': _user!.familyId, 'name': _user!.familyName}}
+            : null,
+      };
+
   Future<void> logout() async {
     try {
       final refresh = _user?.refreshToken;

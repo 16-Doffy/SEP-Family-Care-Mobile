@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
+import 'providers/family_provider.dart';
+import 'providers/finance_provider.dart';
 import 'providers/money_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/task_provider.dart';
@@ -30,6 +32,22 @@ void main() {
             final fid = auth.familyId;
             if (fid != null) money!.familyId = fid;
             return money!;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, FamilyProvider>(
+          create: (_) => FamilyProvider(),
+          update: (_, auth, family) {
+            final fid = auth.familyId;
+            if (fid != null) family!.familyId = fid;
+            return family!;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, FinanceProvider>(
+          create: (_) => FinanceProvider(),
+          update: (_, auth, finance) {
+            final fid = auth.familyId;
+            if (fid != null) finance!.familyId = fid;
+            return finance!;
           },
         ),
         ChangeNotifierProvider(create: (_) => TaskProvider()),
