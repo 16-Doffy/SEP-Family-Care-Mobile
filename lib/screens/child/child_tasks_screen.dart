@@ -264,6 +264,24 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     );
   }
 
+  Future<void> _confirmReceived(TaskItem t) async {
+    final settlementId = t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
+    try {
+      await context.read<TaskProvider>().confirmSettlementReceived(settlementId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã xác nhận nhận thưởng!'), backgroundColor: AppColors.safe),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
   Future<void> _reportDispute(TaskItem t) async {
     final reasonCtrl = TextEditingController();
     bool submitting = false;
@@ -497,10 +515,17 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                         ),
                                         if (t.status.toUpperCase() == 'DONE' || t.status.toUpperCase() == 'APPROVED') ...[
                                           const SizedBox(height: 6),
-                                          GestureDetector(
-                                            onTap: () => _reportDispute(t),
-                                            child: Text('Khiếu nại', style: GoogleFonts.inter(fontSize: 11, color: AppColors.danger, decoration: TextDecoration.underline)),
-                                          ),
+                                          Row(mainAxisSize: MainAxisSize.min, children: [
+                                            GestureDetector(
+                                              onTap: () => _confirmReceived(t),
+                                              child: Text('Đã nhận thưởng', style: GoogleFonts.inter(fontSize: 11, color: AppColors.safe, decoration: TextDecoration.underline)),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            GestureDetector(
+                                              onTap: () => _reportDispute(t),
+                                              child: Text('Khiếu nại', style: GoogleFonts.inter(fontSize: 11, color: AppColors.danger, decoration: TextDecoration.underline)),
+                                            ),
+                                          ]),
                                         ],
                                       ]),
                                     ]),

@@ -333,6 +333,10 @@ class _TasksTabState extends State<_TasksTab> {
               try {
                 final id = _submissionId ?? (t.assignmentId.isNotEmpty ? t.assignmentId : t.id);
                 await context.read<TaskProvider>().reviewSubmission(id, approved: true);
+                // tự tạo settlement sau khi duyệt nếu task có reward
+                if (t.reward > 0 && _submissionId != null) {
+                  try { await context.read<TaskProvider>().createSettlement(_submissionId!); } catch (_) {}
+                }
                 if (mounted) setState(() { _approveTask = null; _submitting = false; });
               } catch (e) {
                 if (mounted) {
