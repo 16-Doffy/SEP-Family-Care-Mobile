@@ -558,6 +558,27 @@ class FinanceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<Map<String, dynamic>> fetchAlertDetail(String alertId) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/alerts/$alertId',
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  Future<Map<String, dynamic>> fetchBudgetPlanDetail(String planId) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/budget-plans/$planId',
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  Future<Map<String, dynamic>> fetchGoalDetail(String goalId) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/financial-goals/$goalId',
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
   // ── Alert actions ──────────────────────────────────────────────────────────
 
   Future<void> resolveAlert(String alertId, {String? note}) async {

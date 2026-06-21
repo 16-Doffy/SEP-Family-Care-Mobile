@@ -94,6 +94,19 @@ class MoneyProvider extends ChangeNotifier {
     await fetchRequests();
   }
 
+  Future<MoneyRequest?> fetchRequestDetail(String requestId) async {
+    if (_familyId == null) return null;
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$_familyId/finance/support-requests/$requestId',
+      );
+      if (data is Map<String, dynamic>) {
+        return MoneyRequest.fromJson(data);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   // Giữ lại cho tương thích với wallet_screen (approve/reject nhanh)
   Future<void> updateStatus(String requestId, MoneyRequestStatus status) async {
     if (status == MoneyRequestStatus.approved) {
