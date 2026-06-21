@@ -264,6 +264,23 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     );
   }
 
+  Future<void> _cancelUnavailability(String unavailabilityId) async {
+    try {
+      await context.read<TaskProvider>().cancelUnavailability(unavailabilityId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã hủy báo cáo'), backgroundColor: AppColors.safe),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
   Future<void> _confirmReceived(TaskItem t) async {
     final settlementId = t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
     try {
