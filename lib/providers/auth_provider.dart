@@ -3,40 +3,62 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../services/api_client.dart';
 
-const _kAccessToken  = 'access_token';
+const _kAccessToken = 'access_token';
 const _kRefreshToken = 'refresh_token';
+const _kFamilyRole  = 'family_role';
 
 class AuthProvider extends ChangeNotifier {
   AppUser? _user;
   bool _initializing = true;
+  String? _pendingInviteToken;
 
   AppUser? get user => _user;
   bool get isLoggedIn => _user != null;
   bool get initializing => _initializing;
   String? get familyId => _user?.familyId;
+  String? get pendingInviteToken => _pendingInviteToken;
 
-  AuthProvider() {
-    _restoreSession();
+  void setPendingInvite(String token) => _pendingInviteToken = token;
+
+  void clearPendingInvite() {
+    _pendingInviteToken = null;
+    notifyListeners();
   }
 
-  // Try to restore session from persisted tokens
+  /// Gọi sau khi tạo gia đình hoặc accept invite — persist để survive refresh
+  Future<void> setFamilyRole(UserRole role) async {
+    if (_user == null) return;
+    _user = _user!.copyWith(role: role);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kFamilyRole, role.name);
+    notifyListeners();
+  }
+
+  AuthProvider() { _restoreSession(); }
+
+  // ─── Session ───────────────────────────────────────────────────────────────
+
   Future<void> _restoreSession() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final access  = prefs.getString(_kAccessToken);
+      final prefs  = await SharedPreferences.getInstance();
+      final access = prefs.getString(_kAccessToken);
       final refresh = prefs.getString(_kRefreshToken);
-      if (access != null) {
-        ApiClient.instance.setToken(access);
-        ApiClient.instance.setRefreshToken(refresh);
-        final data = await ApiClient.instance.get('/auth/me');
-        if (data is Map<String, dynamic>) {
-          _user = AppUser.fromJson(data, accessToken: access, refreshToken: refresh);
-          // Fetch familyId if not embedded in auth/me response
-          if (_user!.familyId == null) await _fetchAndSetFamily();
+      if (access == null) return;
+
+      ApiClient.instance.setToken(access);
+      ApiClient.instance.setRefreshToken(refresh);
+
+      final data = await ApiClient.instance.get('/auth/me');
+      if (data is Map<String, dynamic>) {
+        _user = AppUser.fromJson(data, accessToken: access, refreshToken: refresh);
+        if (_user!.familyId == null) {
+          await _fetchAndSetFamily();
+        } else {
+          // familyId có rồi — đồng bộ role từ members list
+          await _syncRoleFromMembers(_user!.familyId!);
         }
       }
     } catch (_) {
-      // Tokens expired or invalid — clear and start fresh
       await _clearPersistedTokens();
     } finally {
       _initializing = false;
@@ -52,12 +74,7 @@ class AuthProvider extends ChangeNotifier {
     await _applySession(data as Map<String, dynamic>);
   }
 
-  Future<void> register(
-    String email,
-    String password,
-    String fullName,
-    String familyName, // kept for UI compat — BE doesn't use it at register time
-  ) async {
+  Future<void> register(String email, String password, String fullName, String familyName) async {
     final data = await ApiClient.instance.post('/auth/register', {
       'email': email.trim(),
       'password': password,
@@ -77,15 +94,18 @@ class AuthProvider extends ChangeNotifier {
       accessToken: access,
       refreshToken: refresh,
     );
-
     await _persistTokens(access, refresh);
 
-    // Fetch familyId if not embedded in response
-    if (_user!.familyId == null) await _fetchAndSetFamily();
+    if (_user!.familyId == null) {
+      await _fetchAndSetFamily();
+    } else {
+      await _syncRoleFromMembers(_user!.familyId!);
+    }
 
     notifyListeners();
   }
 
+  // Lấy familyId từ /families/my khi auth/me không embed familyMember
   Future<void> _fetchAndSetFamily() async {
     try {
       final list = await ApiClient.instance.get('/families/my');
@@ -95,44 +115,81 @@ class AuthProvider extends ChangeNotifier {
         final name = first['name']?.toString() ?? '';
         if (id != null) {
           _user = _user!.copyWith(familyId: id, familyName: name);
+          await _syncRoleFromMembers(id);
         }
       }
+    } catch (_) {}
+  }
+
+  /// Fetch GET /families/{id} → tìm current user trong members → set role đúng
+  Future<void> _syncRoleFromMembers(String fid) async {
+    try {
+      final data = await ApiClient.instance.get('/families/$fid');
+      if (data is! Map<String, dynamic>) return;
+
+      // Cập nhật familyName nếu chưa có
+      final name = data['name'] as String?;
+      if (name != null && (_user!.familyName.isEmpty)) {
+        _user = _user!.copyWith(familyName: name);
+      }
+
+      final rawMembers = data['members'] as List<dynamic>? ?? [];
+      final currentId  = _user?.id;
+
+      for (final raw in rawMembers) {
+        final m = raw as Map<String, dynamic>? ?? {};
+        // userId có thể ở m['userId'] hoặc m['user']['id']
+        final uid = m['userId']?.toString() ??
+            (m['user'] as Map?)?['id']?.toString() ?? '';
+        if (uid != currentId) continue;
+
+        final roleStr = (m['familyRole'] as String? ?? '').toUpperCase();
+        final role = roleStr.contains('MANAGER')
+            ? UserRole.manager
+            : roleStr.contains('DEPUTY')
+                ? UserRole.deputy
+                : UserRole.member;
+
+        _user = _user!.copyWith(role: role);
+        // Persist để survive browser refresh
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_kFamilyRole, role.name);
+        return;
+      }
+
+      // Nếu không tìm thấy trong members (chưa join) → thử restore từ prefs
+      final prefs     = await SharedPreferences.getInstance();
+      final savedRole = prefs.getString(_kFamilyRole);
+      if (savedRole != null && _user!.role == UserRole.member) {
+        final r = UserRole.values.firstWhere(
+          (r) => r.name == savedRole,
+          orElse: () => UserRole.member,
+        );
+        _user = _user!.copyWith(role: r);
+      }
     } catch (_) {
-      // No family yet — user may need to create or join one
+      // Fallback: restore role từ prefs
+      try {
+        final prefs     = await SharedPreferences.getInstance();
+        final savedRole = prefs.getString(_kFamilyRole);
+        if (savedRole != null && _user!.role == UserRole.member) {
+          final r = UserRole.values.firstWhere(
+            (r) => r.name == savedRole,
+            orElse: () => UserRole.member,
+          );
+          _user = _user!.copyWith(role: r);
+        }
+      } catch (_) {}
     }
   }
-
-  Future<void> updateProfile({String? fullName, String? phone, String? avatarUrl}) async {
-    final body = <String, dynamic>{
-      if (fullName != null && fullName.isNotEmpty) 'fullName': fullName,
-      if (phone != null) 'phone': phone,
-      if (avatarUrl != null) 'avatarUrl': avatarUrl,
-    };
-    final data = await ApiClient.instance.patch('/auth/me', body);
-    if (_user != null) {
-      final raw = data is Map<String, dynamic> ? data : <String, dynamic>{};
-      _user = AppUser.fromJson(
-        {'id': _user!.id, 'role': _user!.role.name, ..._userJson(), ...raw},
-        accessToken: _user!.accessToken,
-        refreshToken: _user!.refreshToken,
-        familyId: _user!.familyId,
-      );
-      notifyListeners();
-    }
-  }
-
-  Map<String, dynamic> _userJson() => {
-        'fullName': _user!.name,
-        'familyMember': _user!.familyId != null
-            ? {'familyId': _user!.familyId, 'family': {'id': _user!.familyId, 'name': _user!.familyName}}
-            : null,
-      };
 
   Future<void> logout() async {
     try {
       final refresh = _user?.refreshToken;
-      await ApiClient.instance.post('/auth/logout',
-          refresh != null ? {'refreshToken': refresh} : null);
+      await ApiClient.instance.post(
+        '/auth/logout',
+        refresh != null ? {'refreshToken': refresh} : null,
+      );
     } catch (_) {}
     _user = null;
     ApiClient.instance.setToken(null);
@@ -151,19 +208,6 @@ class AuthProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kAccessToken);
     await prefs.remove(_kRefreshToken);
-  }
-
-  // Demo login — no API call, for offline/UI testing
-  void loginDemo(UserRole role, String name, {String? familyName}) {
-    _user = AppUser(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: name,
-      familyName: familyName ?? 'Nguyễn',
-      role: role,
-      avatarInitials:
-          name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase(),
-      avatarColor: AppUser.colorForRole(role),
-    );
-    notifyListeners();
+    await prefs.remove(_kFamilyRole);
   }
 }

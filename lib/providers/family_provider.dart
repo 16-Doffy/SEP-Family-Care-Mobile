@@ -144,19 +144,23 @@ class FamilyProvider extends ChangeNotifier {
 
   // ─── Invitations ──────────────────────────────────────────────────────────
 
-  Future<void> inviteMember(
+  // Returns the invite token so the caller can display a shareable link
+  Future<String> inviteMember(
     String email, {
     String familyRole = 'FAMILY_MEMBER',
     String relationship = 'OTHER',
     String? invitedPhone,
   }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
-    await ApiClient.instance.post('/families/$_familyId/invitations', {
+    final data = await ApiClient.instance.post('/families/$_familyId/invitations', {
       'email': email,
       'familyRole': familyRole,
       'relationship': relationship,
       if (invitedPhone != null && invitedPhone.isNotEmpty) 'invitedPhone': invitedPhone,
     });
+    final map = data is Map ? data : {};
+    final token = map['token']?.toString() ?? map['inviteToken']?.toString() ?? map['data']?['token']?.toString() ?? '';
+    return token;
   }
 
   Future<Map<String, dynamic>> lookupInvitation(String token) async {

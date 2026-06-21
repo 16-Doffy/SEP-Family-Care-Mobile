@@ -48,13 +48,25 @@ GoRouter createRouter(AuthProvider auth) {
       final onInvite = loc.startsWith('/invite/');
 
       if (!loggedIn && !onAuth && !onInvite) return '/login';
+
       if (loggedIn && onAuth) {
-        // Nếu chưa có gia đình → màn hình tạo gia đình
+        if (auth.pendingInviteToken != null) return '/invite/${auth.pendingInviteToken}';
         if (auth.familyId == null || auth.familyId!.isEmpty) return '/create-family';
         return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
       }
-      if (loggedIn && onNoFamily && auth.familyId != null && auth.familyId!.isNotEmpty) {
-        return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
+
+      // Guard: manager không được ở /member shell và ngược lại
+      if (loggedIn && auth.familyId != null) {
+        final isAdmin = auth.user!.isAdministrative;
+        if (isAdmin && loc.startsWith('/member/')) return '/manager/home';
+        if (!isAdmin && loc.startsWith('/manager/')) return '/member/home';
+      }
+
+      if (loggedIn && onNoFamily) {
+        if (auth.pendingInviteToken != null) return '/invite/${auth.pendingInviteToken}';
+        if (auth.familyId != null && auth.familyId!.isNotEmpty) {
+          return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
+        }
       }
       return null;
     },

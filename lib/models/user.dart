@@ -28,21 +28,22 @@ class AppUser {
     String? accessToken,
     String? refreshToken,
     String? familyId,
+    UserRole? roleOverride,
   }) {
-    final roleStr = (json['role'] as String? ?? '').toUpperCase();
-    final role = roleStr.contains('MANAGER') || roleStr.contains('ADMIN')
-        ? UserRole.manager
-        : roleStr.contains('DEPUTY')
-            ? UserRole.deputy
-            : UserRole.member;
+    // familyMember.familyRole = role trong gia đình (FAMILY_MANAGER/DEPUTY_MEMBER/FAMILY_MEMBER)
+    // json['role'] = platform role (USER/ADMIN) — không phản ánh vai trò gia đình
+    final member = json['familyMember'] as Map<String, dynamic>?;
+    final memberFamilyRole = (member?['familyRole'] as String? ?? '').toUpperCase();
+    final platformRole    = (json['role'] as String? ?? '').toUpperCase();
+    // Ưu tiên: override > familyRole > platformRole
+    final effectiveRole = roleOverride != null
+        ? roleOverride
+        : _parseRole(memberFamilyRole.isNotEmpty ? memberFamilyRole : platformRole);
 
-    // BE returns fullName on user object; family member has displayName
     final name = json['fullName'] as String? ??
         json['displayName'] as String? ??
         'User';
 
-    // Try to extract familyId from nested member info in auth response
-    final member = json['familyMember'] as Map<String, dynamic>?;
     final family = member?['family'] as Map<String, dynamic>?;
     final extractedFamilyId = familyId ??
         member?['familyId']?.toString() ??
@@ -54,25 +55,34 @@ class AppUser {
       name: name,
       familyName: familyName,
       familyId: extractedFamilyId,
-      role: role,
+      role: effectiveRole,
       avatarInitials: _initials(name),
-      avatarColor: colorForRole(role),
+      avatarColor: colorForRole(effectiveRole),
       accessToken: accessToken,
       refreshToken: refreshToken,
     );
   }
 
-  AppUser copyWith({String? familyId, String? familyName}) => AppUser(
-        id: id,
-        name: name,
-        familyName: familyName ?? this.familyName,
-        familyId: familyId ?? this.familyId,
-        role: role,
-        avatarInitials: avatarInitials,
-        avatarColor: avatarColor,
-        accessToken: accessToken,
-        refreshToken: refreshToken,
-      );
+  static UserRole _parseRole(String s) {
+    if (s.contains('MANAGER') || s.contains('ADMIN')) return UserRole.manager;
+    if (s.contains('DEPUTY')) return UserRole.deputy;
+    return UserRole.member;
+  }
+
+  AppUser copyWith({String? familyId, String? familyName, UserRole? role}) {
+    final newRole = role ?? this.role;
+    return AppUser(
+      id: id,
+      name: name,
+      familyName: familyName ?? this.familyName,
+      familyId: familyId ?? this.familyId,
+      role: newRole,
+      avatarInitials: avatarInitials,
+      avatarColor: colorForRole(newRole),
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+    );
+  }
 
   static String _initials(String value) {
     final parts =

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
@@ -34,18 +35,36 @@ class _InvitationScreenState extends State<InvitationScreen> {
     }
   }
 
+  // Lưu token vào AuthProvider rồi navigate đến auth screen
+  void _goToAuthWithPending(String route) {
+    context.read<AuthProvider>().setPendingInvite(widget.token);
+    context.go(route);
+  }
+
   Future<void> _accept() async {
     setState(() => _acting = true);
     try {
       await context.read<FamilyProvider>().acceptInvitation(widget.token);
       if (mounted) {
-        final role = context.read<AuthProvider>().currentUser?['role']?.toString() ?? 'FAMILY_MEMBER';
-        context.go(role == 'FAMILY_MANAGER' ? '/manager/home' : '/member/home');
+        context.read<AuthProvider>().clearPendingInvite();
+        // Set role từ invitation data và persist
+        final rawRole = (_invite?['familyRole'] as String? ?? '').toUpperCase();
+        final role = rawRole.contains('MANAGER')
+            ? UserRole.manager
+            : rawRole.contains('DEPUTY')
+                ? UserRole.deputy
+                : UserRole.member;
+        await context.read<AuthProvider>().setFamilyRole(role);
+        if (mounted) {
+          context.go(role == UserRole.manager ? '/manager/home' : '/member/home');
+        }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _acting = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+        );
       }
     }
   }
@@ -54,11 +73,16 @@ class _InvitationScreenState extends State<InvitationScreen> {
     setState(() => _acting = true);
     try {
       await context.read<FamilyProvider>().rejectInvitation(widget.token);
-      if (mounted) context.go('/login');
+      if (mounted) {
+        context.read<AuthProvider>().clearPendingInvite();
+        context.go('/login');
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _acting = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+        );
       }
     }
   }
@@ -78,6 +102,7 @@ class _InvitationScreenState extends State<InvitationScreen> {
   }
 
   Widget _inviteView() {
+    final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
     final familyName = _invite?['family'] is Map ? (_invite!['family'] as Map)['name']?.toString() : null;
     final inviterName = _invite?['inviter'] is Map ? (_invite!['inviter'] as Map)['displayName']?.toString() : null;
     final role = _invite?['familyRole']?.toString() ?? 'FAMILY_MEMBER';
@@ -91,7 +116,11 @@ class _InvitationScreenState extends State<InvitationScreen> {
           const SizedBox(height: 40),
           const Text('🏠', style: TextStyle(fontSize: 64)),
           const SizedBox(height: 24),
-          Text('Lời mời tham gia gia đình', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary), textAlign: TextAlign.center),
+          Text(
+            'Lời mời tham gia gia đình',
+            style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 16),
           if (inviterName != null)
             Text('$inviterName mời bạn vào', style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary)),
@@ -101,35 +130,95 @@ class _InvitationScreenState extends State<InvitationScreen> {
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(color: AppColors.link.withOpacity(0.1), borderRadius: BorderRadius.circular(999)),
+            decoration: BoxDecoration(
+              color: AppColors.link.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(999),
+            ),
             child: Text('Vai trò: $roleLabel', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.link)),
           ),
           const Spacer(),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
-              onPressed: _acting ? null : _accept,
-              child: _acting
-                  ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                  : Text('Chấp nhận lời mời', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.danger,
-                side: const BorderSide(color: AppColors.danger),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+
+          // Nếu chưa đăng nhập → hướng dẫn tạo tài khoản hoặc đăng nhập
+          if (!isLoggedIn) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(16),
               ),
-              onPressed: _acting ? null : _reject,
-              child: Text('Từ chối', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+              child: Row(children: [
+                const Text('ℹ️', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Bạn cần có tài khoản để tham gia gia đình này.',
+                    style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF92400E), height: 1.4),
+                  ),
+                ),
+              ]),
             ),
-          ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.link,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
+                ),
+                onPressed: () => _goToAuthWithPending('/register'),
+                child: Text('Đăng ký tài khoản mới', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.link,
+                  side: const BorderSide(color: AppColors.link),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: () => _goToAuthWithPending('/login'),
+                child: Text('Đăng nhập tài khoản có sẵn', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+
+          // Đã đăng nhập → hiện nút Accept / Reject
+          if (isLoggedIn) ...[
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.success,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
+                ),
+                onPressed: _acting ? null : _accept,
+                child: _acting
+                    ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                    : Text('Chấp nhận lời mời', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.danger,
+                  side: const BorderSide(color: AppColors.danger),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+                onPressed: _acting ? null : _reject,
+                child: Text('Từ chối', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
         ],
       ),
@@ -142,12 +231,19 @@ class _InvitationScreenState extends State<InvitationScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('❌', style: TextStyle(fontSize: 48)),
             const SizedBox(height: 16),
-            Text('Lời mời không hợp lệ hoặc đã hết hạn', style: GoogleFonts.inter(fontSize: 16, color: AppColors.textPrimary), textAlign: TextAlign.center),
+            Text(
+              'Lời mời không hợp lệ hoặc đã hết hạn',
+              style: GoogleFonts.inter(fontSize: 16, color: AppColors.textPrimary),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 8),
             Text(_error ?? '', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted), textAlign: TextAlign.center),
             const SizedBox(height: 24),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.link,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
               onPressed: () => context.go('/login'),
               child: Text('Về trang đăng nhập', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
             ),

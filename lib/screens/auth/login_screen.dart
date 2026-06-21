@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
 
@@ -40,10 +39,6 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  void _loginDemo(UserRole role, String name) {
-    context.read<AuthProvider>().loginDemo(role, name);
   }
 
   void _showError(String msg) {
@@ -148,37 +143,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 : Text('Đăng nhập', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                           ),
                         ),
-                        const SizedBox(height: 24),
-
-                        Row(
-                          children: [
-                            const Expanded(child: Divider()),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              child: Text('DEMO ROLE', style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
-                            ),
-                            const Expanded(child: Divider()),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-
-                        _demoButton(
-                          emoji: '👑', label: 'Trưởng nhóm', role: 'Family Manager',
-                          bg: const Color(0xFFEFF6FF), textColor: AppColors.link,
-                          onTap: () => _loginDemo(UserRole.manager, 'Ba Nguyễn'),
-                        ),
-                        const SizedBox(height: 10),
-                        _demoButton(
-                          emoji: '🛡️', label: 'Phó nhóm', role: 'Deputy',
-                          bg: const Color(0xFFF0FDF4), textColor: const Color(0xFF16A34A),
-                          onTap: () => _loginDemo(UserRole.deputy, 'Mẹ Nguyễn'),
-                        ),
-                        const SizedBox(height: 10),
-                        _demoButton(
-                          emoji: '🧒', label: 'Thành viên', role: 'Member',
-                          bg: const Color(0xFFFFF7ED), textColor: const Color(0xFFEA580C),
-                          onTap: () => _loginDemo(UserRole.member, 'An Nguyễn'),
-                        ),
                       ],
                     ),
                   ),
@@ -244,32 +208,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _demoButton({
-    required String emoji, required String label, required String role,
-    required Color bg, required Color textColor, required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
-        child: Row(
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 24)),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: GoogleFonts.inter(fontSize: 11, color: textColor)),
-                Text(role, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: textColor)),
-              ],
-            ),
-            const Spacer(),
-            Icon(Icons.arrow_forward_ios_rounded, size: 14, color: textColor.withOpacity(0.5)),
-          ],
-        ),
-      ),
-    );
-  }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
@@ -36,9 +37,11 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
       if (familyId.isNotEmpty) {
         context.read<FamilyProvider>().familyId = familyId;
       }
-      final role = context.read<AuthProvider>().currentUser?['role']?.toString() ?? 'FAMILY_MANAGER';
+      // Người tạo gia đình LUÔN là FAMILY_MANAGER — set và persist role
+      final auth = context.read<AuthProvider>();
+      await auth.setFamilyRole(UserRole.manager);
       if (mounted) {
-        context.go(role == 'FAMILY_MANAGER' ? '/manager/home' : '/member/home');
+        context.go('/manager/home');
       }
     } catch (e) {
       if (mounted) {

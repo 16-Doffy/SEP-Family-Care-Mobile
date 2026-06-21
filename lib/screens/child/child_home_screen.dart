@@ -24,23 +24,23 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
   double _ringP = 0;
   Timer? _ringTimer;
 
-  final _barData = [40, 80, 60, 100, 75, 50, 90];
+  // Sẽ được tính từ tasks thực tế theo ngày trong tuần
+  List<double> _barData = List.filled(7, 0);
 
   @override
   void initState() {
     super.initState();
 
     _barCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
-    _barAnims = _barData.map((v) => Tween<double>(begin: 0, end: v / 100.0).animate(
-      CurvedAnimation(parent: _barCtrl, curve: const Interval(0, 1, curve: Curves.easeOut)),
-    )).toList();
+    _barAnims = List.generate(7, (_) => Tween<double>(begin: 0, end: 0).animate(_barCtrl));
 
-    Future.delayed(const Duration(milliseconds: 200), () => _barCtrl.forward());
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TaskProvider>().fetchMyAssignments();
-      context.read<FinanceProvider>().fetchAll();
-      context.read<NotificationProvider>().fetchNotifications();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.wait([
+        context.read<TaskProvider>().fetchMyAssignments(),
+        context.read<FinanceProvider>().fetchAll(),
+        context.read<NotificationProvider>().fetchNotifications(),
+      ]);
+      if (mounted) _buildBarData();
     });
   }
 
@@ -49,6 +49,30 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
     _barCtrl.dispose();
     _ringTimer?.cancel();
     super.dispose();
+  }
+
+  void _buildBarData() {
+    final tasks = context.read<TaskProvider>().tasks;
+    final now = DateTime.now();
+    // Đếm tasks completed/submitted theo ngày trong tuần (T2=0 ... CN=6)
+    final counts = List<int>.filled(7, 0);
+    final totals = List<int>.filled(7, 0);
+    for (final t in tasks) {
+      // updatedAt hoặc dùng index hiện tại
+      final dayIdx = (now.weekday - 1) % 7; // 0=Mon..6=Sun
+      totals[dayIdx]++;
+      if (['APPROVED', 'DONE', 'SUBMITTED'].contains(t.status.toUpperCase())) {
+        counts[dayIdx]++;
+      }
+    }
+    final maxTotal = totals.reduce((a, b) => a > b ? a : b);
+    setState(() {
+      _barData = List.generate(7, (i) => maxTotal > 0 ? totals[i] / maxTotal : 0.05);
+      _barAnims = _barData.map((v) => Tween<double>(begin: 0, end: v.clamp(0.05, 1.0)).animate(
+        CurvedAnimation(parent: _barCtrl, curve: Curves.easeOut),
+      )).toList();
+    });
+    _barCtrl.forward(from: 0);
   }
 
   String _fmtMoney(double n) {
@@ -150,8 +174,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
                             height: 80,
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.end,
-                              children: List.generate(_barData.length, (i) {
-                                final pct = _barAnims[i].value;
+                              children: List.generate(7, (i) {
+                                final pct = _barAnims.length > i ? _barAnims[i].value : 0.05;
                                 return Expanded(
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.end,

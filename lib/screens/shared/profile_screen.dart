@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../models/user.dart';
@@ -42,19 +44,23 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 32),
 
             _section('Tài khoản', [
-              _tile(context, '👤', 'Hồ sơ cá nhân', onTap: () => _showEditProfile(context, auth)),
+              _tile(context, '👤', 'Hồ sơ cá nhân', onTap: () => _showProfileInfo(context, auth)),
               _tile(context, '🔒', 'Bảo mật', onTap: () {}),
-              _tile(context, '🔔', 'Thông báo', onTap: () {}),
+              _tile(context, '🔔', 'Thông báo', onTap: () => context.push('/notifications')),
             ]),
             const SizedBox(height: 16),
 
             _section('Gia đình', [
-              _tile(context, '👨‍👩‍👧', 'Quản lý thành viên',
+              // Tất cả role đều xem được danh sách thành viên
+              _tile(context, '👨‍👩‍👧', 'Xem thành viên',
                   onTap: () => _showMembers(context, family)),
-              _tile(context, '✉️', 'Mời thành viên',
-                  onTap: () => _showInvite(context, family)),
-              _tile(context, '⚙️', 'Cài đặt gia đình',
-                  onTap: () => _showEditFamily(context, family)),
+              // Chỉ manager/deputy mới mời và cài đặt
+              if (user?.isAdministrative == true) ...[
+                _tile(context, '✉️', 'Mời thành viên',
+                    onTap: () => _showInvite(context, family)),
+                _tile(context, '⚙️', 'Cài đặt gia đình',
+                    onTap: () => _showEditFamily(context, family)),
+              ],
             ]),
             const SizedBox(height: 16),
 
@@ -83,41 +89,40 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  // ── Edit profile dialog ──────────────────────────────────────────────────
+  // ── Profile info dialog (read-only — PATCH /auth/me not available) ────────
 
-  void _showEditProfile(BuildContext context, AuthProvider auth) {
-    final nameCtrl  = TextEditingController(text: auth.user?.name ?? '');
-    final phoneCtrl = TextEditingController();
+  void _showProfileInfo(BuildContext context, AuthProvider auth) {
+    final user = auth.user;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Sửa hồ sơ'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Họ tên')),
+        title: const Text('Hồ sơ cá nhân'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _infoRow('Họ tên', user?.name ?? '—'),
           const SizedBox(height: 8),
-          TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Số điện thoại'), keyboardType: TextInputType.phone),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                await auth.updateProfile(
-                  fullName: nameCtrl.text.trim().isEmpty ? null : nameCtrl.text.trim(),
-                  phone: phoneCtrl.text.trim().isEmpty ? null : phoneCtrl.text.trim(),
-                );
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cập nhật hồ sơ')));
-              } catch (e) {
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-              }
-            },
-            child: const Text('Lưu'),
+          _infoRow('Vai trò', _getRoleName(user?.role)),
+          const SizedBox(height: 8),
+          _infoRow('Gia đình', user?.familyName.isNotEmpty == true ? user!.familyName : '—'),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(10)),
+            child: const Text('Chỉnh sửa hồ sơ chưa được hỗ trợ trong phiên bản này.', style: TextStyle(fontSize: 13, color: Color(0xFF92400E))),
           ),
-        ],
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng'))],
       ),
     );
   }
+
+  Widget _infoRow(String label, String value) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(width: 60, child: Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)))),
+      const SizedBox(width: 8),
+      Expanded(child: Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+    ],
+  );
 
   // ── Members list dialog ──────────────────────────────────────────────────
 
@@ -171,31 +176,7 @@ class ProfileScreen extends StatelessWidget {
     final emailCtrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Mời thành viên'),
-        content: TextField(
-          controller: emailCtrl,
-          decoration: const InputDecoration(labelText: 'Email', hintText: 'example@email.com'),
-          keyboardType: TextInputType.emailAddress,
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-          ElevatedButton(
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (email.isEmpty) return;
-              Navigator.pop(ctx);
-              try {
-                await family.inviteMember(email);
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã gửi lời mời đến $email')));
-              } catch (e) {
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-              }
-            },
-            child: const Text('Gửi lời mời'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _InviteDialog(emailCtrl: emailCtrl, family: family),
     );
   }
 
@@ -273,6 +254,119 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Invite dialog (StatefulWidget để handle loading + hiện link) ────────────
+
+class _InviteDialog extends StatefulWidget {
+  final TextEditingController emailCtrl;
+  final FamilyProvider family;
+  const _InviteDialog({required this.emailCtrl, required this.family});
+
+  @override
+  State<_InviteDialog> createState() => _InviteDialogState();
+}
+
+class _InviteDialogState extends State<_InviteDialog> {
+  bool _loading = false;
+  String? _inviteLink;
+
+  String get _baseUrl {
+    // Lấy origin của web app (ví dụ: http://localhost:8080)
+    // Nếu không phải web, dùng deeplink scheme
+    try {
+      final uri = Uri.base;
+      return '${uri.scheme}://${uri.host}${uri.port != 80 && uri.port != 443 ? ':${uri.port}' : ''}';
+    } catch (_) {
+      return 'http://localhost:8080';
+    }
+  }
+
+  Future<void> _send() async {
+    final email = widget.emailCtrl.text.trim();
+    if (email.isEmpty) return;
+    setState(() => _loading = true);
+    try {
+      final token = await widget.family.inviteMember(email);
+      if (mounted) {
+        final link = token.isNotEmpty ? '$_baseUrl/#/invite/$token' : '';
+        setState(() { _loading = false; _inviteLink = link; });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_inviteLink != null) {
+      // Hiện link sau khi tạo thành công
+      return AlertDialog(
+        title: const Text('Lời mời đã tạo'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Gửi link này cho ${widget.emailCtrl.text.trim()}:', style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Expanded(
+                child: Text(
+                  _inviteLink!.isNotEmpty ? _inviteLink! : '(Token không có trong response — kiểm tra API)',
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+                ),
+              ),
+              if (_inviteLink!.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, size: 18, color: AppColors.link),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: _inviteLink!));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Đã copy link'), duration: Duration(seconds: 2)),
+                    );
+                  },
+                ),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          const Text('Link chỉ dùng được 1 lần và có thời hạn.', style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+        ]),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Xong', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      );
+    }
+
+    // Form nhập email
+    return AlertDialog(
+      title: const Text('Mời thành viên'),
+      content: TextField(
+        controller: widget.emailCtrl,
+        decoration: const InputDecoration(labelText: 'Email', hintText: 'example@email.com'),
+        keyboardType: TextInputType.emailAddress,
+        autofocus: true,
+        onSubmitted: (_) => _send(),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
+        ElevatedButton(
+          onPressed: _loading ? null : _send,
+          child: _loading
+              ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Gửi lời mời'),
+        ),
+      ],
     );
   }
 }
