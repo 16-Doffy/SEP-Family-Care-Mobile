@@ -85,7 +85,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
                 // Hero wallet card
                 GestureDetector(
-                  onTap: () => context.push('/manager/wallet'),
+                  onTap: () => context.go('/manager/finance'),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
                     decoration: BoxDecoration(
@@ -115,9 +115,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 // Quick actions
                 Row(
                   children: [
-                    _quickCard('➕', 'Nạp', () => context.push('/manager/wallet')),
+                    _quickCard('📊', 'Tài chính', () => context.go('/manager/finance')),
                     const SizedBox(width: 12),
-                    _quickCard('↗', 'Chuyển', () => context.push('/manager/wallet')),
+                    _quickCard('📝', 'Ghi chi', () => context.go('/manager/finance')),
                     const SizedBox(width: 12),
                     _quickCard('📋', 'Tasks', () => context.push('/manager/tasks')),
                     const SizedBox(width: 12),
@@ -131,7 +131,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => context.push('/manager/wallet'),
+                        onTap: () => context.go('/manager/finance'),
                         child: _card(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -215,7 +215,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Giao dịch gần đây', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                    GestureDetector(onTap: () => context.push('/manager/wallet'), child: Text('Xem tất cả →', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.link))),
+                    GestureDetector(onTap: () => context.go('/manager/finance'), child: Text('Xem tất cả →', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.link))),
                   ],
                 ),
                 const SizedBox(height: 12),

@@ -9,6 +9,7 @@ import 'providers/wallet_provider.dart';
 import 'providers/task_provider.dart';
 import 'providers/gps_provider.dart';
 import 'providers/sos_provider.dart';
+import 'providers/notification_provider.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 
@@ -50,9 +51,38 @@ void main() {
             return finance!;
           },
         ),
-        ChangeNotifierProvider(create: (_) => TaskProvider()),
-        ChangeNotifierProvider(create: (_) => GpsProvider()),
-        ChangeNotifierProvider(create: (_) => SosProvider()),
+        ChangeNotifierProxyProvider<AuthProvider, TaskProvider>(
+          create: (_) => TaskProvider(),
+          update: (_, auth, task) {
+            final fid = auth.familyId;
+            if (fid != null) task!.familyId = fid;
+            return task!;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, GpsProvider>(
+          create: (_) => GpsProvider(),
+          update: (_, auth, gps) {
+            final fid = auth.familyId;
+            if (fid != null) gps!.familyId = fid;
+            return gps!;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, SosProvider>(
+          create: (_) => SosProvider(),
+          update: (_, auth, sos) {
+            final fid = auth.familyId;
+            if (fid != null) sos!.familyId = fid;
+            return sos!;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, NotificationProvider>(
+          create: (_) => NotificationProvider(),
+          update: (_, auth, notif) {
+            final fid = auth.familyId;
+            if (fid != null) notif!.familyId = fid;
+            return notif!;
+          },
+        ),
       ],
       child: const FamilyCareApp(),
     ),

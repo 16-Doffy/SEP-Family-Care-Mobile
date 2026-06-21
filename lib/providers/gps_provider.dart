@@ -1,30 +1,29 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
-class LocationShare {
-  final String userId;
+class LocationPoint {
+  final String memberId;
   final String displayName;
   final double? latitude;
   final double? longitude;
-  final String? updatedAt;
+  final String? recordedAt;
 
-  const LocationShare({
-    required this.userId,
+  const LocationPoint({
+    required this.memberId,
     required this.displayName,
     this.latitude,
     this.longitude,
-    this.updatedAt,
+    this.recordedAt,
   });
 
-  factory LocationShare.fromJson(Map<String, dynamic> json) {
-    final user =
-        json['user'] is Map ? json['user'] as Map<String, dynamic> : <String, dynamic>{};
-    return LocationShare(
-      userId: user['id']?.toString() ?? '',
-      displayName: user['displayName']?.toString() ?? 'Thành viên',
+  factory LocationPoint.fromJson(Map<String, dynamic> json) {
+    final member = json['member'] is Map ? json['member'] as Map : {};
+    return LocationPoint(
+      memberId: member['id']?.toString() ?? json['memberId']?.toString() ?? '',
+      displayName: member['displayName']?.toString() ?? 'Thành viên',
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),
-      updatedAt: json['updatedAt']?.toString(),
+      recordedAt: json['recordedAt']?.toString() ?? json['createdAt']?.toString(),
     );
   }
 
@@ -35,28 +34,42 @@ class LocationShare {
 }
 
 class GpsProvider extends ChangeNotifier {
-  List<LocationShare> _shares = [];
+  String? _familyId;
+  List<LocationPoint> _points = [];
   bool _loading = false;
   bool _busy = false;
   String? _error;
 
-  List<LocationShare> get shares => _shares;
+  List<LocationPoint> get points => _points;
   bool get loading => _loading;
   bool get busy => _busy;
   String? get error => _error;
 
+  // Giữ tương thích với code cũ
+  List<LocationPoint> get shares => _points;
+
+  set familyId(String id) {
+    if (_familyId != id) {
+      _familyId = id;
+      fetchFamilyLocations();
+    }
+  }
+
   Future<void> fetchFamilyLocations() async {
+    if (_familyId == null) return;
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      final data = await ApiClient.instance.get('/location/family');
-      final list = data is Map && data['shares'] is List
-          ? data['shares'] as List
-          : <dynamic>[];
-      _shares = list
+      final data = await ApiClient.instance.get('/families/$_familyId/locations/member-points');
+      final list = data is List
+          ? data
+          : data is Map && data['items'] is List
+              ? data['items'] as List
+              : <dynamic>[];
+      _points = list
           .whereType<Map>()
-          .map((e) => LocationShare.fromJson(Map<String, dynamic>.from(e)))
+          .map((e) => LocationPoint.fromJson(Map<String, dynamic>.from(e)))
           .toList();
     } catch (e) {
       _error = e.toString();
@@ -67,10 +80,14 @@ class GpsProvider extends ChangeNotifier {
   }
 
   Future<void> toggleSharing(bool value) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
     _busy = true;
     notifyListeners();
     try {
-      await ApiClient.instance.patch('/location/toggle', {'isSharing': value});
+      await ApiClient.instance.patch(
+        '/families/$_familyId/location-sharing',
+        {'isSharing': value},
+      );
       await fetchFamilyLocations();
     } finally {
       _busy = false;
@@ -78,12 +95,12 @@ class GpsProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> updateLocation(double latitude, double longitude,
-      {double accuracy = 18}) async {
+  Future<void> updateLocation(double latitude, double longitude, {double accuracy = 18}) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
     _busy = true;
     notifyListeners();
     try {
-      await ApiClient.instance.post('/location/update', {
+      await ApiClient.instance.post('/families/$_familyId/locations/member-points', {
         'latitude': latitude,
         'longitude': longitude,
         'accuracy': accuracy,

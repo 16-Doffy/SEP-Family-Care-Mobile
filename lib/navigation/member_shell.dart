@@ -23,7 +23,7 @@ class MemberShell extends StatelessWidget {
               children: [
                 _NavItem(icon: Icons.home_rounded, label: 'Trang chủ', index: 0, current: navigationShell.currentIndex, onTap: () => _go(context, 0)),
                 _NavItem(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ', index: 1, current: navigationShell.currentIndex, onTap: () => _go(context, 1)),
-                _NavItem(icon: Icons.account_balance_wallet_rounded, label: 'Ví', index: 2, current: navigationShell.currentIndex, onTap: () => _go(context, 2)),
+                _NavItem(icon: Icons.menu_book_rounded, label: 'Sổ chi tiêu', index: 2, current: navigationShell.currentIndex, onTap: () => _go(context, 2)),
                 _SOSNavItem(current: navigationShell.currentIndex, onTap: () => _go(context, 3)),
                 _NavItem(icon: Icons.chat_bubble_rounded, label: 'Chat', index: 4, current: navigationShell.currentIndex, onTap: () => _go(context, 4)),
                 _NavItem(icon: Icons.person_rounded, label: 'Tôi', index: 5, current: navigationShell.currentIndex, onTap: () => _go(context, 5)),

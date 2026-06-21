@@ -21,7 +21,6 @@ import '../screens/child/child_wallet_screen.dart';
 // Shared
 import '../screens/shared/chat_screen.dart';
 import '../screens/shared/sos_screen.dart';
-import '../screens/shared/album_screen.dart';
 import '../screens/shared/profile_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
@@ -77,7 +76,7 @@ GoRouter createRouter(AuthProvider auth) {
             GoRoute(path: '/manager/sos',   builder: (_, __) => const SOSScreen()),
           ]),
           StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/album', builder: (_, __) => const AlbumScreen()),
+            GoRoute(path: '/manager/finance', builder: (_, __) => const WalletScreen()),
           ]),
           StatefulShellBranch(routes: [
             GoRoute(path: '/manager/profile', builder: (_, __) => const ProfileScreen()),
@@ -112,7 +111,6 @@ GoRouter createRouter(AuthProvider auth) {
       ),
 
       // ── Manager Specific Routes ───────────────────────────
-      GoRoute(path: '/manager/wallet',  builder: (_, __) => const WalletScreen()),
       GoRoute(path: '/manager/tasks',   builder: (_, __) => const TaskManagementScreen()),
     ],
   );

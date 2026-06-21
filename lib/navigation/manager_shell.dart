@@ -25,7 +25,7 @@ class ManagerShell extends StatelessWidget {
                 _NavItem(icon: Icons.chat_bubble_rounded, label: 'Nhắn tin', index: 1, current: navigationShell.currentIndex, onTap: () => _go(context, 1)),
                 _NavItem(icon: Icons.calendar_month_rounded, label: 'Lịch', index: 2, current: navigationShell.currentIndex, onTap: () => _go(context, 2)),
                 _SOSNavItem(current: navigationShell.currentIndex, onTap: () => _go(context, 3)),
-                _NavItem(icon: Icons.photo_library_rounded, label: 'Album', index: 4, current: navigationShell.currentIndex, onTap: () => _go(context, 4)),
+                _NavItem(icon: Icons.account_balance_rounded, label: 'Tài chính', index: 4, current: navigationShell.currentIndex, onTap: () => _go(context, 4)),
                 _NavItem(icon: Icons.person_rounded, label: 'Tôi', index: 5, current: navigationShell.currentIndex, onTap: () => _go(context, 5)),
               ],
             ),

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../../models/money_request.dart';
 import '../../providers/money_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
@@ -49,7 +48,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   _backBtn(context),
                   const Expanded(
                     child: Center(
-                      child: Text('Ví Gia Đình', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                      child: Text('Tài chính Gia Đình', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                     ),
                   ),
                   const SizedBox(width: 40),
@@ -126,9 +125,9 @@ class _WalletScreenState extends State<WalletScreen> {
           const SizedBox(height: 18),
           Row(
             children: [
-              Expanded(child: GestureDetector(onTap: () => _showDepositSheet(context), child: _heroBtn('➕', 'Nạp tiền'))),
+              Expanded(child: GestureDetector(onTap: () => _showDepositSheet(context), child: _heroBtn('➕', 'Ghi thu'))),
               Container(width: 1, height: 36, color: Colors.white30),
-              Expanded(child: GestureDetector(onTap: () => _showTransferSheet(context), child: _heroBtn('↗', 'Chuyển'))),
+              Expanded(child: GestureDetector(onTap: () => _showExpenseSheet(context), child: _heroBtn('📝', 'Ghi chi'))),
             ],
           ),
         ],
@@ -230,7 +229,7 @@ class _WalletScreenState extends State<WalletScreen> {
               ? [Text('Chưa có ví thành viên', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted))]
               : state.memberWallets.map((w) {
                   final initials = w.ownerName.isNotEmpty ? w.ownerName.substring(0, 1).toUpperCase() : '?';
-                  return _memberRow(initials, AppColors.avatarOrange, w.ownerName, w.type, _fmt(w.balance.round()), onTransfer: () => _showTransferSheet(context, targetWalletId: w.id));
+                  return _memberRow(initials, AppColors.avatarOrange, w.ownerName, w.type, _fmt(w.balance.round()), onTransfer: () => _showExpenseSheet(context));
                 }).toList(),
         ),
       ),
@@ -293,17 +292,25 @@ class _WalletScreenState extends State<WalletScreen> {
         ])),
         Row(children: [
           GestureDetector(
-            onTap: () {
-              context.read<MoneyProvider>().updateStatus(req.id, MoneyRequestStatus.approved);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã duyệt ${_fmt(req.amount.round())} cho ${req.senderName} ✅'), backgroundColor: AppColors.safe));
+            onTap: () async {
+              try {
+                await context.read<MoneyProvider>().reviewRequest(req.id, approved: true);
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã duyệt cho ${req.senderName} ✅'), backgroundColor: AppColors.safe));
+              } catch (e) {
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+              }
             },
             child: Container(width: 36, height: 36, decoration: const BoxDecoration(color: Color(0xFFDCFCE7), borderRadius: BorderRadius.all(Radius.circular(8))), child: const Icon(Icons.check, size: 18, color: AppColors.success)),
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: () {
-              context.read<MoneyProvider>().updateStatus(req.id, MoneyRequestStatus.rejected);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã từ chối yêu cầu của ${req.senderName} ❌'), backgroundColor: AppColors.danger));
+            onTap: () async {
+              try {
+                await context.read<MoneyProvider>().reviewRequest(req.id, approved: false);
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã từ chối yêu cầu của ${req.senderName} ❌'), backgroundColor: AppColors.danger));
+              } catch (e) {
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+              }
             },
             child: Container(width: 36, height: 36, decoration: const BoxDecoration(color: Color(0xFFFEE2E2), borderRadius: BorderRadius.all(Radius.circular(8))), child: const Icon(Icons.close, size: 18, color: AppColors.danger)),
           ),
@@ -321,7 +328,7 @@ class _WalletScreenState extends State<WalletScreen> {
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(28, 28, 28, MediaQuery.of(ctx).viewInsets.bottom + 40),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Nạp tiền vào quỹ', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Ghi thu nhập vào quỹ', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
           const SizedBox(height: 16),
           TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'Số tiền (VD: 1000000)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
           const SizedBox(height: 16),
@@ -347,9 +354,9 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  void _showTransferSheet(BuildContext context, {String? targetWalletId}) {
+  void _showExpenseSheet(BuildContext context) {
     final amountCtrl = TextEditingController();
-    final noteCtrl   = TextEditingController();
+    final descCtrl   = TextEditingController();
     showModalBottomSheet(
       context: context, isScrollControlled: true,
       backgroundColor: AppColors.white,
@@ -357,26 +364,28 @@ class _WalletScreenState extends State<WalletScreen> {
       builder: (ctx) => Padding(
         padding: EdgeInsets.fromLTRB(28, 28, 28, MediaQuery.of(ctx).viewInsets.bottom + 40),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Chuyển tiền', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          Text('Ghi chi tiêu', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
           const SizedBox(height: 16),
-          TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'Số tiền', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
+          TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'Số tiền (VD: 500000)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
           const SizedBox(height: 12),
-          TextField(controller: noteCtrl, decoration: InputDecoration(hintText: 'Ghi chú (tuỳ chọn)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
+          TextField(controller: descCtrl, decoration: InputDecoration(hintText: 'Mô tả (VD: Tiền điện tháng 6)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity, height: 52,
             child: ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
               onPressed: () async {
                 final amount = double.tryParse(amountCtrl.text);
-                if (amount == null || amount <= 0 || targetWalletId == null) return;
-                // Tính năng chuyển tiền nội bộ chưa được hỗ trợ bởi BE hiện tại
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Tính năng chuyển tiền chưa khả dụng')));
-                  Navigator.pop(ctx);
+                final desc   = descCtrl.text.trim();
+                if (amount == null || amount <= 0 || desc.isEmpty) return;
+                try {
+                  await context.read<WalletProvider>().addExpense(amount, description: desc);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                } catch (e) {
+                  if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                 }
               },
-              child: Text('Xác nhận chuyển', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+              child: Text('Xác nhận ghi chi', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
             ),
           ),
         ]),

@@ -390,6 +390,209 @@ class FinanceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Finance Reports ────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> fetchOverviewReport({int? month, int? year}) async {
+    final now = DateTime.now();
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/reports/overview',
+      params: {
+        'month': (month ?? now.month).toString(),
+        'year': (year ?? now.year).toString(),
+      },
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  Future<Map<String, dynamic>> fetchBudgetGoalReport({int? month, int? year}) async {
+    final now = DateTime.now();
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/reports/budget-goal',
+      params: {
+        'month': (month ?? now.month).toString(),
+        'year': (year ?? now.year).toString(),
+      },
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  Future<Map<String, dynamic>> fetchNonEssentialReport({int? month, int? year}) async {
+    final now = DateTime.now();
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/reports/non-essential-spending',
+      params: {
+        'month': (month ?? now.month).toString(),
+        'year': (year ?? now.year).toString(),
+      },
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  // ── Budget Plan Lines ──────────────────────────────────────────────────────
+
+  Future<void> createBudgetLine(String planId, {
+    required String categoryId,
+    required double expectedAmount,
+    String? note,
+  }) async {
+    await ApiClient.instance.post(
+      '/families/$_familyId/finance/budget-plans/$planId/lines',
+      {
+        'categoryId': categoryId,
+        'expectedAmount': expectedAmount,
+        if (note != null && note.isNotEmpty) 'note': note,
+      },
+    );
+    await _fetchBudgetPlans();
+    notifyListeners();
+  }
+
+  Future<void> updateBudgetLine(String budgetLineId, {double? expectedAmount, String? note}) async {
+    await ApiClient.instance.patch(
+      '/families/$_familyId/finance/budget-lines/$budgetLineId',
+      {
+        if (expectedAmount != null) 'expectedAmount': expectedAmount,
+        if (note != null) 'note': note,
+      },
+    );
+    await _fetchBudgetPlans();
+    notifyListeners();
+  }
+
+  Future<void> deleteBudgetLine(String budgetLineId) async {
+    await ApiClient.instance.delete('/families/$_familyId/finance/budget-lines/$budgetLineId');
+    await _fetchBudgetPlans();
+    notifyListeners();
+  }
+
+  Future<Map<String, dynamic>> fetchBudgetPlanReport(String planId) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/budget-plans/$planId/report',
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  Future<void> updateBudgetPlan(String planId, {
+    String? planName,
+    double? expectedSharedIncome,
+    double? expectedSharedExpense,
+  }) async {
+    await ApiClient.instance.patch(
+      '/families/$_familyId/finance/budget-plans/$planId',
+      {
+        if (planName != null) 'planName': planName,
+        if (expectedSharedIncome != null) 'expectedSharedIncome': expectedSharedIncome,
+        if (expectedSharedExpense != null) 'expectedSharedExpense': expectedSharedExpense,
+      },
+    );
+    await _fetchBudgetPlans();
+    notifyListeners();
+  }
+
+  // ── Financial Goal Allocations ─────────────────────────────────────────────
+
+  Future<void> updateGoal(String goalId, {
+    String? goalName,
+    double? targetAmount,
+    String? deadline,
+  }) async {
+    await ApiClient.instance.patch(
+      '/families/$_familyId/finance/financial-goals/$goalId',
+      {
+        if (goalName != null) 'goalName': goalName,
+        if (targetAmount != null) 'targetAmount': targetAmount,
+        if (deadline != null) 'deadline': deadline,
+      },
+    );
+    await _fetchGoals();
+    notifyListeners();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchGoalAllocations(String goalId) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/financial-goals/$goalId/allocations',
+    );
+    return _parseList(data, (e) => e).cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> fetchGoalProgress(String goalId) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/financial-goals/$goalId/progress',
+    );
+    return data is Map<String, dynamic> ? data : {};
+  }
+
+  Future<void> createGoalAllocation(String goalId, {
+    required double amount,
+    String? note,
+  }) async {
+    await ApiClient.instance.post(
+      '/families/$_familyId/finance/financial-goals/$goalId/allocations',
+      {
+        'amount': amount,
+        if (note != null && note.isNotEmpty) 'note': note,
+      },
+    );
+    await _fetchGoals();
+    notifyListeners();
+  }
+
+  Future<void> updateGoalAllocation(String allocationId, {double? amount, String? note}) async {
+    await ApiClient.instance.patch(
+      '/families/$_familyId/finance/goal-allocations/$allocationId',
+      {
+        if (amount != null) 'amount': amount,
+        if (note != null) 'note': note,
+      },
+    );
+    notifyListeners();
+  }
+
+  Future<void> deleteGoalAllocation(String allocationId) async {
+    await ApiClient.instance.delete('/families/$_familyId/finance/goal-allocations/$allocationId');
+    notifyListeners();
+  }
+
+  // ── Alert actions ──────────────────────────────────────────────────────────
+
+  Future<void> resolveAlert(String alertId, {String? note}) async {
+    await ApiClient.instance.patch(
+      '/families/$_familyId/finance/alerts/$alertId/resolve',
+      {if (note != null && note.isNotEmpty) 'note': note},
+    );
+    await _fetchAlerts();
+    notifyListeners();
+  }
+
+  Future<void> recomputeAlerts() async {
+    await ApiClient.instance.post('/families/$_familyId/finance/alerts/recompute', {});
+    await _fetchAlerts();
+    notifyListeners();
+  }
+
+  // ── Jar creation ───────────────────────────────────────────────────────────
+
+  Future<void> createJar({
+    required String name,
+    required String jarCode,
+    double allocationPercentage = 0,
+  }) async {
+    await ApiClient.instance.post('/families/$_familyId/finance/jars', {
+      'name': name,
+      'jarCode': jarCode,
+      'allocationPercentage': allocationPercentage,
+    });
+    await _fetchJars();
+    notifyListeners();
+  }
+
+  // ── Model templates ────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> fetchModelTemplates() async {
+    final data = await ApiClient.instance.get('/families/$_familyId/finance/model-templates');
+    return _parseList(data, (e) => e).cast<Map<String, dynamic>>();
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   static List<T> _parseList<T>(dynamic data, T Function(Map<String, dynamic>) fromJson) {
