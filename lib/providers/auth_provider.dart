@@ -54,12 +54,35 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Đăng ký callbacks vào ApiClient: token rotation + force logout
+  void _registerApiClientCallbacks() {
+    ApiClient.instance.onTokenRotated = (newAccess, newRefresh) {
+      if (_user == null) return;
+      _user = AppUser.fromJson(
+        {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
+        accessToken:  newAccess,
+        refreshToken: newRefresh,
+        familyId:     _user!.familyId,
+        familyName:   _user!.familyName,
+        familyRole:   _user!.role.name.toUpperCase(),
+        phone:        _user!.phone,
+      );
+    };
+    ApiClient.instance.onSessionExpired = () {
+      _user = null;
+      ApiClient.instance.clearSession();
+      notifyListeners();
+    };
+  }
+
   // Sau login/register: set token → gọi /families/my để lấy familyId + role trong gia đình
   Future<void> _applySession(Map<String, dynamic> data) async {
     // ApiClient đã unwrap { success, data } → data trực tiếp
     final token        = data['accessToken'] as String;
     final refreshToken = data['refreshToken'] as String? ?? '';
     ApiClient.instance.setToken(token);
+    ApiClient.instance.setRefreshToken(refreshToken);
+    _registerApiClientCallbacks();
 
     final userJson = data['user'] as Map<String, dynamic>? ?? data;
     final myId     = userJson['id']?.toString();
@@ -179,17 +202,19 @@ class AuthProvider extends ChangeNotifier {
 
   // POST /auth/logout
   Future<void> logout() async {
-    try {
-      if (_user?.refreshToken != null) {
-        await ApiClient.instance.post('/auth/logout', {
-          'refreshToken': _user!.refreshToken!,
-        });
-      }
-    } catch (_) {}
+    final refreshToken = _user?.refreshToken;
+    // Xóa session ngay lập tức — không đợi server response
     _user = null;
-    ApiClient.instance.setToken(null);
-    ApiClient.instance.setFamilyId(null);
+    ApiClient.instance.clearSession();
     notifyListeners();
+    // Thông báo server invalidate refresh token (best-effort)
+    if (refreshToken != null) {
+      try {
+        await ApiClient.instance.post('/auth/logout', {
+          'refreshToken': refreshToken,
+        });
+      } catch (_) {}
+    }
   }
 
   // Cập nhật familyId sau khi user tạo/join gia đình thành công

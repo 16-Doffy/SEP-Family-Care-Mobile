@@ -38,9 +38,10 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   }
 
   // GET /invitations/{token} — xem thông tin gia đình trước khi accept
+  // token = full UUID từ invitation.id (36 ký tự)
   Future<void> _lookupCode() async {
     final token = _codeCtrl.text.trim();
-    if (token.length < 6) return;
+    if (token.length < 36) return; // UUID là 36 ký tự (8-4-4-4-12 + dấu -).
     setState(() { _loading = true; _error = null; _preview = null; });
     try {
       final data = await ApiClient.instance.get('/invitations/$token');
@@ -104,12 +105,12 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
             const SizedBox(height: 24),
 
             Center(
-              child: Text('Nhập mã mời 6 ký tự',
+              child: Text('Nhập mã mời',
                   style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
             ),
             const SizedBox(height: 8),
             Center(
-              child: Text('Mã được cung cấp bởi Trưởng / Phó nhóm gia đình',
+              child: Text('Dán token được gửi bởi Trưởng / Phó nhóm gia đình',
                   style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
                   textAlign: TextAlign.center),
             ),
@@ -142,7 +143,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                         letterSpacing: 2,
                         color: AppColors.textPrimary),
                     decoration: InputDecoration(
-                      hintText: 'Nhập token lời mời...',
+                      hintText: 'Dán token mời (xxxxxxxx-xxxx-...)',
                       hintStyle: GoogleFonts.inter(
                           fontSize: 15, color: AppColors.textMuted),
                       border: InputBorder.none,
@@ -150,7 +151,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                     ),
                     onChanged: (v) {
                       setState(() { _error = null; _preview = null; });
-                      if (v.trim().length >= 6) _lookupCode();
+                      if (v.trim().length >= 36) _lookupCode();
                     },
                   ),
                 ),
@@ -210,9 +211,12 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                   backgroundColor: AppColors.link,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                onPressed: (_loading || _preview == null) ? null : _joinFamily,
-                child: Text('Tham gia gia đình',
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                onPressed: (_loading || (_preview == null && _codeCtrl.text.trim().length < 36)) ? null : (_preview == null ? _lookupCode : _joinFamily),
+                child: _loading
+                    ? const SizedBox(width: 22, height: 22,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text(_preview == null ? 'Kiểm tra mã mời' : 'Tham gia gia đình',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
             const SizedBox(height: 16),
@@ -234,13 +238,16 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                 onPressed: () async {
                   final data = await Clipboard.getData(Clipboard.kTextPlain);
                   if (data?.text != null) {
-                    final code = data!.text!.trim().toUpperCase();
-                    // Extract code from link if needed
-                    final match = RegExp(r'[A-Z0-9]{6}').firstMatch(code);
-                    if (match != null) {
-                      _codeCtrl.text = match.group(0)!;
-                      _lookupCode();
-                    }
+                    final raw = data!.text!.trim();
+                    // Thử extract UUID từ query param ?token=...
+                    final uriToken = Uri.tryParse(raw)?.queryParameters['token'];
+                    // Regex UUID: 8-4-4-4-12 hex digits
+                    final uuidPattern = RegExp(
+                      r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
+                    final uuid = uriToken ?? uuidPattern.firstMatch(raw)?.group(0) ?? raw;
+                    _codeCtrl.text = uuid;
+                    setState(() { _error = null; _preview = null; });
+                    _lookupCode();
                   }
                 },
                 icon: const Icon(Icons.paste_rounded, size: 16, color: AppColors.link),

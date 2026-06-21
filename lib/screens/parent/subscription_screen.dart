@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
 // UC01 — Quản lý gói đăng ký (3 tiers: Free / Family / Premium)
@@ -13,11 +14,11 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-  // Mock: gói hiện tại của gia đình
-  String _currentPlan = 'FREE';
-  bool _loading = false;
+  final String _currentPlan = 'FREE';
+  bool _plansLoading = false;
+  List<_PlanData> _plans = [];
 
-  static const _plans = [
+  static const _fallbackPlans = [
     _PlanData(
       id: 'FREE',
       name: 'Free',
@@ -86,21 +87,115 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     ),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _plans = List.from(_fallbackPlans);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchPlans());
+  }
+
+  Future<void> _fetchPlans() async {
+    setState(() => _plansLoading = true);
+    try {
+      final data = await ApiClient.instance.get('/subscription-plans');
+      final list = data is List ? data : (data['items'] as List? ?? data['data'] as List? ?? []);
+      if (list.isNotEmpty) {
+        final mapped = list.map((p) {
+          final code    = p['planCode']?.toString() ?? '';
+          final name    = p['name']?.toString() ?? code;
+          final annual  = (p['annualPrice'] as num?)?.toDouble() ?? 0;
+          final monthly = annual / 12;
+          final maxM    = p['maxMembers']?.toString() ?? '∞';
+          final stoMB   = (p['storageLimit'] as num?)?.toDouble() ?? 0;
+          final stoStr  = stoMB >= 1024
+              ? '${(stoMB / 1024).toStringAsFixed(0)} GB'
+              : '${stoMB.toStringAsFixed(0)} MB';
+          final feat    = p['featureAccess'] as Map? ?? {};
+          final features = <String>[
+            '✅ Task & Wallet cơ bản',
+            if (feat['chat'] == true || code != 'FREE') '✅ Chat nhóm',
+            if (feat['notifications'] != false) '✅ Thông báo',
+            if (feat['calendar'] == true) '✅ Lịch gia đình',
+            if (feat['album'] == true) '✅ Album ảnh',
+            if (feat['gps'] == true || feat['locationTracking'] == true) '✅ Theo dõi vị trí GPS',
+            if (feat['aiChatbot'] == true) '✅ AI Chatbot',
+            if (feat['sos'] == true) '✅ Tính năng SOS',
+          ];
+          if (features.isEmpty) features.add('✅ Các tính năng cơ bản');
+
+          Color color;
+          List<Color> gradient;
+          String emoji;
+          if (code == 'FREE') {
+            color = const Color(0xFF6B7280);
+            gradient = const [Color(0xFFF3F4F6), Color(0xFFE5E7EB)];
+            emoji = '🏠';
+          } else if (code == 'PREMIUM') {
+            color = const Color(0xFF7C3AED);
+            gradient = const [Color(0xFF7C3AED), Color(0xFFA78BFA)];
+            emoji = '⭐';
+          } else {
+            color = const Color(0xFF2563EB);
+            gradient = const [Color(0xFF2563EB), Color(0xFF3B82F6)];
+            emoji = '👨‍👩‍👧‍👦';
+          }
+
+          return _PlanData(
+            id: code,
+            name: name,
+            price: monthly > 0
+                ? '${_fmtPrice(monthly.round())} ₫'
+                : '0 ₫',
+            period: '/tháng',
+            emoji: emoji,
+            color: color,
+            gradientColors: gradient,
+            members: maxM == '0' ? 'Không giới hạn' : '$maxM thành viên',
+            storage: stoStr,
+            db: code == 'PREMIUM' ? 'Docker riêng / gia đình' : 'Shared DB + RLS',
+            features: features,
+          );
+        }).toList();
+        if (mounted) setState(() => _plans = mapped);
+      }
+    } catch (_) {
+      // Keep fallback plans
+    } finally {
+      if (mounted) setState(() => _plansLoading = false);
+    }
+  }
+
+  static String _fmtPrice(int v) {
+    final s = v.toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return buf.toString();
+  }
+
   Future<void> _subscribe(_PlanData plan) async {
     if (plan.id == _currentPlan) return;
-    setState(() => _loading = true);
-    // TODO: gọi API /subscriptions/upgrade
-    await Future.delayed(const Duration(milliseconds: 800));
-    setState(() {
-      _currentPlan = plan.id;
-      _loading = false;
-    });
+    // Chưa có upgrade API — hiện thông báo liên hệ
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
+          title: Text('Nâng cấp lên ${plan.name} ${plan.emoji}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           content: Text(
-              'Đã chuyển sang gói ${plan.name} ${plan.emoji}'),
-          backgroundColor: plan.color,
+              'Để nâng cấp gói, vui lòng liên hệ hỗ trợ qua email hoặc hotline. '
+              'Tính năng thanh toán tự động sẽ sớm ra mắt.',
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Đóng'),
+            ),
+          ],
         ),
       );
     }
@@ -171,10 +266,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                     fontSize: 12,
                                     color: AppColors.textMuted)),
                             Text(
-                              _plans
-                                  .firstWhere(
-                                      (p) => p.id == _currentPlan)
-                                  .name,
+                              _plans.isNotEmpty
+                                  ? (_plans.any((p) => p.id == _currentPlan)
+                                      ? _plans.firstWhere((p) => p.id == _currentPlan).name
+                                      : _currentPlan)
+                                  : _currentPlan,
                               style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
@@ -211,10 +307,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 const SizedBox(height: 16),
 
                 // ── Plan cards ────────────────────────────────
+                if (_plansLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else
                 ..._plans.map((plan) => _PlanCard(
                       plan: plan,
                       isCurrent: plan.id == _currentPlan,
-                      loading: _loading,
                       onSubscribe: () => _subscribe(plan),
                     )),
 
@@ -258,13 +361,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 class _PlanCard extends StatelessWidget {
   final _PlanData plan;
   final bool isCurrent;
-  final bool loading;
   final VoidCallback onSubscribe;
 
   const _PlanCard({
     required this.plan,
     required this.isCurrent,
-    required this.loading,
     required this.onSubscribe,
   });
 
@@ -364,13 +465,8 @@ class _PlanCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: isCurrent ? null : onSubscribe,
-                  child: loading && !isCurrent
-                      ? SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(
-                              color: plan.color, strokeWidth: 2))
-                      : Text(
-                          isCurrent ? '✓ Đang sử dụng' : 'Chọn gói ${plan.name}',
+                  child: Text(
+                          isCurrent ? '✓ Đang sử dụng' : 'Nâng cấp ${plan.name}',
                           style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
