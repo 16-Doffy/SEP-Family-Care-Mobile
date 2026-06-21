@@ -126,8 +126,15 @@ class _TasksTabState extends State<_TasksTab> {
   String? _submissionNote;
   bool _loadingSubmission = false;
   bool _showCreate = false;
+  bool _showRecurring = false;
   bool _submitting = false;
   final _titleCtrl = TextEditingController();
+  final _recurTitleCtrl = TextEditingController();
+  final _recurDescCtrl = TextEditingController();
+  String _repeatType = 'WEEKLY';
+  int _repeatInterval = 1;
+  String _startDate = '';
+  String _endDate = '';
 
   static const _statusCfg = {
     'TODO':      (label: 'Chờ làm',    bg: Color(0xFFF3F4F6), color: Color(0xFF6B7280)),
@@ -140,6 +147,8 @@ class _TasksTabState extends State<_TasksTab> {
   @override
   void dispose() {
     _titleCtrl.dispose();
+    _recurTitleCtrl.dispose();
+    _recurDescCtrl.dispose();
     super.dispose();
   }
 
@@ -279,16 +288,28 @@ class _TasksTabState extends State<_TasksTab> {
         Positioned(
           right: 20,
           bottom: 20,
-          child: FloatingActionButton(
-            backgroundColor: AppColors.link,
-            onPressed: () => setState(() => _showCreate = true),
-            child: const Icon(Icons.add, color: Colors.white),
-          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            FloatingActionButton.small(
+              heroTag: 'recurring_fab',
+              backgroundColor: const Color(0xFF7C3AED),
+              onPressed: () => setState(() { _showRecurring = true; _recurTitleCtrl.clear(); _recurDescCtrl.clear(); _repeatType = 'WEEKLY'; _repeatInterval = 1; _startDate = ''; _endDate = ''; }),
+              child: const Icon(Icons.repeat_rounded, color: Colors.white, size: 20),
+            ),
+            const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'task_fab',
+              backgroundColor: AppColors.link,
+              onPressed: () => setState(() => _showCreate = true),
+              child: const Icon(Icons.add, color: Colors.white),
+            ),
+          ]),
         ),
         if (_approveTask != null)
           _BottomSheetOverlay(child: _approveSheet(context)),
         if (_showCreate)
           _BottomSheetOverlay(child: _createSheet(context)),
+        if (_showRecurring)
+          _BottomSheetOverlay(child: _recurringSheet(context)),
       ],
     );
   }
@@ -422,6 +443,108 @@ class _TasksTabState extends State<_TasksTab> {
         child: Center(child: Text('Hủy', style: GoogleFonts.inter(fontSize: 15, color: AppColors.textMuted))),
       ),
     ]);
+  }
+
+  Widget _recurringSheet(BuildContext context) {
+    final now = DateTime.now();
+    final defaultStart = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    if (_startDate.isEmpty) _startDate = defaultStart;
+
+    return StatefulBuilder(builder: (ctx, setSheet) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Tạo task lặp lại', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 16),
+        _fieldLabel('Tên task'),
+        const SizedBox(height: 6),
+        _inputBox(_recurTitleCtrl, 'VD: Dọn phòng hàng tuần...'),
+        const SizedBox(height: 12),
+        _fieldLabel('Mô tả (tùy chọn)'),
+        const SizedBox(height: 6),
+        _inputBox(_recurDescCtrl, 'Mô tả ngắn...'),
+        const SizedBox(height: 12),
+        _fieldLabel('Kiểu lặp'),
+        const SizedBox(height: 6),
+        Row(children: ['DAILY', 'WEEKLY', 'MONTHLY'].map((t) => Expanded(
+          child: GestureDetector(
+            onTap: () => setSheet(() => _repeatType = t),
+            child: Container(
+              margin: const EdgeInsets.only(right: 6),
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _repeatType == t ? AppColors.link : const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                t == 'DAILY' ? 'Ngày' : t == 'WEEKLY' ? 'Tuần' : 'Tháng',
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: _repeatType == t ? Colors.white : AppColors.textSecondary),
+              ),
+            ),
+          ),
+        )).toList()),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _fieldLabel('Ngày bắt đầu'),
+            const SizedBox(height: 6),
+            _inputBox(TextEditingController(text: _startDate)..addListener(() {}), 'YYYY-MM-DD'),
+          ])),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _fieldLabel('Ngày kết thúc (tùy chọn)'),
+            const SizedBox(height: 6),
+            _inputBox(TextEditingController(text: _endDate), 'YYYY-MM-DD'),
+          ])),
+        ]),
+        const SizedBox(height: 20),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF7C3AED),
+            minimumSize: const Size.fromHeight(54),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          onPressed: _submitting
+              ? null
+              : () async {
+                  if (_recurTitleCtrl.text.trim().isEmpty) return;
+                  setState(() => _submitting = true);
+                  try {
+                    await context.read<TaskProvider>().createRecurringTask(
+                      title: _recurTitleCtrl.text.trim(),
+                      description: _recurDescCtrl.text.trim(),
+                      schedule: {
+                        'repeatType': _repeatType,
+                        'repeatInterval': _repeatInterval,
+                        'startDate': _startDate.isNotEmpty ? _startDate : defaultStart,
+                        if (_endDate.isNotEmpty) 'endDate': _endDate,
+                        'status': 'ACTIVE',
+                      },
+                    );
+                    if (mounted) {
+                      setState(() { _showRecurring = false; _submitting = false; });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Đã tạo task lặp lại!'), backgroundColor: AppColors.safe),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      setState(() => _submitting = false);
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                    }
+                  }
+                },
+          child: _submitting
+              ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+              : Text('Tạo task lặp lại', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+        ),
+        TextButton(
+          onPressed: () => setState(() => _showRecurring = false),
+          child: Center(child: Text('Hủy', style: GoogleFonts.inter(fontSize: 15, color: AppColors.textMuted))),
+        ),
+      ],
+    ));
   }
 
   Widget _errorView(String msg, VoidCallback onRetry) => Center(
