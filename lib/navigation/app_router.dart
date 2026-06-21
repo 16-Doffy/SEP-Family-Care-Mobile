@@ -34,6 +34,11 @@ import '../screens/parent/finance_model_screen.dart';
 import '../screens/auth/join_family_screen.dart';
 import '../screens/auth/family_setup_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
+import '../screens/parent/finance_alerts_screen.dart';
+import '../screens/parent/support_request_screen.dart';
+import '../screens/shared/family_map_screen.dart';
+import '../screens/parent/budget_plan_screen.dart';
+import '../screens/parent/financial_goal_screen.dart';
 
 // Shells
 import 'manager_shell.dart';
@@ -69,8 +74,14 @@ GoRouter createRouter(AuthProvider auth) {
         // (covers deep-link hoặc manual URL vào các route cần family)
         if (!hasFamily && !onSetup) return '/family-setup';
       }
-      // Các trường hợp còn lại (onSetup với mọi trạng thái family) — không redirect.
-      // FamilySetupScreen tự gọi context.go() sau khi tạo/join xong.
+      // Role guard: member không được vào /manager/* routes
+      if (loggedIn && hasFamily && loc.startsWith('/manager/')) {
+        if (!auth.user!.isAdministrative) {
+          return '/member/home';
+        }
+      }
+
+      // Các trường hợp còn lại — không redirect.
       return null;
     },
     routes: [
@@ -143,10 +154,17 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/manager/members',       builder: (_, _) => const MemberListScreen()),
       GoRoute(path: '/manager/finance-model', builder: (_, _) => const FinanceModelScreen()),
       GoRoute(path: '/profile/edit',          builder: (_, _) => const EditProfileScreen()),
+      GoRoute(path: '/manager/finance-alerts', builder: (_, _) => const FinanceAlertsScreen()),
+      GoRoute(path: '/finance/support-requests', builder: (_, _) => const SupportRequestScreen()),
+      GoRoute(path: '/map', builder: (_, _) => const FamilyMapScreen()),
+      GoRoute(path: '/manager/budget-plans', builder: (_, _) => const BudgetPlanScreen()),
+      GoRoute(path: '/manager/financial-goals', builder: (_, _) => const FinancialGoalScreen()),
       GoRoute(
         path: '/join',
         builder: (_, state) => JoinFamilyScreen(
-          initialCode: state.uri.queryParameters['code'],
+          // Link mời tạo bởi invite_member_screen dùng query param "token"
+          // (không phải "code") — phải khớp tên ở cả 2 nơi.
+          initialCode: state.uri.queryParameters['token'] ?? state.uri.queryParameters['code'],
         ),
       ),
     ],

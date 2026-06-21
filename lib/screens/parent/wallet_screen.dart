@@ -47,6 +47,7 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<WalletProvider>().fetchWallets();
+      context.read<MoneyProvider>().fetchRequests();
     });
   }
 

@@ -68,7 +68,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final balance      = walletState.familyWallet?.balance ?? 0.0;
     final transactions = walletState.transactions;
     final tasks        = taskState.tasks;
-    final doneTasks    = tasks.where((t) => t.status == 'DONE').length;
+    final doneTasks    = tasks.where((t) => t.status == 'COMPLETED').length;
     final totalTasks   = tasks.length;
     final taskPct      = totalTasks > 0 ? doneTasks / totalTasks : 0.0;
 
@@ -238,6 +238,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       const SizedBox(width: 12),
                       _quickCard('👥', 'Mời',
                           () => context.push('/manager/invite')),
+                      const SizedBox(width: 12),
+                      _quickCard('🗺️', 'Bản đồ',
+                          () => context.push('/map')),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -264,7 +267,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                           color: AppColors.textPrimary)),
                                 ]),
                                 const SizedBox(height: 4),
-                                taskState.isLoading
+                                taskState.loading
                                     ? Text('Đang tải...',
                                         style: GoogleFonts.inter(
                                             fontSize: 12,
