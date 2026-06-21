@@ -12,7 +12,7 @@ class ChildTasksScreen extends StatefulWidget {
 
 class _ChildTasksScreenState extends State<ChildTasksScreen> {
   String _filter = 'Tất cả';
-  final _filters = ['Tất cả', 'Chờ làm', 'Đã nộp', 'Hoàn thành'];
+  final _filters = ['Tất cả', 'Chờ làm', 'Đang làm', 'Đã nộp', 'Hoàn thành'];
 
   @override
   void initState() {
@@ -24,41 +24,80 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
 
   bool _matchFilter(String status) {
     switch (_filter) {
-      case 'Chờ làm': return status == 'PENDING' || status == 'TODO' || status == 'IN_PROGRESS';
-      case 'Đã nộp': return status == 'SUBMITTED';
-      case 'Hoàn thành': return status == 'APPROVED' || status == 'DONE';
-      default: return true;
+      case 'Chờ làm':
+        return status == 'PENDING' || status == 'TODO';
+      case 'Đang làm':
+        return status == 'IN_PROGRESS';
+      case 'Đã nộp':
+        return status == 'SUBMITTED';
+      case 'Hoàn thành':
+        return status == 'APPROVED' || status == 'DONE';
+      default:
+        return true;
     }
   }
 
   Color _statusColor(String s) {
     switch (s.toUpperCase()) {
-      case 'SUBMITTED': return AppColors.planned;
+      case 'IN_PROGRESS':
+        return const Color(0xFFD97706);
+      case 'SUBMITTED':
+        return AppColors.planned;
       case 'APPROVED':
-      case 'DONE': return AppColors.safe;
-      case 'REJECTED': return AppColors.sos;
-      default: return AppColors.textMuted;
+      case 'DONE':
+        return AppColors.safe;
+      case 'REJECTED':
+        return AppColors.sos;
+      default:
+        return AppColors.textMuted;
     }
   }
 
   String _statusLabel(String s) {
     switch (s.toUpperCase()) {
-      case 'SUBMITTED': return '⏳ Chờ duyệt';
+      case 'IN_PROGRESS':
+        return '🔄 Đang làm';
+      case 'SUBMITTED':
+        return '⏳ Chờ duyệt';
       case 'APPROVED':
-      case 'DONE': return '✅ Hoàn thành';
-      case 'REJECTED': return '❌ Từ chối';
-      case 'IN_PROGRESS': return '🔄 Đang làm';
-      default: return '🔵 Chờ làm';
+      case 'DONE':
+        return '✅ Hoàn thành';
+      case 'REJECTED':
+        return '❌ Từ chối';
+      default:
+        return '🔵 Chờ làm';
     }
   }
 
-  bool _isPending(String s) {
+  bool _canStart(String s) {
+    final u = s.toUpperCase();
+    return u == 'PENDING' || u == 'TODO';
+  }
+
+  bool _canSubmit(String s) {
     final u = s.toUpperCase();
     return u == 'PENDING' || u == 'TODO' || u == 'IN_PROGRESS';
   }
 
-  String _fmt(double n) {
-    return '${n.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} ₫';
+  String _fmt(double n) =>
+      '${n.round().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} ₫';
+
+  Future<void> _startTask(TaskItem t) async {
+    final id = t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
+    try {
+      await context.read<TaskProvider>().startAssignment(id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bắt đầu làm! Cố lên nào 💪'), backgroundColor: AppColors.safe),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+        );
+      }
+    }
   }
 
   Future<void> _submitTask(TaskItem t) async {
@@ -111,17 +150,11 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                           setBS(() => submitting = true);
                           try {
                             final assignmentId = t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
-                            await context.read<TaskProvider>().submitCompletion(
-                              assignmentId,
-                              note: noteCtrl.text,
-                            );
+                            await context.read<TaskProvider>().submitCompletion(assignmentId, note: noteCtrl.text);
                             if (mounted) {
                               Navigator.pop(context);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'),
-                                  backgroundColor: AppColors.safe,
-                                ),
+                                const SnackBar(content: Text('Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'), backgroundColor: AppColors.safe),
                               );
                               context.read<TaskProvider>().fetchMyAssignments();
                             }
@@ -147,6 +180,177 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     );
   }
 
+  Future<void> _reportUnavailability(TaskItem t) async {
+    final reasonCtrl = TextEditingController();
+    bool submitting = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setBS) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('Báo không thể làm', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 8),
+              Text(t.title, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary), textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              TextField(
+                controller: reasonCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Lý do không thể làm (VD: Con bị ốm...)',
+                  hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.all(16),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.danger,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: submitting
+                      ? null
+                      : () async {
+                          if (reasonCtrl.text.trim().isEmpty) return;
+                          setBS(() => submitting = true);
+                          try {
+                            final assignmentId = t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
+                            await context.read<TaskProvider>().reportUnavailability(assignmentId, reason: reasonCtrl.text.trim());
+                            if (mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Đã báo cho Ba/Mẹ biết'), backgroundColor: AppColors.safe),
+                              );
+                            }
+                          } catch (e) {
+                            setBS(() => submitting = false);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+                              );
+                            }
+                          }
+                        },
+                  child: submitting
+                      ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                      : Text('Gửi báo cáo', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Hủy', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+              ),
+              const SizedBox(height: 4),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reportDispute(TaskItem t) async {
+    final reasonCtrl = TextEditingController();
+    bool submitting = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setBS) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('Chưa nhận được thưởng?', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 8),
+              Text(t.title, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary), textAlign: TextAlign.center),
+              const SizedBox(height: 4),
+              Text('Nhập lý do để Ba/Mẹ xem xét lại', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'VD: Con đã hoàn thành nhưng chưa nhận thưởng...',
+                  hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.all(16),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.planned,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: submitting
+                      ? null
+                      : () async {
+                          if (reasonCtrl.text.trim().isEmpty) return;
+                          setBS(() => submitting = true);
+                          try {
+                            // settlement ID must come from the task's settlement — use assignmentId as proxy
+                            final settlementId = t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
+                            await context.read<TaskProvider>().createDispute(settlementId, reason: reasonCtrl.text.trim());
+                            if (mounted) {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Đã gửi khiếu nại'), backgroundColor: AppColors.safe),
+                              );
+                            }
+                          } catch (e) {
+                            setBS(() => submitting = false);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+                              );
+                            }
+                          }
+                        },
+                  child: submitting
+                      ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                      : Text('Gửi khiếu nại', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Hủy', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+              ),
+              const SizedBox(height: 4),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TaskProvider>();
@@ -163,7 +367,6 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(children: [
-          // Header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Row(children: [
@@ -178,7 +381,6 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
             ]),
           ),
 
-          // Progress bar
           if (total > 0)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -201,30 +403,28 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
             ),
           const SizedBox(height: 12),
 
-          // Filter chips
           SizedBox(
             height: 36,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 20),
               children: _filters.map((f) => GestureDetector(
-                onTap: () => setState(() => _filter = f),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _filter == f ? AppColors.link : AppColors.white,
-                    borderRadius: BorderRadius.circular(999),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8)],
-                  ),
-                  child: Text(f, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _filter == f ? Colors.white : AppColors.textSecondary)),
-                ),
-              )).toList(),
+                    onTap: () => setState(() => _filter = f),
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _filter == f ? AppColors.link : AppColors.white,
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8)],
+                      ),
+                      child: Text(f, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _filter == f ? Colors.white : AppColors.textSecondary)),
+                    ),
+                  )).toList(),
             ),
           ),
           const SizedBox(height: 12),
 
-          // Task list
           Expanded(
             child: provider.isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -232,17 +432,14 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                     onRefresh: () => context.read<TaskProvider>().fetchMyAssignments(),
                     child: filtered.isEmpty
                         ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text('📋', style: TextStyle(fontSize: 48)),
-                                const SizedBox(height: 12),
-                                Text(
-                                  allTasks.isEmpty ? 'Chưa có nhiệm vụ nào' : 'Không có nhiệm vụ trong mục này',
-                                  style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
-                                ),
-                              ],
-                            ),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              const Text('📋', style: TextStyle(fontSize: 48)),
+                              const SizedBox(height: 12),
+                              Text(
+                                allTasks.isEmpty ? 'Chưa có nhiệm vụ nào' : 'Không có nhiệm vụ trong mục này',
+                                style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
+                              ),
+                            ]),
                           )
                         : ListView.builder(
                             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -262,7 +459,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                     padding: const EdgeInsets.all(16),
                                     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                       Container(
-                                        width: 48, height: 48,
+                                        width: 48,
+                                        height: 48,
                                         decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
                                         alignment: Alignment.center,
                                         child: Text(catIcon, style: const TextStyle(fontSize: 24)),
@@ -291,25 +489,65 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                           ),
                                         ],
                                       ])),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(color: _statusColor(t.status).withOpacity(0.1), borderRadius: BorderRadius.circular(999)),
-                                        child: Text(_statusLabel(t.status), style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: _statusColor(t.status))),
-                                      ),
+                                      Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(color: _statusColor(t.status).withOpacity(0.1), borderRadius: BorderRadius.circular(999)),
+                                          child: Text(_statusLabel(t.status), style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: _statusColor(t.status))),
+                                        ),
+                                        if (t.status.toUpperCase() == 'DONE' || t.status.toUpperCase() == 'APPROVED') ...[
+                                          const SizedBox(height: 6),
+                                          GestureDetector(
+                                            onTap: () => _reportDispute(t),
+                                            child: Text('Khiếu nại', style: GoogleFonts.inter(fontSize: 11, color: AppColors.danger, decoration: TextDecoration.underline)),
+                                          ),
+                                        ],
+                                      ]),
                                     ]),
                                   ),
-                                  if (_isPending(t.status))
+                                  // Action buttons
+                                  if (_canStart(t.status) || _canSubmit(t.status))
                                     Padding(
                                       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 14),
-                                      child: SizedBox(
-                                        width: double.infinity,
-                                        height: 40,
-                                        child: ElevatedButton(
-                                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                                          onPressed: () => _submitTask(t),
-                                          child: Text('Nộp nhiệm vụ ✅', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-                                        ),
-                                      ),
+                                      child: Row(children: [
+                                        if (_canStart(t.status))
+                                          Expanded(
+                                            child: Padding(
+                                              padding: const EdgeInsets.only(right: 6),
+                                              child: SizedBox(
+                                                height: 40,
+                                                child: ElevatedButton(
+                                                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                                                  onPressed: () => _startTask(t),
+                                                  child: Text('Bắt đầu 🚀', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        if (_canSubmit(t.status))
+                                          Expanded(
+                                            child: SizedBox(
+                                              height: 40,
+                                              child: ElevatedButton(
+                                                style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                                                onPressed: () => _submitTask(t),
+                                                child: Text('Nộp bài ✅', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+                                              ),
+                                            ),
+                                          ),
+                                        const SizedBox(width: 6),
+                                        if (_canSubmit(t.status))
+                                          GestureDetector(
+                                            onTap: () => _reportUnavailability(t),
+                                            child: Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(10)),
+                                              alignment: Alignment.center,
+                                              child: const Icon(Icons.block_rounded, size: 18, color: AppColors.textMuted),
+                                            ),
+                                          ),
+                                      ]),
                                     ),
                                 ]),
                               );
