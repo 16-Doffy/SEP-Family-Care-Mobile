@@ -787,6 +787,24 @@ class TaskProvider extends ChangeNotifier {
     return _parseList(data).map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
+  Future<Map<String, dynamic>> fetchDispute(String disputeId) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    return Map<String, dynamic>.from(
+      await ApiClient.instance.get(
+            '/families/$_familyId/tasks/reward-disputes/$disputeId',
+          ) as Map,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchUnavailability(String unavailabilityId) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    return Map<String, dynamic>.from(
+      await ApiClient.instance.get(
+            '/families/$_familyId/tasks/unavailabilities/$unavailabilityId',
+          ) as Map,
+    );
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   // Shortcut: duyệt task (legacy — dùng reviewSubmission cho submission flow)

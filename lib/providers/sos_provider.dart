@@ -141,6 +141,23 @@ class SosProvider extends ChangeNotifier {
     );
   }
 
+  Future<void> sendLocationToAlert(
+    String alertId, {
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.post(
+      '/families/$_familyId/sos/alerts/$alertId/locations',
+      {
+        'latitude': latitude,
+        'longitude': longitude,
+        if (accuracy != null) 'accuracy': accuracy,
+      },
+    );
+  }
+
   // Giữ lại cho tương thích ngược với màn hình cũ
   Future<void> updateAlert(String id, String status) async {
     if (status == 'RESOLVED') {
