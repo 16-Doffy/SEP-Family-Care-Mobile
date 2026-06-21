@@ -20,8 +20,19 @@ void main() {
   );
 }
 
-class WearApp extends StatelessWidget {
+class WearApp extends StatefulWidget {
   const WearApp({super.key});
+
+  @override
+  State<WearApp> createState() => _WearAppState();
+}
+
+class _WearAppState extends State<WearApp> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<AuthProvider>().tryRestoreSession();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,6 +57,20 @@ class _WearRoot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    if (auth.restoring) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: SizedBox.square(
+            dimension: 28,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: Color(0xFFDC2626),
+            ),
+          ),
+        ),
+      );
+    }
     return auth.isLoggedIn ? const WearHomeScreen() : const WearLoginScreen();
   }
 }

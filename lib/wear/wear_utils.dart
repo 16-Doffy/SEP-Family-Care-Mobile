@@ -14,7 +14,7 @@ class WearUtils {
 
   static EdgeInsets safePadding(BuildContext context) {
     final round = isRound(context);
-    final size  = MediaQuery.of(context).size;
+    final size = MediaQuery.of(context).size;
     final inset = round ? size.width * 0.08 : 12.0;
     return EdgeInsets.all(inset);
   }

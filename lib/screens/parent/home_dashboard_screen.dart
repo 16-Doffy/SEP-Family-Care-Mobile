@@ -74,8 +74,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
     // income delta từ tháng trước — tính từ income transactions
     final totalIn = transactions
-        .where((t) => t.amount > 0)
-        .fold(0.0, (s, t) => s + t.amount);
+        .where((t) => t.entryType == 'INCOME' || t.entryType == 'TRANSFER_IN')
+        .fold(0.0, (s, t) => s + t.amount.abs());
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -485,7 +485,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                                   color: Color(0xFFF3F4F6)),
                                               alignment: Alignment.center,
                                               child: Text(
-                                                tx.amount > 0 ? '💵' : '💸',
+                                                tx.signedAmount > 0 ? '💵' : '💸',
                                                 style: const TextStyle(
                                                     fontSize: 18),
                                               ),
@@ -516,11 +516,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                               ),
                                             ),
                                             Text(
-                                              '${tx.amount > 0 ? '+' : ''}${_fmtBalance(tx.amount)}',
+                                              '${tx.signedAmount > 0 ? '+' : '-'}${_fmtBalance(tx.signedAmount.abs())}',
                                               style: GoogleFonts.inter(
                                                   fontSize: 13,
                                                   fontWeight: FontWeight.w700,
-                                                  color: tx.amount > 0
+                                                  color: tx.signedAmount > 0
                                                       ? AppColors.success
                                                       : AppColors.danger),
                                             ),
