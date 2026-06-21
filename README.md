@@ -12,7 +12,7 @@
 |---|---|
 | **Tên dự án** | Family Care |
 | **Mã dự án** | SU26SE032 |
-| **Platform** | Flutter (Android / iOS / Wear OS) |
+| **Platform** | Flutter (Android / Web). Wear OS: UI có sẵn ở `lib/wear/`, chưa cấu hình build app riêng. iOS: chưa setup (không có thư mục `ios/`) |
 | **Backend** | `http://103.110.84.66/api/v1` |
 | **API Docs** | `http://103.110.84.66/api/docs` |
 | **Branch chính** | `main` |
@@ -49,9 +49,9 @@ lib/
 ├── theme/               # AppColors, design tokens
 └── widgets/             # RingChart, WaffleChart, ...
 
-wear/                    # Wear OS companion app
+lib/wear/                # Wear OS companion UI (chưa cấu hình thành app/flavor riêng)
 android/
-ios/
+web/
 ```
 
 ---

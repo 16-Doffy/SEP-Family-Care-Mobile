@@ -34,7 +34,13 @@ dependencies:
   go_router: ^14.3.0
   google_fonts: ^6.2.1
   http: ^1.2.0
+  http_parser: ^4.0.2
   sensors_plus: ^5.0.0
+  url_launcher: ^6.3.0
+  geolocator: ^13.0.0
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
