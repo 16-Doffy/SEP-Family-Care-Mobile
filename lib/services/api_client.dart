@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -7,6 +8,8 @@ const _kBase = String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: 'http://103.110.84.66:8080/api/v1',
 );
+
+const _kRequestTimeout = Duration(seconds: 15);
 
 class ApiClient {
   ApiClient._();
@@ -100,6 +103,16 @@ class ApiClient {
 
   // ── Internal ─────────────────────────────────────────────────────────────
 
+  Future<http.Response> _withTimeout(Future<http.Response> Function() fn) async {
+    try {
+      return await fn().timeout(_kRequestTimeout);
+    } on TimeoutException {
+      throw Exception('Kết nối đến server quá lâu, vui lòng kiểm tra mạng và thử lại.');
+    } on http.ClientException {
+      throw Exception('Không thể kết nối đến server, vui lòng kiểm tra mạng.');
+    }
+  }
+
   Uri _uri(String path) => Uri.parse('$_kBase$path');
 
   Map<String, String> _headers() => {
@@ -108,13 +121,13 @@ class ApiClient {
       };
 
   Future<dynamic> _send(Future<http.Response> Function() fn) async {
-    var response = await fn();
+    var response = await _withTimeout(fn);
 
     // ── Auto-refresh on 401 (với lock tránh race condition) ───────────────
     if (response.statusCode == 401 && _refreshToken != null) {
       final refreshed = await _lockedRefresh();
       if (refreshed) {
-        response = await fn(); // retry với token mới
+        response = await _withTimeout(fn); // retry với token mới
       } else {
         onSessionExpired?.call();
         throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
@@ -167,7 +180,7 @@ class ApiClient {
         _uri('/auth/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refreshToken': _refreshToken}),
-      );
+      ).timeout(_kRequestTimeout);
       if (res.statusCode != 200) return false;
       final body = jsonDecode(res.body);
       final data = (body is Map && body.containsKey('data')) ? body['data'] : body;
@@ -178,7 +191,8 @@ class ApiClient {
       _refreshToken = newRefresh ?? _refreshToken;
       onTokenRotated?.call(newAccess, newRefresh ?? _refreshToken!);
       return true;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('ApiClient: refresh token failed: $e');
       return false;
     }
   }
