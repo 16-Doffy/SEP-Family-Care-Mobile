@@ -762,6 +762,31 @@ class TaskProvider extends ChangeNotifier {
     await fetchTasks();
   }
 
+  // ─── Settlement Allocations ───────────────────────────────────────────────
+
+  /// Phân bổ thưởng vào quỹ (jarId) hoặc mục tiêu (goalId).
+  /// allocations: [{amount, jarId?}, {amount, goalId?}, ...]
+  Future<void> allocateSettlement(
+    String settlementId, {
+    required List<Map<String, dynamic>> allocations,
+  }) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.post(
+      '/families/$_familyId/tasks/reward-settlements/$settlementId/allocations',
+      {'allocations': allocations},
+    );
+    await fetchSettlements();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSettlementAllocations(
+      String settlementId) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/tasks/reward-settlements/$settlementId/allocations',
+    );
+    return _parseList(data).map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   // Shortcut: duyệt task (legacy — dùng reviewSubmission cho submission flow)

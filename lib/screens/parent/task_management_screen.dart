@@ -1109,8 +1109,73 @@ class _RewardsTabState extends State<_RewardsTab> {
               ),
             ),
           ]),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.account_balance_wallet_rounded, size: 16),
+            label: Text('Phân bổ vào quỹ / mục tiêu', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.link,
+              side: const BorderSide(color: AppColors.link),
+              minimumSize: const Size.fromHeight(38),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => _showAllocateSheet(context, tp, s),
+          ),
         ],
       ]),
+    );
+  }
+
+  void _showAllocateSheet(BuildContext context, TaskProvider tp, RewardSettlement s) {
+    final amountCtrl = TextEditingController();
+    final jarIdCtrl  = TextEditingController();
+    final goalIdCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: _sheetWrap(StatefulBuilder(builder: (ctx, set) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Phân bổ thưởng', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            const SizedBox(height: 4),
+            Text('Tổng: ${_fmt(s.amount)}', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
+            const SizedBox(height: 16),
+            _fieldLabel('Số tiền phân bổ'),
+            const SizedBox(height: 6),
+            _inputBox(amountCtrl, '50000'),
+            const SizedBox(height: 12),
+            _fieldLabel('ID Quỹ (jarId) — hoặc để trống nếu dùng goalId'),
+            const SizedBox(height: 6),
+            _inputBox(jarIdCtrl, 'UUID của quỹ...'),
+            const SizedBox(height: 12),
+            _fieldLabel('ID Mục tiêu (goalId) — hoặc để trống nếu dùng jarId'),
+            const SizedBox(height: 6),
+            _inputBox(goalIdCtrl, 'UUID của mục tiêu...'),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+              onPressed: () async {
+                final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+                if (amount <= 0) return;
+                final alloc = <String, dynamic>{'amount': amount};
+                if (jarIdCtrl.text.trim().isNotEmpty) alloc['jarId'] = jarIdCtrl.text.trim();
+                if (goalIdCtrl.text.trim().isNotEmpty) alloc['goalId'] = goalIdCtrl.text.trim();
+                try {
+                  await tp.allocateSettlement(s.id, allocations: [alloc]);
+                  if (context.mounted) Navigator.pop(context);
+                } catch (e) {
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                }
+              },
+              child: Text('Phân bổ', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ],
+        ))),
+      ),
     );
   }
 
