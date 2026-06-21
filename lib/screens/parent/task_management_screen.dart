@@ -849,7 +849,9 @@ class _AssignmentsTabState extends State<_AssignmentsTab> {
                 minimumSize: const Size.fromHeight(48),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
-              onPressed: () => _showAssignSheet(context),
+              onPressed: () => _selected!.isRecurring
+                  ? _showGenerateAssignSheet(context)
+                  : _showAssignSheet(context),
             ),
           ],
         ],
@@ -929,68 +931,166 @@ class _AssignmentsTabState extends State<_AssignmentsTab> {
 
   void _showAssignSheet(BuildContext context) {
     if (_selected == null) return;
-    final memberIdCtrl = TextEditingController();
+    final members = context.read<FamilyProvider>().members;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: _sheetWrap(Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Giao việc: ${_selected!.title}', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 16),
-          _fieldLabel('ID thành viên'),
-          const SizedBox(height: 6),
-          _inputBox(memberIdCtrl, 'UUID của thành viên...'),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: () async {
-              if (memberIdCtrl.text.trim().isEmpty) return;
+      builder: (_) => _sheetWrap(Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('Giao việc: ${_selected!.title}', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 12),
+        _fieldLabel('Chọn thành viên'),
+        const SizedBox(height: 8),
+        if (members.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('Không có thành viên', style: GoogleFonts.inter(color: AppColors.textMuted)),
+          )
+        else
+          ...members.map((m) => ListTile(
+            leading: CircleAvatar(
+              backgroundColor: AppColors.link.withOpacity(0.15),
+              child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+            ),
+            title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onTap: () async {
+              Navigator.pop(context);
               try {
-                await context.read<TaskProvider>().assignTask(_selected!.id, memberIdCtrl.text.trim());
-                if (mounted) { Navigator.pop(context); if (_selected != null) _loadAssignments(_selected!); }
+                await context.read<TaskProvider>().assignTask(_selected!.id, m.id);
+                if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
               } catch (e) {
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
               }
             },
-            child: Text('Giao việc', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-          ),
-        ])),
-      ),
+          )),
+        const SizedBox(height: 8),
+      ])),
     );
   }
 
-  void _showReassignSheet(BuildContext context, String assignmentId) {
-    final memberIdCtrl = TextEditingController();
+  void _showGenerateAssignSheet(BuildContext context) {
+    if (_selected == null) return;
+    final members = context.read<FamilyProvider>().members;
+    final now = DateTime.now();
+    String fromDate = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+    final end = now.add(const Duration(days: 30));
+    String toDate = '${end.year}-${end.month.toString().padLeft(2,'0')}-${end.day.toString().padLeft(2,'0')}';
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: _sheetWrap(Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Giao lại cho thành viên khác', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const SizedBox(height: 16),
-          _fieldLabel('ID thành viên mới'),
-          const SizedBox(height: 6),
-          _inputBox(memberIdCtrl, 'UUID của thành viên...'),
-          const SizedBox(height: 20),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: () async {
-              if (memberIdCtrl.text.trim().isEmpty) return;
+      builder: (_) => StatefulBuilder(builder: (ctx, setSheet) => _sheetWrap(Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('Giao task lặp lại: ${_selected!.title}', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _fieldLabel('Từ ngày'),
+            const SizedBox(height: 4),
+            GestureDetector(
+              onTap: () async {
+                final picked = await showDatePicker(context: ctx, initialDate: now, firstDate: now.subtract(const Duration(days: 365)), lastDate: now.add(const Duration(days: 365)));
+                if (picked != null) setSheet(() => fromDate = '${picked.year}-${picked.month.toString().padLeft(2,'0')}-${picked.day.toString().padLeft(2,'0')}');
+              },
+              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(border: Border.all(color: AppColors.progressTrack), borderRadius: BorderRadius.circular(10)), child: Text(fromDate, style: GoogleFonts.inter(fontSize: 14))),
+            ),
+          ])),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _fieldLabel('Đến ngày'),
+            const SizedBox(height: 4),
+            GestureDetector(
+              onTap: () async {
+                final picked = await showDatePicker(context: ctx, initialDate: end, firstDate: now, lastDate: now.add(const Duration(days: 365)));
+                if (picked != null) setSheet(() => toDate = '${picked.year}-${picked.month.toString().padLeft(2,'0')}-${picked.day.toString().padLeft(2,'0')}');
+              },
+              child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(border: Border.all(color: AppColors.progressTrack), borderRadius: BorderRadius.circular(10)), child: Text(toDate, style: GoogleFonts.inter(fontSize: 14))),
+            ),
+          ])),
+        ]),
+        const SizedBox(height: 16),
+        _fieldLabel('Chọn thành viên'),
+        const SizedBox(height: 8),
+        if (members.isEmpty)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text('Không có thành viên', style: GoogleFonts.inter(color: AppColors.textMuted)))
+        else
+          ...members.map((m) => ListTile(
+            leading: CircleAvatar(
+              backgroundColor: AppColors.link.withOpacity(0.15),
+              child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+            ),
+            title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onTap: () async {
+              Navigator.pop(context);
               try {
-                await context.read<TaskProvider>().reassignTask(assignmentId, newMemberId: memberIdCtrl.text.trim());
-                if (mounted) { Navigator.pop(context); if (_selected != null) _loadAssignments(_selected!); }
+                await context.read<TaskProvider>().generateAssignments(
+                  _selected!.id,
+                  memberId: m.id,
+                  fromDate: fromDate,
+                  toDate: toDate,
+                );
+                if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
               } catch (e) {
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
               }
             },
-            child: Text('Giao lại', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-          ),
-        ])),
-      ),
+          )),
+        const SizedBox(height: 8),
+      ]))),
+    );
+  }
+
+  String _roleLabel(String role) {
+    switch (role) {
+      case 'FAMILY_MANAGER': return 'Trưởng nhóm';
+      case 'DEPUTY_MEMBER': return 'Phó nhóm';
+      default: return 'Thành viên';
+    }
+  }
+
+  void _showReassignSheet(BuildContext context, String assignmentId) {
+    final members = context.read<FamilyProvider>().members;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _sheetWrap(Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('Giao lại cho thành viên khác', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 12),
+        _fieldLabel('Chọn thành viên'),
+        const SizedBox(height: 8),
+        if (members.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('Không có thành viên', style: GoogleFonts.inter(color: AppColors.textMuted)),
+          )
+        else
+          ...members.map((m) => ListTile(
+            leading: CircleAvatar(
+              backgroundColor: AppColors.link.withOpacity(0.15),
+              child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+            ),
+            title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            onTap: () async {
+              Navigator.pop(context);
+              try {
+                await context.read<TaskProvider>().reassignTask(assignmentId, newMemberId: m.id);
+                if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
+              } catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+              }
+            },
+          )),
+        const SizedBox(height: 8),
+      ])),
     );
   }
 }

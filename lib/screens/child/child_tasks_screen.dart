@@ -25,7 +25,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   bool _matchFilter(String status) {
     switch (_filter) {
       case 'Chờ làm':
-        return status == 'PENDING' || status == 'TODO';
+        return status == 'PENDING' || status == 'TODO' || status == 'ASSIGNED' || status == 'SCHEDULED';
       case 'Đang làm':
         return status == 'IN_PROGRESS';
       case 'Đã nộp':
@@ -71,12 +71,12 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
 
   bool _canStart(String s) {
     final u = s.toUpperCase();
-    return u == 'PENDING' || u == 'TODO';
+    return u == 'PENDING' || u == 'TODO' || u == 'ASSIGNED' || u == 'SCHEDULED';
   }
 
   bool _canSubmit(String s) {
     final u = s.toUpperCase();
-    return u == 'PENDING' || u == 'TODO' || u == 'IN_PROGRESS';
+    return u == 'PENDING' || u == 'TODO' || u == 'IN_PROGRESS' || u == 'ASSIGNED' || u == 'SCHEDULED';
   }
 
   String _fmt(double n) =>

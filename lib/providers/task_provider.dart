@@ -434,7 +434,10 @@ class TaskProvider extends ChangeNotifier {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.post(
       '/families/$_familyId/tasks/assignments/$assignmentId/submissions',
-      {if (note != null && note.isNotEmpty) 'note': note},
+      {
+        'proofs': [],
+        if (note != null && note.isNotEmpty) 'submissionNote': note,
+      },
     );
   }
 
@@ -465,8 +468,8 @@ class TaskProvider extends ChangeNotifier {
     await ApiClient.instance.patch(
       '/families/$_familyId/tasks/submissions/$submissionId/review',
       {
-        'decision': approved ? 'APPROVE' : 'REJECT',
-        if (note != null && note.isNotEmpty) 'note': note,
+        'decision': approved ? 'APPROVED' : 'REJECTED',
+        if (note != null && note.isNotEmpty) 'reviewNote': note,
       },
     );
     await fetchTasks();
@@ -661,7 +664,7 @@ class TaskProvider extends ChangeNotifier {
     required String title,
     String description = '',
     String? categoryId,
-    String priority = 'NORMAL',
+    String priority = 'MEDIUM',
     required Map<String, dynamic> schedule,
   }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
@@ -694,11 +697,24 @@ class TaskProvider extends ChangeNotifier {
         .patch('/families/$_familyId/tasks/$taskId/schedule', body);
   }
 
-  Future<void> generateAssignments(String taskId) async {
+  Future<void> generateAssignments(
+    String taskId, {
+    required String memberId,
+    required String fromDate,
+    required String toDate,
+    String? startTime,
+    String? dueTime,
+  }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.post(
       '/families/$_familyId/tasks/$taskId/schedule/generate-assignments',
-      {},
+      {
+        'assignedToMemberId': memberId,
+        'fromDate': fromDate,
+        'toDate': toDate,
+        if (startTime != null) 'startTime': startTime,
+        if (dueTime != null) 'dueTime': dueTime,
+      },
     );
     await fetchTasks();
   }

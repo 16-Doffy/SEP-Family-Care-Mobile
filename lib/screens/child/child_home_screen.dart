@@ -355,7 +355,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
     final isPending = ['PENDING', 'TODO', 'IN_PROGRESS'].contains(task.status.toUpperCase());
     final isSubmitted = task.status.toUpperCase() == 'SUBMITTED';
 
-    return Container(
+    return GestureDetector(
+      onTap: () => context.go('/member/tasks'),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -399,7 +401,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
             ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _chip(String label, Color bg, Color color) {
