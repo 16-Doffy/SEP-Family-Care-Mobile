@@ -122,6 +122,9 @@ class _TasksTab extends StatefulWidget {
 class _TasksTabState extends State<_TasksTab> {
   String? _filter;
   TaskItem? _approveTask;
+  String? _submissionId;
+  String? _submissionNote;
+  bool _loadingSubmission = false;
   bool _showCreate = false;
   bool _submitting = false;
   final _titleCtrl = TextEditingController();
@@ -138,6 +141,31 @@ class _TasksTabState extends State<_TasksTab> {
   void dispose() {
     _titleCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _openApproveSheet(TaskItem task) async {
+    setState(() {
+      _approveTask = task;
+      _submissionId = null;
+      _submissionNote = null;
+      _loadingSubmission = true;
+    });
+    try {
+      final assignmentId = task.assignmentId.isNotEmpty ? task.assignmentId : task.id;
+      final subs = await context.read<TaskProvider>().fetchSubmissions(assignmentId);
+      if (mounted && subs.isNotEmpty) {
+        final latest = subs.last;
+        setState(() {
+          _submissionId = latest['id']?.toString();
+          _submissionNote = latest['note']?.toString();
+          _loadingSubmission = false;
+        });
+      } else if (mounted) {
+        setState(() => _loadingSubmission = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingSubmission = false);
+    }
   }
 
   List<TaskItem> _filtered(List<TaskItem> tasks) =>
@@ -194,7 +222,7 @@ class _TasksTabState extends State<_TasksTab> {
                         final st = _statusCfg[task.status] ?? _statusCfg['TODO']!;
                         return GestureDetector(
                           onTap: () => task.status == 'SUBMITTED'
-                              ? setState(() => _approveTask = task)
+                              ? _openApproveSheet(task)
                               : null,
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 12),
@@ -268,7 +296,7 @@ class _TasksTabState extends State<_TasksTab> {
   Widget _approveSheet(BuildContext context) {
     final t = _approveTask!;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Duyệt task', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+      Text('Duyệt minh chứng', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
       const SizedBox(height: 12),
       Text(t.title, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
       const SizedBox(height: 8),
@@ -279,18 +307,32 @@ class _TasksTabState extends State<_TasksTab> {
           Text('💰 ${(t.reward / 1000).toStringAsFixed(0)}K ₫', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
         ],
       ]),
+      if (_loadingSubmission) ...[
+        const SizedBox(height: 16),
+        const Center(child: CircularProgressIndicator()),
+      ] else if (_submissionNote != null && _submissionNote!.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(12)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Ghi chú của con:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+            const SizedBox(height: 4),
+            Text(_submissionNote!, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textPrimary)),
+          ]),
+        ),
+      ],
       const SizedBox(height: 20),
       Row(children: [
         Expanded(
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: _submitting ? null : () async {
+            onPressed: (_submitting || _loadingSubmission) ? null : () async {
               setState(() => _submitting = true);
               try {
-                await context.read<TaskProvider>().reviewSubmission(
-                  t.assignmentId.isNotEmpty ? t.assignmentId : t.id,
-                  approved: true,
-                );
+                final id = _submissionId ?? (t.assignmentId.isNotEmpty ? t.assignmentId : t.id);
+                await context.read<TaskProvider>().reviewSubmission(id, approved: true);
                 if (mounted) setState(() { _approveTask = null; _submitting = false; });
               } catch (e) {
                 if (mounted) {
@@ -308,13 +350,11 @@ class _TasksTabState extends State<_TasksTab> {
         Expanded(
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: _submitting ? null : () async {
+            onPressed: (_submitting || _loadingSubmission) ? null : () async {
               setState(() => _submitting = true);
               try {
-                await context.read<TaskProvider>().reviewSubmission(
-                  t.assignmentId.isNotEmpty ? t.assignmentId : t.id,
-                  approved: false,
-                );
+                final id = _submissionId ?? (t.assignmentId.isNotEmpty ? t.assignmentId : t.id);
+                await context.read<TaskProvider>().reviewSubmission(id, approved: false);
                 if (mounted) setState(() { _approveTask = null; _submitting = false; });
               } catch (e) {
                 if (mounted) {
