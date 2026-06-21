@@ -1,34 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
-
-// ── Local demo model (vẫn giữ khi API chưa sẵn sàng) ──────────────────────
-class _Task {
-  final String id;
-  final String title;
-  final String category;
-  final String reward;
-  final double rewardAmount; // UC47 — số tiền thực để kiểm tra > 0
-  final String due;
-  final int xp;
-  final bool isRecurring;
-  final String? schedule;
-  String status;
-  bool rewardConfirmed = false;
-
-  _Task({
-    required this.id,
-    required this.title,
-    required this.category,
-    required this.reward,
-    this.rewardAmount = 0,
-    required this.due,
-    required this.xp,
-    this.isRecurring = false,
-    this.schedule,
-    this.status = 'pending',
-  });
-}
 
 class ChildTasksScreen extends StatefulWidget {
   const ChildTasksScreen({super.key});
@@ -37,436 +12,274 @@ class ChildTasksScreen extends StatefulWidget {
 }
 
 class _ChildTasksScreenState extends State<ChildTasksScreen> {
-  final _tasks = [
-    _Task(id: '1', title: 'Dọn phòng ngủ',              category: 'Nhà cửa',  reward: '20,000 ₫', rewardAmount: 20000, due: 'Hôm nay',          xp: 50),
-    _Task(id: '2', title: 'Làm bài tập toán trang 45-48', category: 'Học tập',  reward: '30,000 ₫', rewardAmount: 30000, due: 'Hôm nay',          xp: 80),
-    _Task(id: '3', title: 'Đổ rác buổi sáng',            category: 'Nhà cửa',  reward: '10,000 ₫', rewardAmount: 10000, due: 'Hôm nay 06:30',    xp: 30,
-          isRecurring: true, schedule: '06:30 – 06:45 mỗi ngày'),
-    _Task(id: '4', title: 'Đọc sách 30 phút',            category: 'Học tập',  reward: '15,000 ₫', rewardAmount: 15000, due: 'Ngày mai',         xp: 40),
-    _Task(id: '5', title: 'Rửa chén sau bữa tối',        category: 'Nhà cửa',  reward: '20,000 ₫', rewardAmount: 20000, due: 'Tối nay',          xp: 50,
-          isRecurring: true, schedule: '19:00 – 19:30 mỗi tối', status: 'submitted'),
-    _Task(id: '6', title: 'Ôn bài kiểm tra cuối tuần',  category: 'Học tập',  reward: '50,000 ₫', rewardAmount: 50000, due: 'Thứ 7',           xp: 120, status: 'done'),
-  ];
-
   String _filter = 'Tất cả';
   final _filters = ['Tất cả', 'Chờ làm', 'Đã nộp', 'Hoàn thành'];
 
-  List<_Task> get _filtered {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<TaskProvider>().fetchMyAssignments();
+    });
+  }
+
+  List<TaskAssignment> _filtered(List<TaskAssignment> list) {
     switch (_filter) {
       case 'Chờ làm':
-        return _tasks.where((t) => t.status == 'pending').toList();
+        return list.where((a) => a.status == 'PENDING' || a.status == 'IN_PROGRESS').toList();
       case 'Đã nộp':
-        return _tasks.where((t) => t.status == 'submitted').toList();
+        return list.where((a) => a.status == 'SUBMITTED').toList();
       case 'Hoàn thành':
-        return _tasks.where((t) => t.status == 'done' || t.status == 'approved').toList();
+        return list.where((a) => a.status == 'APPROVED').toList();
       default:
-        return _tasks;
+        return list;
     }
   }
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'submitted':
-        return AppColors.planned;
-      case 'approved':
-        return AppColors.safe;
-      case 'rejected':
-        return AppColors.sos;
-      case 'unavailable':
-        return const Color(0xFFEA580C);
-      default:
-        return AppColors.textMuted;
-    }
-  }
-
-  String _statusLabel(String s) {
-    switch (s) {
-      case 'submitted':
-        return '⏳ Chờ duyệt';
-      case 'approved':
-        return '✅ Hoàn thành';
-      case 'rejected':
-        return '❌ Từ chối';
-      case 'unavailable':
-        return '🚫 Đã báo bận';
-      default:
-        return '🔵 Chờ làm';
-    }
-  }
-
-  String _catIcon(String cat) => cat == 'Học tập' ? '📚' : '🏠';
+  String _catIcon(String? cat) => cat == 'Học tập' ? '📚' : '🏠';
 
   @override
   Widget build(BuildContext context) {
-    final done  = _tasks.where((t) => t.status == 'approved').length;
-    final total = _tasks.length;
+    final taskState = context.watch<TaskProvider>();
+    final all   = taskState.myAssignments;
+    final done  = all.where((a) => a.status == 'APPROVED').length;
+    final total = all.length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(children: [
-          // ── Header ────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Row(children: [
-              Text('📋 Nhiệm vụ',
-                  style: GoogleFonts.inter(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-              const Spacer(),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                    color: AppColors.safe.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999)),
-                child: Text('$done/$total hoàn thành',
-                    style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.safe)),
-              ),
-            ]),
-          ),
-
-          // ── Progress bar ───────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: total > 0 ? done / total : 0,
-                  minHeight: 8,
-                  backgroundColor: const Color(0xFFE5E7EB),
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(AppColors.safe),
+        child: RefreshIndicator(
+          onRefresh: () => taskState.fetchMyAssignments(),
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Row(children: [
+                Text('📋 Nhiệm vụ', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: AppColors.safe.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(999)),
+                  child: Text('$done/$total hoàn thành', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.safe)),
                 ),
+              ]),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: total > 0 ? done / total : 0,
+                    minHeight: 8,
+                    backgroundColor: const Color(0xFFE5E7EB),
+                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.safe),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text('Tiến độ: ${total > 0 ? (done / total * 100).round() : 0}% · ${total - done} việc còn lại',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              ]),
+            ),
+            const SizedBox(height: 12),
+
+            SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: _filters.map((f) => GestureDetector(
+                      onTap: () => setState(() => _filter = f),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _filter == f ? AppColors.link : AppColors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8)],
+                        ),
+                        child: Text(f, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _filter == f ? Colors.white : AppColors.textSecondary)),
+                      ),
+                    )).toList(),
               ),
-              const SizedBox(height: 6),
-              Text(
-                  'Tiến độ: ${total > 0 ? (done / total * 100).round() : 0}% · ${total - done} việc còn lại',
-                  style: GoogleFonts.inter(
-                      fontSize: 12, color: AppColors.textMuted)),
-            ]),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Filter chips ───────────────────────────────────────
-          SizedBox(
-            height: 36,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              children: _filters
-                  .map((f) => GestureDetector(
-                        onTap: () => setState(() => _filter = f),
-                        child: Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _filter == f
-                                ? AppColors.link
-                                : AppColors.white,
-                            borderRadius: BorderRadius.circular(999),
-                            boxShadow: [
-                              BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.06),
-                                  blurRadius: 8)
-                            ],
-                          ),
-                          child: Text(f,
-                              style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: _filter == f
-                                      ? Colors.white
-                                      : AppColors.textSecondary)),
-                        ),
-                      ))
-                  .toList(),
             ),
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
 
-          // ── Task list ──────────────────────────────────────────
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: _filtered.length,
-              itemBuilder: (_, i) {
-                final t = _filtered[i];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 16,
-                            offset: const Offset(0, 4))
-                      ]),
-                  child: Column(children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 48, height: 48,
-                              decoration: BoxDecoration(
-                                  color: AppColors.background,
-                                  borderRadius: BorderRadius.circular(12)),
-                              alignment: Alignment.center,
-                              child: Text(_catIcon(t.category),
-                                  style: const TextStyle(fontSize: 24)),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Title + recurring badge
-                                    Row(children: [
-                                      Expanded(
-                                        child: Text(t.title,
-                                            style: GoogleFonts.inter(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w700,
-                                                color: AppColors.textPrimary)),
-                                      ),
-                                      if (t.isRecurring)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                              color: const Color(0xFFF0F9FF),
-                                              borderRadius:
-                                                  BorderRadius.circular(6)),
-                                          child: Text('🔁 Định kỳ',
-                                              style: GoogleFonts.inter(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: const Color(
-                                                      0xFF0369A1))),
-                                        ),
-                                    ]),
-                                    const SizedBox(height: 4),
-                                    Row(children: [
-                                      Text(t.category,
-                                          style: GoogleFonts.inter(
-                                              fontSize: 12,
-                                              color: AppColors.textMuted)),
-                                      const Text(' · ',
-                                          style: TextStyle(
-                                              color: AppColors.textMuted)),
-                                      Text('Hạn: ${t.due}',
-                                          style: GoogleFonts.inter(
-                                              fontSize: 12,
-                                              color: AppColors.textMuted)),
-                                    ]),
-                                    // Khung giờ nếu là recurring
-                                    if (t.isRecurring && t.schedule != null)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text('⏰ ${t.schedule}',
-                                            style: GoogleFonts.inter(
-                                                fontSize: 11,
-                                                color: const Color(0xFF0369A1))),
-                                      ),
-                                    const SizedBox(height: 8),
-                                    Wrap(spacing: 6, children: [
-                                      Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                              color: AppColors.income
-                                                  .withValues(alpha: 0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(999)),
-                                          child: Text(t.reward,
-                                              style: GoogleFonts.inter(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: AppColors.income))),
-                                      Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                              color: AppColors.planned
-                                                  .withValues(alpha: 0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(999)),
-                                          child: Text('+${t.xp} XP',
-                                              style: GoogleFonts.inter(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: AppColors.planned))),
-                                    ]),
-                                  ]),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                  color:
-                                      _statusColor(t.status).withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(999)),
-                              child: Text(_statusLabel(t.status),
-                                  style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: _statusColor(t.status))),
-                            ),
-                          ]),
-                    ),
-
-                    // ── Action buttons ─────────────────────────────
-                    if (t.status == 'pending') ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                        child: Row(children: [
-                          // Nộp nhiệm vụ
-                          Expanded(
-                            flex: 3,
-                            child: SizedBox(
-                              height: 40,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.link,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(10))),
-                                onPressed: () => _submitTask(t),
-                                child: Text('Nộp nhiệm vụ ✅',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white)),
-                              ),
-                            ),
-                          ),
-                          // UC41 — "Không thể làm" chỉ cho recurring tasks
-                          if (t.isRecurring) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              flex: 2,
-                              child: SizedBox(
-                                height: 40,
-                                child: OutlinedButton(
-                                  style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(
-                                          color: Color(0xFFEA580C), width: 1.5),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(10))),
-                                  onPressed: () => _reportUnavailable(t),
-                                  child: Text('🚫 Bận',
-                                      style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: const Color(0xFFEA580C))),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ]),
-                      ),
-                    ],
-
-                    // Từ chối → hiện thông báo để sửa
-                    if (t.status == 'rejected')
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                              color: const Color(0xFFFEE2E2),
-                              borderRadius: BorderRadius.circular(10)),
-                          child: Row(children: [
-                            const Text('❌',
-                                style: TextStyle(fontSize: 14)),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                  'Ba/Mẹ đã từ chối. Hãy thực hiện lại và nộp mới.',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      color: const Color(0xFF991B1B))),
-                            ),
-                            GestureDetector(
-                              onTap: () => _submitTask(t),
-                              child: Text('Nộp lại →',
-                                  style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFFDC2626))),
-                            ),
-                          ]),
-                        ),
-                      ),
-
-                    // UC47 — Xác nhận nhận thưởng (khi task DONE + có reward)
-                    if (t.status == 'done' && t.rewardAmount > 0)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                              color: const Color(0xFFFFF7ED),
-                              borderRadius: BorderRadius.circular(10)),
-                          child: Row(children: [
-                            const Text('🎁', style: TextStyle(fontSize: 16)),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Phần thưởng: ${(t.rewardAmount / 1000).toStringAsFixed(0)}K ₫ — Đã nhận chưa?',
-                                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E)),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () {
-                                setState(() => t.rewardConfirmed = true);
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                  content: Text('Đã xác nhận nhận thưởng ✅'),
-                                  backgroundColor: AppColors.safe,
-                                ));
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: t.rewardConfirmed ? AppColors.safe : AppColors.link,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  t.rewardConfirmed ? '✅ Đã nhận' : 'Nhận rồi',
-                                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
-                                ),
-                              ),
-                            ),
-                          ]),
-                        ),
-                      ),
+            if (taskState.loading && all.isEmpty)
+              const Expanded(child: Center(child: CircularProgressIndicator()))
+            else if (taskState.error != null && all.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text('Lỗi tải dữ liệu', style: GoogleFonts.inter(fontSize: 14, color: AppColors.danger)),
+                    const SizedBox(height: 8),
+                    ElevatedButton(onPressed: () => taskState.fetchMyAssignments(), child: const Text('Thử lại')),
                   ]),
-                );
-              },
-            ),
-          ),
-        ]),
+                ),
+              )
+            else
+              Expanded(
+                child: _filtered(all).isEmpty
+                    ? Center(child: Text('Không có nhiệm vụ', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)))
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: _filtered(all).length,
+                        itemBuilder: (_, i) => _assignmentCard(context, _filtered(all)[i]),
+                      ),
+              ),
+          ]),
+        ),
       ),
     );
   }
 
-  // ── UC43 — Nộp nhiệm vụ kèm bằng chứng (note + ảnh đính kèm) ────────────
-  void _submitTask(_Task t) {
-    final noteCtrl   = TextEditingController();
-    bool hasProof    = false;
-    String proofName = '';
+  Widget _assignmentCard(BuildContext context, TaskAssignment a) {
+    final cat = a.task?.taskCategoryName;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [
+        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, 4)),
+      ]),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
+              alignment: Alignment.center,
+              child: Text(_catIcon(cat), style: const TextStyle(fontSize: 24)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(child: Text(a.taskTitle ?? a.task?.title ?? 'Nhiệm vụ', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary))),
+                  if (a.task?.isRecurring == true)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: const Color(0xFFF0F9FF), borderRadius: BorderRadius.circular(6)),
+                      child: Text('🔁 Định kỳ', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF0369A1))),
+                    ),
+                ]),
+                const SizedBox(height: 4),
+                if (cat != null || a.dueAt != null)
+                  Row(children: [
+                    if (cat != null) Text(cat, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                    if (cat != null && a.dueAt != null) const Text(' · ', style: TextStyle(color: AppColors.textMuted)),
+                    if (a.dueAt != null) Text('Hạn: ${_fmtDate(a.dueAt!)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                  ]),
+                if (a.task?.isRecurring == true && a.task?.schedule != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text('⏰ ${a.task!.schedule!.label}', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF0369A1))),
+                  ),
+                const SizedBox(height: 8),
+                if (a.rewardSetting != null || a.task?.rewardSetting != null)
+                  Wrap(spacing: 6, children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: AppColors.income.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
+                      child: Text('💰 ${(a.rewardSetting ?? a.task!.rewardSetting!).label}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.income)),
+                    ),
+                  ]),
+              ]),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: a.statusColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(999)),
+              child: Text(a.statusLabel, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: a.statusColor)),
+            ),
+          ]),
+        ),
+
+        if (a.status == 'PENDING')
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: SizedBox(
+              width: double.infinity,
+              height: 40,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                onPressed: () async {
+                  try {
+                    await context.read<TaskProvider>().startAssignment(a.id);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                    }
+                  }
+                },
+                child: Text('Bắt đầu làm ▶️', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+          ),
+
+        if (a.status == 'IN_PROGRESS')
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Row(children: [
+              Expanded(
+                flex: 3,
+                child: SizedBox(
+                  height: 40,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                    onPressed: () => _submitTask(context, a),
+                    child: Text('Nộp nhiệm vụ ✅', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
+                ),
+              ),
+              if (a.task?.isRecurring == true) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: SizedBox(
+                    height: 40,
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFFEA580C), width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                      onPressed: () => _reportUnavailable(context, a),
+                      child: Text('🚫 Bận', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFFEA580C))),
+                    ),
+                  ),
+                ),
+              ],
+            ]),
+          ),
+
+        if (a.status == 'REJECTED')
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(10)),
+              child: Row(children: [
+                const Text('❌', style: TextStyle(fontSize: 14)),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Ba/Mẹ đã từ chối. Hãy thực hiện lại và nộp mới.', style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF991B1B)))),
+                GestureDetector(
+                  onTap: () => _submitTask(context, a),
+                  child: Text('Nộp lại →', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFFDC2626))),
+                ),
+              ]),
+            ),
+          ),
+
+        if (a.status == 'APPROVED' && (a.rewardSetting ?? a.task?.rewardSetting) != null)
+          _RewardConfirmBar(assignment: a),
+      ]),
+    );
+  }
+
+  String _fmtDate(DateTime d) => '${d.day}/${d.month}';
+
+  // ── Nộp nhiệm vụ kèm proof (ảnh / note) ───────────────────────────────────
+
+  void _submitTask(BuildContext context, TaskAssignment a) {
+    final noteCtrl = TextEditingController();
+    String? pickedImagePath;
+    bool uploading = false;
+    bool submitting = false;
 
     showModalBottomSheet(
       context: context,
@@ -477,18 +290,13 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
           child: Container(
             padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            decoration: const BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text('Nộp nhiệm vụ',
-                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Nộp nhiệm vụ', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
               const SizedBox(height: 4),
-              Text(t.title,
-                  style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
+              Text(a.taskTitle ?? '', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
               const SizedBox(height: 20),
 
-              // Note field
               TextField(
                 controller: noteCtrl,
                 maxLines: 3,
@@ -503,47 +311,32 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               ),
               const SizedBox(height: 12),
 
-              // UC43 — Đính kèm ảnh bằng chứng
               GestureDetector(
-                onTap: () {
-                  // Simulate chọn ảnh — thực tế cần image_picker
-                  setSheet(() {
-                    hasProof  = true;
-                    proofName = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-                  });
-                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                    content: Text('📷 Ảnh được đính kèm (demo)'),
-                    duration: Duration(seconds: 1),
-                  ));
+                onTap: uploading ? null : () async {
+                  final picker = ImagePicker();
+                  final img = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+                  if (img != null) setSheet(() => pickedImagePath = img.path);
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: hasProof ? const Color(0xFFDCFCE7) : AppColors.background,
+                    color: pickedImagePath != null ? const Color(0xFFDCFCE7) : AppColors.background,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: hasProof ? AppColors.success : const Color(0xFFE5E7EB),
-                    ),
+                    border: Border.all(color: pickedImagePath != null ? AppColors.success : const Color(0xFFE5E7EB)),
                   ),
                   child: Row(children: [
-                    Icon(
-                      hasProof ? Icons.check_circle_rounded : Icons.camera_alt_rounded,
-                      color: hasProof ? AppColors.success : AppColors.textMuted,
-                      size: 20,
-                    ),
+                    Icon(pickedImagePath != null ? Icons.check_circle_rounded : Icons.camera_alt_rounded,
+                        color: pickedImagePath != null ? AppColors.success : AppColors.textMuted, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        hasProof ? '📷 $proofName' : 'Đính kèm ảnh bằng chứng (tuỳ chọn)',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: hasProof ? AppColors.success : AppColors.textMuted,
-                        ),
+                        pickedImagePath != null ? '📷 Đã chọn ảnh minh chứng' : 'Đính kèm ảnh bằng chứng (tùy chọn)',
+                        style: GoogleFonts.inter(fontSize: 13, color: pickedImagePath != null ? AppColors.success : AppColors.textMuted),
                       ),
                     ),
-                    if (hasProof)
+                    if (pickedImagePath != null)
                       GestureDetector(
-                        onTap: () => setSheet(() { hasProof = false; proofName = ''; }),
+                        onTap: () => setSheet(() => pickedImagePath = null),
                         child: const Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
                       ),
                   ]),
@@ -555,22 +348,33 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.safe,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                  onPressed: () {
-                    setState(() => t.status = 'submitted');
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(hasProof
-                          ? 'Đã nộp kèm ảnh bằng chứng! Chờ Ba/Mẹ duyệt 🎉'
-                          : 'Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'),
-                      backgroundColor: AppColors.safe,
-                    ));
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.safe, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                  onPressed: submitting ? null : () async {
+                    setSheet(() => submitting = true);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final provider  = context.read<TaskProvider>();
+                    try {
+                      final proofs = <TaskProof>[];
+                      if (pickedImagePath != null) {
+                        setSheet(() => uploading = true);
+                        final proof = await provider.uploadProof(pickedImagePath!, 'IMAGE');
+                        setSheet(() => uploading = false);
+                        if (proof != null) proofs.add(proof);
+                      }
+                      if (noteCtrl.text.trim().isNotEmpty && proofs.isEmpty) {
+                        proofs.add(TaskProof(proofType: 'NOTE', note: noteCtrl.text.trim()));
+                      }
+                      await provider.submitProof(a.id, submissionNote: noteCtrl.text.trim(), proofs: proofs);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      messenger.showSnackBar(const SnackBar(content: Text('Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'), backgroundColor: AppColors.safe));
+                    } catch (e) {
+                      setSheet(() { submitting = false; uploading = false; });
+                      messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                    }
                   },
-                  child: Text('Xác nhận nộp${hasProof ? ' + Ảnh 📷' : ''}',
-                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                  child: submitting
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text('Xác nhận nộp', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                 ),
               ),
               const SizedBox(height: 8),
@@ -581,137 +385,202 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     );
   }
 
-  // ── UC41 — Báo cáo không thể thực hiện task định kỳ ─────────────────────
-  void _reportUnavailable(_Task t) {
+  // ── Báo cáo không thể thực hiện ───────────────────────────────────────────
+
+  void _reportUnavailable(BuildContext context, TaskAssignment a) {
     final reasonCtrl = TextEditingController();
+    bool submitting = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: const BoxDecoration(
-              color: AppColors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(24))),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Icon cảnh báo
-            Container(
-              width: 56, height: 56,
-              decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
-                  borderRadius: BorderRadius.circular(28)),
-              alignment: Alignment.center,
-              child:
-                  const Text('🚫', style: TextStyle(fontSize: 28)),
-            ),
-            const SizedBox(height: 12),
-            Text('Báo cáo không thể thực hiện',
-                style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary)),
-            const SizedBox(height: 4),
-            Text(t.title,
-                style: GoogleFonts.inter(
-                    fontSize: 13, color: AppColors.textSecondary),
-                textAlign: TextAlign.center),
-            if (t.schedule != null)
-              Text('⏰ ${t.schedule}',
-                  style: GoogleFonts.inter(
-                      fontSize: 12, color: const Color(0xFF0369A1))),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
-                  borderRadius: BorderRadius.circular(12)),
-              child: Row(children: [
-                const Text('ℹ️', style: TextStyle(fontSize: 14)),
-                const SizedBox(width: 8),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(color: const Color(0xFFFFF7ED), borderRadius: BorderRadius.circular(28)),
+                alignment: Alignment.center,
+                child: const Text('🚫', style: TextStyle(fontSize: 28)),
+              ),
+              const SizedBox(height: 12),
+              Text('Báo cáo không thể thực hiện', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 4),
+              Text(a.taskTitle ?? '', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary), textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: const Color(0xFFFFF7ED), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  const Text('ℹ️', style: TextStyle(fontSize: 14)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Ba/Mẹ sẽ phân công lại nếu không ai nhận.', style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E)))),
+                ]),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonCtrl,
+                maxLines: 2,
+                decoration: InputDecoration(
+                  hintText: 'Lý do (VD: Con bị ốm, đang có việc khác...)',
+                  hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                  filled: true,
+                  fillColor: AppColors.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.all(14),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(children: [
                 Expanded(
-                  child: Text(
-                      'Hệ thống sẽ thông báo cho các thành viên khác. Ba/Mẹ sẽ phân công lại nếu không ai nhận.',
-                      style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: const Color(0xFF92400E))),
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFFE5E7EB), width: 1.5), minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text('Hủy', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEA580C), minimumSize: const Size.fromHeight(48), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    onPressed: submitting || reasonCtrl.text.trim().isEmpty ? null : () async {
+                      setSheet(() => submitting = true);
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await context.read<TaskProvider>().reportUnavailability(a.id, reasonCtrl.text.trim());
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        messenger.showSnackBar(const SnackBar(content: Text('✅ Đã báo. Ba/Mẹ sẽ phân công lại.'), backgroundColor: Color(0xFFEA580C)));
+                      } catch (e) {
+                        setSheet(() => submitting = false);
+                        messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                      }
+                    },
+                    child: submitting
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : Text('Xác nhận báo bận', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
                 ),
               ]),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: reasonCtrl,
-              maxLines: 2,
-              decoration: InputDecoration(
-                hintText: 'Lý do (VD: Con bị ốm, Con đang có việc khác...)',
-                hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
-                filled: true,
-                fillColor: AppColors.background,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.all(14),
-              ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 8),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Reward confirm/dispute bar — hiện khi task APPROVED và có reward ──────────
+
+class _RewardConfirmBar extends StatefulWidget {
+  final TaskAssignment assignment;
+  const _RewardConfirmBar({required this.assignment});
+  @override
+  State<_RewardConfirmBar> createState() => _RewardConfirmBarState();
+}
+
+class _RewardConfirmBarState extends State<_RewardConfirmBar> {
+  RewardSettlement? _settlement;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final provider = context.read<TaskProvider>();
+    await provider.fetchRewardSettlements();
+    if (!mounted) return;
+    setState(() {
+      _settlement = provider.rewardSettlements
+          .where((s) => s.submissionId == widget.assignment.latestSubmissionId)
+          .firstOrNull;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reward = (widget.assignment.rewardSetting ?? widget.assignment.task?.rewardSetting)!;
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
+        child: LinearProgressIndicator(minHeight: 2),
+      );
+    }
+    if (_settlement == null) return const SizedBox.shrink();
+
+    final s = _settlement!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: const Color(0xFFFFF7ED), borderRadius: BorderRadius.circular(10)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text('🎁', style: TextStyle(fontSize: 16)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Phần thưởng: ${reward.label} — ${s.statusLabel}', style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E)))),
+          ]),
+          if (s.status == 'PAID') ...[
+            const SizedBox(height: 8),
             Row(children: [
               Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                      side: const BorderSide(
-                          color: Color(0xFFE5E7EB), width: 1.5),
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12))),
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Hủy',
-                      style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary)),
+                child: SizedBox(
+                  height: 32,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, padding: EdgeInsets.zero),
+                    onPressed: () async {
+                      await context.read<TaskProvider>().confirmRewardReceived(s.id);
+                      _load();
+                    },
+                    child: Text('✅ Đã nhận', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFEA580C),
-                      minimumSize: const Size.fromHeight(48),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12))),
-                  onPressed: () async {
-                    // Gọi API nếu task đến từ real provider
-                    // (hiện tại vẫn dùng local state)
-                    setState(() => t.status = 'unavailable');
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text(
-                            '✅ Đã báo. Ba/Mẹ sẽ phân công lại cho người khác.'),
-                        backgroundColor: const Color(0xFFEA580C),
-                        action: SnackBarAction(
-                          label: 'OK',
-                          textColor: Colors.white,
-                          onPressed: () {},
-                        ),
-                      ),
-                    );
-                  },
-                  child: Text('Xác nhận báo bận',
-                      style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                child: SizedBox(
+                  height: 32,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.danger)),
+                    onPressed: () => _showDisputeDialog(context, s.id),
+                    child: Text('Chưa nhận', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.danger)),
+                  ),
                 ),
               ),
             ]),
-            const SizedBox(height: 8),
-          ]),
-        ),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  void _showDisputeDialog(BuildContext context, String settlementId) {
+    final reasonCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('Báo chưa nhận thưởng'),
+        content: TextField(controller: reasonCtrl, decoration: const InputDecoration(hintText: 'Lý do...')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Hủy')),
+          TextButton(
+            onPressed: () async {
+              if (reasonCtrl.text.trim().isEmpty) return;
+              await context.read<TaskProvider>().createDispute(settlementId, reasonCtrl.text.trim());
+              if (dCtx.mounted) Navigator.pop(dCtx);
+              _load();
+            },
+            child: const Text('Gửi báo cáo'),
+          ),
+        ],
       ),
     );
   }

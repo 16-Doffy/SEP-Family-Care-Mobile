@@ -75,7 +75,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   void _fetchAll() {
     if (!mounted) return;
-    context.read<TaskProvider>().fetchTasks();
+    context.read<TaskProvider>().fetchMyAssignments();
     context.read<WalletProvider>().fetchWallets();
   }
 
@@ -103,16 +103,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     final taskState   = context.watch<TaskProvider>();
     final walletState = context.watch<WalletProvider>();
 
-    final myTasks   = taskState.tasks;
-    final doneTasks = myTasks.where((t) => t.status == 'DONE').length;
-    final pending   = myTasks.where((t) => t.status != 'DONE').toList();
+    final myTasks   = taskState.myAssignments;
+    final doneTasks = myTasks.where((t) => t.status == 'APPROVED').length;
+    final pending   = myTasks.where((t) => t.status != 'APPROVED').toList();
     final balance   = walletState.totalBalance;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: RefreshIndicator(
         onRefresh: () => Future.wait([
-          context.read<TaskProvider>().fetchTasks(),
+          context.read<TaskProvider>().fetchMyAssignments(),
           context.read<WalletProvider>().fetchWallets(),
         ]),
         child: ListView(
@@ -342,7 +342,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary)),
-                  if (taskState.isLoading)
+                  if (taskState.loading)
                     const SizedBox(
                         width: 14,
                         height: 14,
@@ -353,7 +353,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                             fontSize: 12, color: AppColors.textMuted)),
                 ]),
                 const SizedBox(height: 12),
-                if (taskState.isLoading)
+                if (taskState.loading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Center(child: CircularProgressIndicator()),
@@ -404,8 +404,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
-  Widget _taskCard(TaskItem task) {
-    final isDone = task.status == 'DONE';
+  Widget _taskCard(TaskAssignment task) {
+    final isDone = task.status == 'APPROVED';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -427,22 +427,22 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-            Text(task.title,
+            Text(task.taskTitle ?? task.task?.title ?? '',
                 style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary)),
             const SizedBox(height: 8),
             Wrap(spacing: 6, children: [
-              if (task.reward > 0)
+              if ((task.rewardSetting ?? task.task?.rewardSetting) != null)
                 _chip(
-                    '💰 ${(task.reward / 1000).toStringAsFixed(0)}K',
+                    '💰 ${(task.rewardSetting ?? task.task!.rewardSetting!).label}',
                     const Color(0xFFDCFCE7),
                     const Color(0xFF16A34A)),
-              if (task.schedule != null)
-                _chip('🕐 ${task.schedule!}',
+              if (task.task?.schedule != null)
+                _chip('🕐 ${task.task!.schedule!.label}',
                     const Color(0xFFEFF6FF), AppColors.link),
-              if (task.status == 'PENDING_REVIEW')
+              if (task.status == 'SUBMITTED')
                 _chip('⏳ Chờ duyệt',
                     const Color(0xFFFEF3C7), const Color(0xFFD97706)),
             ]),
