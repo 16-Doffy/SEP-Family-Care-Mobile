@@ -34,6 +34,7 @@ import '../screens/parent/finance_model_screen.dart';
 import '../screens/auth/join_family_screen.dart';
 import '../screens/auth/family_setup_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
+import '../screens/shared/splash_screen.dart';
 import '../screens/parent/finance_alerts_screen.dart';
 import '../screens/parent/support_request_screen.dart';
 import '../screens/shared/family_map_screen.dart';
@@ -48,44 +49,63 @@ final _rootKey = GlobalKey<NavigatorState>();
 final _managerKey = GlobalKey<NavigatorState>(debugLabel: 'manager');
 final _memberKey  = GlobalKey<NavigatorState>(debugLabel: 'member');
 
+// Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
+// riêng để unit test được mà không cần render cây widget thật.
+String? computeRedirect({
+  required bool restoring,
+  required bool loggedIn,
+  required bool hasFamily,
+  required bool isAdministrative,
+  required String loc,
+}) {
+  // Đang khôi phục session đã lưu (đọc token + gọi /auth/me) — giữ ở
+  // splash để tránh nháy về /login rồi lại vào home.
+  if (restoring) {
+    return loc == '/splash' ? null : '/splash';
+  }
+
+  final onAuth  = loc == '/login' || loc == '/register' || loc == '/splash';
+  final onSetup = loc == '/family-setup';
+
+  // Chưa đăng nhập → login
+  if (!loggedIn && !onAuth) return '/login';
+  if (!loggedIn && loc == '/splash') return '/login';
+
+  if (loggedIn) {
+    // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
+    if (onAuth) {
+      if (!hasFamily) return '/family-setup';
+      return isAdministrative ? '/manager/home' : '/member/home';
+    }
+
+    // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
+    // (covers deep-link hoặc manual URL vào các route cần family)
+    if (!hasFamily && !onSetup) return '/family-setup';
+  }
+  // Role guard: member không được vào /manager/* routes
+  if (loggedIn && hasFamily && loc.startsWith('/manager/')) {
+    if (!isAdministrative) return '/member/home';
+  }
+
+  // Các trường hợp còn lại — không redirect.
+  return null;
+}
+
 GoRouter createRouter(AuthProvider auth) {
   return GoRouter(
     navigatorKey: _rootKey,
-    initialLocation: '/login',
+    initialLocation: '/splash',
     refreshListenable: auth,
-    redirect: (context, state) {
-      final loggedIn  = auth.isLoggedIn;
-      final hasFamily = auth.hasFamily;
-      final loc       = state.matchedLocation;
-      final onAuth    = loc == '/login' || loc == '/register';
-      final onSetup   = loc == '/family-setup';
-
-      // Chưa đăng nhập → login
-      if (!loggedIn && !onAuth) return '/login';
-
-      if (loggedIn) {
-        // Đã đăng nhập, đang ở auth screen → home (dựa theo role + family)
-        if (onAuth) {
-          if (!hasFamily) return '/family-setup';
-          return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
-        }
-
-        // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
-        // (covers deep-link hoặc manual URL vào các route cần family)
-        if (!hasFamily && !onSetup) return '/family-setup';
-      }
-      // Role guard: member không được vào /manager/* routes
-      if (loggedIn && hasFamily && loc.startsWith('/manager/')) {
-        if (!auth.user!.isAdministrative) {
-          return '/member/home';
-        }
-      }
-
-      // Các trường hợp còn lại — không redirect.
-      return null;
-    },
+    redirect: (context, state) => computeRedirect(
+      restoring:         auth.restoring,
+      loggedIn:          auth.isLoggedIn,
+      hasFamily:         auth.hasFamily,
+      isAdministrative:  auth.isLoggedIn && auth.user!.isAdministrative,
+      loc:               state.matchedLocation,
+    ),
     routes: [
       // ── Auth ──────────────────────────────────────────────
+      GoRoute(path: '/splash',       builder: (_, _) => const SplashScreen()),
       GoRoute(path: '/login',        builder: (_, _) => const LoginScreen()),
       GoRoute(path: '/register',     builder: (_, _) => const RegisterScreen()),
       GoRoute(path: '/family-setup', builder: (_, _) => const FamilySetupScreen()),

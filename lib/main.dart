@@ -44,6 +44,12 @@ class _FamilyCareAppState extends State<FamilyCareApp> {
   late final _router = createRouter(context.read<AuthProvider>());
 
   @override
+  void initState() {
+    super.initState();
+    context.read<AuthProvider>().tryRestoreSession();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'FamilyCare',
