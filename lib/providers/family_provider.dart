@@ -88,6 +88,22 @@ class FamilyProvider extends ChangeNotifier {
     }
   }
 
+  // ─── Families ─────────────────────────────────────────────────────────────
+
+  Future<String> createFamily({
+    required String name,
+    String description = '',
+    String? avatarUrl,
+  }) async {
+    final data = await ApiClient.instance.post('/families', {
+      'name': name,
+      if (description.isNotEmpty) 'description': description,
+      if (avatarUrl != null) 'avatarUrl': avatarUrl,
+    });
+    final id = (data is Map ? data['id']?.toString() : null) ?? '';
+    return id;
+  }
+
   Future<void> fetchFamily() async {
     if (_familyId == null) return;
     _loading = true;
@@ -106,13 +122,17 @@ class FamilyProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> updateFamily({String? name, String? description}) async {
+  Future<void> updateFamily({
+    String? name,
+    String? description,
+    String? avatarUrl,
+  }) async {
     if (_familyId == null) return;
-    final body = <String, dynamic>{
+    await ApiClient.instance.patch('/families/$_familyId', {
       if (name != null) 'name': name,
       if (description != null) 'description': description,
-    };
-    await ApiClient.instance.patch('/families/$_familyId', body);
+      if (avatarUrl != null) 'avatarUrl': avatarUrl,
+    });
     await fetchFamily();
   }
 
@@ -122,12 +142,33 @@ class FamilyProvider extends ChangeNotifier {
     await fetchFamily();
   }
 
-  // Gửi lời mời qua email
-  Future<void> inviteMember(String email, {String role = 'FAMILY_MEMBER'}) async {
+  // ─── Invitations ──────────────────────────────────────────────────────────
+
+  Future<void> inviteMember(
+    String email, {
+    String familyRole = 'FAMILY_MEMBER',
+    String relationship = 'OTHER',
+    String? invitedPhone,
+  }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.post('/families/$_familyId/invitations', {
       'email': email,
-      'role': role,
+      'familyRole': familyRole,
+      'relationship': relationship,
+      if (invitedPhone != null && invitedPhone.isNotEmpty) 'invitedPhone': invitedPhone,
     });
+  }
+
+  Future<Map<String, dynamic>> lookupInvitation(String token) async {
+    final data = await ApiClient.instance.get('/invitations/$token');
+    return data is Map ? Map<String, dynamic>.from(data) : {};
+  }
+
+  Future<void> acceptInvitation(String token) async {
+    await ApiClient.instance.post('/invitations/$token/accept');
+  }
+
+  Future<void> rejectInvitation(String token) async {
+    await ApiClient.instance.post('/invitations/$token/reject');
   }
 }

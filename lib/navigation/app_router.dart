@@ -6,6 +6,8 @@ import '../providers/auth_provider.dart';
 // Auth
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
+import '../screens/auth/create_family_screen.dart';
+import '../screens/auth/invitation_screen.dart';
 
 // Manager/Deputy (Dùng chung bộ UI quản lý)
 import '../screens/parent/home_dashboard_screen.dart';
@@ -40,11 +42,18 @@ GoRouter createRouter(AuthProvider auth) {
     refreshListenable: auth,
     redirect: (context, state) {
       final loggedIn = auth.isLoggedIn;
-      final onAuth = state.matchedLocation == '/login' || state.matchedLocation == '/register';
+      final loc = state.matchedLocation;
+      final onAuth = loc == '/login' || loc == '/register';
+      final onNoFamily = loc == '/create-family';
+      final onInvite = loc.startsWith('/invite/');
 
-      if (!loggedIn && !onAuth) return '/login';
+      if (!loggedIn && !onAuth && !onInvite) return '/login';
       if (loggedIn && onAuth) {
-        // Trưởng/Phó nhóm vào luồng quản lý, Thành viên vào luồng riêng
+        // Nếu chưa có gia đình → màn hình tạo gia đình
+        if (auth.familyId == null || auth.familyId!.isEmpty) return '/create-family';
+        return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
+      }
+      if (loggedIn && onNoFamily && auth.familyId != null && auth.familyId!.isNotEmpty) {
         return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
       }
       return null;
@@ -53,6 +62,11 @@ GoRouter createRouter(AuthProvider auth) {
       // ── Auth ──────────────────────────────────────────────
       GoRoute(path: '/login',    builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(path: '/create-family', builder: (_, __) => const CreateFamilyScreen()),
+      GoRoute(
+        path: '/invite/:token',
+        builder: (_, state) => InvitationScreen(token: state.pathParameters['token'] ?? ''),
+      ),
 
       // ── Shared overlays (full-screen) ──────────────────────
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
