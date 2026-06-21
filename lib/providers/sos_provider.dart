@@ -82,6 +82,15 @@ class SosProvider extends ChangeNotifier {
     }
   }
 
+  Future<SosAlert?> fetchAlertDetail(String alertId) async {
+    if (_familyId == null) return null;
+    try {
+      final data = await ApiClient.instance.get('/families/$_familyId/sos/alerts/$alertId');
+      if (data is Map<String, dynamic>) return SosAlert.fromJson(data);
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> sendSos({String message = 'SOS', String? address}) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     _sending = true;
