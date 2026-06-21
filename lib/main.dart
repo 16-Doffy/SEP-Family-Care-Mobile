@@ -10,6 +10,7 @@ import 'providers/task_provider.dart';
 import 'providers/gps_provider.dart';
 import 'providers/sos_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/subscription_provider.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 
@@ -83,6 +84,7 @@ void main() {
             return notif!;
           },
         ),
+        ChangeNotifierProvider(create: (_) => SubscriptionProvider()),
       ],
       child: const FamilyCareApp(),
     ),
