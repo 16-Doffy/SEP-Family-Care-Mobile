@@ -29,6 +29,11 @@
 | State Management | provider | ^6.1.2 |
 | HTTP | http | ^1.2.0 |
 | Font | google_fonts (Inter) | ^6.2.1 |
+| Secure storage (session) | flutter_secure_storage | ^9.2.2 |
+| Bản đồ | flutter_map + latlong2 | ^7.0.2 / ^0.9.1 |
+| GPS | geolocator | ^13.0.0 |
+| Chọn ảnh | image_picker | ^1.1.2 |
+| Mở link ngoài | url_launcher | ^6.3.0 |
 
 ---
 
@@ -39,13 +44,16 @@ lib/
 ├── main.dart
 ├── models/              # AppUser, MoneyRequest, ...
 ├── navigation/          # app_router.dart, manager_shell, member_shell
-├── providers/           # AuthProvider, WalletProvider, TaskProvider, ...
+├── providers/           # AuthProvider, WalletProvider, TaskProvider,
+│                        # FinanceProvider, FinanceAlertProvider, SupportRequestProvider, ...
 ├── screens/
 │   ├── auth/            # LoginScreen, RegisterScreen, JoinFamilyScreen
-│   ├── parent/          # HomeDashboard, WalletScreen, TaskManagement, ...
+│   ├── parent/          # HomeDashboard, WalletScreen, TaskManagement,
+│   │                    # BudgetPlanScreen, FinancialGoalScreen, FinanceAlertsScreen,
+│   │                    # SupportRequestScreen, ...
 │   ├── child/           # ChildHome, ChildTasks, ChildWallet
-│   └── shared/          # SOS, Chat, Album, Profile, AI Assistant
-├── services/            # ApiClient (singleton HTTP client)
+│   └── shared/          # SOS, FamilyMapScreen, Chat, Album, Profile, AI Assistant, SplashScreen
+├── services/            # ApiClient (singleton HTTP client, timeout + auto-refresh)
 ├── theme/               # AppColors, design tokens
 └── widgets/             # RingChart, WaffleChart, ...
 
@@ -112,7 +120,7 @@ flutter build apk --release
 - Mô hình tài chính — 5 Jars, 80-20, Custom (`/finance/models`)
 - Kế hoạch ngân sách, mục tiêu tài chính
 
-### ✅ Task & Reward
+### ✅ Task & Reward (kết nối API thực, `/families/{id}/tasks/...`)
 - Tạo task ad-hoc (UC38) và định kỳ (UC39)
 - Giao task / reassign (UC40, UC42)
 - Báo bận — recurring task (UC41)
@@ -125,9 +133,9 @@ flutter build apk --release
 - Danh sách thành viên (UC20)
 - Xoá thành viên (UC19)
 
-### ✅ SOS & Safety
+### ✅ SOS & Safety (kết nối API thực, `/families/{id}/sos/alerts...`)
 - Nút SOS giữ 3 giây (UC50)
-- Nhận cảnh báo SOS từ thành viên khác (UC51)
+- Nhận cảnh báo SOS từ thành viên khác, global banner ở ManagerShell/MemberShell (UC51)
 - Xác nhận an toàn / hủy SOS (UC52, UC53)
 
 ### ✅ Calendar
@@ -135,12 +143,12 @@ flutter build apk --release
 
 ### ✅ Subscription
 - Xem / chọn gói: Free / Family (99k₫) / Premium (299k₫) (UC76, UC77)
+- Nút "Nâng cấp" hiện chỉ show dialog — checkout/thanh toán thật chưa làm, xem mục "Subscription / Thanh toán" trong `BE_API_REQUESTS.md`
 
 ### ⚠️ Chờ Backend
-- Tasks API (`/tasks`) — chưa có endpoint
-- SOS API (`/sos`) — chưa có endpoint
-- GPS / Location (`/location`) — chưa có endpoint
-- Profile PATCH (`/users/me`) — chưa có endpoint
+- GPS / Location sharing (`/location/...`) — **BE chưa có endpoint nào** cho location (đã verify qua Swagger `/api/docs-json`), `GpsProvider`/`FamilyMapScreen` hiện không hoạt động
+- Profile PATCH (`/auth/me`) — BE chỉ có `GET`, chưa có `PATCH` để cập nhật họ tên/SĐT/avatar
+- Subscription checkout (Stripe) — BE chỉ có `GET /subscription-plans`, chưa có endpoint tạo checkout session
 
 ---
 

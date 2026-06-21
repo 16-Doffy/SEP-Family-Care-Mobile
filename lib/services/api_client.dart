@@ -6,7 +6,7 @@ import 'package:http_parser/http_parser.dart';
 
 const _kBase = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://103.110.84.66:8080/api/v1',
+  defaultValue: 'http://103.110.84.66/api/v1',
 );
 
 const _kRequestTimeout = Duration(seconds: 15);

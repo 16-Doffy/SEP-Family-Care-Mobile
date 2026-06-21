@@ -1,74 +1,57 @@
 # Danh sách API cần BE bổ sung — Family Care Mobile
 
-> Cập nhật: 2026-06-16  
-> Người tổng hợp: FE Team  
+> Cập nhật: 2026-06-21
+> Người tổng hợp: FE Team
 > Mục đích: Gửi BE để ưu tiên triển khai, unblock các tính năng FE đang bị chặn.
+> Đã re-verify trực tiếp qua Swagger (`GET /api/docs-json`) ngày 2026-06-21 — xem mục ✅ RESOLVED bên dưới.
+
+---
+
+## ✅ RESOLVED — Không còn cần BE làm gì
+
+### SOS Alert System (trước đây ghi nhận là CRITICAL/thiếu API)
+
+**Cập nhật 2026-06-21**: Verify lại qua Swagger phát hiện **BE đã triển khai đầy đủ** 8 endpoint dưới
+`/api/v1/families/{familyId}/sos/alerts...` (tạo, list, chi tiết, gửi vị trí, phản hồi, confirm-safety, resolve, cancel).
+Vấn đề thực ra là **FE gọi sai path** (`/sos` phẳng thay vì `/families/{familyId}/sos/alerts`) — đã sửa trong
+`lib/providers/sos_provider.dart`. Không cần BE làm thêm gì cho SOS.
 
 ---
 
 ## 🔴 CRITICAL — Tính năng hoàn toàn không chạy được nếu thiếu
 
-### 1. SOS Alert System
-
-| | |
-|---|---|
-| **Chức năng** | UC51/54 — Gửi SOS khẩn cấp, thông báo đến các thành viên gia đình |
-| **FE đã làm** | UI giữ 3 giây → lấy GPS thực → cố POST API → graceful fallback (show tọa độ nhưng không notify ai) |
-| **Vấn đề** | `POST /api/v1/sos` → **404 Not Found** — endpoint chưa tồn tại |
-| **Cần thêm** | |
-
-```
-POST   /api/v1/families/{familyId}/sos
-Body:  { message, address?, latitude?, longitude? }
-→ Tạo SOS alert, push notification đến tất cả thành viên trong gia đình
-
-GET    /api/v1/families/{familyId}/sos
-→ Danh sách SOS alerts (manager xem)
-
-PATCH  /api/v1/families/{familyId}/sos/{alertId}
-Body:  { status: "ACKNOWLEDGED" | "RESOLVED" | "CANCELLED" }
-→ Cập nhật trạng thái SOS
-
-GET    /api/v1/families/{familyId}/sos/active
-→ Lấy các alert đang active (để hiện global banner)
-```
-
-| **Lý do quan trọng** | Đây là tính năng an toàn — nếu không có API, SOS chỉ chạy cục bộ trên thiết bị gửi, không ai nhận được thông báo. |
-|---|---|
-
----
-
-### 2. Location Sharing (Bản đồ gia đình)
+### 1. Location Sharing (Bản đồ gia đình)
 
 | | |
 |---|---|
 | **Chức năng** | Hiển thị vị trí GPS từng thành viên trên bản đồ trong app (dùng flutter_map + OpenStreetMap) |
 | **FE đã làm** | Map hiển thị, lấy GPS thiết bị của bản thân, hiện pin trên bản đồ |
-| **Vấn đề** | Không có API → chỉ xem được vị trí của chính mình, không thấy thành viên khác |
+| **Vấn đề** | **Verify qua Swagger (2026-06-21): BE chưa có bất kỳ endpoint location/tracking nào** — đã quét toàn bộ 107 path, không có `/location`, `/members/.../location`, `/tracking`. FE (`GpsProvider`) đang gọi `/location/family`, `/location/toggle`, `/location/update` — các path này chắc chắn 404. |
 | **Cần thêm** | |
 
 ```
-POST  /api/v1/families/{familyId}/members/location
-Body: { latitude, longitude, accuracy?, updatedAt }
+POST  /api/v1/families/{familyId}/locations
+Body: { latitude, longitude, accuracy?, recordedAt? }
 → Thành viên gửi vị trí lên server (gọi định kỳ khi user cho phép)
+   (đặt tên theo đúng convention BE đang dùng cho SOS: .../sos/alerts/{alertId}/locations)
 
 GET   /api/v1/families/{familyId}/members/locations
 → Trả về tọa độ mới nhất của tất cả thành viên đã chia sẻ
-Response: [{ userId, displayName, latitude, longitude, updatedAt, isSharing }]
+Response: [{ userId, displayName, latitude, longitude, recordedAt, isSharing }]
 
-PATCH /api/v1/families/{familyId}/members/location/toggle
+PATCH /api/v1/families/{familyId}/members/me/location-sharing
 Body: { isSharing: true | false }
 → Bật/tắt chia sẻ vị trí
 ```
 
-| **Lý do** | FE đã có GpsProvider sẵn, chỉ cần BE expose endpoint là cắm vào được ngay. |
+| **Lý do** | FE đã có GpsProvider + FamilyMapScreen sẵn, chỉ cần BE expose endpoint là cắm vào được ngay. |
 |---|---|
 
 ---
 
 ## 🟠 HIGH — Tính năng chạy được nhưng không đầy đủ
 
-### 3. Chỉnh sửa Profile
+### 2. Chỉnh sửa Profile
 
 | | |
 |---|---|
@@ -88,7 +71,7 @@ Body: { fullName?, phone?, avatarUrl? }
 
 ---
 
-### 4. Invite Management (Quản lý lời mời)
+### 3. Invite Management (Quản lý lời mời)
 
 | | |
 |---|---|
@@ -110,7 +93,7 @@ DELETE /api/v1/families/{familyId}/invitations/{invitationId}
 
 ---
 
-### 5. Role Management (Cấp/thu hồi quyền Phó nhóm)
+### 4. Role Management (Cấp/thu hồi quyền Phó nhóm)
 
 | | |
 |---|---|
@@ -130,7 +113,7 @@ Body: { familyRole: "FAMILY_MEMBER" | "DEPUTY_MEMBER" | "MANAGER" }
 
 ---
 
-### 6. Wallet / Chi tiêu cá nhân từng thành viên
+### 5. Wallet / Chi tiêu cá nhân từng thành viên
 
 | | |
 |---|---|
@@ -155,7 +138,7 @@ GET /api/v1/families/{familyId}/members/{userId}/finance/summary
 
 ## 🟡 MEDIUM — Tính năng mới hoàn toàn, chưa implement FE
 
-### 7. Chat gia đình
+### 6. Chat gia đình
 
 | | |
 |---|---|
@@ -177,7 +160,7 @@ WebSocket: ws://host/families/{familyId}/chat
 
 ---
 
-### 8. Lịch gia đình
+### 7. Lịch gia đình
 
 | | |
 |---|---|
@@ -195,7 +178,7 @@ DELETE /api/v1/families/{familyId}/events/{eventId}
 
 ---
 
-### 9. Album ảnh gia đình
+### 8. Album ảnh gia đình
 
 | | |
 |---|---|
@@ -214,7 +197,7 @@ DELETE /api/v1/families/{familyId}/albums/{albumId}/photos/{photoId}
 
 ---
 
-### 10. Thông báo (Notifications)
+### 9. Thông báo (Notifications)
 
 | | |
 |---|---|
@@ -234,7 +217,7 @@ Body: { token, platform: "android" | "ios" }
 
 ---
 
-### 11. AI Assistant
+### 10. AI Assistant
 
 | | |
 |---|---|
@@ -253,7 +236,7 @@ Response: { reply, suggestions? }
 
 ---
 
-### 12. Subscription / Thanh toán
+### 11. Subscription / Thanh toán
 
 | | |
 |---|---|
@@ -276,12 +259,59 @@ GET  /api/v1/families/{familyId}/subscription
 
 ---
 
+## ❓ CẦN BE XÁC NHẬN TRƯỚC KHI FE TRIỂN KHAI — Subscription Checkout (Stripe)
+
+> Bối cảnh: FE đang lên kế hoạch nối nút "Nâng cấp" (`lib/screens/parent/subscription_screen.dart:178`) vào checkout thật qua
+> Stripe + deep link `familycare://subscription/success`. Trước khi sửa code, cần BE xác nhận 4 điểm sau để tránh đoán sai
+> contract dẫn đến lỗi thanh toán.
+
+### 1. Mã gói (planCode) chính xác
+
+BE được mô tả dùng `FREE | PLUS | PREMIUM`, trong khi FE đang fallback hardcode `FREE | FAMILY | PREMIUM`
+(`lib/screens/parent/subscription_screen.dart:17`). Nếu FE gửi sai mã gói, checkout có thể trả 400.
+
+⚠️ **Cần xác nhận**: enum `planCode` chính xác trả về từ `GET /subscription-plans`. FE sẽ dùng trực tiếp giá trị này, không tự
+ánh xạ theo tên hiển thị.
+
+### 2. Response schema của checkout endpoint
+
+Tài liệu nội bộ hiện ghi `POST /subscription/upgrade` (mục 12 ở trên), nhưng cần xác nhận lại tên endpoint thật
+(`/subscription/checkout`?) và schema response chính xác, ví dụ:
+
+```
+{ "checkoutUrl": "https://checkout.stripe.com/...", "sessionId": "cs_..." }
+```
+
+⚠️ **Cần xác nhận**: tên field thật là `url`, `checkoutUrl`, hay nằm trong `data.url`; và danh sách mã lỗi có thể trả về.
+
+### 3. Webhook là nguồn xác nhận thanh toán duy nhất
+
+Deep link `familycare://subscription/success` chỉ cho biết trình duyệt đã quay lại app — **không chứng minh thanh toán đã
+thành công** (app khác hoặc user có thể tự gọi URI này). Luồng đề xuất:
+
+1. Stripe redirect về app → FE hiển thị "Đang xác nhận thanh toán".
+2. FE gọi `GET /families/{id}/subscription`.
+3. BE chỉ trả gói mới sau khi **Stripe webhook đã xác nhận** — không dựa vào `session_id` trong deep link.
+4. FE retry ngắn hạn nếu webhook chưa xử lý xong.
+
+⚠️ **Cần xác nhận**: BE đã xử lý Stripe webhook chưa, có kiểm tra session thuộc đúng user/family không, và `GET
+/families/{id}/subscription` trả schema gì (đặc biệt là field thể hiện gói đang chờ xác nhận vs. đã active).
+
+### 4. Ý nghĩa của checkout khi chọn gói FREE
+
+Cần xác nhận chọn gói FREE là downgrade, hủy subscription, hay vẫn tạo Stripe Checkout session. Thông thường downgrade/cancel
+có lifecycle khác với nâng cấp trả phí (không qua Stripe Checkout).
+
+⚠️ **Cần xác nhận**: endpoint/luồng riêng cho downgrade-to-FREE (nếu có), hay vẫn dùng chung endpoint checkout.
+
+---
+
 ## 📊 Tổng kết ưu tiên
 
 | Mức độ | API | Unblock tính năng |
 |--------|-----|-------------------|
-| 🔴 Critical | SOS endpoints | An toàn khẩn cấp — core feature |
-| 🔴 Critical | Location sharing | Bản đồ gia đình |
+| ✅ Resolved | SOS endpoints | Đã có sẵn trên BE — bug nằm ở FE, đã sửa |
+| 🔴 Critical | Location sharing | Bản đồ gia đình — BE chưa có endpoint nào |
 | 🟠 High | `PATCH /auth/me` | Chỉnh sửa profile |
 | 🟠 High | Invite GET/DELETE | Quản lý lời mời |
 | 🟠 High | Role management | Cấp/thu quyền Deputy |
