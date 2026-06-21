@@ -1184,7 +1184,7 @@ class _RewardsTabState extends State<_RewardsTab> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(40), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 onPressed: () async {
-                  try { await tp.markSettlementPaid(s.id); } catch (e) {
+                  try { await tp.markSettlementPaid(s.id, externalMethod: 'CASH'); } catch (e) {
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                   }
                 },
@@ -1317,7 +1317,7 @@ class _RewardsTabState extends State<_RewardsTab> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(40), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 onPressed: () async {
-                  try { await tp.resolveDispute(d.id, action: 'APPROVE'); } catch (e) {
+                  try { await tp.resolveDispute(d.id, action: 'ACCEPT_DISPUTE'); } catch (e) {
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                   }
                 },
@@ -1329,7 +1329,7 @@ class _RewardsTabState extends State<_RewardsTab> {
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(foregroundColor: AppColors.textMuted, side: const BorderSide(color: Color(0xFFE5E7EB)), minimumSize: const Size.fromHeight(40), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 onPressed: () async {
-                  try { await tp.resolveDispute(d.id, action: 'REJECT'); } catch (e) {
+                  try { await tp.resolveDispute(d.id, action: 'REJECT_DISPUTE'); } catch (e) {
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                   }
                 },

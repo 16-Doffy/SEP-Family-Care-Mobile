@@ -431,15 +431,23 @@ class FinanceProvider extends ChangeNotifier {
   // ── Budget Plan Lines ──────────────────────────────────────────────────────
 
   Future<void> createBudgetLine(String planId, {
-    required String categoryId,
-    required double expectedAmount,
+    String? categoryId,
+    String? jarId,
+    required double plannedAmount,
+    double? thresholdAmount,
+    double? thresholdPercent,
+    String? essentialType,
     String? note,
   }) async {
     await ApiClient.instance.post(
       '/families/$_familyId/finance/budget-plans/$planId/lines',
       {
-        'categoryId': categoryId,
-        'expectedAmount': expectedAmount,
+        if (categoryId != null && categoryId.isNotEmpty) 'categoryId': categoryId,
+        if (jarId != null && jarId.isNotEmpty) 'jarId': jarId,
+        'plannedAmount': plannedAmount,
+        if (thresholdAmount != null) 'thresholdAmount': thresholdAmount,
+        if (thresholdPercent != null) 'thresholdPercent': thresholdPercent,
+        if (essentialType != null && essentialType.isNotEmpty) 'essentialType': essentialType,
         if (note != null && note.isNotEmpty) 'note': note,
       },
     );
@@ -447,11 +455,11 @@ class FinanceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> updateBudgetLine(String budgetLineId, {double? expectedAmount, String? note}) async {
+  Future<void> updateBudgetLine(String budgetLineId, {double? plannedAmount, String? note}) async {
     await ApiClient.instance.patch(
       '/families/$_familyId/finance/budget-lines/$budgetLineId',
       {
-        if (expectedAmount != null) 'expectedAmount': expectedAmount,
+        if (plannedAmount != null) 'plannedAmount': plannedAmount,
         if (note != null) 'note': note,
       },
     );
@@ -523,27 +531,24 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   Future<void> createGoalAllocation(String goalId, {
+    required String ledgerEntryId,
     required double amount,
-    String? note,
   }) async {
     await ApiClient.instance.post(
       '/families/$_familyId/finance/financial-goals/$goalId/allocations',
       {
+        'ledgerEntryId': ledgerEntryId,
         'amount': amount,
-        if (note != null && note.isNotEmpty) 'note': note,
       },
     );
     await _fetchGoals();
     notifyListeners();
   }
 
-  Future<void> updateGoalAllocation(String allocationId, {double? amount, String? note}) async {
+  Future<void> updateGoalAllocation(String allocationId, {required double amount}) async {
     await ApiClient.instance.patch(
       '/families/$_familyId/finance/goal-allocations/$allocationId',
-      {
-        if (amount != null) 'amount': amount,
-        if (note != null) 'note': note,
-      },
+      {'amount': amount},
     );
     notifyListeners();
   }
@@ -573,14 +578,20 @@ class FinanceProvider extends ChangeNotifier {
   // ── Jar creation ───────────────────────────────────────────────────────────
 
   Future<void> createJar({
+    required String financeModelId,
     required String name,
     required String jarCode,
-    double allocationPercentage = 0,
+    required double allocationPercentage,
+    String? description,
+    bool isActive = true,
   }) async {
     await ApiClient.instance.post('/families/$_familyId/finance/jars', {
+      'financeModelId': financeModelId,
       'name': name,
       'jarCode': jarCode,
       'allocationPercentage': allocationPercentage,
+      if (description != null && description.isNotEmpty) 'description': description,
+      'isActive': isActive,
     });
     await _fetchJars();
     notifyListeners();

@@ -229,7 +229,7 @@ class TaskProvider extends ChangeNotifier {
 
   // ─── Tasks ────────────────────────────────────────────────────────────────
 
-  Future<void> fetchTasks({String? status, String? assigneeId}) async {
+  Future<void> fetchTasks({String? status, String? taskCategoryId, String? priority, String? taskType}) async {
     if (_familyId == null) return;
     _loading = true;
     _error = null;
@@ -237,7 +237,9 @@ class TaskProvider extends ChangeNotifier {
     try {
       final params = <String, String>{};
       if (status != null) params['status'] = status;
-      if (assigneeId != null) params['assigneeId'] = assigneeId;
+      if (taskCategoryId != null) params['taskCategoryId'] = taskCategoryId;
+      if (priority != null) params['priority'] = priority;
+      if (taskType != null) params['taskType'] = taskType;
       final data = await ApiClient.instance.get(
         '/families/$_familyId/tasks',
         params: params.isEmpty ? null : params,
@@ -263,20 +265,20 @@ class TaskProvider extends ChangeNotifier {
   Future<void> createTask({
     required String title,
     String description = '',
-    String? assigneeId,
     String? categoryId,
-    double reward = 0,
-    String? dueDate,
+    String? priority,
+    String? taskType,
+    String? dueAt,
   }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.post('/families/$_familyId/tasks', {
       'title': title,
       if (description.isNotEmpty) 'description': description,
-      if (assigneeId != null && assigneeId.isNotEmpty)
-        'assigneeId': assigneeId,
       if (categoryId != null && categoryId.isNotEmpty)
         'taskCategoryId': categoryId,
-      if (dueDate != null && dueDate.isNotEmpty) 'dueDate': dueDate,
+      if (priority != null && priority.isNotEmpty) 'priority': priority,
+      if (taskType != null && taskType.isNotEmpty) 'taskType': taskType,
+      if (dueAt != null && dueAt.isNotEmpty) 'dueAt': dueAt,
     });
     await fetchTasks();
   }
@@ -558,11 +560,14 @@ class TaskProvider extends ChangeNotifier {
   }
 
   Future<void> markSettlementPaid(String settlementId,
-      {String? note}) async {
+      {required String externalMethod, String? externalNote}) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.patch(
       '/families/$_familyId/tasks/reward-settlements/$settlementId/mark-paid',
-      {if (note != null && note.isNotEmpty) 'note': note},
+      {
+        'externalMethod': externalMethod,
+        if (externalNote != null && externalNote.isNotEmpty) 'externalNote': externalNote,
+      },
     );
     await fetchSettlements();
   }
@@ -607,15 +612,13 @@ class TaskProvider extends ChangeNotifier {
     await fetchDisputes();
   }
 
+  /// action must be one of: ACCEPT_DISPUTE | REJECT_DISPUTE
   Future<void> resolveDispute(String disputeId,
-      {required String action, String? note}) async {
+      {required String action}) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.patch(
       '/families/$_familyId/tasks/reward-disputes/$disputeId/resolve',
-      {
-        'action': action,
-        if (note != null && note.isNotEmpty) 'note': note,
-      },
+      {'action': action},
     );
     await fetchDisputes();
     await fetchSettlements();
@@ -642,13 +645,16 @@ class TaskProvider extends ChangeNotifier {
     return result is Map ? Map<String, dynamic>.from(result) : {};
   }
 
-  Future<void> updateProof(String proofId, {String? note, String? status}) async {
+  Future<void> updateProof(String proofId,
+      {String? note, String? proofType, String? fileUrl, String? thumbnailUrl}) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.patch(
       '/families/$_familyId/tasks/proofs/$proofId',
       {
         if (note != null) 'note': note,
-        if (status != null) 'status': status,
+        if (proofType != null) 'proofType': proofType,
+        if (fileUrl != null) 'fileUrl': fileUrl,
+        if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
       },
     );
   }
