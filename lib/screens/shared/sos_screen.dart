@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/gps_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
 
@@ -14,25 +14,35 @@ class SOSScreen extends StatefulWidget {
   State<SOSScreen> createState() => _SOSScreenState();
 }
 
-class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMixin {
-  bool _sent     = false;
-  bool _sending  = false;
-  int? _countdown;
+class _SOSScreenState extends State<SOSScreen>
+    with SingleTickerProviderStateMixin {
+  bool   _sent      = false;
+  bool   _sending   = false;
+  bool   _apiOk     = false; // true nếu BE nhận được SOS
+  int?   _countdown;
   Timer? _countTimer;
+  double? _localLat, _localLng; // GPS lưu local khi API chưa có
   late AnimationController _pulseCtrl;
-  late Animation<double> _ring1, _ring2, _ring3;
+  late Animation<double>   _ring1, _ring2, _ring3;
 
   @override
   void initState() {
     super.initState();
-    // Cập nhật vị trí gia đình để lấy lat/lng của user hiện tại
+    _pulseCtrl = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1600))
+      ..repeat(reverse: true);
+    _ring1 = Tween<double>(begin: 1.0, end: 1.08).animate(
+        CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+    _ring2 = Tween<double>(begin: 1.0, end: 1.06).animate(
+        CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+    _ring3 = Tween<double>(begin: 1.0, end: 1.04).animate(
+        CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+
+    // Refresh alerts when manager opens screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<GpsProvider>().fetchFamilyLocations();
+      context.read<SosProvider>().fetchAlerts();
     });
-    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat(reverse: true);
-    _ring1 = Tween<double>(begin: 1.0, end: 1.08).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-    _ring2 = Tween<double>(begin: 1.0, end: 1.06).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-    _ring3 = Tween<double>(begin: 1.0, end: 1.04).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
   }
 
   @override
@@ -41,6 +51,8 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     _countTimer?.cancel();
     super.dispose();
   }
+
+  // ── Hold-to-send countdown ───────────────────────────────────────────────
 
   void _onPressStart() {
     _pulseCtrl.stop();
@@ -62,278 +74,312 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     _pulseCtrl.repeat(reverse: true);
   }
 
+  // ── Get GPS → send SOS ───────────────────────────────────────────────────
+
+  Future<Position?> _getLocation() async {
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied) { return null; }
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _triggerSOS() async {
     _countTimer?.cancel();
     setState(() { _sending = true; _countdown = null; });
+    final sosProvider = context.read<SosProvider>();
+    final pos = await _getLocation();
+    // Lưu GPS local trước để hiển thị dù API có lỗi
+    if (mounted) {
+      setState(() {
+        _localLat = pos?.latitude;
+        _localLng = pos?.longitude;
+      });
+    }
     try {
-      // Lấy vị trí GPS của user từ GpsProvider (nếu có)
-      final myId = context.read<AuthProvider>().user?.id ?? '';
-      final gps  = context.read<GpsProvider>();
-      final myLocation = gps.shares
-          .where((s) => s.userId == myId && s.latitude != null)
-          .firstOrNull;
-
-      await context.read<SosProvider>().sendSos(
+      await sosProvider.sendSos(
         message:   'SOS khẩn cấp từ ứng dụng Family Care',
-        address:   myLocation != null
-            ? 'GPS: ${myLocation.latitude?.toStringAsFixed(5)}, ${myLocation.longitude?.toStringAsFixed(5)}'
-            : 'Vị trí đang cập nhật...',
-        latitude:  myLocation?.latitude,
-        longitude: myLocation?.longitude,
+        address:   pos != null
+            ? 'GPS: ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}'
+            : '',
+        latitude:  pos?.latitude,
+        longitude: pos?.longitude,
       );
-      if (mounted) setState(() { _sent = true; _sending = false; });
+      // Chỉ chuyển sang "đã gửi" khi API xác nhận thành công
+      if (mounted) setState(() { _sent = true; _sending = false; _apiOk = true; });
     } catch (e) {
+      // API thất bại → KHÔNG báo thành công, show lỗi để user biết
+      // (kèm tọa độ GPS để user có thể chia sẻ thủ công)
       if (mounted) {
-        setState(() => _sending = false);
+        setState(() { _sending = false; });
         _pulseCtrl.repeat(reverse: true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Không gửi được SOS: ${e.toString().replaceFirst('Exception: ', '')}'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
+        _showSosFailDialog(e.toString().replaceFirst('Exception: ', ''));
       }
     }
   }
 
+  void _showSosFailDialog(String reason) {
+    final hasGps = _localLat != null && _localLng != null;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          const Text('⚠️', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 8),
+          Text('Không gửi được SOS',
+              style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white)),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Gia đình chưa nhận được cảnh báo. Hãy liên hệ trực tiếp.',
+              style: GoogleFonts.inter(fontSize: 13, color: Colors.white70)),
+          if (hasGps) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(10)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('📍 Vị trí của bạn:',
+                    style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white54)),
+                const SizedBox(height: 4),
+                Text(
+                  '${_localLat!.toStringAsFixed(5)}, ${_localLng!.toStringAsFixed(5)}',
+                  style: GoogleFonts.inter(
+                      fontSize: 13, color: Colors.white70),
+                ),
+              ]),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text('Lỗi: $reason',
+              style: GoogleFonts.inter(
+                  fontSize: 11, color: Colors.white38)),
+        ]),
+        actions: [
+          if (hasGps)
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _openMaps(_localLat!, _localLng!, 'Vị trí của tôi');
+              },
+              child: Text('Mở Maps',
+                  style: GoogleFonts.inter(
+                      color: const Color(0xFF1A73E8),
+                      fontWeight: FontWeight.w700)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Đóng',
+                style: GoogleFonts.inter(
+                    color: AppColors.sos,
+                    fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _cancelSOS() async {
-    final sosState = context.read<SosProvider>();
-    final latestId = sosState.alerts.isNotEmpty ? sosState.alerts.first.id : null;
+    final sosState  = context.read<SosProvider>();
+    final latestId  = sosState.alerts.isNotEmpty ? sosState.alerts.first.id : null;
     if (latestId != null) {
-      try {
-        await sosState.updateAlert(latestId, 'CANCELLED');
-      } catch (_) {}
+      try { await sosState.updateAlert(latestId, 'CANCELLED'); } catch (_) {}
     }
     if (mounted) setState(() => _sent = false);
   }
+
+  // ── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     if (_sending) return _loadingScreen();
     if (_sent)    return _sentScreen(context);
 
-    // UC51 — Hiển thị SOS alert đến từ thành viên khác
     final activeAlerts = context.watch<SosProvider>().activeAlerts;
-    if (activeAlerts.isNotEmpty) return _incomingAlertsScreen(context, activeAlerts);
+    if (activeAlerts.isNotEmpty) {
+      return _incomingAlertsScreen(context, activeAlerts);
+    }
+    return _sosButton(context);
+  }
 
+  // ── SOS button screen (member / sender) ──────────────────────────────────
+
+  Widget _sosButton(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Center(
-                child: Container(
-                  width: 200, height: 200,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.sos.withValues(alpha: 0.12)),
+        child: Stack(children: [
+          Positioned.fill(
+            child: Center(
+              child: Container(
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.sos.withValues(alpha: 0.12)),
+              ),
+            ),
+          ),
+          Column(children: [
+            _appBar(context),
+            Expanded(
+              child: AnimatedBuilder(
+                animation: _pulseCtrl,
+                builder: (_, _) => Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Transform.scale(
+                        scale: _ring3.value,
+                        child: _ring(290,
+                            AppColors.sos.withValues(alpha: 0.3))),
+                    Transform.scale(
+                        scale: _ring2.value,
+                        child: _ring(240,
+                            AppColors.sos.withValues(alpha: 0.3))),
+                    Transform.scale(
+                        scale: _ring1.value,
+                        child: _ring(190,
+                            AppColors.sos.withValues(alpha: 0.3))),
+                    GestureDetector(
+                      onTapDown:   (_) => _onPressStart(),
+                      onTapUp:     (_) => _onPressEnd(),
+                      onTapCancel: _onPressEnd,
+                      child: Container(
+                        width: 130,
+                        height: 130,
+                        decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.sos),
+                        child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('🚨',
+                                  style: TextStyle(fontSize: 40)),
+                              Text('SOS',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                      letterSpacing: 2)),
+                            ]),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  child: Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => context.pop(),
-                        child: Container(
-                          width: 40, height: 40,
-                          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.1)),
-                          alignment: Alignment.center,
-                          child: const Text('←', style: TextStyle(fontSize: 20, color: Colors.white)),
-                        ),
-                      ),
-                      Expanded(child: Center(child: Text('Khẩn cấp', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white54)))),
-                      const SizedBox(width: 40),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: AnimatedBuilder(
-                    animation: _pulseCtrl,
-                    builder: (_, _) => Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Transform.scale(scale: _ring3.value, child: Container(width: 290, height: 290, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withValues(alpha: 0.3), width: 1)))),
-                        Transform.scale(scale: _ring2.value, child: Container(width: 240, height: 240, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withValues(alpha: 0.3), width: 1)))),
-                        Transform.scale(scale: _ring1.value, child: Container(width: 190, height: 190, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.sos.withValues(alpha: 0.3), width: 1)))),
-                        GestureDetector(
-                          onTapDown: (_) => _onPressStart(),
-                          onTapUp:   (_) => _onPressEnd(),
-                          onTapCancel: _onPressEnd,
-                          child: Container(
-                            width: 130, height: 130,
-                            decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.sos),
-                            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                              const Text('🚨', style: TextStyle(fontSize: 40)),
-                              Text('SOS', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: 2)),
-                            ]),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 32),
-                  child: _countdown != null
-                      ? Text('$_countdown', style: GoogleFonts.inter(fontSize: 56, fontWeight: FontWeight.w700, color: AppColors.danger))
-                      : Column(children: [
-                          Text('KHẨN CẤP', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.danger, letterSpacing: 3)),
-                          Text('Giữ 3 giây để gửi SOS', style: GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
-                        ]),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 80),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('Liên hệ khẩn: ', style: GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
-                      ...['113', '115', '114'].map((n) => Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 5),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), border: Border.all(color: Colors.white24)),
-                        child: Text(n, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
-                      )),
-                    ],
-                  ),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.only(bottom: 32),
+              child: _countdown != null
+                  ? Text('$_countdown',
+                      style: GoogleFonts.inter(
+                          fontSize: 56,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.danger))
+                  : Column(children: [
+                      Text('KHẨN CẤP',
+                          style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.danger,
+                              letterSpacing: 3)),
+                      Text('Giữ 3 giây để gửi SOS',
+                          style: GoogleFonts.inter(
+                              fontSize: 13, color: Colors.white38)),
+                    ]),
             ),
-          ],
-        ),
+            // Emergency call buttons
+            Padding(
+              padding: const EdgeInsets.only(bottom: 80),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Liên hệ khẩn: ',
+                      style:
+                          GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
+                  ...['113', '115', '114'].map((n) => GestureDetector(
+                        onTap: () => launchUrl(Uri.parse('tel:$n')),
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(999),
+                              border:
+                                  Border.all(color: Colors.white24)),
+                          child: Text(n,
+                              style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white)),
+                        ),
+                      )),
+                ],
+              ),
+            ),
+          ]),
+        ]),
       ),
     );
   }
 
-  // UC51 — Màn hình nhận cảnh báo SOS từ thành viên khác
-  Widget _incomingAlertsScreen(BuildContext context, List<SosAlert> alerts) {
+  // ── Manager: incoming alert list ─────────────────────────────────────────
+
+  Widget _incomingAlertsScreen(
+      BuildContext context, List<SosAlert> alerts) {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
         child: Column(children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             child: Row(children: [
-              GestureDetector(
-                onTap: () => context.pop(),
-                child: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.1)),
-                  alignment: Alignment.center,
-                  child: const Text('←', style: TextStyle(fontSize: 20, color: Colors.white)),
-                ),
-              ),
+              _backBtn(context),
               Expanded(
                 child: Center(
                   child: Text('Cảnh báo khẩn cấp 🚨',
-                      style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.sos)),
+                      style: GoogleFonts.inter(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.sos)),
                 ),
               ),
               GestureDetector(
                 onTap: () => context.read<SosProvider>().fetchAlerts(),
-                child: const Icon(Icons.refresh_rounded, color: Colors.white54, size: 20),
+                child: const Icon(Icons.refresh_rounded,
+                    color: Colors.white54, size: 20),
               ),
             ]),
           ),
-
           Expanded(
             child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 8),
               itemCount: alerts.length,
-              itemBuilder: (_, i) {
-                final alert = alerts[i];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.sos.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.sos.withValues(alpha: 0.5), width: 1.5),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Container(
-                        width: 44, height: 44,
-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.sos),
-                        alignment: Alignment.center,
-                        child: const Text('🚨', style: TextStyle(fontSize: 22)),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(alert.senderName,
-                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-                          Text(alert.createdAt,
-                              style: GoogleFonts.inter(fontSize: 12, color: Colors.white38)),
-                        ]),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(color: AppColors.sos, borderRadius: BorderRadius.circular(8)),
-                        child: Text(alert.status,
-                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
-                      ),
-                    ]),
-                    const SizedBox(height: 12),
-                    Text(alert.message,
-                        style: GoogleFonts.inter(fontSize: 14, color: Colors.white70)),
-                    if (alert.address.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        const Icon(Icons.location_on_rounded, size: 14, color: Colors.white38),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(alert.address,
-                              style: GoogleFonts.inter(fontSize: 12, color: Colors.white38)),
-                        ),
-                      ]),
-                    ],
-                    const SizedBox(height: 14),
-                    Row(children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () async {
-                            await context.read<SosProvider>().updateAlert(alert.id, 'ACKNOWLEDGED');
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                content: Text('Đã phản hồi SOS ✅'),
-                                backgroundColor: AppColors.success,
-                              ));
-                            }
-                          },
-                          child: Container(
-                            height: 42,
-                            decoration: BoxDecoration(color: AppColors.success, borderRadius: BorderRadius.circular(12)),
-                            alignment: Alignment.center,
-                            child: Text('✅ Tôi đang đến',
-                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () async {
-                            await context.read<SosProvider>().updateAlert(alert.id, 'RESOLVED');
-                          },
-                          child: Container(
-                            height: 42,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white24),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text('Đã xử lý',
-                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white60)),
-                          ),
-                        ),
-                      ),
-                    ]),
-                  ]),
-                );
-              },
+              itemBuilder: (_, i) => _alertCard(context, alerts[i]),
             ),
           ),
         ]),
@@ -341,61 +387,357 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     );
   }
 
-  Widget _loadingScreen() => Scaffold(
-    backgroundColor: const Color(0xFF0F172A),
-    body: Center(
-      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        const CircularProgressIndicator(color: AppColors.sos, strokeWidth: 3),
-        const SizedBox(height: 24),
-        Text('Đang gửi SOS...', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white)),
-        const SizedBox(height: 8),
-        Text('Vui lòng chờ', style: GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
+  Widget _alertCard(BuildContext context, SosAlert alert) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.sos.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+            color: AppColors.sos.withValues(alpha: 0.5), width: 1.5),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Header
+        Row(children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+                shape: BoxShape.circle, color: AppColors.sos),
+            alignment: Alignment.center,
+            child: const Text('🚨', style: TextStyle(fontSize: 22)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(alert.senderName,
+                      style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                  Text(alert.createdAt,
+                      style: GoogleFonts.inter(
+                          fontSize: 12, color: Colors.white38)),
+                ]),
+          ),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+                color: AppColors.sos,
+                borderRadius: BorderRadius.circular(8)),
+            child: Text(alert.status,
+                style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white)),
+          ),
+        ]),
+        const SizedBox(height: 12),
+
+        Text(alert.message,
+            style:
+                GoogleFonts.inter(fontSize: 14, color: Colors.white70)),
+
+        // Location row
+        if (alert.address.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.location_on_rounded,
+                size: 14, color: Colors.white38),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(alert.address,
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: Colors.white38)),
+            ),
+          ]),
+        ],
+
+        // ── Google Maps button ────────────────────────────────────────
+        if (alert.hasLocation) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A73E8), // Google blue
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              onPressed: () => _openMaps(
+                  alert.latitude!, alert.longitude!, alert.senderName),
+              icon: const Text('🗺️', style: TextStyle(fontSize: 16)),
+              label: Text('Mở vị trí trên Google Maps',
+                  style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white)),
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 14),
+
+        // Action buttons
+        Row(children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () async {
+                await context
+                    .read<SosProvider>()
+                    .updateAlert(alert.id, 'ACKNOWLEDGED');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Đã phản hồi SOS ✅'),
+                        backgroundColor: AppColors.success),
+                  );
+                }
+              },
+              child: Container(
+                height: 42,
+                decoration: BoxDecoration(
+                    color: AppColors.success,
+                    borderRadius: BorderRadius.circular(12)),
+                alignment: Alignment.center,
+                child: Text('✅ Tôi đang đến',
+                    style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: GestureDetector(
+              onTap: () =>
+                  context.read<SosProvider>().updateAlert(alert.id, 'RESOLVED'),
+              child: Container(
+                height: 42,
+                decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24)),
+                alignment: Alignment.center,
+                child: Text('Đã xử lý',
+                    style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white60)),
+              ),
+            ),
+          ),
+        ]),
       ]),
-    ),
-  );
+    );
+  }
+
+  // ── Open Google Maps ─────────────────────────────────────────────────────
+
+  Future<void> _openMaps(
+      double lat, double lng, String label) async {
+    // geo: URI opens Google Maps on Android; fallback to https URL
+    final geoUri  = Uri.parse('geo:$lat,$lng?q=$lat,$lng($label)');
+    final webUri  = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+
+    if (await canLaunchUrl(geoUri)) {
+      await launchUrl(geoUri);
+    } else {
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  // ── Loading / Sent screens ───────────────────────────────────────────────
+
+  Widget _loadingScreen() => Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        body: Center(
+          child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(
+                    color: AppColors.sos, strokeWidth: 3),
+                const SizedBox(height: 24),
+                Text('Đang gửi SOS...',
+                    style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white)),
+                const SizedBox(height: 8),
+                Text('Đang lấy vị trí GPS…',
+                    style: GoogleFonts.inter(
+                        fontSize: 13, color: Colors.white38)),
+              ]),
+        ),
+      );
 
   Widget _sentScreen(BuildContext context) {
-    final sosState    = context.watch<SosProvider>();
-    final latestAlert = sosState.alerts.isNotEmpty ? sosState.alerts.first : null;
+    final hasGps = _localLat != null && _localLng != null;
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('🚨', style: TextStyle(fontSize: 80)),
-              Text('SOS đã gửi!', style: GoogleFonts.inter(fontSize: 32, fontWeight: FontWeight.w700, color: Colors.white)),
-              const SizedBox(height: 8),
-              Text(
-                latestAlert != null
-                    ? 'Gửi lúc ${latestAlert.createdAt}'
-                    : 'Đang liên hệ thành viên gia đình…',
-                style: GoogleFonts.inter(fontSize: 14, color: Colors.white60),
-              ),
-              const SizedBox(height: 32),
-              if (latestAlert != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(color: AppColors.sos.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(999)),
-                  child: Text(
-                    'Trạng thái: ${latestAlert.status}',
-                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.sos),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('🚨', style: TextStyle(fontSize: 80)),
+                  Text('SOS đã gửi!',
+                      style: GoogleFonts.inter(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                  const SizedBox(height: 8),
+                  Text(
+                    _apiOk
+                        ? 'Thông báo đã gửi đến gia đình'
+                        : 'Đã ghi nhận — thành viên đang được thông báo',
+                    style: GoogleFonts.inter(
+                        fontSize: 14, color: Colors.white60),
+                    textAlign: TextAlign.center,
                   ),
-                ),
-              const SizedBox(height: 40),
-              GestureDetector(
-                onTap: _cancelSOS,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(999), border: Border.all(color: AppColors.danger, width: 2)),
-                  child: Text('Hủy SOS', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.danger)),
-                ),
-              ),
-            ],
+
+                  // GPS coordinates
+                  if (hasGps) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on_rounded,
+                                size: 16, color: Colors.white54),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_localLat!.toStringAsFixed(5)}, ${_localLng!.toStringAsFixed(5)}',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, color: Colors.white70),
+                            ),
+                          ]),
+                    ),
+                    const SizedBox(height: 12),
+                    // Mở Maps từ máy gửi
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A73E8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        onPressed: () => _openMaps(
+                            _localLat!, _localLng!, 'Vị trí của tôi'),
+                        icon: const Text('🗺️',
+                            style: TextStyle(fontSize: 16)),
+                        label: Text('Chia sẻ vị trí qua Google Maps',
+                            style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white)),
+                      ),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    Text('Không lấy được GPS',
+                        style: GoogleFonts.inter(
+                            fontSize: 12, color: Colors.white38)),
+                  ],
+
+                  if (!_apiOk) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                              color: Colors.amber.withValues(alpha: 0.4))),
+                      child: Text('⚠️ Chức năng SOS đang chờ BE triển khai',
+                          style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: Colors.amber.shade200),
+                          textAlign: TextAlign.center),
+                    ),
+                  ],
+
+                  const SizedBox(height: 32),
+                  GestureDetector(
+                    onTap: _cancelSOS,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 14),
+                      decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color: AppColors.danger, width: 2)),
+                      child: Text('Đóng',
+                          style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.danger)),
+                    ),
+                  ),
+                ]),
           ),
         ),
       ),
     );
   }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  Widget _appBar(BuildContext context) => Padding(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        child: Row(children: [
+          _backBtn(context),
+          Expanded(
+            child: Center(
+              child: Text('Khẩn cấp',
+                  style: GoogleFonts.inter(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white54)),
+            ),
+          ),
+          const SizedBox(width: 40),
+        ]),
+      );
+
+  Widget _backBtn(BuildContext context) => GestureDetector(
+        onTap: () => context.pop(),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.1)),
+          alignment: Alignment.center,
+          child: const Text('←',
+              style: TextStyle(fontSize: 20, color: Colors.white)),
+        ),
+      );
+
+  static Widget _ring(double size, Color color) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 1)),
+      );
 }
