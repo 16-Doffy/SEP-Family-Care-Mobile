@@ -87,7 +87,9 @@ class FinanceAlertProvider extends ChangeNotifier {
               status: 'ACKNOWLEDGED', message: a.message, createdAt: a.createdAt)
           : a).toList();
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('FinanceAlertProvider: acknowledge failed: $e');
+    }
   }
 
   Future<void> resolve(String alertId) async {
@@ -100,6 +102,8 @@ class FinanceAlertProvider extends ChangeNotifier {
       );
       _alerts = _alerts.where((a) => a.id != alertId).toList();
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('FinanceAlertProvider: resolve failed: $e');
+    }
   }
 }

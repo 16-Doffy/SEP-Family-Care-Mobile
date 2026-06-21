@@ -115,6 +115,8 @@ class SupportRequestProvider extends ChangeNotifier {
         {},
       );
       await fetchRequests();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('SupportRequestProvider: cancel failed: $e');
+    }
   }
 }

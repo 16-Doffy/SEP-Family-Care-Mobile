@@ -308,7 +308,8 @@ class FinanceProvider extends ChangeNotifier {
       monthlyFinance = data is Map<String, dynamic> && data.isNotEmpty
           ? MonthlyFinance.fromJson(data)
           : null;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('FinanceProvider: fetchMonthlyFinance failed: $e');
       monthlyFinance = null;
     }
   }

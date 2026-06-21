@@ -90,7 +90,8 @@ class _SOSScreenState extends State<SOSScreen>
           timeLimit: Duration(seconds: 10),
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('SOSScreen: get GPS location failed: $e');
       return null;
     }
   }
@@ -205,7 +206,11 @@ class _SOSScreenState extends State<SOSScreen>
     final sosState  = context.read<SosProvider>();
     final latestId  = sosState.alerts.isNotEmpty ? sosState.alerts.first.id : null;
     if (latestId != null) {
-      try { await sosState.updateAlert(latestId, 'CANCELLED'); } catch (_) {}
+      try {
+        await sosState.updateAlert(latestId, 'CANCELLED');
+      } catch (e) {
+        debugPrint('SOSScreen: cancel SOS failed: $e');
+      }
     }
     if (mounted) setState(() => _sent = false);
   }

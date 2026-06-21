@@ -502,7 +502,9 @@ class TaskProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get('/families/$_fid/tasks/categories?limit=100');
       categories = _list(data).map(TaskCategory.fromJson).toList();
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('TaskProvider: fetchCategories failed: $e');
+    }
   }
 
   Future<TaskCategory?> createCategory({required String name, String? description}) async {
@@ -535,7 +537,9 @@ class TaskProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get('/families/$_fid/tasks/$taskId/assignments$qs');
       _assignmentsByTask[taskId] = _list(data).map(TaskAssignment.fromJson).toList();
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('TaskProvider: fetchTaskAssignments failed: $e');
+    }
   }
 
   Future<void> fetchMyAssignments({
@@ -562,7 +566,8 @@ class TaskProvider extends ChangeNotifier {
     try {
       final data = await ApiClient.instance.get('/families/$_fid/tasks/assignments/$assignmentId');
       return data is Map<String, dynamic> ? TaskAssignment.fromJson(data) : null;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('TaskProvider: getAssignmentDetail failed: $e');
       return null;
     }
   }
@@ -641,7 +646,9 @@ class TaskProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get('/families/$_fid/tasks/reward-settlements?limit=100');
       rewardSettlements = _list(data).map(RewardSettlement.fromJson).toList();
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('TaskProvider: fetchRewardSettlements failed: $e');
+    }
   }
 
   Future<void> markRewardPaid(String settlementId, {String? note}) async {
@@ -681,7 +688,9 @@ class TaskProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get('/families/$_fid/tasks/reward-disputes?limit=100');
       rewardDisputes = _list(data).map(RewardDispute.fromJson).toList();
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('TaskProvider: fetchRewardDisputes failed: $e');
+    }
   }
 
   Future<void> resolveDispute(String disputeId, String resolutionNote) async {
@@ -705,7 +714,9 @@ class TaskProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get('/families/$_fid/tasks/unavailabilities?limit=100');
       unavailabilities = _list(data).map(TaskUnavailability.fromJson).toList();
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('TaskProvider: fetchUnavailabilities failed: $e');
+    }
   }
 
   Future<void> cancelUnavailability(String id) async {

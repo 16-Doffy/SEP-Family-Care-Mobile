@@ -189,7 +189,8 @@ class WalletProvider extends ChangeNotifier {
         if (ri > 0) _monthlyIncome  = ri;
         if (re > 0) _monthlyExpense = re;
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('WalletProvider: fetchReport failed: $e');
       _report = null;
     }
   }
@@ -213,7 +214,8 @@ class WalletProvider extends ChangeNotifier {
           .whereType<Map>()
           .map((e) => LedgerEntry.fromJson(Map<String, dynamic>.from(e)))
           .toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('WalletProvider: fetchEntries failed: $e');
       _entries = [];
     }
   }
@@ -232,7 +234,8 @@ class WalletProvider extends ChangeNotifier {
           .whereType<Map>()
           .map((e) => JarData.fromJson(Map<String, dynamic>.from(e)))
           .toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('WalletProvider: fetchJars failed: $e');
       _jars = [];
     }
   }
