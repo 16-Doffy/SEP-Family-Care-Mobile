@@ -34,6 +34,28 @@ class ApiClient {
   Future<dynamic> delete(String path) =>
       _sendWithRetry(() => http.delete(_uri(path), headers: _headers()));
 
+  Future<dynamic> postMultipart(
+    String path,
+    List<int> bytes,
+    String filename, {
+    String fieldName = 'file',
+    Map<String, String>? fields,
+  }) async {
+    final uri = _uri(path);
+    final request = http.MultipartRequest('POST', uri);
+    if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+    request.files.add(http.MultipartFile.fromBytes(fieldName, bytes, filename: filename));
+    if (fields != null) request.fields.addAll(fields);
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    final body = response.body.isEmpty ? null : jsonDecode(response.body);
+    if (response.statusCode >= 400) {
+      final message = body is Map ? (body['message'] ?? body['error'] ?? 'Upload failed') : 'Upload failed';
+      throw ApiException(message.toString(), response.statusCode);
+    }
+    return _unwrap(body);
+  }
+
   Uri _uri(String path, [Map<String, dynamic>? params]) {
     final uri = Uri.parse('$_kBase$path');
     if (params == null || params.isEmpty) return uri;

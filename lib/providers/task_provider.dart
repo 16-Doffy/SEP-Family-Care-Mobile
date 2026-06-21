@@ -618,6 +618,43 @@ class TaskProvider extends ChangeNotifier {
     await fetchSettlements();
   }
 
+  // ─── Proof Files ──────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> uploadProof(
+    List<int> bytes,
+    String filename, {
+    String? assignmentId,
+    String? submissionId,
+  }) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    final result = await ApiClient.instance.postMultipart(
+      '/families/$_familyId/tasks/proofs/upload',
+      bytes,
+      filename,
+      fields: {
+        if (assignmentId != null) 'assignmentId': assignmentId,
+        if (submissionId != null) 'submissionId': submissionId,
+      },
+    );
+    return result is Map ? Map<String, dynamic>.from(result) : {};
+  }
+
+  Future<void> updateProof(String proofId, {String? note, String? status}) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.patch(
+      '/families/$_familyId/tasks/proofs/$proofId',
+      {
+        if (note != null) 'note': note,
+        if (status != null) 'status': status,
+      },
+    );
+  }
+
+  Future<void> deleteProof(String proofId) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.delete('/families/$_familyId/tasks/proofs/$proofId');
+  }
+
   // ─── Recurring Tasks ──────────────────────────────────────────────────────
 
   Future<void> createRecurringTask({
