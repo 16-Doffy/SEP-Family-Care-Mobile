@@ -99,8 +99,10 @@ class TaskItem {
 
 class RewardSettlement {
   final String id;
+  final String taskId;
   final String taskTitle;
   final double amount;
+  // ERD: PENDING_SETTLEMENT | WAITING_CONFIRMATION | SETTLED | DISPUTED | CANCELED
   final String status;
   final String memberId;
   final String memberName;
@@ -108,6 +110,7 @@ class RewardSettlement {
 
   const RewardSettlement({
     required this.id,
+    this.taskId = '',
     required this.taskTitle,
     required this.amount,
     required this.status,
@@ -116,15 +119,29 @@ class RewardSettlement {
     this.createdAt = '',
   });
 
+  bool get needsConfirmation => status == 'WAITING_CONFIRMATION';
+  bool get isDisputed => status == 'DISPUTED';
+  bool get isSettled => status == 'SETTLED';
+
   factory RewardSettlement.fromJson(Map<String, dynamic> j) {
     final task = j['task'] is Map ? j['task'] as Map : {};
+    final submission = j['submission'] is Map ? j['submission'] as Map : {};
+    final assignment = submission['assignment'] is Map ? submission['assignment'] as Map : {};
     final member = j['member'] is Map ? j['member'] as Map : {};
+    final taskId = task['id']?.toString()
+        ?? assignment['taskId']?.toString()
+        ?? j['taskId']?.toString()
+        ?? '';
     return RewardSettlement(
       id: j['id']?.toString() ?? '',
+      taskId: taskId,
       taskTitle: task['title']?.toString() ?? j['taskTitle']?.toString() ?? '',
       amount: TaskItem._parseDouble(j['amount'] ?? j['rewardAmount']),
-      status: j['status']?.toString() ?? 'PENDING',
-      memberId: j['memberId']?.toString() ?? member['id']?.toString() ?? '',
+      status: j['status']?.toString() ?? 'PENDING_SETTLEMENT',
+      memberId: j['memberId']?.toString()
+          ?? j['receiverMemberId']?.toString()
+          ?? member['id']?.toString()
+          ?? '',
       memberName:
           member['displayName']?.toString() ?? j['memberName']?.toString() ?? '',
       createdAt: j['createdAt']?.toString() ?? '',
@@ -538,16 +555,28 @@ class TaskProvider extends ChangeNotifier {
 
   // ─── Reward Settlements ───────────────────────────────────────────────────
 
-  Future<void> fetchSettlements() async {
+  Future<void> fetchSettlements({String? receiverMemberId}) async {
     if (_familyId == null) return;
     try {
-      final data = await ApiClient.instance
-          .get('/families/$_familyId/tasks/reward-settlements');
+      final data = await ApiClient.instance.get(
+        '/families/$_familyId/tasks/reward-settlements',
+        params: receiverMemberId != null ? {'receiverMemberId': receiverMemberId} : null,
+      );
       _settlements = _parseList(data)
           .map((e) => RewardSettlement.fromJson(Map<String, dynamic>.from(e)))
           .toList();
       notifyListeners();
     } catch (_) {}
+  }
+
+  /// Trả về settlement của task (nếu có). Dùng cho member screen.
+  RewardSettlement? settlementFor(String taskId) {
+    if (taskId.isEmpty) return null;
+    try {
+      return _settlements.firstWhere((s) => s.taskId == taskId);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> createSettlement(String submissionId) async {
