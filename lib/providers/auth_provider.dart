@@ -12,7 +12,7 @@ class _FamilyContext {
 
 class AuthProvider extends ChangeNotifier {
   static const _storage = FlutterSecureStorage();
-  static const _kAccessTokenKey  = 'access_token';
+  static const _kAccessTokenKey = 'access_token';
   static const _kRefreshTokenKey = 'refresh_token';
 
   AppUser? _user;
@@ -23,8 +23,8 @@ class AuthProvider extends ChangeNotifier {
 
   AppUser? get user => _user;
   bool get isLoggedIn => _user != null;
-  bool get hasFamily  => _user?.familyId != null;
-  bool get restoring  => _restoring;
+  bool get hasFamily => _user?.familyId != null;
+  bool get restoring => _restoring;
 
   // Chỉ dùng trong test — set state trực tiếp, không gọi API.
   @visibleForTesting
@@ -43,19 +43,19 @@ class AuthProvider extends ChangeNotifier {
     await _applySession(data);
   }
 
-  // POST /auth/register — schema: { email, password, fullName, phone? }
+  // POST /auth/register — app yêu cầu đủ { email, password, fullName, phone }
   // Không tự tạo gia đình — user sẽ chọn tạo mới hoặc join ở FamilySetupScreen
   Future<void> register(
     String email,
     String password,
     String fullName, {
-    String? phone,
+    required String phone,
   }) async {
     final data = await ApiClient.instance.post('/auth/register', {
       'email': email.trim(),
       'password': password,
       'fullName': fullName.trim(),
-      if (phone != null && phone.isNotEmpty) 'phone': phone.trim(),
+      'phone': phone.trim(),
     });
     await _applySession(data);
   }
@@ -70,11 +70,11 @@ class AuthProvider extends ChangeNotifier {
     ApiClient.instance.setFamilyId(fid);
     _user = AppUser.fromJson(
       {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
-      accessToken:  _user!.accessToken,
+      accessToken: _user!.accessToken,
       refreshToken: _user!.refreshToken,
-      familyId:     fid,
-      familyName:   name.trim(),
-      familyRole:   'MANAGER',
+      familyId: fid,
+      familyName: name.trim(),
+      familyRole: 'MANAGER',
     );
     notifyListeners();
   }
@@ -86,12 +86,12 @@ class AuthProvider extends ChangeNotifier {
       if (_user == null) return;
       _user = AppUser.fromJson(
         {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
-        accessToken:  newAccess,
+        accessToken: newAccess,
         refreshToken: newRefresh,
-        familyId:     _user!.familyId,
-        familyName:   _user!.familyName,
-        familyRole:   _user!.role.name.toUpperCase(),
-        phone:        _user!.phone,
+        familyId: _user!.familyId,
+        familyName: _user!.familyName,
+        familyRole: _user!.role.name.toUpperCase(),
+        phone: _user!.phone,
       );
       notifyListeners();
     };
@@ -107,7 +107,7 @@ class AuthProvider extends ChangeNotifier {
   // sau khi OS kill app) — gọi 1 lần ở khởi động app.
   Future<void> tryRestoreSession() async {
     try {
-      final access  = await _storage.read(key: _kAccessTokenKey);
+      final access = await _storage.read(key: _kAccessTokenKey);
       final refresh = await _storage.read(key: _kRefreshTokenKey);
       if (access == null || access.isEmpty) {
         _restoring = false;
@@ -120,7 +120,9 @@ class AuthProvider extends ChangeNotifier {
       _registerApiClientCallbacks();
 
       final me = await ApiClient.instance.get('/auth/me');
-      final userJson = me is Map ? me as Map<String, dynamic> : <String, dynamic>{};
+      final userJson = me is Map
+          ? me as Map<String, dynamic>
+          : <String, dynamic>{};
       final myId = userJson['id']?.toString();
 
       final ctx = await _fetchFamilyContext(myId);
@@ -128,12 +130,14 @@ class AuthProvider extends ChangeNotifier {
 
       _user = AppUser.fromJson(
         userJson,
-        accessToken:  access,
+        accessToken: access,
         refreshToken: refresh ?? '',
-        familyId:     ctx.id,
-        familyName:   ctx.name ?? '',
-        familyRole:   ctx.role,
-        phone:        userJson['phone']?.toString() ?? userJson['phoneNumber']?.toString(),
+        familyId: ctx.id,
+        familyName: ctx.name ?? '',
+        familyRole: ctx.role,
+        phone:
+            userJson['phone']?.toString() ??
+            userJson['phoneNumber']?.toString(),
       );
     } catch (e) {
       // Token hết hạn/không hợp lệ — xóa session, bắt đăng nhập lại
@@ -172,20 +176,22 @@ class AuthProvider extends ChangeNotifier {
       final list = families is List ? families : <dynamic>[];
       if (list.isEmpty) return const _FamilyContext();
 
-      final f          = list.first as Map<String, dynamic>;
-      final familyId    = f['id']?.toString();
-      final familyName  = f['name']?.toString();
+      final f = list.first as Map<String, dynamic>;
+      final familyId = f['id']?.toString();
+      final familyName = f['name']?.toString();
 
-      String? familyRole = f['currentMemberRole']?.toString()
-          ?? f['myRole']?.toString()
-          ?? f['userRole']?.toString()
-          ?? f['role']?.toString();
+      String? familyRole =
+          f['currentMemberRole']?.toString() ??
+          f['myRole']?.toString() ??
+          f['userRole']?.toString() ??
+          f['role']?.toString();
 
       if (familyRole == null) {
         final members = f['members'] as List? ?? [];
         final me = members.whereType<Map>().firstWhere(
-          (m) => m['userId']?.toString() == myId
-              || m['user']?['id']?.toString() == myId,
+          (m) =>
+              m['userId']?.toString() == myId ||
+              m['user']?['id']?.toString() == myId,
           orElse: () => {},
         );
         familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
@@ -194,10 +200,11 @@ class AuthProvider extends ChangeNotifier {
       if ((familyRole == null || familyRole.isEmpty) && familyId != null) {
         try {
           final detail = await ApiClient.instance.get('/families/$familyId');
-          final dMems  = (detail['members'] as List? ?? []);
+          final dMems = (detail['members'] as List? ?? []);
           final me = dMems.whereType<Map>().firstWhere(
-            (m) => m['userId']?.toString() == myId
-                || m['user']?['id']?.toString() == myId,
+            (m) =>
+                m['userId']?.toString() == myId ||
+                m['user']?['id']?.toString() == myId,
             orElse: () => {},
           );
           familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
@@ -217,7 +224,7 @@ class AuthProvider extends ChangeNotifier {
   // Sau login/register: set token → gọi /families/my để lấy familyId + role trong gia đình
   Future<void> _applySession(Map<String, dynamic> data) async {
     // ApiClient đã unwrap { success, data } → data trực tiếp
-    final token        = data['accessToken'] as String;
+    final token = data['accessToken'] as String;
     final refreshToken = data['refreshToken'] as String? ?? '';
     ApiClient.instance.setToken(token);
     ApiClient.instance.setRefreshToken(refreshToken);
@@ -225,18 +232,18 @@ class AuthProvider extends ChangeNotifier {
     await _persistTokens(token, refreshToken);
 
     final userJson = data['user'] as Map<String, dynamic>? ?? data;
-    final myId     = userJson['id']?.toString();
+    final myId = userJson['id']?.toString();
 
     final ctx = await _fetchFamilyContext(myId);
     if (ctx.id != null) ApiClient.instance.setFamilyId(ctx.id);
 
     _user = AppUser.fromJson(
       userJson,
-      accessToken:  token,
+      accessToken: token,
       refreshToken: refreshToken,
-      familyId:     ctx.id,
-      familyName:   ctx.name ?? '',
-      familyRole:   ctx.role,
+      familyId: ctx.id,
+      familyName: ctx.name ?? '',
+      familyRole: ctx.role,
     );
     notifyListeners();
   }
@@ -246,15 +253,19 @@ class AuthProvider extends ChangeNotifier {
     if (!isLoggedIn) return;
     try {
       final data = await ApiClient.instance.get('/auth/me');
-      final userJson = data is Map ? data as Map<String, dynamic> : <String, dynamic>{};
+      final userJson = data is Map
+          ? data as Map<String, dynamic>
+          : <String, dynamic>{};
       _user = AppUser.fromJson(
         userJson,
-        accessToken:  _user!.accessToken,
+        accessToken: _user!.accessToken,
         refreshToken: _user!.refreshToken,
-        familyId:     _user!.familyId,
-        familyName:   _user!.familyName,
-        familyRole:   _user!.role.name.toUpperCase(),
-        phone:        userJson['phone']?.toString() ?? userJson['phoneNumber']?.toString(),
+        familyId: _user!.familyId,
+        familyName: _user!.familyName,
+        familyRole: _user!.role.name.toUpperCase(),
+        phone:
+            userJson['phone']?.toString() ??
+            userJson['phoneNumber']?.toString(),
       );
       notifyListeners();
     } catch (e) {
@@ -274,12 +285,12 @@ class AuthProvider extends ChangeNotifier {
     if (fid == null) throw Exception('Chưa có gia đình');
     final now = DateTime.now();
     final body = {
-      'periodMonth':             now.month,
-      'periodYear':              now.year,
-      'expectedIncome':          expectedIncome,
+      'periodMonth': now.month,
+      'periodYear': now.year,
+      'expectedIncome': expectedIncome,
       'expectedPersonalExpense': expectedExpense,
-      'incomeVisibility':        incomeVisibility,
-      'expenseVisibility':       expenseVisibility,
+      'incomeVisibility': incomeVisibility,
+      'expenseVisibility': expenseVisibility,
       if (note != null && note.isNotEmpty) 'note': note,
     };
     // Try PUT first (update existing), fall back to POST (create)
@@ -289,7 +300,9 @@ class AuthProvider extends ChangeNotifier {
         body,
       );
     } catch (e) {
-      debugPrint('AuthProvider: PUT monthly-finance failed, fallback to POST: $e');
+      debugPrint(
+        'AuthProvider: PUT monthly-finance failed, fallback to POST: $e',
+      );
       await ApiClient.instance.post(
         ApiClient.instance.familyPath('/finance/monthly-finances/me'),
         body,
@@ -325,11 +338,11 @@ class AuthProvider extends ChangeNotifier {
     ApiClient.instance.setFamilyId(ctx.id);
     _user = AppUser.fromJson(
       {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
-      accessToken:  _user!.accessToken,
+      accessToken: _user!.accessToken,
       refreshToken: _user!.refreshToken,
-      familyId:     ctx.id,
-      familyName:   ctx.name ?? '',
-      familyRole:   ctx.role,
+      familyId: ctx.id,
+      familyName: ctx.name ?? '',
+      familyRole: ctx.role,
     );
     notifyListeners();
   }

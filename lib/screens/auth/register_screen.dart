@@ -12,13 +12,35 @@ class RegisterScreen extends StatefulWidget {
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
+String registrationErrorMessage(Object error) {
+  final message = error.toString().replaceFirst('Exception: ', '').trim();
+  final normalized = message.toLowerCase();
+  final isPhoneError =
+      normalized.contains('phone') ||
+      normalized.contains('số điện thoại') ||
+      normalized.contains('số đt');
+  final isDuplicateError =
+      normalized.contains('exist') ||
+      normalized.contains('already') ||
+      normalized.contains('duplicate') ||
+      normalized.contains('taken') ||
+      normalized.contains('unique') ||
+      normalized.contains('conflict') ||
+      normalized.contains('tồn tại');
+
+  if (isPhoneError && isDuplicateError) {
+    return 'Số điện thoại đã tồn tại';
+  }
+  return message;
+}
+
 class _RegisterScreenState extends State<RegisterScreen> {
-  final _nameCtrl  = TextEditingController();
+  final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
-  final _passCtrl  = TextEditingController();
-  bool _loading    = false;
-  bool _obscure    = true;
+  final _passCtrl = TextEditingController();
+  bool _loading = false;
+  bool _obscure = true;
 
   @override
   void dispose() {
@@ -30,11 +52,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _submit() async {
-    final name  = _nameCtrl.text.trim();
+    final name = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
-    final pass  = _passCtrl.text;
+    final pass = _passCtrl.text;
 
+    if (phone.isEmpty) {
+      _showError('Vui lòng nhập số điện thoại');
+      return;
+    }
     if (name.isEmpty || email.isEmpty || pass.isEmpty) {
       _showError('Vui lòng điền đầy đủ thông tin bắt buộc');
       return;
@@ -55,10 +81,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         email,
         pass,
         name,
-        phone: phone.isNotEmpty ? phone : null,
+        phone: phone,
       );
     } catch (e) {
-      if (mounted) _showError(e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) _showError(registrationErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -81,138 +107,163 @@ class _RegisterScreenState extends State<RegisterScreen> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(children: [
-            // Header
-            Row(children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-                onPressed: () => context.pop(),
-              ),
-              Text('Tạo tài khoản',
-                  style: GoogleFonts.inter(
+          child: Column(
+            children: [
+              // Header
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
+                    ),
+                    onPressed: () => context.pop(),
+                  ),
+                  Text(
+                    'Tạo tài khoản',
+                    style: GoogleFonts.inter(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-            ]),
-            const SizedBox(height: 24),
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
 
-            // Form card
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
+              // Form card
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
                       color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 20,
-                      offset: const Offset(0, 4))
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _field(
-                    ctrl: _nameCtrl,
-                    label: 'Họ và tên',
-                    hint: 'Nguyễn Văn A',
-                    icon: Icons.person_outline_rounded,
-                  ),
-                  _field(
-                    ctrl: _emailCtrl,
-                    label: 'Email',
-                    hint: 'email@example.com',
-                    icon: Icons.mail_outline_rounded,
-                    keyboardType: TextInputType.emailAddress,
-                  ),
-                  _field(
-                    ctrl: _phoneCtrl,
-                    label: 'Số điện thoại',
-                    hint: '0901 234 567  (không bắt buộc)',
-                    icon: Icons.phone_outlined,
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    required: false,
-                  ),
-                  _passwordField(),
-                  const SizedBox(height: 4),
-
-                  // Ghi chú vai trò
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.link.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
+                      offset: const Offset(0, 4),
                     ),
-                    child: Row(children: [
-                      const Text('👑', style: TextStyle(fontSize: 16)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Sau khi đăng ký, bạn sẽ tạo hoặc tham gia gia đình ở bước tiếp theo.',
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: AppColors.link,
-                              height: 1.5),
-                        ),
-                      ),
-                    ]),
-                  ),
-                  const SizedBox(height: 20),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _field(
+                      ctrl: _nameCtrl,
+                      label: 'Họ và tên',
+                      hint: 'Nguyễn Văn A',
+                      icon: Icons.person_outline_rounded,
+                    ),
+                    _field(
+                      ctrl: _emailCtrl,
+                      label: 'Email',
+                      hint: 'email@example.com',
+                      icon: Icons.mail_outline_rounded,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    _field(
+                      ctrl: _phoneCtrl,
+                      label: 'Số điện thoại',
+                      hint: '0901 234 567',
+                      icon: Icons.phone_outlined,
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                    _passwordField(),
+                    const SizedBox(height: 4),
 
-                  // Submit
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.link,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                        elevation: 0,
+                    // Ghi chú vai trò
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
-                      onPressed: _loading ? null : _submit,
-                      child: _loading
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            )
-                          : Text('Đăng ký',
+                      decoration: BoxDecoration(
+                        color: AppColors.link.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Text('👑', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Sau khi đăng ký, bạn sẽ tạo hoặc tham gia gia đình ở bước tiếp theo.',
                               style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.link,
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Submit
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.link,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: _loading ? null : _submit,
+                        child: _loading
+                            ? const SizedBox.square(
+                                dimension: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                'Đăng ký',
+                                style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
-                                  color: Colors.white)),
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // Đã có tài khoản
-                  Center(
-                    child: GestureDetector(
-                      onTap: () => context.go('/login'),
-                      child: RichText(
-                        text: TextSpan(
-                          style: GoogleFonts.inter(
-                              fontSize: 13, color: AppColors.textMuted),
-                          children: [
-                            const TextSpan(text: 'Đã có tài khoản? '),
-                            TextSpan(
-                              text: 'Đăng nhập',
-                              style: GoogleFonts.inter(
+                    // Đã có tài khoản
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => context.go('/login'),
+                        child: RichText(
+                          text: TextSpan(
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.textMuted,
+                            ),
+                            children: [
+                              const TextSpan(text: 'Đã có tài khoản? '),
+                              TextSpan(
+                                text: 'Đăng nhập',
+                                style: GoogleFonts.inter(
                                   fontSize: 13,
                                   color: AppColors.link,
-                                  fontWeight: FontWeight.w700),
-                            ),
-                          ],
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ),
       ),
     );
@@ -225,24 +276,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     List<TextInputFormatter>? inputFormatters,
-    bool required = true,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Row(children: [
-            Text(label,
+          child: Row(
+            children: [
+              Text(
+                label,
                 style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary)),
-            if (!required)
-              Text(' (tuỳ chọn)',
-                  style: GoogleFonts.inter(
-                      fontSize: 11, color: AppColors.textMuted)),
-          ]),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
         Container(
           height: 52,
@@ -252,23 +303,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
           ),
-          child: Row(children: [
-            Icon(icon, size: 18, color: AppColors.textMuted),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: ctrl,
-                keyboardType: keyboardType,
-                inputFormatters: inputFormatters,
-                decoration: InputDecoration(
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: AppColors.textMuted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: ctrl,
+                  keyboardType: keyboardType,
+                  inputFormatters: inputFormatters,
+                  decoration: InputDecoration(
                     hintText: hint,
                     border: InputBorder.none,
-                    hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
-                style: GoogleFonts.inter(
-                    fontSize: 15, color: AppColors.textPrimary),
+                    hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                  ),
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ),
       ],
     );
@@ -280,11 +336,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Text('Mật khẩu',
-              style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary)),
+          child: Text(
+            'Mật khẩu',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
         ),
         Container(
           height: 52,
@@ -294,33 +353,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
           ),
-          child: Row(children: [
-            const Icon(Icons.lock_outline_rounded,
-                size: 18, color: AppColors.textMuted),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: _passCtrl,
-                obscureText: _obscure,
-                decoration: InputDecoration(
-                    hintText: 'Ít nhất 6 ký tự',
-                    border: InputBorder.none,
-                    hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
-                style: GoogleFonts.inter(
-                    fontSize: 15, color: AppColors.textPrimary),
-              ),
-            ),
-            GestureDetector(
-              onTap: () => setState(() => _obscure = !_obscure),
-              child: Icon(
-                _obscure
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
+          child: Row(
+            children: [
+              const Icon(
+                Icons.lock_outline_rounded,
                 size: 18,
                 color: AppColors.textMuted,
               ),
-            ),
-          ]),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _passCtrl,
+                  obscureText: _obscure,
+                  decoration: InputDecoration(
+                    hintText: 'Ít nhất 6 ký tự',
+                    border: InputBorder.none,
+                    hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                  ),
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _obscure = !_obscure),
+                child: Icon(
+                  _obscure
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 18,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
