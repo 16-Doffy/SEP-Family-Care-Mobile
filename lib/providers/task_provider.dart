@@ -620,6 +620,21 @@ class TaskProvider extends ChangeNotifier {
     });
   }
 
+  // GET .../assignments/{id}/submissions — BE không embed submission trong
+  // response danh sách assignment (chỉ trả status), nên TaskAssignment.
+  // latestSubmissionId luôn null dù status đã SUBMITTED. Phải gọi riêng
+  // endpoint này trước khi duyệt.
+  Future<TaskSubmission?> fetchLatestSubmission(String assignmentId) async {
+    try {
+      final data = await ApiClient.instance.get('/families/$_fid/tasks/assignments/$assignmentId/submissions');
+      final list = _list(data).map((e) => TaskSubmission.fromJson(Map<String, dynamic>.from(e))).toList();
+      return list.isEmpty ? null : list.last;
+    } catch (e) {
+      debugPrint('TaskProvider: fetchLatestSubmission failed: $e');
+      return null;
+    }
+  }
+
   // ── Reward setting ───────────────────────────────────────────────────────
 
   Future<void> setRewardSetting(String taskId, {

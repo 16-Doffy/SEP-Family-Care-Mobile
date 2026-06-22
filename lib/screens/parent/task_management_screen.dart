@@ -265,15 +265,25 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   // ── Review submission ─────────────────────────────────────────────────────
 
-  void _showReviewSheet(BuildContext context, TaskAssignment a) {
-    final submissionId = a.latestSubmissionId;
+  Future<void> _showReviewSheet(BuildContext context, TaskAssignment a) async {
+    // BE không embed submission trong response danh sách assignment (chỉ có
+    // status) nên latestSubmissionId hầu như luôn null dù đã SUBMITTED —
+    // phải gọi riêng endpoint submissions để lấy submission mới nhất.
+    var submissionId = a.latestSubmissionId;
     if (submissionId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Không tìm thấy bài nộp để duyệt — thử tải lại'),
-        backgroundColor: AppColors.danger,
-      ));
-      return;
+      final messenger = ScaffoldMessenger.of(context);
+      final submission = await context.read<TaskProvider>().fetchLatestSubmission(a.id);
+      submissionId = submission?.id;
+      if (submissionId == null) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Không tìm thấy bài nộp để duyệt — thử tải lại'),
+          backgroundColor: AppColors.danger,
+        ));
+        return;
+      }
     }
+    if (!context.mounted) return;
+    final resolvedSubmissionId = submissionId;
     final noteCtrl = TextEditingController();
     bool submitting = false;
     showModalBottomSheet(
@@ -298,8 +308,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     setSheet(() => submitting = true);
                     final messenger = ScaffoldMessenger.of(context);
                     try {
-                      // submissionId không nằm trên assignment list — review qua endpoint review nếu BE map theo assignmentId
-                      await context.read<TaskProvider>().reviewSubmission(submissionId, approved: true, reviewNote: noteCtrl.text.trim());
+                      await context.read<TaskProvider>().reviewSubmission(resolvedSubmissionId, approved: true, reviewNote: noteCtrl.text.trim());
                       if (ctx.mounted) Navigator.pop(ctx);
                     } catch (e) {
                       setSheet(() => submitting = false);
@@ -317,7 +326,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     setSheet(() => submitting = true);
                     final messenger = ScaffoldMessenger.of(context);
                     try {
-                      await context.read<TaskProvider>().reviewSubmission(submissionId, approved: false, reviewNote: noteCtrl.text.trim());
+                      await context.read<TaskProvider>().reviewSubmission(resolvedSubmissionId, approved: false, reviewNote: noteCtrl.text.trim());
                       if (ctx.mounted) Navigator.pop(ctx);
                     } catch (e) {
                       setSheet(() => submitting = false);
