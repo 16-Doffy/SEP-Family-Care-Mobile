@@ -120,17 +120,24 @@ class _WearSosScreenState extends State<WearSosScreen>
     }
   }
 
+  // Người đeo đồng hồ tự xác nhận an toàn (confirm-safety) — không dùng
+  // /cancel vì endpoint đó chỉ Manager/Deputy mới có quyền gọi.
   void _cancelSOS() async {
+    if (context.read<SosProvider>().sending) return;
     final alertId = _sentAlertId;
-    if (alertId != null) {
-      try {
-        await context.read<SosProvider>().updateAlert(alertId, 'CANCELLED');
-      } catch (e) {
-        if (mounted) {
-          setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
-        }
-        return;
+    if (alertId == null) {
+      if (mounted) {
+        setState(() => _error = 'Không xác định được cảnh báo, vui lòng thử lại.');
       }
+      return;
+    }
+    try {
+      await context.read<SosProvider>().confirmSafety(alertId);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+      return;
     }
     if (!mounted) return;
     setState(() {
@@ -305,7 +312,7 @@ class _WearSosScreenState extends State<WearSosScreen>
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                'Huỷ SOS',
+                'Tôi an toàn',
                 style: GoogleFonts.inter(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,

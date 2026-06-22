@@ -14,6 +14,7 @@ class AuthProvider extends ChangeNotifier {
   static const _storage = FlutterSecureStorage();
   static const _kAccessTokenKey = 'access_token';
   static const _kRefreshTokenKey = 'refresh_token';
+  static const _kPendingInviteTokenKey = 'pending_invite_token';
 
   AppUser? _user;
 
@@ -21,10 +22,34 @@ class AuthProvider extends ChangeNotifier {
   // giữ màn splash, tránh nháy về /login rồi mới vào lại home.
   bool _restoring = true;
 
+  // Token lời mời gia đình (deeplink /join?token=...) đang chờ — lưu lại khi
+  // người dùng mở link mà chưa đăng nhập, để không mất token sau khi
+  // login/register xong (sống sót qua cả cold-start nhờ secure storage).
+  String? _pendingInviteToken;
+
   AppUser? get user => _user;
   bool get isLoggedIn => _user != null;
   bool get hasFamily => _user?.familyId != null;
   bool get restoring => _restoring;
+  String? get pendingInviteToken => _pendingInviteToken;
+
+  Future<void> savePendingInviteToken(String token) async {
+    _pendingInviteToken = token;
+    try {
+      await _storage.write(key: _kPendingInviteTokenKey, value: token);
+    } catch (e) {
+      debugPrint('AuthProvider: save pending invite token failed: $e');
+    }
+  }
+
+  Future<void> clearPendingInviteToken() async {
+    _pendingInviteToken = null;
+    try {
+      await _storage.delete(key: _kPendingInviteTokenKey);
+    } catch (e) {
+      debugPrint('AuthProvider: clear pending invite token failed: $e');
+    }
+  }
 
   // Chỉ dùng trong test — set state trực tiếp, không gọi API.
   @visibleForTesting
@@ -106,6 +131,11 @@ class AuthProvider extends ChangeNotifier {
   // Khôi phục session đã lưu khi mở lại app (token không còn nằm trong RAM
   // sau khi OS kill app) — gọi 1 lần ở khởi động app.
   Future<void> tryRestoreSession() async {
+    try {
+      _pendingInviteToken = await _storage.read(key: _kPendingInviteTokenKey);
+    } catch (e) {
+      debugPrint('AuthProvider: load pending invite token failed: $e');
+    }
     try {
       final access = await _storage.read(key: _kAccessTokenKey);
       final refresh = await _storage.read(key: _kRefreshTokenKey);

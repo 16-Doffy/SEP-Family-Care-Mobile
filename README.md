@@ -1,3 +1,4 @@
+
 # Family Care — Mobile App
 
 **SU26SE032** · Flutter Mobile Application · Capstone Project SEP
@@ -160,7 +161,16 @@ flutter build apk --release
 
 ### ✅ Family Management
 - Mời thành viên: QR / link / mã mời (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403
-- Tham gia qua token (`/invitations/{token}/accept`) (UC13)
+- Tham gia qua token (`/invitations/{token}/accept`) (UC13) — `JoinFamilyScreen` lookup + accept không
+  cần đăng nhập (public). Route `/join` không còn bị router tự đẩy về `/login` khi chưa đăng nhập; nếu
+  vẫn cần đăng nhập trước (accept đòi auth), token được lưu lại (`AuthProvider.pendingInviteToken`, qua
+  `flutter_secure_storage` — sống sót qua cold-start) và tự điều hướng lại `/join?token=...` sau khi
+  login/register xong, không bị mất (2026-06-22)
+  - ⚠️ Link mời hiện là `http://<BE-IP>/join?token=<UUID>` (chưa phải App Link/Universal Link thật, vì
+    chưa có domain HTTPS ổn định) — chỉ hoạt động qua copy/dán/clipboard trong `JoinFamilyScreen`,
+    **chưa wire Android Intent Filter / iOS Universal Link** nên OS chưa tự mở app khi bấm link
+  - ⚠️ Mã mời 6 ký tự trong design (COMPONENT_PATTERNS) chưa có endpoint BE tương ứng — chỉ UUID token,
+    xem `BE_API_REQUESTS.md` mục Invite Management
 - Danh sách thành viên (UC20) — Manager/Deputy xem đầy đủ + có hành động quản lý; Member xem read-only
   qua route dùng chung `/manager/members`
 - Cấp/thu quyền Phó nhóm (UC18) — **Manager only**, đang chờ BE endpoint user-facing (xem
@@ -171,7 +181,19 @@ flutter build apk --release
 - Nút SOS giữ 3 giây (UC50)
 - Nhận cảnh báo SOS từ thành viên khác, global banner ở `FamilyShell` (chung cho cả 3 role, banner
   bấm vào chuyển tab SOS trong shell hiện tại — không dùng route `/sos` cố định) (UC51)
-- Xác nhận an toàn / hủy SOS (UC52, UC53)
+- Xác nhận an toàn (`confirm-safety`) / phản hồi (`responses`: VIEWED) / resolve & cancel (UC52, UC53)
+  — đã sửa lại đúng theo Swagger thật (2026-06-22):
+  - Bỏ status `ACKNOWLEDGED` giả (BE chỉ có `ACTIVE/RESOLVED/CANCELED/FALSE_ALARM`) — "Tôi đang đến" giờ
+    gọi đúng `/responses` (VIEWED) thay vì vô tình đóng cảnh báo qua `/resolve`
+  - Tách `resolveAlert()`/`cancelAlert()` riêng (bỏ `updateAlert()` ánh xạ ngầm); nút "Đã xử lý"/"Xong"
+    chỉ hiện với Manager/Deputy (`canResolveSos`) — khớp role-restriction `/resolve`, `/cancel` của BE
+  - Người gửi tự đóng SOS của mình qua `confirm-safety` (không bị 403 như `/cancel`)
+  - Không gửi `address` lên BE (field không có trong `CreateSosAlertDto`, tránh rủi ro 400)
+  - `sendSos()` bắt buộc trả `alertId`, mọi action mutating throw rõ khi thiếu family context hoặc lỗi
+    mạng — UI hiển thị lỗi qua SnackBar, khoá nút khi đang gửi
+  - Test riêng cho `SosProvider`: `test/sos_provider_test.dart`
+  - ⚠️ Chưa làm: gửi vị trí liên tục khi SOS active (`POST .../locations`), xem chi tiết 1 alert
+    (`GET .../alerts/{id}`), nhận cảnh báo realtime (hiện chỉ fetch 1 lần lúc vào màn hình)
 
 ### ✅ Calendar
 - 5 loại sự kiện màu sắc riêng: Task / Sự kiện / Du lịch / Sinh nhật / Sức khỏe (UC70, UC71)

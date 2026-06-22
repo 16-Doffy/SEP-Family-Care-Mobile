@@ -99,6 +99,9 @@ String? computeRedirect({
   required bool hasFamily,
   required UserRole? role, // null khi chưa đăng nhập
   required String loc,
+  // Token lời mời /join đang chờ (lưu khi user mở link lúc chưa đăng nhập) —
+  // null nếu không có gì đang chờ.
+  String? pendingInviteToken,
 }) {
   // Đang khôi phục session đã lưu (đọc token + gọi /auth/me) — giữ ở
   // splash để tránh nháy về /login rồi lại vào home.
@@ -108,11 +111,21 @@ String? computeRedirect({
 
   final onAuth  = loc == '/login' || loc == '/register' || loc == '/splash';
   final onSetup = loc == '/family-setup';
+  // JoinFamilyScreen tự xử lý lookup/accept không cần đăng nhập (public
+  // endpoint) — không chặn về /login như các route khác.
+  final onJoin  = loc == '/join';
 
-  // Chưa đăng nhập → login
-  if (!loggedIn && !onAuth) return '/login';
+  // Chưa đăng nhập → login (trừ /join, màn hình mời tham gia là public)
+  if (!loggedIn && !onAuth && !onJoin) return '/login';
   if (!loggedIn && loc == '/splash') return '/login';
   if (!loggedIn) return null;
+
+  // Vừa đăng nhập/đăng ký xong và có lời mời đang chờ (lưới an toàn — phòng
+  // trường hợp accept thực ra cần đăng nhập) → quay lại /join trước khi
+  // route theo role bình thường, để không mất token.
+  if (onAuth && pendingInviteToken != null && pendingInviteToken.isNotEmpty) {
+    return '/join?token=$pendingInviteToken';
+  }
 
   final homePath = switch (role) {
     UserRole.manager => '/manager/home',
@@ -164,13 +177,31 @@ GoRouter createRouter(AuthProvider auth) {
     navigatorKey: _rootKey,
     initialLocation: '/splash',
     refreshListenable: auth,
-    redirect: (context, state) => computeRedirect(
-      restoring:  auth.restoring,
-      loggedIn:   auth.isLoggedIn,
-      hasFamily:  auth.hasFamily,
-      role:       auth.isLoggedIn ? auth.user!.role : null,
-      loc:        state.matchedLocation,
-    ),
+    redirect: (context, state) {
+      final loc = state.matchedLocation;
+      // Lưu lại token mời ngay khi vào /join — phòng trường hợp router cần
+      // bắt đăng nhập trước (xem computeRedirect: pendingInviteToken).
+      if (loc == '/join') {
+        final token = state.uri.queryParameters['token'] ??
+            state.uri.queryParameters['code'];
+        if (token != null && token.isNotEmpty) {
+          auth.savePendingInviteToken(token);
+        }
+      }
+      final result = computeRedirect(
+        restoring:           auth.restoring,
+        loggedIn:            auth.isLoggedIn,
+        hasFamily:            auth.hasFamily,
+        role:                auth.isLoggedIn ? auth.user!.role : null,
+        loc:                 loc,
+        pendingInviteToken:  auth.pendingInviteToken,
+      );
+      // Token đã được dùng để quay lại /join — xoá để không lặp lại lần sau.
+      if (result != null && result.startsWith('/join') && auth.pendingInviteToken != null) {
+        auth.clearPendingInviteToken();
+      }
+      return result;
+    },
     routes: [
       // ── Auth ──────────────────────────────────────────────
       GoRoute(path: '/splash',       builder: (_, _) => const SplashScreen()),

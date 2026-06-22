@@ -91,6 +91,17 @@ DELETE /api/v1/families/{familyId}/invitations/{invitationId}
 | **Lý do** | `POST /families/{familyId}/invitations` đã có → thiếu GET/DELETE để quản lý. |
 |---|---|
 
+**Gap khác (chưa cần BE làm ngay, ghi lại để theo dõi — 2026-06-22):**
+- Design họp 19/05 (`COMPONENT_PATTERNS.md`) có mã mời 6 ký tự (vd `A7X-9P2`) để chia sẻ bằng lời
+  nói/SMS thường, nhưng BE hiện **chỉ có UUID token** (36 ký tự, không nhập tay được). Cần BE thêm
+  `POST /invitations/code/{shortCode}/accept` (hoặc tương đương) nếu muốn giữ UX nhập mã tay.
+- Cần xác nhận: `POST /invitations/{token}/accept` có yêu cầu user đăng nhập khớp `email` trong
+  `CreateInvitationDto` không? Ảnh hưởng tới việc link mời có thể chia sẻ rộng (ai bấm cũng join được)
+  hay chỉ dùng được bởi đúng người được nhắm tới qua email.
+- Link mời hiện là HTTP thường tới IP backend (`http://103.110.84.66/join?token=...`), chưa phải App
+  Link/Universal Link — muốn OS tự mở app khi bấm link cần domain HTTPS ổn định + file xác minh
+  (`assetlinks.json`/`apple-app-site-association`), không làm được với IP thô.
+
 ---
 
 ### 4. Role Management (Cấp/thu hồi quyền Phó nhóm)

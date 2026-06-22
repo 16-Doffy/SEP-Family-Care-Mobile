@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../wear_utils.dart';
 
@@ -169,8 +170,20 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
               Expanded(
                 child: GestureDetector(
                   onTap: () async {
+                    if (sos.sending) return;
                     HapticFeedback.mediumImpact();
-                    await sos.updateAlert(alert.id, 'ACKNOWLEDGED');
+                    try {
+                      await sos.respond(alert.id, 'VIEWED', message: 'Tôi đang đến');
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                          content: Text(e.toString().replaceFirst('Exception: ', ''),
+                              style: const TextStyle(fontSize: 10)),
+                          backgroundColor: const Color(0xFFDC2626),
+                          duration: const Duration(seconds: 2),
+                        ));
+                      }
+                    }
                   },
                   child: Container(
                     height: 26,
@@ -190,30 +203,46 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () async {
-                    HapticFeedback.lightImpact();
-                    await sos.updateAlert(alert.id, 'RESOLVED');
-                  },
-                  child: Container(
-                    height: 26,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white24),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      'Xong',
-                      style: GoogleFonts.inter(
-                        fontSize: 8,
-                        color: Colors.white38,
+              // Chỉ Manager/Deputy được phép resolve (Swagger: PATCH
+              // .../resolve chỉ FAMILY_MANAGER/DEPUTY_MEMBER).
+              if (ctx.watch<AuthProvider>().user?.canResolveSos == true) ...[
+                const SizedBox(width: 5),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () async {
+                      if (sos.sending) return;
+                      HapticFeedback.lightImpact();
+                      try {
+                        await sos.resolveAlert(alert.id);
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                            content: Text(e.toString().replaceFirst('Exception: ', ''),
+                                style: const TextStyle(fontSize: 10)),
+                            backgroundColor: const Color(0xFFDC2626),
+                            duration: const Duration(seconds: 2),
+                          ));
+                        }
+                      }
+                    },
+                    child: Container(
+                      height: 26,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white24),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Xong',
+                        style: GoogleFonts.inter(
+                          fontSize: 8,
+                          color: Colors.white38,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ],

@@ -435,6 +435,11 @@ else SizedBox.shrink(),
 
 ### InviteMemberScreen (TODO)
 
+> ⚠️ 2026-06-22: BE hiện chỉ có UUID token (36 ký tự), **không có endpoint nhận mã 6 ký tự** ở dưới.
+> Tab "Mã số" trong design này chưa làm được cho tới khi BE thêm endpoint tương ứng — xem
+> `BE_API_REQUESTS.md` mục Invite Management. `InviteMemberScreen`/`JoinFamilyScreen` thực tế hiện chỉ
+> hỗ trợ Link (UUID token, dán tay/clipboard).
+
 ```
 Layout (bottom sheet hoặc full screen):
 

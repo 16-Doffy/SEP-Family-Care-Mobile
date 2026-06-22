@@ -22,7 +22,7 @@ class SosAlert {
     this.longitude,
   });
 
-  bool get isActive => status == 'ACTIVE' || status == 'ACKNOWLEDGED';
+  bool get isActive => status == 'ACTIVE';
   bool get hasLocation => latitude != null && longitude != null;
 
   factory SosAlert.fromJson(Map<String, dynamic> json) {
@@ -95,7 +95,9 @@ class SosProvider extends ChangeNotifier {
   }
 
   // POST /families/{familyId}/sos/alerts
-  Future<String?> sendSos({
+  // address: chỉ dùng hiển thị local (UI cũ), KHÔNG gửi lên BE — xem comment
+  // trong body POST bên dưới.
+  Future<String> sendSos({
     String message = 'SOS khẩn cấp',
     String address = '',
     double? latitude,
@@ -103,9 +105,12 @@ class SosProvider extends ChangeNotifier {
   }) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
+    _ensureNoActionInProgress();
     _sending = true;
     notifyListeners();
     try {
+      // address KHÔNG nằm trong CreateSosAlertDto theo API_DOCS — không gửi
+      // vì backend có thể bật forbidNonWhitelisted và trả 400 cho field lạ.
       final created = await ApiClient.instance.post('/families/$fid/sos/alerts', {
         'sourceType': 'MOBILE_APP',
         'message': message,
@@ -113,23 +118,37 @@ class SosProvider extends ChangeNotifier {
         'initialLongitude': ?longitude,
       });
       await fetchAlerts();
-      return created['id']?.toString();
+      final id = created['id']?.toString();
+      if (id == null || id.isEmpty) {
+        throw Exception('Server không trả về ID cảnh báo');
+      }
+      return id;
     } finally {
       _sending = false;
       notifyListeners();
     }
   }
 
-  // PATCH .../resolve hoặc .../cancel tùy status — giữ tên method cũ để
-  // không phải sửa các nơi gọi (sos_screen.dart).
-  Future<void> updateAlert(String id, String status) async {
+  // PATCH /families/{familyId}/sos/alerts/{alertId}/resolve — chỉ
+  // FAMILY_MANAGER / DEPUTY_MEMBER.
+  Future<void> resolveAlert(String alertId, {String? resolutionNote}) =>
+      _patchAlert(alertId, 'resolve', resolutionNote);
+
+  // PATCH /families/{familyId}/sos/alerts/{alertId}/cancel — chỉ
+  // FAMILY_MANAGER / DEPUTY_MEMBER.
+  Future<void> cancelAlert(String alertId, {String? resolutionNote}) =>
+      _patchAlert(alertId, 'cancel', resolutionNote);
+
+  Future<void> _patchAlert(String alertId, String action, String? resolutionNote) async {
     final fid = _fid;
-    if (fid == null) return;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    _ensureNoActionInProgress();
     _sending = true;
     notifyListeners();
     try {
-      final action = status == 'CANCELLED' ? 'cancel' : 'resolve';
-      await ApiClient.instance.patch('/families/$fid/sos/alerts/$id/$action', {});
+      await ApiClient.instance.patch('/families/$fid/sos/alerts/$alertId/$action', {
+        if (resolutionNote != null && resolutionNote.isNotEmpty) 'resolutionNote': resolutionNote,
+      });
       await fetchAlerts();
     } finally {
       _sending = false;
@@ -141,20 +160,42 @@ class SosProvider extends ChangeNotifier {
   // khác phản hồi cảnh báo (VIEWED / CONFIRM_SAFE / NEED_HELP).
   Future<void> respond(String alertId, String responseType, {String? message}) async {
     final fid = _fid;
-    if (fid == null) return;
-    await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/responses', {
-      'responseType': responseType,
-      if (message != null && message.isNotEmpty) 'message': message,
-    });
-    await fetchAlerts();
+    if (fid == null) throw Exception('Chưa có gia đình');
+    _ensureNoActionInProgress();
+    _sending = true;
+    notifyListeners();
+    try {
+      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/responses', {
+        'responseType': responseType,
+        if (message != null && message.isNotEmpty) 'message': message,
+      });
+      await fetchAlerts();
+    } finally {
+      _sending = false;
+      notifyListeners();
+    }
   }
 
   // POST /families/{familyId}/sos/alerts/{alertId}/confirm-safety — người
   // kích hoạt SOS tự xác nhận đã an toàn.
   Future<void> confirmSafety(String alertId) async {
     final fid = _fid;
-    if (fid == null) return;
-    await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/confirm-safety', {});
-    await fetchAlerts();
+    if (fid == null) throw Exception('Chưa có gia đình');
+    _ensureNoActionInProgress();
+    _sending = true;
+    notifyListeners();
+    try {
+      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/confirm-safety', {});
+      await fetchAlerts();
+    } finally {
+      _sending = false;
+      notifyListeners();
+    }
+  }
+
+  void _ensureNoActionInProgress() {
+    if (_sending) {
+      throw Exception('Một thao tác SOS khác đang được xử lý, vui lòng chờ.');
+    }
   }
 }

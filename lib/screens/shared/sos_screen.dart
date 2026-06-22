@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
 
@@ -22,6 +23,7 @@ class _SOSScreenState extends State<SOSScreen>
   int?   _countdown;
   Timer? _countTimer;
   double? _localLat, _localLng; // GPS lưu local khi API chưa có
+  String? _sentAlertId; // id alert vừa tạo, để Đóng/confirm-safety đúng alert
   late AnimationController _pulseCtrl;
   late Animation<double>   _ring1, _ring2, _ring3;
 
@@ -109,7 +111,7 @@ class _SOSScreenState extends State<SOSScreen>
       });
     }
     try {
-      await sosProvider.sendSos(
+      final alertId = await sosProvider.sendSos(
         message:   'SOS khẩn cấp từ ứng dụng Family Care',
         address:   pos != null
             ? 'GPS: ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}'
@@ -118,7 +120,9 @@ class _SOSScreenState extends State<SOSScreen>
         longitude: pos?.longitude,
       );
       // Chỉ chuyển sang "đã gửi" khi API xác nhận thành công
-      if (mounted) setState(() { _sent = true; _sending = false; _apiOk = true; });
+      if (mounted) {
+        setState(() { _sent = true; _sending = false; _apiOk = true; _sentAlertId = alertId; });
+      }
     } catch (e) {
       // API thất bại → KHÔNG báo thành công, show lỗi để user biết
       // (kèm tọa độ GPS để user có thể chia sẻ thủ công)
@@ -202,17 +206,35 @@ class _SOSScreenState extends State<SOSScreen>
     );
   }
 
+  // Đóng màn hình "đã gửi": người gửi tự xác nhận an toàn (confirm-safety),
+  // không phải hủy SOS — mọi thành viên đều được phép tự xác nhận, khác với
+  // /cancel và /resolve vốn chỉ Manager/Deputy mới có quyền.
   Future<void> _cancelSOS() async {
-    final sosState  = context.read<SosProvider>();
-    final latestId  = sosState.alerts.isNotEmpty ? sosState.alerts.first.id : null;
-    if (latestId != null) {
-      try {
-        await sosState.updateAlert(latestId, 'CANCELLED');
-      } catch (e) {
-        debugPrint('SOSScreen: cancel SOS failed: $e');
+    final sosState = context.read<SosProvider>();
+    if (sosState.sending) return;
+    final id = _sentAlertId;
+    if (id == null) {
+      // Không có alertId hợp lệ → không thể xác nhận an toàn, giữ màn hình.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Không xác định được cảnh báo, vui lòng thử lại.'),
+          backgroundColor: AppColors.danger,
+        ));
+      }
+      return;
+    }
+    try {
+      await sosState.confirmSafety(id);
+      if (mounted) setState(() => _sent = false);
+    } catch (e) {
+      debugPrint('SOSScreen: confirmSafety failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Xác nhận an toàn thất bại: ${e.toString().replaceFirst('Exception: ', '')}'),
+          backgroundColor: AppColors.danger,
+        ));
       }
     }
-    if (mounted) setState(() => _sent = false);
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -494,15 +516,24 @@ class _SOSScreenState extends State<SOSScreen>
           Expanded(
             child: GestureDetector(
               onTap: () async {
-                await context
-                    .read<SosProvider>()
-                    .updateAlert(alert.id, 'ACKNOWLEDGED');
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Đã phản hồi SOS ✅'),
-                        backgroundColor: AppColors.success),
-                  );
+                final sos = context.read<SosProvider>();
+                if (sos.sending) return;
+                try {
+                  await sos.respond(alert.id, 'VIEWED', message: 'Tôi đang đến');
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Đã phản hồi SOS ✅'),
+                          backgroundColor: AppColors.success),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Phản hồi thất bại: ${e.toString().replaceFirst('Exception: ', '')}'),
+                      backgroundColor: AppColors.danger,
+                    ));
+                  }
                 }
               },
               child: Container(
@@ -519,25 +550,41 @@ class _SOSScreenState extends State<SOSScreen>
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: GestureDetector(
-              onTap: () =>
-                  context.read<SosProvider>().updateAlert(alert.id, 'RESOLVED'),
-              child: Container(
-                height: 42,
-                decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white24)),
-                alignment: Alignment.center,
-                child: Text('Đã xử lý',
-                    style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white60)),
+          // Chỉ Manager/Deputy được phép resolve (theo Swagger: PATCH
+          // .../resolve chỉ FAMILY_MANAGER/DEPUTY_MEMBER).
+          if (context.watch<AuthProvider>().user?.canResolveSos == true) ...[
+            const SizedBox(width: 10),
+            Expanded(
+              child: GestureDetector(
+                onTap: () async {
+                  final sos = context.read<SosProvider>();
+                  if (sos.sending) return;
+                  try {
+                    await sos.resolveAlert(alert.id);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Xử lý thất bại: ${e.toString().replaceFirst('Exception: ', '')}'),
+                        backgroundColor: AppColors.danger,
+                      ));
+                    }
+                  }
+                },
+                child: Container(
+                  height: 42,
+                  decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white24)),
+                  alignment: Alignment.center,
+                  child: Text('Đã xử lý',
+                      style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white60)),
+                ),
               ),
             ),
-          ),
+          ],
         ]),
       ]),
     );

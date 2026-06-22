@@ -31,6 +31,48 @@ void main() {
       );
     });
 
+    test('not logged in CAN access /join (public invite lookup) without redirect', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: false, hasFamily: false,
+          role: null, loc: '/join',
+        ),
+        isNull,
+      );
+    });
+
+    test('logged in just after login with pending invite token → back to /join, not home', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.member, loc: '/login',
+          pendingInviteToken: 'abc-123',
+        ),
+        '/join?token=abc-123',
+      );
+    });
+
+    test('logged in on /login WITHOUT pending token → home by role như cũ', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.member, loc: '/login',
+        ),
+        '/member/home',
+      );
+    });
+
+    test('logged in already on /join with pending token → không redirect lặp', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.member, loc: '/join',
+          pendingInviteToken: 'abc-123',
+        ),
+        isNull,
+      );
+    });
+
     test('member is blocked from /manager/* and /deputy/* and sent to /member/home', () {
       expect(
         computeRedirect(
