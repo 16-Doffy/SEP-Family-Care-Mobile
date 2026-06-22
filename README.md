@@ -66,11 +66,36 @@ web/
 
 ## Roles & Navigation
 
-| Role | Shell | Vào từ |
+Cả 3 role dùng chung 1 widget `FamilyShell` (`lib/navigation/family_shell.dart`) — khác biệt chỉ ở
+3 tab giữa (`middleTabs`) và route đích, định nghĩa ở `app_router.dart`. Tab Trang chủ (0) và Tôi (5)
+cố định, slot SOS (3) luôn là nút tròn đỏ giống nhau ở cả 3 shell.
+
+| Role | Bottom nav (Trang chủ / 1 / 2 / SOS / 4 / Tôi) | Vào từ |
 |---|---|---|
-| `MANAGER` (Trưởng nhóm) | `ManagerShell` | Đăng ký mới → tự động |
-| `DEPUTY` (Phó nhóm) | `ManagerShell` | Được cấp quyền bởi Manager |
-| `MEMBER` (Thành viên) | `MemberShell` | Tham gia qua link / QR / mã mời |
+| `MANAGER` (Trưởng nhóm) | Trang chủ, **Nhắn tin, Lịch**, SOS, **Album**, Tôi → `/manager/*` | Đăng ký mới → tự động |
+| `DEPUTY` (Phó nhóm) | Trang chủ, **Nhiệm vụ, Ví**, SOS, **Chat**, Tôi → `/deputy/*` (mở thẳng màn hình quản lý — `TaskManagementScreen`/`WalletScreen`, không phải màn member) | Được Manager cấp quyền (UC18 — hiện chỉ làm được qua admin API, chưa có endpoint user-facing) |
+| `MEMBER` (Thành viên) | Trang chủ, Nhiệm vụ, Ví, SOS, Chat, Tôi → `/member/*` | Tham gia qua link / QR / mã mời |
+
+Deputy về bản chất vẫn là Family Member được cấp quyền hạn chế (không phải actor độc lập — theo
+BR-ROLE-02), nên **không dùng chung shell với Manager**. Router (`computeRedirect` trong
+`app_router.dart`) cô lập 3 shell theo `_managerShellPaths`/`_deputyShellPaths`/`_memberShellPaths`,
+nhưng vẫn mở các route quản lý dùng chung (`/manager/members`, `/manager/wallet`,
+`/manager/finance-model`, `/manager/budget-plans`...) cho Deputy vì các route này không nằm trong 3
+set path kể trên.
+
+### Capability matrix (`AppUser` trong `lib/models/user.dart`)
+
+| Quyền | Manager | Deputy | Member |
+|---|---|---|---|
+| `canManageTasks` / `canManageFinance` / `canApproveSupportRequests` / `canManageCalendar` / `canResolveSos` | ✅ | ✅ | ❌ |
+| `canManageMemberRoles` (cấp/thu Deputy) | ✅ | ❌ | ❌ |
+| `canRemoveMembers` | ✅ | ❌ | ❌ |
+| `canManageSubscription` | ✅ | ❌ | ❌ |
+| `canInviteMembers` | ✅ | ❌ (đã verify BE thật trả 403 cho Deputy, 2026-06-22) | ❌ |
+
+`isAdministrative` (= Manager hoặc Deputy) chỉ còn dùng cho nhóm quyền chung ở trên — các hành động
+nhạy cảm (xoá thành viên, cấp/thu Deputy, mời, subscription) **không** dựa vào `isAdministrative` nữa,
+tránh lỗ hổng Deputy gọi được API quản trị qua UI (đã xảy ra trước khi tách capability).
 
 ---
 
@@ -109,13 +134,16 @@ flutter build apk --release
 ## Flows đã implement
 
 ### ✅ Auth
-- Đăng ký → tự động tạo gia đình → role MANAGER
+- Đăng ký → tự động tạo gia đình → role MANAGER. Số điện thoại **bắt buộc** (BE yêu cầu đủ
+  `{ email, password, fullName, phone }`) — bỏ trống bị validate ngay ở FE, số đã tồn tại được map
+  thành thông báo rõ "Số điện thoại đã tồn tại" thay vì exception thô từ BE
 - Đăng nhập → lấy familyId từ `/families/my`
 - Đăng xuất (revoke refresh token)
 
 ### ✅ Finance (kết nối API thực)
 - Xem tổng quan quỹ gia đình (`/finance/overview`)
-- Lịch sử thu/chi (`/finance/ledger/entries`)
+- Lịch sử thu/chi (`/finance/ledger/entries`) — dấu +/- và tổng thu nhập tính theo `entryType`
+  (`INCOME`/`TRANSFER_IN` = thu, `EXPENSE`/`TRANSFER_OUT` = chi) qua `signedAmount`, không suy đoán từ `amount > 0`
 - Yêu cầu hỗ trợ chi tiêu (`/finance/support-requests`)
 - Mô hình tài chính — 5 Jars, 80-20, Custom (`/finance/models`)
 - Kế hoạch ngân sách, mục tiêu tài chính
@@ -124,18 +152,25 @@ flutter build apk --release
 - Tạo task ad-hoc (UC38) và định kỳ (UC39)
 - Giao task / reassign (UC40, UC42)
 - Báo bận — recurring task (UC41)
-- Duyệt / từ chối task (UC44)
+- Duyệt / từ chối task (UC44) — `TaskProvider.fetchLatestSubmission()` gọi riêng
+  `GET .../assignments/{id}/submissions` trước khi mở sheet duyệt, vì endpoint danh sách assignment
+  (`GET .../tasks/{taskId}/assignments`) không trả kèm submission nên field `latestSubmissionId`
+  luôn null dù status đã `SUBMITTED` — sửa banner "Không tìm thấy bài nộp" xảy ra 100% các lần
 - Reward settlement flow: PENDING → SETTLED → CONFIRMED / DISPUTED (UC46–48)
 
 ### ✅ Family Management
-- Mời thành viên: QR / link / mã mời (UC15, UC16)
+- Mời thành viên: QR / link / mã mời (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403
 - Tham gia qua token (`/invitations/{token}/accept`) (UC13)
-- Danh sách thành viên (UC20)
-- Xoá thành viên (UC19)
+- Danh sách thành viên (UC20) — Manager/Deputy xem đầy đủ + có hành động quản lý; Member xem read-only
+  qua route dùng chung `/manager/members`
+- Cấp/thu quyền Phó nhóm (UC18) — **Manager only**, đang chờ BE endpoint user-facing (xem
+  `BE_API_REQUESTS.md` mục 4), FE chỉ hiện action khi `canManageMemberRoles`
+- Xoá thành viên (UC19) — **Manager only** (`canRemoveMembers`)
 
 ### ✅ SOS & Safety (kết nối API thực, `/families/{id}/sos/alerts...`)
 - Nút SOS giữ 3 giây (UC50)
-- Nhận cảnh báo SOS từ thành viên khác, global banner ở ManagerShell/MemberShell (UC51)
+- Nhận cảnh báo SOS từ thành viên khác, global banner ở `FamilyShell` (chung cho cả 3 role, banner
+  bấm vào chuyển tab SOS trong shell hiện tại — không dùng route `/sos` cố định) (UC51)
 - Xác nhận an toàn / hủy SOS (UC52, UC53)
 
 ### ✅ Calendar
@@ -160,10 +195,12 @@ Xem chi tiết tại [`API_DOCS.md`](API_DOCS.md) hoặc Swagger UI: `http://103
 
 ## Wear OS
 
-Companion app cho Wear OS nằm trong `lib/wear/`. Hỗ trợ:
-- Xem trạng thái SOS
-- Trigger SOS từ đồng hồ (UC57)
+Companion UI cho Wear OS nằm trong `lib/wear/` (`main_wear.dart` + `screens/wear_*`). Dùng chung
+`AuthProvider`/`SosProvider`/`GpsProvider` với app điện thoại — **chưa đóng gói thành app/flavor riêng** để cài lên đồng hồ thật.
+- Xem trạng thái SOS, danh sách cảnh báo
+- Trigger SOS từ đồng hồ (UC57) — dùng `SosProvider` đã sửa đúng path `/families/{id}/sos/alerts` (xem mục SOS & Safety)
 - Hiển thị task và thông báo (UC58)
+- ⚠️ Vị trí GPS gửi qua `GpsProvider` vẫn không hoạt động — BE chưa có endpoint location (xem mục "Chờ Backend")
 
 ---
 
