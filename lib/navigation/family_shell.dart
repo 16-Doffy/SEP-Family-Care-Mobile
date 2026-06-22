@@ -51,7 +51,10 @@ class _FamilyShellState extends State<FamilyShell> {
       body: Column(children: [
         if (activeAlerts.isNotEmpty)
           GestureDetector(
-            onTap: () => context.go('/sos'),
+            // Chuyển sang tab SOS (index 3) trong shell hiện tại — không
+            // dùng context.go('/sos') vì route đó không tồn tại (mỗi role
+            // có path riêng /manager|deputy|member/sos).
+            onTap: () => _go(3),
             child: Container(
               width: double.infinity,
               color: AppColors.sos,

@@ -142,5 +142,73 @@ void main() {
         isNull,
       );
     });
+
+    test('member can view shared /manager/members (read-only)', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.member, loc: '/manager/members',
+        ),
+        isNull,
+      );
+    });
+
+    test('deputy is blocked from Manager-only shell tabs (calendar/album) and Member shell', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.deputy, loc: '/manager/calendar',
+        ),
+        '/deputy/home',
+      );
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.deputy, loc: '/manager/album',
+        ),
+        '/deputy/home',
+      );
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.deputy, loc: '/member/home',
+        ),
+        '/deputy/home',
+      );
+    });
+
+    test('deputy can still access shared flat management routes outside any shell', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.deputy, loc: '/manager/finance-model',
+        ),
+        isNull,
+      );
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.deputy, loc: '/manager/wallet',
+        ),
+        isNull,
+      );
+    });
+
+    test('manager is blocked from Deputy/Member shell tabs', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.manager, loc: '/deputy/home',
+        ),
+        '/manager/home',
+      );
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.manager, loc: '/member/home',
+        ),
+        '/manager/home',
+      );
+    });
   });
 }

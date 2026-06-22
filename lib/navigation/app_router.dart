@@ -68,6 +68,29 @@ const _memberTabs = _deputyTabs;
 // Deputy. Xem AppUser.canManageSubscription / canInviteMembers.
 const _managerOnlyPaths = {'/manager/subscription', '/manager/invite'};
 
+// Route dùng chung dù namespace /manager/* — Member chỉ xem (read-only),
+// không có nút quản lý nào hiện ra vì member_list_screen đã tự gate theo
+// canManageMemberRoles/canRemoveMembers/canInviteMembers (đều false với
+// Member). Không đưa Member vào /manager/* nói chung, chỉ mở lối riêng
+// cho đúng path này.
+const _memberSharedPaths = {'/manager/members'};
+
+// Path thuộc shell bottom-nav riêng của từng role — chỉ chính role đó được
+// vào (Deputy/Member không nên đi sâu vào Lịch/Album của Manager dù route
+// vẫn nằm dưới /manager/*; Manager không có lý do gì vào /deputy/* hay
+// /member/*). Các route quản lý dùng chung KHÔNG nằm trong các set này
+// (ví dụ /manager/members, /manager/finance-model, /manager/wallet...) nên
+// vẫn mở cho Deputy như bình thường.
+const _managerShellPaths = {
+  '/manager/home', '/manager/chat', '/manager/calendar', '/manager/sos', '/manager/album', '/manager/profile',
+};
+const _deputyShellPaths = {
+  '/deputy/home', '/deputy/tasks', '/deputy/wallet', '/deputy/sos', '/deputy/chat', '/deputy/profile',
+};
+const _memberShellPaths = {
+  '/member/home', '/member/tasks', '/member/wallet', '/member/sos', '/member/chat', '/member/profile',
+};
+
 // Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
 // riêng để unit test được mà không cần render cây widget thật.
 String? computeRedirect({
@@ -107,15 +130,28 @@ String? computeRedirect({
   // (covers deep-link hoặc manual URL vào các route cần family)
   if (!hasFamily) return onSetup ? null : '/family-setup';
 
-  // Member: chỉ vào được /member/* — chặn toàn bộ /manager/* và /deputy/*
+  // Member: chỉ vào được /member/* — chặn /manager/* và /deputy/*, trừ vài
+  // route dùng chung đã liệt ở _memberSharedPaths (xem màn hình quản lý ở
+  // chế độ chỉ xem, không có hành động quản trị nào hiện ra).
   if (role == UserRole.member &&
+      !_memberSharedPaths.contains(loc) &&
       (loc.startsWith('/manager/') || loc.startsWith('/deputy/'))) {
     return homePath;
   }
 
   // Deputy: dùng chung UI quản lý ở /manager/* (Nhiệm vụ/Ví/Members/...)
-  // trừ các route Manager-only.
-  if (role == UserRole.deputy && _managerOnlyPaths.contains(loc)) {
+  // trừ các route Manager-only và shell riêng của Manager/Member.
+  if (role == UserRole.deputy &&
+      (_managerOnlyPaths.contains(loc) ||
+          _managerShellPaths.contains(loc) ||
+          _memberShellPaths.contains(loc))) {
+    return homePath;
+  }
+
+  // Manager: không có route quản lý nào nằm dưới /deputy/* hay /member/* —
+  // chặn deep-link vào shell của 2 role khác.
+  if (role == UserRole.manager &&
+      (_deputyShellPaths.contains(loc) || _memberShellPaths.contains(loc))) {
     return homePath;
   }
 
