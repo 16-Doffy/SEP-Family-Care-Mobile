@@ -5,14 +5,30 @@ import 'package:provider/provider.dart';
 import '../providers/sos_provider.dart';
 import '../theme/app_colors.dart';
 
-class MemberShell extends StatefulWidget {
-  final StatefulNavigationShell navigationShell;
-  const MemberShell({super.key, required this.navigationShell});
-  @override
-  State<MemberShell> createState() => _MemberShellState();
+// Tab thường (không phải SOS) trong bottom nav.
+class FamilyTab {
+  final IconData icon;
+  final String label;
+  const FamilyTab({required this.icon, required this.label});
 }
 
-class _MemberShellState extends State<MemberShell> {
+// Shell dùng chung cho cả 3 role (Manager/Deputy/Member) — khác biệt giữa
+// role chỉ nằm ở danh sách tab + route đích (định nghĩa ở app_router.dart),
+// không ảnh hưởng tới logic phân quyền (xem AppUser.canXxx trong
+// lib/models/user.dart).
+//
+// Thứ tự 6 vị trí luôn cố định: 0 Trang chủ, 1-2 middleTabs[0..1], 3 SOS
+// (nút tròn đỏ đặc biệt, giống nhau mọi role), 4 middleTabs[2], 5 Tôi.
+class FamilyShell extends StatefulWidget {
+  final StatefulNavigationShell navigationShell;
+  final List<FamilyTab> middleTabs; // đúng 3 phần tử: vị trí 1, 2, 4
+  const FamilyShell({super.key, required this.navigationShell, required this.middleTabs});
+
+  @override
+  State<FamilyShell> createState() => _FamilyShellState();
+}
+
+class _FamilyShellState extends State<FamilyShell> {
   @override
   void initState() {
     super.initState();
@@ -29,10 +45,10 @@ class _MemberShellState extends State<MemberShell> {
   @override
   Widget build(BuildContext context) {
     final activeAlerts = context.watch<SosProvider>().activeAlerts;
+    final current = widget.navigationShell.currentIndex;
 
     return Scaffold(
       body: Column(children: [
-        // ── Global SOS banner (thành viên khác đang kêu cứu) ──────────────
         if (activeAlerts.isNotEmpty)
           GestureDetector(
             onTap: () => context.go('/sos'),
@@ -83,16 +99,12 @@ class _MemberShellState extends State<MemberShell> {
           child: SizedBox(
             height: 60,
             child: Row(children: [
-              _NavItem(icon: Icons.home_rounded, label: 'Trang chủ', index: 0, current: widget.navigationShell.currentIndex, onTap: () => _go(0)),
-              _NavItem(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ', index: 1, current: widget.navigationShell.currentIndex, onTap: () => _go(1)),
-              _NavItem(icon: Icons.account_balance_wallet_rounded, label: 'Ví', index: 2, current: widget.navigationShell.currentIndex, onTap: () => _go(2)),
-              _SOSNavItem(
-                hasAlert: activeAlerts.isNotEmpty,
-                current: widget.navigationShell.currentIndex,
-                onTap: () => _go(3),
-              ),
-              _NavItem(icon: Icons.chat_bubble_rounded, label: 'Chat', index: 4, current: widget.navigationShell.currentIndex, onTap: () => _go(4)),
-              _NavItem(icon: Icons.person_rounded, label: 'Tôi', index: 5, current: widget.navigationShell.currentIndex, onTap: () => _go(5)),
+              _NavItem(icon: Icons.home_rounded, label: 'Trang chủ', index: 0, current: current, onTap: () => _go(0)),
+              _NavItem(icon: widget.middleTabs[0].icon, label: widget.middleTabs[0].label, index: 1, current: current, onTap: () => _go(1)),
+              _NavItem(icon: widget.middleTabs[1].icon, label: widget.middleTabs[1].label, index: 2, current: current, onTap: () => _go(2)),
+              _SOSNavItem(hasAlert: activeAlerts.isNotEmpty, current: current, onTap: () => _go(3)),
+              _NavItem(icon: widget.middleTabs[2].icon, label: widget.middleTabs[2].label, index: 4, current: current, onTap: () => _go(4)),
+              _NavItem(icon: Icons.person_rounded, label: 'Tôi', index: 5, current: current, onTap: () => _go(5)),
             ]),
           ),
         ),
@@ -145,8 +157,7 @@ class _SOSNavItem extends StatelessWidget {
           Stack(clipBehavior: Clip.none, children: [
             Container(
               width: 36, height: 36,
-              decoration: const BoxDecoration(
-                  shape: BoxShape.circle, color: AppColors.sos),
+              decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.sos),
               alignment: Alignment.center,
               child: const Text('🚨', style: TextStyle(fontSize: 18)),
             ),
@@ -165,10 +176,7 @@ class _SOSNavItem extends StatelessWidget {
           ]),
           const SizedBox(height: 2),
           Text('SOS',
-              style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.sos)),
+              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.sos)),
         ]),
       ),
     );

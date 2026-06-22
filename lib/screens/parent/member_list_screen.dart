@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
@@ -30,7 +31,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
   @override
   Widget build(BuildContext context) {
     final me       = context.watch<AuthProvider>().user;
-    final isAdmin  = me?.isAdministrative ?? false;
+    final canManage = (me?.canManageMemberRoles ?? false) || (me?.canRemoveMembers ?? false);
     final provider = context.watch<FamilyProvider>();
 
     return Scaffold(
@@ -50,7 +51,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
                 child: Text('Thành viên gia đình',
                     style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
               ),
-              if (isAdmin)
+              if (me?.canInviteMembers ?? false)
                 GestureDetector(
                   onTap: () => context.push('/manager/invite'),
                   child: Container(
@@ -76,7 +77,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               itemCount: provider.members.length,
                               separatorBuilder: (_, _) => const SizedBox(height: 10),
-                              itemBuilder: (_, i) => _memberCard(context, provider.members[i], me?.id, isAdmin),
+                              itemBuilder: (_, i) => _memberCard(context, provider.members[i], me, canManage),
                             ),
                           ),
           ),
@@ -85,8 +86,8 @@ class _MemberListScreenState extends State<MemberListScreen> {
     );
   }
 
-  Widget _memberCard(BuildContext ctx, FamilyMember m, String? myId, bool isAdmin) {
-    final isMe = m.userId == myId;
+  Widget _memberCard(BuildContext ctx, FamilyMember m, AppUser? me, bool canManage) {
+    final isMe = m.userId == me?.id;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -124,9 +125,9 @@ class _MemberListScreenState extends State<MemberListScreen> {
             ],
           ]),
         ),
-        if (isAdmin && !isMe)
+        if (canManage && !isMe)
           GestureDetector(
-            onTap: () => _showManageSheet(ctx, m),
+            onTap: () => _showManageSheet(ctx, m, me),
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -140,9 +141,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
     );
   }
 
-  void _showManageSheet(BuildContext ctx, FamilyMember m) {
+  void _showManageSheet(BuildContext ctx, FamilyMember m, AppUser? me) {
     final provider = ctx.read<FamilyProvider>();
     final isDeputy = m.isDeputy;
+    final canManageRoles = me?.canManageMemberRoles ?? false;
+    final canRemove = me?.canRemoveMembers ?? false;
 
     showModalBottomSheet(
       context: ctx,
@@ -164,47 +167,50 @@ class _MemberListScreenState extends State<MemberListScreen> {
           const Divider(),
           const SizedBox(height: 12),
 
-          // UC18 — Deputy toggle
-          _actionTile(
-            icon: isDeputy ? Icons.remove_moderator_rounded : Icons.admin_panel_settings_rounded,
-            label: isDeputy ? 'Thu quyền Phó nhóm' : 'Cấp quyền Phó nhóm',
-            color: AppColors.link,
-            onTap: () async {
-              Navigator.pop(ctx);
-              try {
-                if (isDeputy) {
-                  await provider.revokeDeputy(m.id);
-                } else {
-                  await provider.grantDeputy(m.id);
+          // UC18 — Deputy toggle (Manager-only)
+          if (canManageRoles) ...[
+            _actionTile(
+              icon: isDeputy ? Icons.remove_moderator_rounded : Icons.admin_panel_settings_rounded,
+              label: isDeputy ? 'Thu quyền Phó nhóm' : 'Cấp quyền Phó nhóm',
+              color: AppColors.link,
+              onTap: () async {
+                Navigator.pop(ctx);
+                try {
+                  if (isDeputy) {
+                    await provider.revokeDeputy(m.id);
+                  } else {
+                    await provider.grantDeputy(m.id);
+                  }
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                      content: Text(isDeputy ? 'Đã thu quyền Phó nhóm' : 'Đã cấp quyền Phó nhóm'),
+                      backgroundColor: AppColors.success,
+                    ));
+                  }
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                      content: Text(e.toString()),
+                      backgroundColor: AppColors.danger,
+                    ));
+                  }
                 }
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                    content: Text(isDeputy ? 'Đã thu quyền Phó nhóm' : 'Đã cấp quyền Phó nhóm'),
-                    backgroundColor: AppColors.success,
-                  ));
-                }
-              } catch (e) {
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                    content: Text(e.toString()),
-                    backgroundColor: AppColors.danger,
-                  ));
-                }
-              }
-            },
-          ),
-          const SizedBox(height: 8),
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
 
-          // UC19 — Remove member
-          _actionTile(
-            icon: Icons.person_remove_rounded,
-            label: 'Xoá thành viên khỏi gia đình',
-            color: AppColors.danger,
-            onTap: () {
-              Navigator.pop(ctx);
-              _confirmRemove(ctx, m, provider);
-            },
-          ),
+          // UC19 — Remove member (Manager-only)
+          if (canRemove)
+            _actionTile(
+              icon: Icons.person_remove_rounded,
+              label: 'Xoá thành viên khỏi gia đình',
+              color: AppColors.danger,
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmRemove(ctx, m, provider);
+              },
+            ),
         ]),
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 
 // Auth
@@ -41,13 +42,31 @@ import '../screens/shared/family_map_screen.dart';
 import '../screens/parent/budget_plan_screen.dart';
 import '../screens/parent/financial_goal_screen.dart';
 
-// Shells
-import 'manager_shell.dart';
-import 'member_shell.dart';
+// Shell
+import 'family_shell.dart';
 
 final _rootKey = GlobalKey<NavigatorState>();
 final _managerKey = GlobalKey<NavigatorState>(debugLabel: 'manager');
+final _deputyKey  = GlobalKey<NavigatorState>(debugLabel: 'deputy');
 final _memberKey  = GlobalKey<NavigatorState>(debugLabel: 'member');
+
+const _managerTabs = [
+  FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Nhắn tin'),
+  FamilyTab(icon: Icons.calendar_month_rounded, label: 'Lịch'),
+  FamilyTab(icon: Icons.photo_library_rounded, label: 'Album'),
+];
+const _deputyTabs = [
+  FamilyTab(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ'),
+  FamilyTab(icon: Icons.account_balance_wallet_rounded, label: 'Ví'),
+  FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Chat'),
+];
+const _memberTabs = _deputyTabs;
+
+// Route Manager-only — Deputy KHÔNG được vào dù dùng chung namespace
+// /manager/* với các màn hình quản lý khác. Đã verify bằng tài khoản Deputy
+// thật trên BE thật (2026-06-22): cả 2 endpoint phía sau đều trả 403 cho
+// Deputy. Xem AppUser.canManageSubscription / canInviteMembers.
+const _managerOnlyPaths = {'/manager/subscription', '/manager/invite'};
 
 // Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
 // riêng để unit test được mà không cần render cây widget thật.
@@ -55,7 +74,7 @@ String? computeRedirect({
   required bool restoring,
   required bool loggedIn,
   required bool hasFamily,
-  required bool isAdministrative,
+  required UserRole? role, // null khi chưa đăng nhập
   required String loc,
 }) {
   // Đang khôi phục session đã lưu (đọc token + gọi /auth/me) — giữ ở
@@ -70,21 +89,34 @@ String? computeRedirect({
   // Chưa đăng nhập → login
   if (!loggedIn && !onAuth) return '/login';
   if (!loggedIn && loc == '/splash') return '/login';
+  if (!loggedIn) return null;
 
-  if (loggedIn) {
-    // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
-    if (onAuth) {
-      if (!hasFamily) return '/family-setup';
-      return isAdministrative ? '/manager/home' : '/member/home';
-    }
+  final homePath = switch (role) {
+    UserRole.manager => '/manager/home',
+    UserRole.deputy  => '/deputy/home',
+    _                 => '/member/home',
+  };
 
-    // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
-    // (covers deep-link hoặc manual URL vào các route cần family)
-    if (!hasFamily && !onSetup) return '/family-setup';
+  // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
+  if (onAuth) {
+    if (!hasFamily) return '/family-setup';
+    return homePath;
   }
-  // Role guard: member không được vào /manager/* routes
-  if (loggedIn && hasFamily && loc.startsWith('/manager/')) {
-    if (!isAdministrative) return '/member/home';
+
+  // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
+  // (covers deep-link hoặc manual URL vào các route cần family)
+  if (!hasFamily) return onSetup ? null : '/family-setup';
+
+  // Member: chỉ vào được /member/* — chặn toàn bộ /manager/* và /deputy/*
+  if (role == UserRole.member &&
+      (loc.startsWith('/manager/') || loc.startsWith('/deputy/'))) {
+    return homePath;
+  }
+
+  // Deputy: dùng chung UI quản lý ở /manager/* (Nhiệm vụ/Ví/Members/...)
+  // trừ các route Manager-only.
+  if (role == UserRole.deputy && _managerOnlyPaths.contains(loc)) {
+    return homePath;
   }
 
   // Các trường hợp còn lại — không redirect.
@@ -97,11 +129,11 @@ GoRouter createRouter(AuthProvider auth) {
     initialLocation: '/splash',
     refreshListenable: auth,
     redirect: (context, state) => computeRedirect(
-      restoring:         auth.restoring,
-      loggedIn:          auth.isLoggedIn,
-      hasFamily:         auth.hasFamily,
-      isAdministrative:  auth.isLoggedIn && auth.user!.isAdministrative,
-      loc:               state.matchedLocation,
+      restoring:  auth.restoring,
+      loggedIn:   auth.isLoggedIn,
+      hasFamily:  auth.hasFamily,
+      role:       auth.isLoggedIn ? auth.user!.role : null,
+      loc:        state.matchedLocation,
     ),
     routes: [
       // ── Auth ──────────────────────────────────────────────
@@ -114,10 +146,10 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/notifications', builder: (_, _) => const NotificationsScreen()),
       GoRoute(path: '/ai',            builder: (_, _) => const AIAssistantScreen()),
 
-      // ── Manager/Deputy Shell ──────────────────────────────
+      // ── Manager Shell (Trang chủ/Nhắn tin/Lịch/SOS/Album/Tôi) ──
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) => ManagerShell(navigationShell: shell),
+        builder: (_, _, shell) => FamilyShell(navigationShell: shell, middleTabs: _managerTabs),
         branches: [
           StatefulShellBranch(navigatorKey: _managerKey, routes: [
             GoRoute(path: '/manager/home',  builder: (_, _) => const HomeDashboardScreen()),
@@ -140,10 +172,37 @@ GoRouter createRouter(AuthProvider auth) {
         ],
       ),
 
-      // ── Member Shell ──────────────────────────────────────
+      // ── Deputy Shell (Trang chủ/Nhiệm vụ/Ví/SOS/Chat/Tôi — mở màn
+      // hình quản lý, không phải màn hình member thông thường) ──
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) => MemberShell(navigationShell: shell),
+        builder: (_, _, shell) => FamilyShell(navigationShell: shell, middleTabs: _deputyTabs),
+        branches: [
+          StatefulShellBranch(navigatorKey: _deputyKey, routes: [
+            GoRoute(path: '/deputy/home',  builder: (_, _) => const HomeDashboardScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/deputy/tasks',  builder: (_, _) => const TaskManagementScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/deputy/wallet', builder: (_, _) => const WalletScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/deputy/sos',   builder: (_, _) => const SOSScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/deputy/chat', builder: (_, _) => const ChatScreen()),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/deputy/profile', builder: (_, _) => const ProfileScreen()),
+          ]),
+        ],
+      ),
+
+      // ── Member Shell (Trang chủ/Nhiệm vụ/Ví/SOS/Chat/Tôi) ──────
+      StatefulShellRoute.indexedStack(
+        parentNavigatorKey: _rootKey,
+        builder: (_, _, shell) => FamilyShell(navigationShell: shell, middleTabs: _memberTabs),
         branches: [
           StatefulShellBranch(navigatorKey: _memberKey, routes: [
             GoRoute(path: '/member/home',   builder: (_, _) => const ChildHomeScreen()),

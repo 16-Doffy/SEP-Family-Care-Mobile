@@ -93,7 +93,23 @@ class AppUser {
       };
 
   bool get isAdministrative => role == UserRole.manager || role == UserRole.deputy;
+
+  // Quyền chung Manager + Deputy ("limited management authority")
   bool get canAccessSensitiveFinance => isAdministrative;
   bool get canApproveWithdrawals => isAdministrative;
   bool get canManageTasks => isAdministrative;
+  bool get canManageFinance => isAdministrative;
+  bool get canApproveSupportRequests => isAdministrative;
+  bool get canManageCalendar => isAdministrative;
+  bool get canResolveSos => isAdministrative;
+
+  // Quyền Manager-only — Deputy KHÔNG được, dù isAdministrative = true
+  bool get canManageMemberRoles => role == UserRole.manager;
+  bool get canRemoveMembers => role == UserRole.manager;
+  bool get canManageSubscription => role == UserRole.manager;
+
+  // Đã verify bằng tài khoản Deputy thật trên BE (2026-06-22): POST
+  // /invitations trả 403 "Yêu cầu vai trò gia đình: FAMILY_MANAGER" cho
+  // Deputy — chỉ Manager được mời thành viên.
+  bool get canInviteMembers => role == UserRole.manager;
 }
