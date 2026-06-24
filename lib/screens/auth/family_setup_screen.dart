@@ -66,7 +66,7 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
 
   Future<void> _lookupCode() async {
     final token = _codeCtrl.text.trim();
-    if (token.length < 6) return;
+    if (token.length < 32) return;
     setState(() { _lookingUp = true; _joinError = null; _preview = null; });
     try {
       final data = await ApiClient.instance.get('/invitations/$token');
@@ -82,16 +82,46 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
     final token = _codeCtrl.text.trim();
     if (token.isEmpty) return;
     setState(() { _joining = true; _joinError = null; });
-    final auth = context.read<AuthProvider>();
     try {
-      await ApiClient.instance.post('/invitations/$token/accept', {});
-      await auth.refreshFamilyContext();
-      if (mounted) context.go('/member/home');
+      await ApiClient.instance.post('/invitations/$token/claim', {});
+      if (mounted) _showRequestSentDialog();
     } catch (e) {
       if (mounted) setState(() => _joinError = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _joining = false);
     }
+  }
+
+  void _showRequestSentDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Đã gửi yêu cầu',
+          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Yêu cầu tham gia đã được gửi đến Trưởng nhóm. Bạn sẽ vào được gia đình sau khi yêu cầu được duyệt.',
+          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() {
+                _mode = _Mode.choose;
+                _codeCtrl.clear();
+                _preview = null;
+                _joinError = null;
+              });
+            },
+            child: Text('Đã hiểu', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showError(String msg) {
@@ -417,7 +447,7 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
                 ),
                 onChanged: (v) {
                   setState(() { _joinError = null; _preview = null; });
-                  if (v.trim().length >= 6) _lookupCode();
+                  if (v.trim().length >= 32) _lookupCode();
                 },
               ),
             ),
@@ -494,7 +524,7 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
                     dimension: 20,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
-                : Text('Tham gia gia đình',
+                : Text('Gửi yêu cầu tham gia',
                     style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,

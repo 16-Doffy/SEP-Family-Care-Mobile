@@ -209,9 +209,45 @@ class AuthProvider extends ChangeNotifier {
       final f = list.first as Map<String, dynamic>;
       final familyId = f['id']?.toString();
       final familyName = f['name']?.toString();
+      if (familyId == null) return const _FamilyContext();
 
-      String? familyRole =
-          f['currentMemberRole']?.toString() ??
+      // ⚠️ BE bug: /families/my VẪN trả gia đình mà user đã bị xoá
+      // (status REMOVED) — không lọc. Xác thực tư cách thành viên còn hiệu
+      // lực bằng /families/{id}: BE trả 403 "không còn hoạt động" nếu đã bị
+      // xoá → coi như user CHƯA có gia đình để router đưa về /family-setup.
+      Map<String, dynamic>? detail;
+      try {
+        final d = await ApiClient.instance.get('/families/$familyId');
+        detail = d is Map ? Map<String, dynamic>.from(d) : null;
+      } on ApiException catch (e) {
+        if (e.statusCode == 403) {
+          debugPrint('AuthProvider: membership REMOVED → no family');
+          return const _FamilyContext();
+        }
+        // Lỗi khác (mạng/500) → giữ family từ /families/my để tránh đá nhầm
+        // người dùng hợp lệ ra khỏi gia đình khi server tạm lỗi.
+        debugPrint('AuthProvider: family detail check failed (${e.statusCode}): $e');
+      }
+
+      // Lấy role: ưu tiên từ detail (chính xác), fallback /families/my.
+      String? familyRole;
+      if (detail != null) {
+        final dMems = (detail['members'] as List? ?? []);
+        final me = dMems.whereType<Map>().firstWhere(
+          (m) =>
+              m['userId']?.toString() == myId ||
+              m['user']?['id']?.toString() == myId,
+          orElse: () => {},
+        );
+        // Nếu tìm thấy nhưng status không ACTIVE → cũng coi như không còn.
+        final st = me['status']?.toString().toUpperCase();
+        if (st != null && st.isNotEmpty && st != 'ACTIVE') {
+          return const _FamilyContext();
+        }
+        familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
+      }
+
+      familyRole ??= f['currentMemberRole']?.toString() ??
           f['myRole']?.toString() ??
           f['userRole']?.toString() ??
           f['role']?.toString();
@@ -225,22 +261,6 @@ class AuthProvider extends ChangeNotifier {
           orElse: () => {},
         );
         familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
-      }
-
-      if ((familyRole == null || familyRole.isEmpty) && familyId != null) {
-        try {
-          final detail = await ApiClient.instance.get('/families/$familyId');
-          final dMems = (detail['members'] as List? ?? []);
-          final me = dMems.whereType<Map>().firstWhere(
-            (m) =>
-                m['userId']?.toString() == myId ||
-                m['user']?['id']?.toString() == myId,
-            orElse: () => {},
-          );
-          familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
-        } catch (e) {
-          debugPrint('AuthProvider: fetch family detail failed: $e');
-        }
       }
 
       return _FamilyContext(id: familyId, name: familyName, role: familyRole);

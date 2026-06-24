@@ -10,6 +10,7 @@ import 'providers/sos_provider.dart';
 import 'providers/family_provider.dart';
 import 'providers/finance_alert_provider.dart';
 import 'providers/finance_provider.dart';
+import 'providers/invitation_provider.dart';
 import 'providers/support_request_provider.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
@@ -27,6 +28,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => FamilyProvider()),
         ChangeNotifierProvider(create: (_) => FinanceAlertProvider()),
         ChangeNotifierProvider(create: (_) => FinanceProvider()),
+        ChangeNotifierProvider(create: (_) => InvitationProvider()),
         ChangeNotifierProvider(create: (_) => SupportRequestProvider()),
       ],
       child: const FamilyCareApp(),

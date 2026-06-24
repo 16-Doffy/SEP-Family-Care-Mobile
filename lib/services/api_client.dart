@@ -11,6 +11,16 @@ const _kBase = String.fromEnvironment(
 
 const _kRequestTimeout = Duration(seconds: 15);
 
+/// Lỗi từ API kèm HTTP status code. `toString()` trả về đúng message của BE
+/// nên code cũ dùng `e.toString().replaceFirst('Exception: ', '')` vẫn chạy.
+class ApiException implements Exception {
+  final int statusCode;
+  final String message;
+  const ApiException(this.statusCode, this.message);
+  @override
+  String toString() => message;
+}
+
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
@@ -137,19 +147,19 @@ class ApiClient {
     // ── 204 No Content ────────────────────────────────────────────────────
     if (response.statusCode == 204 || response.body.isEmpty) {
       if (response.statusCode >= 400) {
-        throw Exception('Request failed (${response.statusCode})');
+        throw ApiException(response.statusCode, 'Request failed (${response.statusCode})');
       }
       return <String, dynamic>{};
     }
 
-    final body = jsonDecode(response.body);
+    final body = _decodeBody(response);
     if (response.statusCode >= 400) {
       final msg = body is Map
           ? (body['message'] is List
               ? (body['message'] as List).join(', ')
               : body['message']?.toString() ?? body['error']?.toString())
           : null;
-      throw Exception(msg ?? 'Request failed (${response.statusCode})');
+      throw ApiException(response.statusCode, msg ?? 'Request failed (${response.statusCode})');
     }
 
     // Unwrap { success, data }
@@ -157,6 +167,25 @@ class ApiClient {
       return body['data'];
     }
     return body;
+  }
+
+  // Bọc jsonDecode để tránh FormatException thô lọt ra UI khi server/proxy
+  // trả về non-JSON (trang lỗi HTML khi gateway timeout, redirect, maintenance...)
+  dynamic _decodeBody(http.Response response) {
+    try {
+      return jsonDecode(response.body);
+    } on FormatException {
+      final preview = response.body.replaceAll(RegExp(r'\s+'), ' ').trim();
+      debugPrint(
+        'ApiClient: invalid JSON response '
+        '(${response.statusCode}) from ${response.request?.url}: '
+        '${preview.length > 200 ? '${preview.substring(0, 200)}...' : preview}',
+      );
+      throw Exception(
+        'Server trả dữ liệu không đúng định dạng JSON '
+        '(${response.statusCode}). Vui lòng kiểm tra kết nối hoặc thử lại sau.',
+      );
+    }
   }
 
   /// Refresh lock: nếu refresh đang chạy, các caller khác đợi kết quả đó

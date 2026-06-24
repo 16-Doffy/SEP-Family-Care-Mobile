@@ -18,6 +18,26 @@ Vấn đề thực ra là **FE gọi sai path** (`/sos` phẳng thay vì `/famil
 
 ---
 
+## 🐞 BE BUG — cần BE sửa (đã verify bằng kịch bản thật 2026-06-24)
+
+### `GET /families/my` trả về cả gia đình mà user đã bị xoá (status REMOVED)
+
+**Hiện trạng:** Sau khi Manager xoá 1 thành viên (`DELETE /families/{id}/members/{userId}`,
+soft-delete → status REMOVED), thành viên đó đăng nhập lại thì `GET /families/my` **VẪN trả về
+gia đình đó y hệt** (thậm chí `_count.members` chưa giảm). Trong khi mọi endpoint con
+(`GET /families/{id}`, `.../tasks`, ...) lại trả **403 "Tư cách thành viên gia đình không còn
+hoạt động"**. → Member kẹt ở màn hình gia đình rỗng (không có task/ví/dữ liệu).
+
+**Mong muốn:** `GET /families/my` chỉ trả về gia đình mà user còn là thành viên **ACTIVE**
+(lọc bỏ membership REMOVED/LEFT), nhất quán với check 403 ở các endpoint con.
+
+**FE đã workaround (2026-06-24):** sau khi lấy family từ `/families/my`, gọi thêm
+`GET /families/{id}` để xác thực — nếu 403 thì coi như user chưa có gia đình → đưa về
+`/family-setup`. Workaround này tốn thêm 1 request mỗi lần login; bỏ được khi BE sửa
+`/families/my`.
+
+---
+
 ## 🔴 CRITICAL — Tính năng hoàn toàn không chạy được nếu thiếu
 
 ### 1. Location Sharing (Bản đồ gia đình)

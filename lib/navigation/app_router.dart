@@ -38,6 +38,7 @@ import '../screens/shared/edit_profile_screen.dart';
 import '../screens/shared/splash_screen.dart';
 import '../screens/parent/finance_alerts_screen.dart';
 import '../screens/parent/support_request_screen.dart';
+import '../screens/parent/invitation_requests_screen.dart';
 import '../screens/shared/family_map_screen.dart';
 import '../screens/parent/budget_plan_screen.dart';
 import '../screens/parent/financial_goal_screen.dart';
@@ -66,7 +67,7 @@ const _memberTabs = _deputyTabs;
 // /manager/* với các màn hình quản lý khác. Đã verify bằng tài khoản Deputy
 // thật trên BE thật (2026-06-22): cả 2 endpoint phía sau đều trả 403 cho
 // Deputy. Xem AppUser.canManageSubscription / canInviteMembers.
-const _managerOnlyPaths = {'/manager/subscription', '/manager/invite'};
+const _managerOnlyPaths = {'/manager/subscription', '/manager/invite', '/manager/invite-requests'};
 
 // Route dùng chung dù namespace /manager/* — Member chỉ xem (read-only),
 // không có nút quản lý nào hiện ra vì member_list_screen đã tự gate theo
@@ -111,7 +112,7 @@ String? computeRedirect({
 
   final onAuth  = loc == '/login' || loc == '/register' || loc == '/splash';
   final onSetup = loc == '/family-setup';
-  // JoinFamilyScreen tự xử lý lookup/accept không cần đăng nhập (public
+  // JoinFamilyScreen tự xử lý lookup public, còn claim sẽ yêu cầu đăng nhập.
   // endpoint) — không chặn về /login như các route khác.
   final onJoin  = loc == '/join';
 
@@ -297,6 +298,7 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/manager/tasks',         builder: (_, _) => const TaskManagementScreen()),
       GoRoute(path: '/manager/subscription',  builder: (_, _) => const SubscriptionScreen()),
       GoRoute(path: '/manager/invite',        builder: (_, _) => const InviteMemberScreen()),
+      GoRoute(path: '/manager/invite-requests', builder: (_, _) => const InvitationRequestsScreen()),
       GoRoute(path: '/manager/members',       builder: (_, _) => const MemberListScreen()),
       GoRoute(path: '/manager/finance-model', builder: (_, _) => const FinanceModelScreen()),
       GoRoute(path: '/profile/edit',          builder: (_, _) => const EditProfileScreen()),

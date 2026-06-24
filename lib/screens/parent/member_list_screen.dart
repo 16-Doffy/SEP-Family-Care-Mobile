@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/invitation_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
@@ -25,6 +26,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<FamilyProvider>().fetchMembers();
+      // Lấy lời mời để biết số yêu cầu chờ duyệt (chỉ Manager mới fetch được)
+      final me = context.read<AuthProvider>().user;
+      if (me?.canInviteMembers ?? false) {
+        context.read<InvitationProvider>().fetchInvitations();
+      }
     });
   }
 
@@ -51,7 +57,36 @@ class _MemberListScreenState extends State<MemberListScreen> {
                 child: Text('Thành viên gia đình',
                     style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
               ),
-              if (me?.canInviteMembers ?? false)
+              if (me?.canInviteMembers ?? false) ...[
+                // Nút "Yêu cầu" với badge số người đang chờ duyệt
+                GestureDetector(
+                  onTap: () => context.push('/manager/invite-requests'),
+                  child: Stack(clipBehavior: Clip.none, children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.how_to_reg_rounded, size: 18, color: AppColors.textSecondary),
+                    ),
+                    Builder(builder: (_) {
+                      final cnt = context.watch<InvitationProvider>().awaitingCount;
+                      if (cnt == 0) return const SizedBox.shrink();
+                      return Positioned(
+                        top: -4, right: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                          decoration: const BoxDecoration(color: AppColors.danger, shape: BoxShape.circle),
+                          alignment: Alignment.center,
+                          child: Text('$cnt', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
+                        ),
+                      );
+                    }),
+                  ]),
+                ),
+                const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => context.push('/manager/invite'),
                   child: Container(
@@ -60,6 +95,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
                     child: Text('+ Mời', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                   ),
                 ),
+              ],
             ]),
           ),
 

@@ -130,10 +130,15 @@
 - `PATCH /api/v1/families/{familyId}/sos/alerts/{alertId}/cancel` — Hủy cảnh báo (FAMILY_MANAGER/DEPUTY_MEMBER). Body: `ResolveSosAlertDto { resolutionNote? }`
 
 ### Invitations
-- `POST /api/v1/families/{familyId}/invitations` � Invite a member to a family (FAMILY_MANAGER only)
-- `GET /api/v1/invitations/{token}` � Look up an invitation by token (public)
-- `POST /api/v1/invitations/{token}/accept` � Accept an invitation (joins the family)
-- `POST /api/v1/invitations/{token}/reject` � Reject an invitation
+> ⚠️ BE đổi flow 2026-06-24: bỏ `/accept` (join tức thì) → thay bằng 2 bước có duyệt
+> claim (member) → approve (manager). Đã sửa trong `invitation_provider.dart`.
+- `POST /api/v1/families/{familyId}/invitations` — Invite a member to a family (FAMILY_MANAGER only)
+- `GET /api/v1/invitations/{token}` — Look up an invitation by token (public)
+- `POST /api/v1/invitations/{token}/claim` — Member xin tham gia (cần đăng nhập). status: PENDING → CLAIMED
+- `GET /api/v1/families/{familyId}/invitations` — List lời mời của family (FAMILY_MANAGER only) — dùng để xem các invitation đang CLAIMED chờ duyệt
+- `POST /api/v1/families/{familyId}/invitations/{id}/approve` — Manager duyệt → tạo member thật. Body: `{ familyRole?, relationship? }`
+- `POST /api/v1/families/{familyId}/invitations/{id}/reject` — Manager từ chối (dùng invitation `id`, KHÔNG phải token)
+- Invitation status enum: `PENDING | CLAIMED | APPROVED | REJECTED | ACCEPTED | EXPIRED | CANCELED`
 
 ### Admin - Subscription Plans
 - `POST /api/v1/admin/subscription-plans` � Create a subscription plan (SYSTEM_ADMIN only)

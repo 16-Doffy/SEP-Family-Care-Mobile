@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
@@ -38,10 +40,10 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   }
 
   // GET /invitations/{token} — xem thông tin gia đình trước khi accept
-  // token = full UUID từ invitation.id (36 ký tự)
+  // token = secure token của lời mời (64 ký tự hex, KHÁC với invitation.id)
   Future<void> _lookupCode() async {
     final token = _codeCtrl.text.trim();
-    if (token.length < 36) return; // UUID là 36 ký tự (8-4-4-4-12 + dấu -).
+    if (token.length < 32) return; // token đủ dài mới lookup (tránh gọi sớm).
     setState(() { _loading = true; _error = null; _preview = null; });
     try {
       final data = await ApiClient.instance.get('/invitations/$token');
@@ -54,19 +56,69 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     }
   }
 
-  // POST /invitations/{token}/accept — chấp nhận lời mời
+  // POST /invitations/{token}/claim — gửi YÊU CẦU tham gia (cần đăng nhập).
+  // BE đổi flow 2026-06: không còn join tức thì, phải chờ Trưởng nhóm duyệt.
   Future<void> _joinFamily() async {
     final token = _codeCtrl.text.trim();
     if (token.isEmpty) return;
+
+    // claim cần đăng nhập — nếu chưa login, lưu token rồi đưa sang đăng nhập.
+    // Sau khi login/register xong, router tự đưa lại /join?token=... (xem
+    // computeRedirect: pendingInviteToken) để bấm gửi yêu cầu.
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      await auth.savePendingInviteToken(token);
+      if (mounted) context.go('/login');
+      return;
+    }
+
     setState(() { _loading = true; _error = null; });
     try {
-      await ApiClient.instance.post('/invitations/$token/accept', {});
-      if (mounted) context.go('/login');
+      await ApiClient.instance.post('/invitations/$token/claim', {});
+      await auth.clearPendingInviteToken();
+      if (mounted) _showRequestSentDialog();
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) {
+        final msg = e.toString().replaceFirst('Exception: ', '');
+        // claim cần đăng nhập — nếu chưa login BE trả 401
+        setState(() => _error = msg.contains('hết hạn') || msg.contains('401')
+            ? 'Bạn cần đăng nhập trước khi gửi yêu cầu tham gia.'
+            : msg);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _showRequestSentDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          const Text('📨', style: TextStyle(fontSize: 24)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Đã gửi yêu cầu!',
+                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        content: Text(
+          'Yêu cầu tham gia đã được gửi đến Trưởng nhóm. '
+          'Bạn sẽ vào được gia đình ngay khi Trưởng nhóm duyệt.',
+          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.link),
+            onPressed: () => context.go('/login'),
+            child: Text('Đã hiểu',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -143,7 +195,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                         letterSpacing: 2,
                         color: AppColors.textPrimary),
                     decoration: InputDecoration(
-                      hintText: 'Dán token mời (xxxxxxxx-xxxx-...)',
+                      hintText: 'Dán token / link mời từ Trưởng nhóm',
                       hintStyle: GoogleFonts.inter(
                           fontSize: 15, color: AppColors.textMuted),
                       border: InputBorder.none,
@@ -151,7 +203,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                     ),
                     onChanged: (v) {
                       setState(() { _error = null; _preview = null; });
-                      if (v.trim().length >= 36) _lookupCode();
+                      if (v.trim().length >= 32) _lookupCode();
                     },
                   ),
                 ),
@@ -211,11 +263,11 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                   backgroundColor: AppColors.link,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                onPressed: (_loading || (_preview == null && _codeCtrl.text.trim().length < 36)) ? null : (_preview == null ? _lookupCode : _joinFamily),
+                onPressed: (_loading || (_preview == null && _codeCtrl.text.trim().length < 32)) ? null : (_preview == null ? _lookupCode : _joinFamily),
                 child: _loading
                     ? const SizedBox(width: 22, height: 22,
                         child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text(_preview == null ? 'Kiểm tra mã mời' : 'Tham gia gia đình',
+                    : Text(_preview == null ? 'Kiểm tra mã mời' : 'Gửi yêu cầu tham gia',
                         style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),

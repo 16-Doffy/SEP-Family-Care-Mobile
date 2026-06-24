@@ -8,6 +8,7 @@ class FamilyMember {
   final String email;
   final String role;     // MANAGER | DEPUTY | MEMBER
   final String relation;
+  final String status;   // ACTIVE | REMOVED | ...
   final int avatarColor;
 
   const FamilyMember({
@@ -17,8 +18,11 @@ class FamilyMember {
     required this.email,
     required this.role,
     required this.relation,
+    required this.status,
     required this.avatarColor,
   });
+
+  bool get isActive => status.toUpperCase() == 'ACTIVE';
 
   String get avatarInitials =>
       name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase();
@@ -57,6 +61,7 @@ class FamilyMember {
       email:       userMap['email']?.toString() ?? json['email']?.toString() ?? '',
       role:        json['familyRole']?.toString() ?? json['role']?.toString() ?? 'MEMBER',
       relation:    json['relationship']?.toString() ?? json['relation']?.toString() ?? '',
+      status:      json['status']?.toString() ?? 'ACTIVE',
       avatarColor: json['avatarColor'] is int ? json['avatarColor'] as int : colors[idx],
     );
   }
@@ -87,6 +92,9 @@ class FamilyProvider extends ChangeNotifier {
       _members = list
           .whereType<Map>()
           .map((e) => FamilyMember.fromJson(Map<String, dynamic>.from(e)))
+          // BE soft-delete: thành viên bị xoá vẫn nằm trong members nhưng
+          // status = REMOVED → chỉ hiện thành viên đang ACTIVE.
+          .where((m) => m.isActive)
           .toList();
     } catch (e) {
       _error = e.toString();
@@ -97,10 +105,18 @@ class FamilyProvider extends ChangeNotifier {
   }
 
   // UC19 — Xoá thành viên: DELETE /families/{familyId}/members/{userId}
+  // BE soft-delete (status → REMOVED). Endpoint nhận user.id, KHÔNG phải
+  // membership-record id.
   Future<void> removeMember(String userId) async {
     final familyId = ApiClient.instance.familyId;
     if (familyId == null) throw Exception('Chưa có familyId');
-    await ApiClient.instance.delete('/families/$familyId/members/$userId');
+    try {
+      await ApiClient.instance.delete('/families/$familyId/members/$userId');
+    } on ApiException catch (e) {
+      // 404 = thành viên đã bị xoá trước đó (soft-delete) — vẫn dọn khỏi list
+      // local thay vì ném lỗi gây bối rối cho người dùng.
+      if (e.statusCode != 404) rethrow;
+    }
     _members.removeWhere((m) => m.userId == userId);
     notifyListeners();
   }
