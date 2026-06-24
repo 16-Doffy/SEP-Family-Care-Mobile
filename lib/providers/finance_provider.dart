@@ -216,7 +216,7 @@ class FinanceProvider extends ChangeNotifier {
   List<FinanceJar>     get jars        => _jars;
   List<FinanceCategory> get categories => _categories;
   List<BudgetPlan>     get budgetPlans => _budgetPlans;
-  List<FinancialGoal>  get goals       => _goals;
+  List<FinancialGoal>  get goals       => _uniqueGoals(_goals);
   List<BudgetAlert>    get alerts      => _alerts;
   MonthlyFinance?      get monthlyFinance => _monthlyFinance;
   bool   get isLoading => _loading;
@@ -228,17 +228,33 @@ class FinanceProvider extends ChangeNotifier {
 
   List<FinanceJar> get activeJars {
     final active = activeModel;
-    if (active == null) return _jars.where((j) => j.isActive).toList();
+    if (active == null) return _uniqueJars(_jars.where((j) => j.isActive));
     if (active.jars.isNotEmpty) {
-      return active.jars.where((j) => j.isActive).toList();
+      return _uniqueJars(active.jars.where((j) => j.isActive));
     }
     final matched = _jars
         .where((j) => j.isActive && j.financeModelId == active.id)
         .toList();
-    if (matched.isNotEmpty) return matched;
-    return _jars
-        .where((j) => j.isActive && (j.financeModelId == null || j.financeModelId!.isEmpty))
-        .toList();
+    if (matched.isNotEmpty) return _uniqueJars(matched);
+    return _uniqueJars(
+      _jars.where((j) => j.isActive && (j.financeModelId == null || j.financeModelId!.isEmpty)),
+    );
+  }
+
+  List<FinanceJar> _uniqueJars(Iterable<FinanceJar> jars) {
+    final seen = <String>{};
+    return [
+      for (final jar in jars)
+        if (seen.add(jar.id)) jar,
+    ];
+  }
+
+  List<FinancialGoal> _uniqueGoals(Iterable<FinancialGoal> goals) {
+    final seen = <String>{};
+    return [
+      for (final goal in goals)
+        if (seen.add(goal.id)) goal,
+    ];
   }
 
   List<BudgetAlert> get newAlerts =>

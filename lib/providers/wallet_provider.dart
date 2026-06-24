@@ -134,11 +134,10 @@ class WalletProvider extends ChangeNotifier {
 
   Future<void> _fetchEntries() async {
     final data = await ApiClient.instance.get('/families/$_familyId/finance/ledger/entries');
-    final list = data is List
-        ? data
-        : data is Map && data['items'] is List
-            ? data['items'] as List
-            : <dynamic>[];
+    final list = _extractEntryList(data);
+    if (list.isEmpty && data is Map && data.isNotEmpty) {
+      debugPrint('Ledger entries response: $data');
+    }
 
     _transactions = list.whereType<Map>().map((e) {
       final json    = Map<String, dynamic>.from(e);
@@ -152,6 +151,17 @@ class WalletProvider extends ChangeNotifier {
         createdAt: json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
       );
     }).toList();
+  }
+
+  List<dynamic> _extractEntryList(dynamic data) {
+    if (data is List) return data;
+    if (data is Map) {
+      for (final key in const ['items', 'data', 'entries', 'results', 'content', 'list']) {
+        final value = data[key];
+        if (value is List) return value;
+      }
+    }
+    return <dynamic>[];
   }
 
   // Tạo giao dịch thu nhập vào sổ chung (thay thế deposit cũ)

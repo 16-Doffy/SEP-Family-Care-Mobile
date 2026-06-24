@@ -4,7 +4,7 @@ import 'package:http_parser/http_parser.dart';
 
 const _kBase = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://103.110.84.66/api/v1',
+  defaultValue: 'https://api.familycare-digital.com/api/v1',
 );
 
 class ApiClient {
