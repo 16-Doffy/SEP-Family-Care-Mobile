@@ -195,7 +195,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
   // ── STEP 2: KẾT QUẢ ────────────────────────────────────────────────────────
   Widget _buildResultStep() {
     final token = _inviteToken!; // full UUID — dùng nguyên cho cả link & copy
-    final link  = 'http://103.110.84.66/join?token=$token';
+    final link  = 'https://api.familycare-digital.com/join?token=$token';
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
