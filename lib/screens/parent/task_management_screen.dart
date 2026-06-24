@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/finance_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
@@ -123,12 +125,15 @@ class _TasksTabState extends State<_TasksTab> {
   String? _filter;
   TaskItem? _approveTask;
   String? _submissionId;
+  String? _submittedAssignmentId;
   String? _submissionNote;
+  List<Map<String, dynamic>> _submissionProofs = [];
   bool _loadingSubmission = false;
   bool _showCreate = false;
   bool _showRecurring = false;
   bool _submitting = false;
   final _titleCtrl = TextEditingController();
+  final _rewardCtrl = TextEditingController();
   final _recurTitleCtrl = TextEditingController();
   final _recurDescCtrl = TextEditingController();
   String _repeatType = 'WEEKLY';
@@ -137,40 +142,151 @@ class _TasksTabState extends State<_TasksTab> {
   String _endDate = '';
 
   static const _statusCfg = {
-    'TODO':      (label: 'Chờ làm',    bg: Color(0xFFF3F4F6), color: Color(0xFF6B7280)),
-    'DOING':     (label: 'Đang làm',   bg: Color(0xFFFEF3C7), color: Color(0xFFD97706)),
-    'SUBMITTED': (label: 'Chờ duyệt',  bg: Color(0xFFEFF6FF), color: AppColors.planned),
-    'DONE':      (label: 'Hoàn thành', bg: Color(0xFFDCFCE7), color: Color(0xFF16A34A)),
-    'REJECTED':  (label: 'Từ chối',    bg: Color(0xFFFEE2E2), color: Color(0xFFDC2626)),
+    'DRAFT':     (label: 'Bản nháp',   bg: Color(0xFFF3F4F6), color: Color(0xFF6B7280)),
+    'ACTIVE':    (label: 'Đang thực hiện', bg: Color(0xFFFEF3C7), color: Color(0xFFD97706)),
+    'COMPLETED': (label: 'Hoàn thành', bg: Color(0xFFDCFCE7), color: Color(0xFF16A34A)),
+    'CANCELED':  (label: 'Đã hủy',     bg: Color(0xFFFEE2E2), color: Color(0xFFDC2626)),
   };
 
   @override
   void dispose() {
     _titleCtrl.dispose();
+    _rewardCtrl.dispose();
     _recurTitleCtrl.dispose();
     _recurDescCtrl.dispose();
     super.dispose();
   }
 
+  String _submissionIdOf(Map<String, dynamic> submission) =>
+      submission['id']?.toString() ?? submission['submissionId']?.toString() ?? '';
+
+  String? _submissionNoteOf(Map<String, dynamic> submission) =>
+      submission['submissionNote']?.toString() ??
+      submission['note']?.toString() ??
+      submission['comment']?.toString();
+
+  List<Map<String, dynamic>> _proofsOf(Map<String, dynamic> submission) {
+    for (final key in const [
+      'proofs',
+      'taskProofs',
+      'proofFiles',
+      'files',
+      'attachments',
+      'evidences',
+    ]) {
+      final raw = submission[key];
+      if (raw is List) {
+        return raw.whereType<Map>().map((p) => Map<String, dynamic>.from(p)).toList();
+      }
+      if (raw is Map) {
+        final nested = _proofsOf(Map<String, dynamic>.from(raw));
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+    for (final key in const ['data', 'submission', 'latestSubmission']) {
+      final raw = submission[key];
+      if (raw is Map) {
+        final nested = _proofsOf(Map<String, dynamic>.from(raw));
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+    return [];
+  }
+
+  String _proofUrlOf(Map<String, dynamic> proof) {
+    const keys = [
+      'fileUrl',
+      'url',
+      'thumbnailUrl',
+      'publicUrl',
+      'path',
+      'filePath',
+      'storagePath',
+      'proofUrl',
+      'file_url',
+      'proofValue',
+      'value',
+    ];
+    for (final key in keys) {
+      final value = proof[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    for (final key in const ['file', 'media', 'attachment', 'resource', 'data']) {
+      final nested = proof[key];
+      if (nested is Map) {
+        final value = _proofUrlOf(Map<String, dynamic>.from(nested));
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return '';
+  }
+
+  bool _isImageProof(Map<String, dynamic> proof) {
+    final type = proof['proofType']?.toString().toUpperCase();
+    final mime = (proof['mimeType'] ?? proof['contentType'] ?? proof['type'])
+        ?.toString()
+        .toLowerCase();
+    final url = _proofUrlOf(proof).toLowerCase();
+    return type == 'IMAGE' ||
+        (mime != null && mime.startsWith('image/')) ||
+        url.endsWith('.jpg') ||
+        url.endsWith('.jpeg') ||
+        url.endsWith('.png') ||
+        url.endsWith('.gif') ||
+        url.endsWith('.webp');
+  }
+
+  List<Map<String, dynamic>> get _imageProofs =>
+      _submissionProofs.where(_isImageProof).toList();
+
   Future<void> _openApproveSheet(TaskItem task) async {
     setState(() {
       _approveTask = task;
       _submissionId = null;
+      _submittedAssignmentId = null;
       _submissionNote = null;
+      _submissionProofs = [];
       _loadingSubmission = true;
     });
     try {
-      final assignmentId = task.assignmentId.isNotEmpty ? task.assignmentId : task.id;
-      final subs = await context.read<TaskProvider>().fetchSubmissions(assignmentId);
-      if (mounted && subs.isNotEmpty) {
-        final latest = subs.last;
-        setState(() {
-          _submissionId = latest['id']?.toString();
-          _submissionNote = latest['note']?.toString();
-          _loadingSubmission = false;
-        });
-      } else if (mounted) {
-        setState(() => _loadingSubmission = false);
+      final provider = context.read<TaskProvider>();
+      // 1. Load all assignments for this task
+      final assignments = await provider.fetchTaskAssignments(task.id);
+      // 2. Find assignment with SUBMITTED status
+      final submitted = assignments.where((a) => a['status'] == 'SUBMITTED').toList();
+      if (submitted.isEmpty) {
+        if (mounted) setState(() => _loadingSubmission = false);
+        return;
+      }
+      final assignment = submitted.last;
+      final assignmentId = assignment['id']?.toString() ?? '';
+      // 3. Load submissions for this assignment
+      final subs = await provider.fetchSubmissions(assignmentId);
+      if (mounted) {
+        if (subs.isNotEmpty) {
+          var latest = subs.last;
+          final submissionId = _submissionIdOf(latest);
+          var proofs = _proofsOf(latest);
+          if (submissionId.isNotEmpty && proofs.isEmpty) {
+            try {
+              final detail = await provider.fetchSubmission(submissionId);
+              latest = detail;
+              proofs = _proofsOf(detail);
+            } catch (_) {}
+          }
+          setState(() {
+            _submissionId = submissionId;
+            _submittedAssignmentId = assignmentId;
+            _submissionNote = _submissionNoteOf(latest);
+            _submissionProofs = proofs;
+            _loadingSubmission = false;
+          });
+        } else {
+          setState(() {
+            _submittedAssignmentId = assignmentId;
+            _loadingSubmission = false;
+          });
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _loadingSubmission = false);
@@ -184,7 +300,8 @@ class _TasksTabState extends State<_TasksTab> {
   Widget build(BuildContext context) {
     final taskState = context.watch<TaskProvider>();
     final tasks = taskState.tasks;
-    final submitted = tasks.where((t) => t.status == 'SUBMITTED').length;
+    final activeCount = tasks.where((t) => t.status == 'ACTIVE').length;
+    final completedCount = tasks.where((t) => t.status == 'COMPLETED').length;
 
     return Stack(
       children: [
@@ -201,9 +318,9 @@ class _TasksTabState extends State<_TasksTab> {
                 child: Row(children: [
                   _summaryCard(tasks.length, 'Tổng', AppColors.textPrimary),
                   const SizedBox(width: 12),
-                  _summaryCard(submitted, 'Chờ duyệt', AppColors.link),
+                  _summaryCard(activeCount, 'Đang làm', AppColors.link),
                   const SizedBox(width: 12),
-                  _summaryCard(tasks.where((t) => t.status == 'DONE').length, 'Xong', AppColors.success),
+                  _summaryCard(completedCount, 'Xong', AppColors.success),
                 ]),
               ),
               const SizedBox(height: 12),
@@ -214,9 +331,9 @@ class _TasksTabState extends State<_TasksTab> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   children: [
                     _filterChip(null, 'Tất cả'),
-                    _filterChip('SUBMITTED', 'Chờ duyệt', badge: submitted),
-                    _filterChip('DOING', 'Đang làm'),
-                    _filterChip('DONE', 'Hoàn thành'),
+                    _filterChip('ACTIVE', 'Đang làm', badge: activeCount),
+                    _filterChip('COMPLETED', 'Hoàn thành'),
+                    _filterChip('DRAFT', 'Bản nháp'),
                   ],
                 ),
               ),
@@ -228,34 +345,34 @@ class _TasksTabState extends State<_TasksTab> {
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
                     children: [
                       ..._filtered(tasks).map((task) {
-                        final st = _statusCfg[task.status] ?? _statusCfg['TODO']!;
+                        final st = _statusCfg[task.status] ?? _statusCfg['DRAFT']!;
+                        final isActive = task.status == 'ACTIVE';
                         return GestureDetector(
-                          onTap: () => task.status == 'SUBMITTED'
-                              ? _openApproveSheet(task)
-                              : null,
+                          onTap: isActive ? () => _openApproveSheet(task) : null,
                           child: Container(
                             margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
                               color: AppColors.white,
                               borderRadius: BorderRadius.circular(20),
+                              border: isActive ? Border.all(color: AppColors.link.withOpacity(0.25)) : null,
                               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
                             ),
                             child: Row(children: [
                               Container(
                                   width: 4,
                                   height: 60,
-                                  decoration: BoxDecoration(color: AppColors.planned, borderRadius: BorderRadius.circular(2))),
+                                  decoration: BoxDecoration(color: isActive ? AppColors.link : AppColors.textMuted, borderRadius: BorderRadius.circular(2))),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Row(children: [
                                     Expanded(child: Text(task.title, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary))),
-                                    if (task.status == 'SUBMITTED')
+                                    if (isActive)
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(6)),
-                                        child: Text('DUYỆT', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.planned)),
+                                        child: Text('Duyệt →', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.link)),
                                       ),
                                   ]),
                                   const SizedBox(height: 8),
@@ -316,6 +433,8 @@ class _TasksTabState extends State<_TasksTab> {
 
   Widget _approveSheet(BuildContext context) {
     final t = _approveTask!;
+    final hasSubmittedAssignment = _submittedAssignmentId != null;
+    final hasSubmission = _submissionId != null;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Duyệt minh chứng', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
       const SizedBox(height: 12),
@@ -331,34 +450,78 @@ class _TasksTabState extends State<_TasksTab> {
       if (_loadingSubmission) ...[
         const SizedBox(height: 16),
         const Center(child: CircularProgressIndicator()),
-      ] else if (_submissionNote != null && _submissionNote!.isNotEmpty) ...[
-        const SizedBox(height: 12),
+      ] else if (!hasSubmittedAssignment) ...[
+        const SizedBox(height: 16),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(12)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Ghi chú của con:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
-            const SizedBox(height: 4),
-            Text(_submissionNote!, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textPrimary)),
-          ]),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(12)),
+          child: Text('Chưa có thành viên nộp bài cho task này.', style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFFD97706))),
         ),
+      ] else if (!hasSubmission) ...[
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(12)),
+          child: Text('Khong tai duoc minh chung nop bai cho assignment nay.', style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFFD97706))),
+        ),
+      ] else ...[
+        if (_submissionNote != null && _submissionNote!.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(12)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Ghi chú:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+              const SizedBox(height: 4),
+              Text(_submissionNote!, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textPrimary)),
+            ]),
+          ),
+        ],
+        // Proof images
+        if (_imageProofs.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Ảnh minh chứng:', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _imageProofs
+                  .map((p) => Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.network(ApiClient.absoluteUrl(_proofUrlOf(p)), width: 80, height: 80, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(width: 80, height: 80, color: const Color(0xFFF3F4F6), child: const Icon(Icons.broken_image_outlined, color: AppColors.textMuted))),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ],
       ],
       const SizedBox(height: 20),
       Row(children: [
         Expanded(
           child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: (_submitting || _loadingSubmission) ? null : () async {
+            style: ElevatedButton.styleFrom(
+              backgroundColor: hasSubmission ? AppColors.success : AppColors.textMuted,
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            onPressed: (_submitting || _loadingSubmission || !hasSubmission) ? null : () async {
               setState(() => _submitting = true);
               try {
-                final id = _submissionId ?? (t.assignmentId.isNotEmpty ? t.assignmentId : t.id);
-                await context.read<TaskProvider>().reviewSubmission(id, approved: true);
-                // tự tạo settlement sau khi duyệt nếu task có reward
-                if (t.reward > 0 && _submissionId != null) {
-                  try { await context.read<TaskProvider>().createSettlement(_submissionId!); } catch (_) {}
+                await context.read<TaskProvider>().reviewSubmission(_submissionId!, approved: true);
+                try { await context.read<TaskProvider>().createSettlement(_submissionId!); } catch (_) {}
+                if (mounted) {
+                  setState(() { _approveTask = null; _submitting = false; });
+                  context.read<TaskProvider>().fetchTasks();
+                  context.read<TaskProvider>().fetchSettlements();
                 }
-                if (mounted) setState(() { _approveTask = null; _submitting = false; });
               } catch (e) {
                 if (mounted) {
                   setState(() => _submitting = false);
@@ -374,13 +537,19 @@ class _TasksTabState extends State<_TasksTab> {
         const SizedBox(width: 12),
         Expanded(
           child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-            onPressed: (_submitting || _loadingSubmission) ? null : () async {
+            style: ElevatedButton.styleFrom(
+              backgroundColor: hasSubmission ? AppColors.danger : AppColors.textMuted,
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            onPressed: (_submitting || _loadingSubmission || !hasSubmission) ? null : () async {
               setState(() => _submitting = true);
               try {
-                final id = _submissionId ?? (t.assignmentId.isNotEmpty ? t.assignmentId : t.id);
-                await context.read<TaskProvider>().reviewSubmission(id, approved: false);
-                if (mounted) setState(() { _approveTask = null; _submitting = false; });
+                await context.read<TaskProvider>().reviewSubmission(_submissionId!, approved: false);
+                if (mounted) {
+                  setState(() { _approveTask = null; _submitting = false; });
+                  context.read<TaskProvider>().fetchTasks();
+                }
               } catch (e) {
                 if (mounted) {
                   setState(() => _submitting = false);
@@ -415,6 +584,20 @@ class _TasksTabState extends State<_TasksTab> {
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),
       ),
+      const SizedBox(height: 12),
+      Text('Thuong (VND)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+      const SizedBox(height: 6),
+      Container(
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5), borderRadius: BorderRadius.circular(14)),
+        child: TextField(
+          controller: _rewardCtrl,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(hintText: 'VD: 50000', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
+          style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
+        ),
+      ),
       const SizedBox(height: 20),
       ElevatedButton(
         style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
@@ -422,9 +605,21 @@ class _TasksTabState extends State<_TasksTab> {
           if (_titleCtrl.text.isEmpty) return;
           setState(() => _submitting = true);
           try {
-            await context.read<TaskProvider>().createTask(title: _titleCtrl.text.trim());
+            final provider = context.read<TaskProvider>();
+            final task = await provider.createTask(title: _titleCtrl.text.trim());
+            final rewardAmount = double.tryParse(_rewardCtrl.text.trim()) ?? 0;
+            if (task.id.isNotEmpty && rewardAmount > 0) {
+              await provider.createRewardSetting(
+                task.id,
+                rewardType: 'MONEY_RECORD',
+                rewardAmount: rewardAmount,
+                autoCreateSettlement: true,
+              );
+              await provider.fetchTasks();
+            }
             if (mounted) {
               _titleCtrl.clear();
+              _rewardCtrl.clear();
               setState(() { _showCreate = false; _submitting = false; });
             }
           } catch (e) {
@@ -1152,7 +1347,13 @@ class _RewardsTabState extends State<_RewardsTab> {
       'CANCELLED':        (label: 'Đã hủy',         color: AppColors.textMuted),
       'DISPUTED':         (label: 'Tranh chấp',     color: AppColors.danger),
     };
-    final st = statusCfg[s.status] ?? (label: s.status, color: AppColors.textMuted);
+    final st = switch (s.status) {
+      'PENDING_SETTLEMENT' => (label: 'Cho tra', color: const Color(0xFFD97706)),
+      'WAITING_CONFIRMATION' => (label: 'Cho xac nhan', color: AppColors.link),
+      'SETTLED' => (label: 'Da nhan', color: const Color(0xFF16A34A)),
+      'CANCELED' => (label: 'Da huy', color: AppColors.textMuted),
+      _ => statusCfg[s.status] ?? (label: s.status, color: AppColors.textMuted),
+    };
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1177,14 +1378,16 @@ class _RewardsTabState extends State<_RewardsTab> {
           const Spacer(),
           Text('💰 ${_fmt(s.amount)}', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.income)),
         ]),
-        if (s.status == 'PENDING') ...[
+        if (s.status == 'PENDING_SETTLEMENT') ...[
           const SizedBox(height: 10),
           Row(children: [
             Expanded(
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(40), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 onPressed: () async {
-                  try { await tp.markSettlementPaid(s.id, externalMethod: 'CASH'); } catch (e) {
+                  try {
+                    await tp.markSettlementPaid(s.id, externalMethod: 'CASH');
+                  } catch (e) {
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                   }
                 },
@@ -1209,6 +1412,8 @@ class _RewardsTabState extends State<_RewardsTab> {
               ),
             ),
           ]),
+        ],
+        if (s.status == 'SETTLED') ...[
           const SizedBox(height: 8),
           OutlinedButton.icon(
             icon: const Icon(Icons.account_balance_wallet_rounded, size: 16),
@@ -1230,6 +1435,8 @@ class _RewardsTabState extends State<_RewardsTab> {
     final amountCtrl = TextEditingController();
     final jarIdCtrl  = TextEditingController();
     final goalIdCtrl = TextEditingController();
+    amountCtrl.text = s.amount.round().toString();
+    context.read<FinanceProvider>().fetchAll();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1246,6 +1453,16 @@ class _RewardsTabState extends State<_RewardsTab> {
             const SizedBox(height: 16),
             _fieldLabel('Số tiền phân bổ'),
             const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                'Day la ghi nhan noi bo sau khi thanh vien da xac nhan nhan thuong. App khong chuyen tien that; chi gan khoan thuong vao hu tai chinh hoac muc tieu de bao cao.',
+                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E), height: 1.35),
+              ),
+            ),
+            const SizedBox(height: 8),
             _inputBox(amountCtrl, '50000'),
             const SizedBox(height: 12),
             _fieldLabel('ID Quỹ (jarId) — hoặc để trống nếu dùng goalId'),

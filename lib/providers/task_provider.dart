@@ -15,7 +15,7 @@ class TaskCategory {
   });
 
   factory TaskCategory.fromJson(Map<String, dynamic> j) => TaskCategory(
-        id: j['id']?.toString() ?? '',
+        id: j['id']?.toString() ?? j['categoryId']?.toString() ?? '',
         name: j['name']?.toString() ?? '',
         description: j['description']?.toString() ?? '',
         status: j['status']?.toString() ?? 'ACTIVE',
@@ -68,15 +68,21 @@ class TaskItem {
         task['category'] is Map ? task['category'] as Map : {};
 
     return TaskItem(
-      id: task['id']?.toString() ?? '',
-      assignmentId: isAssignment ? json['id']?.toString() ?? '' : '',
+      id: task['id']?.toString() ?? task['taskId']?.toString() ?? '',
+      assignmentId: isAssignment
+          ? json['id']?.toString() ?? json['assignmentId']?.toString() ?? ''
+          : '',
       title: task['title']?.toString() ?? task['name']?.toString() ?? '',
       description: task['description']?.toString() ?? '',
       status:
           (isAssignment ? json['status'] : task['status'])?.toString() ?? 'TODO',
       assigneeName: assignee['displayName']?.toString() ?? '',
       assigneeId:
-          task['assigneeId']?.toString() ?? assignee['id']?.toString() ?? '',
+          task['assigneeId']?.toString() ??
+          task['assignedToMemberId']?.toString() ??
+          assignee['id']?.toString() ??
+          assignee['memberId']?.toString() ??
+          '',
       reward: _parseDouble(
           rewardSetting['rewardAmount'] ?? task['reward'] ?? task['rewardAmount']),
       isRecurring: task['isRecurring'] as bool? ?? false,
@@ -127,15 +133,20 @@ class RewardSettlement {
     final task = j['task'] is Map ? j['task'] as Map : {};
     final submission = j['submission'] is Map ? j['submission'] as Map : {};
     final assignment = submission['assignment'] is Map ? submission['assignment'] as Map : {};
+    final assignmentTask = assignment['task'] is Map ? assignment['task'] as Map : {};
     final member = j['member'] is Map ? j['member'] as Map : {};
     final taskId = task['id']?.toString()
+        ?? assignmentTask['id']?.toString()
         ?? assignment['taskId']?.toString()
         ?? j['taskId']?.toString()
         ?? '';
     return RewardSettlement(
-      id: j['id']?.toString() ?? '',
+      id: j['id']?.toString() ?? j['settlementId']?.toString() ?? '',
       taskId: taskId,
-      taskTitle: task['title']?.toString() ?? j['taskTitle']?.toString() ?? '',
+      taskTitle: task['title']?.toString()
+          ?? assignmentTask['title']?.toString()
+          ?? j['taskTitle']?.toString()
+          ?? '',
       amount: TaskItem._parseDouble(j['amount'] ?? j['rewardAmount']),
       status: j['status']?.toString() ?? 'PENDING_SETTLEMENT',
       memberId: j['memberId']?.toString()
@@ -169,7 +180,7 @@ class RewardDispute {
   factory RewardDispute.fromJson(Map<String, dynamic> j) {
     final reporter = j['reporter'] is Map ? j['reporter'] as Map : {};
     return RewardDispute(
-      id: j['id']?.toString() ?? '',
+      id: j['id']?.toString() ?? j['disputeId']?.toString() ?? '',
       settlementId:
           j['settlementId']?.toString() ?? j['rewardSettlementId']?.toString() ?? '',
       reason: j['reason']?.toString() ?? '',
@@ -205,7 +216,7 @@ class TaskUnavailability {
     final task = assignment['task'] is Map ? assignment['task'] as Map : {};
     final member = j['member'] is Map ? j['member'] as Map : {};
     return TaskUnavailability(
-      id: j['id']?.toString() ?? '',
+      id: j['id']?.toString() ?? j['unavailabilityId']?.toString() ?? '',
       assignmentId:
           j['assignmentId']?.toString() ?? assignment['id']?.toString() ?? '',
       taskTitle:
@@ -246,7 +257,12 @@ class TaskProvider extends ChangeNotifier {
 
   // ─── Tasks ────────────────────────────────────────────────────────────────
 
-  Future<void> fetchTasks({String? status, String? taskCategoryId, String? priority, String? taskType}) async {
+  Future<void> fetchTasks({
+    String? status,
+    String? taskCategoryId,
+    String? priority,
+    String? taskType,
+  }) async {
     if (_familyId == null) return;
     _loading = true;
     _error = null;
@@ -279,7 +295,7 @@ class TaskProvider extends ChangeNotifier {
     );
   }
 
-  Future<void> createTask({
+  Future<TaskItem> createTask({
     required String title,
     String description = '',
     String? categoryId,
@@ -288,7 +304,7 @@ class TaskProvider extends ChangeNotifier {
     String? dueAt,
   }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
-    await ApiClient.instance.post('/families/$_familyId/tasks', {
+    final data = await ApiClient.instance.post('/families/$_familyId/tasks', {
       'title': title,
       if (description.isNotEmpty) 'description': description,
       if (categoryId != null && categoryId.isNotEmpty)
@@ -298,6 +314,19 @@ class TaskProvider extends ChangeNotifier {
       if (dueAt != null && dueAt.isNotEmpty) 'dueAt': dueAt,
     });
     await fetchTasks();
+    if (data is Map) {
+      return TaskItem.fromJson(Map<String, dynamic>.from(data));
+    }
+    return _tasks.firstWhere(
+      (t) => t.title == title,
+      orElse: () => TaskItem(
+        id: '',
+        title: title,
+        status: 'ACTIVE',
+        assigneeName: '',
+        assigneeId: '',
+      ),
+    );
   }
 
   Future<void> updateTask(String taskId, Map<String, dynamic> body) async {
@@ -449,12 +478,58 @@ class TaskProvider extends ChangeNotifier {
 
   // ─── Submissions ─────────────────────────────────────────────────────────
 
-  Future<void> submitCompletion(String assignmentId, {String? note}) async {
+  /// Upload một file minh chứng, trả về fileUrl để dùng trong proofs[].
+  Future<String> uploadProofFile(List<int> bytes, String filename) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
+    final data = await ApiClient.instance.postMultipart(
+      '/families/$_familyId/tasks/proofs/upload',
+      bytes,
+      filename,
+      params: {'proofType': 'IMAGE'},
+    );
+    if (data is Map) {
+      return _uploadedFileUrl(Map<String, dynamic>.from(data));
+    }
+    return data?.toString() ?? '';
+  }
+
+  String _uploadedFileUrl(Map<String, dynamic> data) {
+    for (final key in const [
+      'fileUrl',
+      'url',
+      'publicUrl',
+      'path',
+      'filePath',
+      'storagePath',
+      'thumbnailUrl',
+    ]) {
+      final value = data[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    for (final key in const ['data', 'file', 'media', 'attachment']) {
+      final nested = data[key];
+      if (nested is Map) {
+        final value = _uploadedFileUrl(Map<String, dynamic>.from(nested));
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return '';
+  }
+
+  Future<void> submitCompletion(
+    String assignmentId, {
+    String? note,
+    List<Map<String, dynamic>> extraProofs = const [],
+  }) async {
+    if (_familyId == null) throw Exception('Chưa có gia đình');
+    final proofs = <Map<String, dynamic>>[
+      ...extraProofs,
+      if (note != null && note.isNotEmpty) {'proofType': 'NOTE', 'note': note},
+    ];
     await ApiClient.instance.post(
       '/families/$_familyId/tasks/assignments/$assignmentId/submissions',
       {
-        'proofs': [],
+        'proofs': proofs,
         if (note != null && note.isNotEmpty) 'submissionNote': note,
       },
     );

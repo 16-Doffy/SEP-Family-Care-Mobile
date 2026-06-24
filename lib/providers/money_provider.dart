@@ -75,14 +75,23 @@ class MoneyProvider extends ChangeNotifier {
     String? note,
   }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
-    await ApiClient.instance.patch(
-      '/families/$_familyId/finance/support-requests/$requestId/review',
-      {
-        'decision': approved ? 'APPROVE' : 'REJECT',
-        if (note != null && note.isNotEmpty) 'decisionNote': note,
-      },
-    );
-    await fetchRequests();
+    final previous = List<MoneyRequest>.from(_requests);
+    _requests = _requests.where((r) => r.id != requestId).toList();
+    notifyListeners();
+    try {
+      await ApiClient.instance.patch(
+        '/families/$_familyId/finance/support-requests/$requestId/review',
+        {
+          'decision': approved ? 'APPROVE' : 'REJECT',
+          if (note != null && note.isNotEmpty) 'decisionNote': note,
+        },
+      );
+      await fetchRequests();
+    } catch (_) {
+      _requests = previous;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   // Thành viên hủy yêu cầu của mình

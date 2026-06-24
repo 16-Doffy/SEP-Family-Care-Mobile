@@ -2,7 +2,7 @@
 
 Last updated: 2026-06-24
 Branch: `NDuy`
-Latest commit: `a0a1bea Wire invitation approval flow and task calendar`
+Latest local commit before this patch: `781ede8 docs: add latest AI handoff`
 Backend Swagger: `http://103.110.84.66/api/docs-json`
 API base in app: `http://103.110.84.66/api/v1`
 
@@ -239,10 +239,34 @@ For these modules, either keep local placeholder UI or wait for backend endpoint
 - `file.zip` was moved out of the project to `D:\Desktop\file.zip`.
 - Do not commit generated ZIP files inside the project.
 - There are many pre-existing dirty files in the working tree. Be careful to stage only files related to the current task.
-- The latest local commit `a0a1bea` includes:
+- Local branch may be ahead of `origin/NDuy`; previous push attempts hung at `git-remote-https`.
+- The local commit `a0a1bea` includes:
   - Invitation claim/approval flow
   - Manager pending invitation approval UI
   - Task-backed calendar screen
+
+## 2026-06-24 Current Patch Notes
+
+User-tested issues addressed in the current working tree:
+
+- Manager task approval proof preview now parses proof lists and URLs defensively:
+  - `proofs`, `taskProofs`, `proofFiles`, `files`, `attachments`, `evidences`
+  - nested `data/submission/latestSubmission`
+  - URL fields such as `fileUrl`, `url`, `publicUrl`, `path`, `filePath`, `storagePath`
+- Proof upload parsing now accepts nested upload responses and more URL field names.
+- `ApiClient.absoluteUrl()` now builds static file URLs from the API origin instead of replacing paths under `/api/v1`.
+- Finance support request review is optimistic: approving/rejecting removes the pending item immediately and restores it if the API fails.
+- Member finance tab was renamed conceptually to personal spending ledger; UI explains that members see their own monthly finance/support requests, not the manager family fund balance.
+- Finance model screen uses `activeJars` so old model jars do not appear as duplicate active jars.
+- Budget plan jar dropdown also uses active model jars.
+- Goal tab explains the flow: goals are tracking targets, progress changes when ledger/reward allocation is recorded, not by real money transfer.
+- Reward allocation sheet now clarifies that "paid reward" and allocation are internal records after external/manual reward payment confirmation.
+
+Backend items to verify/report:
+
+- Static proof image URLs must be publicly readable by the authenticated web app. Swagger examples return `/uploads/task-proofs/...`; if browser cannot load that path, BE should expose/serve it correctly or return a full `fileUrl`.
+- There is no Swagger endpoint for a member-visible family fund balance/personal wallet balance separate from `monthly-finances/me` and support requests.
+- Reward allocation requires raw `jarId` or `goalId`; a richer response linking settlements to available jars/goals would improve UX, but current FE can use existing `/finance/jars` and `/finance/financial-goals`.
 
 ## Verification Notes
 

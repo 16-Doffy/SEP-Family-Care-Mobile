@@ -14,20 +14,36 @@ double? _moneyNull(dynamic v) {
   return double.tryParse(v.toString());
 }
 
+int? _intNull(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse(v.toString());
+}
+
+T? _firstOrNull<T>(Iterable<T> values) {
+  final iterator = values.iterator;
+  return iterator.moveNext() ? iterator.current : null;
+}
+
 // ─── Models ────────────────────────────────────────────────────────────────
 
 class FinanceJar {
   final String id;
+  final String? financeModelId;
   final String name;
   final String jarCode;
   final double allocationPercentage;
   final bool isActive;
 
-  const FinanceJar({required this.id, required this.name, required this.jarCode,
+  const FinanceJar({required this.id, this.financeModelId, required this.name, required this.jarCode,
       required this.allocationPercentage, required this.isActive});
 
   factory FinanceJar.fromJson(Map<String, dynamic> j) => FinanceJar(
-        id: j['id']?.toString() ?? '',
+        id: j['id']?.toString() ?? j['jarId']?.toString() ?? '',
+        financeModelId: j['financeModelId']?.toString() ??
+            j['modelId']?.toString() ??
+            j['finance_model_id']?.toString(),
         name: j['name'] as String? ?? '',
         jarCode: j['jarCode'] as String? ?? '',
         allocationPercentage: _money(j['allocationPercentage']),
@@ -46,7 +62,7 @@ class FinanceModel {
       required this.modelType, required this.status, this.jars = const []});
 
   factory FinanceModel.fromJson(Map<String, dynamic> j) => FinanceModel(
-        id: j['id']?.toString() ?? '',
+        id: j['id']?.toString() ?? j['modelId']?.toString() ?? '',
         name: j['name'] as String? ?? '',
         modelType: j['modelType'] as String? ?? '',
         status: j['status'] as String? ?? '',
@@ -67,7 +83,7 @@ class FinanceCategory {
       required this.categoryType, this.essentialType});
 
   factory FinanceCategory.fromJson(Map<String, dynamic> j) => FinanceCategory(
-        id: j['id']?.toString() ?? '',
+        id: j['id']?.toString() ?? j['categoryId']?.toString() ?? '',
         name: j['name'] as String? ?? '',
         categoryType: j['categoryType'] as String? ?? 'EXPENSE',
         essentialType: j['essentialType'] as String?,
@@ -82,22 +98,29 @@ class BudgetPlan {
   final String periodEnd;
   final double? expectedSharedIncome;
   final double? expectedSharedExpense;
+  final int? lineCount;
   final String status;
 
   const BudgetPlan({required this.id, required this.planName,
       required this.periodType, required this.periodStart,
       required this.periodEnd, this.expectedSharedIncome,
-      this.expectedSharedExpense, required this.status});
+      this.expectedSharedExpense, this.lineCount, required this.status});
 
   factory BudgetPlan.fromJson(Map<String, dynamic> j) => BudgetPlan(
-        id: j['id']?.toString() ?? '',
-        planName: j['planName'] as String? ?? '',
-        periodType: j['periodType'] as String? ?? 'MONTHLY',
-        periodStart: j['periodStart'] as String? ?? '',
-        periodEnd: j['periodEnd'] as String? ?? '',
+        id: j['id']?.toString() ?? j['budgetPlanId']?.toString() ?? '',
+        planName: j['planName']?.toString() ?? j['name']?.toString() ?? '',
+        periodType: j['periodType']?.toString() ?? 'MONTHLY',
+        periodStart: j['periodStart']?.toString() ?? '',
+        periodEnd: j['periodEnd']?.toString() ?? '',
         expectedSharedIncome: _moneyNull(j['expectedSharedIncome']),
         expectedSharedExpense: _moneyNull(j['expectedSharedExpense']),
-        status: j['status'] as String? ?? 'DRAFT',
+        lineCount: _intNull(j['lineCount'] ?? j['budgetLineCount'] ?? j['linesCount'])
+            ?? (j['lines'] is List
+                ? (j['lines'] as List).length
+                : j['budgetLines'] is List
+                    ? (j['budgetLines'] as List).length
+                    : null),
+        status: j['status']?.toString() ?? 'DRAFT',
       );
 }
 
@@ -114,12 +137,12 @@ class FinancialGoal {
       this.progressPercent});
 
   factory FinancialGoal.fromJson(Map<String, dynamic> j) => FinancialGoal(
-        id: j['id']?.toString() ?? '',
-        goalName: j['goalName'] as String? ?? '',
-        targetAmount: _money(j['targetAmount']),
-        deadline: j['deadline'] as String?,
-        status: j['status'] as String? ?? 'ACTIVE',
-        progressPercent: _moneyNull(j['progressPercent']),
+        id: j['id']?.toString() ?? j['goalId']?.toString() ?? '',
+        goalName: j['goalName']?.toString() ?? j['name']?.toString() ?? '',
+        targetAmount: _money(j['targetAmount'] ?? j['target']),
+        deadline: j['deadline']?.toString(),
+        status: j['status']?.toString() ?? 'ACTIVE',
+        progressPercent: _moneyNull(j['progressPercent'] ?? j['percent'] ?? j['progress']),
       );
 }
 
@@ -136,7 +159,7 @@ class BudgetAlert {
       required this.status, required this.createdAt});
 
   factory BudgetAlert.fromJson(Map<String, dynamic> j) => BudgetAlert(
-        id: j['id']?.toString() ?? '',
+        id: j['id']?.toString() ?? j['alertId']?.toString() ?? '',
         alertType: j['alertType'] as String? ?? '',
         severity: j['severity'] as String? ?? 'LOW',
         message: j['message'] as String? ?? '',
@@ -200,7 +223,23 @@ class FinanceProvider extends ChangeNotifier {
   String? get error   => _error;
 
   FinanceModel? get activeModel =>
-      _models.where((m) => m.status == 'ACTIVE').firstOrNull ?? _models.firstOrNull;
+      _firstOrNull(_models.where((m) => m.status == 'ACTIVE')) ??
+      _firstOrNull(_models);
+
+  List<FinanceJar> get activeJars {
+    final active = activeModel;
+    if (active == null) return _jars.where((j) => j.isActive).toList();
+    if (active.jars.isNotEmpty) {
+      return active.jars.where((j) => j.isActive).toList();
+    }
+    final matched = _jars
+        .where((j) => j.isActive && j.financeModelId == active.id)
+        .toList();
+    if (matched.isNotEmpty) return matched;
+    return _jars
+        .where((j) => j.isActive && (j.financeModelId == null || j.financeModelId!.isEmpty))
+        .toList();
+  }
 
   List<BudgetAlert> get newAlerts =>
       _alerts.where((a) => a.status == 'NEW').toList();
@@ -300,12 +339,14 @@ class FinanceProvider extends ChangeNotifier {
     await ApiClient.instance.post('/families/$_familyId/finance/models',
         {'modelType': modelType, 'name': name});
     await _fetchModels();
+    await _fetchJars();
     notifyListeners();
   }
 
   Future<void> activateModel(String modelId) async {
     await ApiClient.instance.patch('/families/$_familyId/finance/models/$modelId/activate');
     await _fetchModels();
+    await _fetchJars();
     notifyListeners();
   }
 
@@ -341,13 +382,15 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   Future<void> createGoal({required String goalName, required double targetAmount,
-      String? deadline, double? monthlyContributionTarget}) async {
+      String? deadline, double? monthlyContributionTarget, String? relatedJarId}) async {
     await ApiClient.instance.post('/families/$_familyId/finance/financial-goals', {
       'goalName': goalName,
       'targetAmount': targetAmount,
       if (deadline != null) 'deadline': deadline,
       if (monthlyContributionTarget != null)
         'monthlyContributionTarget': monthlyContributionTarget,
+      if (relatedJarId != null && relatedJarId.isNotEmpty)
+        'relatedJarId': relatedJarId,
     });
     await _fetchGoals();
     notifyListeners();
@@ -503,6 +546,8 @@ class FinanceProvider extends ChangeNotifier {
     String? goalName,
     double? targetAmount,
     String? deadline,
+    double? monthlyContributionTarget,
+    String? relatedJarId,
   }) async {
     await ApiClient.instance.patch(
       '/families/$_familyId/finance/financial-goals/$goalId',
@@ -510,6 +555,9 @@ class FinanceProvider extends ChangeNotifier {
         if (goalName != null) 'goalName': goalName,
         if (targetAmount != null) 'targetAmount': targetAmount,
         if (deadline != null) 'deadline': deadline,
+        if (monthlyContributionTarget != null)
+          'monthlyContributionTarget': monthlyContributionTarget,
+        if (relatedJarId != null) 'relatedJarId': relatedJarId,
       },
     );
     await _fetchGoals();
@@ -591,7 +639,9 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   Future<void> recomputeAlerts() async {
-    await ApiClient.instance.post('/families/$_familyId/finance/alerts/recompute', {});
+    await ApiClient.instance.post('/families/$_familyId/finance/alerts/recompute', {
+      'scope': 'ALL',
+    });
     await _fetchAlerts();
     notifyListeners();
   }

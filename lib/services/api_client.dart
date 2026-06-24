@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 const _kBase = String.fromEnvironment(
   'API_BASE_URL',
@@ -17,19 +18,48 @@ class ApiClient {
   void setRefreshToken(String? token) => _refreshToken = token;
   String? get token => _token;
 
+  static String absoluteUrl(String value) {
+    final cleaned = value.trim().replaceAll('\\', '/');
+    if (cleaned.isEmpty) return cleaned;
+    final uri = Uri.tryParse(cleaned);
+    if (uri != null && uri.hasScheme) return cleaned;
+    final base = Uri.parse(_kBase);
+    final origin = '${base.scheme}://${base.authority}';
+    final path = cleaned.startsWith('/') ? cleaned : '/$cleaned';
+    return '$origin$path';
+  }
+
   Future<dynamic> get(String path, {Map<String, dynamic>? params}) {
     final uri = _uri(path, params);
     return _sendWithRetry(() => http.get(uri, headers: _headers()));
   }
 
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) =>
-      _sendWithRetry(() => http.post(_uri(path), headers: _headers(), body: body != null ? jsonEncode(body) : null));
+      _sendWithRetry(
+        () => http.post(
+          _uri(path),
+          headers: _headers(),
+          body: body != null ? jsonEncode(body) : null,
+        ),
+      );
 
   Future<dynamic> patch(String path, [Map<String, dynamic>? body]) =>
-      _sendWithRetry(() => http.patch(_uri(path), headers: _headers(), body: body != null ? jsonEncode(body) : null));
+      _sendWithRetry(
+        () => http.patch(
+          _uri(path),
+          headers: _headers(),
+          body: body != null ? jsonEncode(body) : null,
+        ),
+      );
 
   Future<dynamic> put(String path, [Map<String, dynamic>? body]) =>
-      _sendWithRetry(() => http.put(_uri(path), headers: _headers(), body: body != null ? jsonEncode(body) : null));
+      _sendWithRetry(
+        () => http.put(
+          _uri(path),
+          headers: _headers(),
+          body: body != null ? jsonEncode(body) : null,
+        ),
+      );
 
   Future<dynamic> delete(String path) =>
       _sendWithRetry(() => http.delete(_uri(path), headers: _headers()));
@@ -40,17 +70,37 @@ class ApiClient {
     String filename, {
     String fieldName = 'file',
     Map<String, String>? fields,
+    Map<String, dynamic>? params,
   }) async {
-    final uri = _uri(path);
+    final uri = _uri(path, params);
     final request = http.MultipartRequest('POST', uri);
     if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
-    request.files.add(http.MultipartFile.fromBytes(fieldName, bytes, filename: filename));
+    final ext = filename.split('.').last.toLowerCase();
+    final mime = switch (ext) {
+      'png' => MediaType('image', 'png'),
+      'gif' => MediaType('image', 'gif'),
+      'jpg' || 'jpeg' => MediaType('image', 'jpeg'),
+      'mp4' => MediaType('video', 'mp4'),
+      'mov' => MediaType('video', 'quicktime'),
+      'pdf' => MediaType('application', 'pdf'),
+      _ => MediaType('application', 'octet-stream'),
+    };
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        fieldName,
+        bytes,
+        filename: filename,
+        contentType: mime,
+      ),
+    );
     if (fields != null) request.fields.addAll(fields);
     final streamed = await request.send();
     final response = await http.Response.fromStream(streamed);
     final body = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode >= 400) {
-      final message = body is Map ? (body['message'] ?? body['error'] ?? 'Upload failed') : 'Upload failed';
+      final message = body is Map
+          ? (body['message'] ?? body['error'] ?? 'Upload failed')
+          : 'Upload failed';
       throw ApiException(message.toString(), response.statusCode);
     }
     return _unwrap(body);
@@ -59,7 +109,9 @@ class ApiClient {
   Uri _uri(String path, [Map<String, dynamic>? params]) {
     final uri = Uri.parse('$_kBase$path');
     if (params == null || params.isEmpty) return uri;
-    return uri.replace(queryParameters: params.map((k, v) => MapEntry(k, v.toString())));
+    return uri.replace(
+      queryParameters: params.map((k, v) => MapEntry(k, v.toString())),
+    );
   }
 
   Map<String, String> _headers() => {
