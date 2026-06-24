@@ -69,14 +69,68 @@ class FamilyDetail {
   }
 }
 
+class FamilyInvitation {
+  final String id;
+  final String email;
+  final String status;
+  final String familyRole;
+  final String relationship;
+  final String? claimedByName;
+  final String? createdAt;
+
+  const FamilyInvitation({
+    required this.id,
+    required this.email,
+    required this.status,
+    required this.familyRole,
+    required this.relationship,
+    this.claimedByName,
+    this.createdAt,
+  });
+
+  factory FamilyInvitation.fromJson(Map<String, dynamic> json) {
+    final invitee = json['invitee'] is Map ? json['invitee'] as Map : {};
+    final acceptedBy =
+        json['acceptedBy'] is Map ? json['acceptedBy'] as Map : {};
+    final claimedBy = json['claimedBy'] is Map ? json['claimedBy'] as Map : {};
+    return FamilyInvitation(
+      id: json['id']?.toString() ?? json['invitationId']?.toString() ?? '',
+      email: json['email']?.toString() ??
+          json['invitedEmail']?.toString() ??
+          invitee['email']?.toString() ??
+          '',
+      status: json['status']?.toString() ?? 'PENDING',
+      familyRole: json['familyRole']?.toString() ?? 'FAMILY_MEMBER',
+      relationship: json['relationship']?.toString() ?? 'OTHER',
+      claimedByName: acceptedBy['fullName']?.toString() ??
+          acceptedBy['displayName']?.toString() ??
+          claimedBy['fullName']?.toString() ??
+          claimedBy['displayName']?.toString() ??
+          invitee['fullName']?.toString() ??
+          invitee['displayName']?.toString(),
+      createdAt: json['createdAt']?.toString(),
+    );
+  }
+
+  String get roleLabel => switch (familyRole) {
+        'FAMILY_MANAGER' => 'Truong nhom',
+        'DEPUTY_MEMBER' => 'Pho nhom',
+        _ => 'Thanh vien',
+      };
+}
+
 class FamilyProvider extends ChangeNotifier {
   String? _familyId;
 
   FamilyDetail? _family;
+  List<FamilyInvitation> _invitations = [];
   bool _loading = false;
   String? _error;
 
   FamilyDetail? get family => _family;
+  List<FamilyInvitation> get invitations => _invitations;
+  List<FamilyInvitation> get claimedInvitations =>
+      _invitations.where((i) => i.status == 'CLAIMED').toList();
   bool get isLoading => _loading;
   String? get error => _error;
   List<FamilyMember> get members => _family?.members ?? [];
@@ -163,16 +217,66 @@ class FamilyProvider extends ChangeNotifier {
     return token;
   }
 
+  Future<void> fetchInvitations({String? status}) async {
+    if (_familyId == null) return;
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/invitations',
+      params: status != null ? {'status': status} : null,
+    );
+    final list = _extractList(data);
+    _invitations = list
+        .whereType<Map>()
+        .map((e) => FamilyInvitation.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    notifyListeners();
+  }
+
+  Future<void> approveInvitation(FamilyInvitation invitation) async {
+    if (_familyId == null) throw Exception('Chua co gia dinh');
+    await ApiClient.instance.post(
+      '/families/$_familyId/invitations/${invitation.id}/approve',
+      {
+        'familyRole': invitation.familyRole,
+        'relationship': invitation.relationship,
+      },
+    );
+    await fetchInvitations(status: 'CLAIMED');
+    await fetchFamily();
+  }
+
+  Future<void> rejectClaimedInvitation(String invitationId) async {
+    if (_familyId == null) throw Exception('Chua co gia dinh');
+    await ApiClient.instance.post(
+      '/families/$_familyId/invitations/$invitationId/reject',
+    );
+    await fetchInvitations(status: 'CLAIMED');
+  }
+
   Future<Map<String, dynamic>> lookupInvitation(String token) async {
     final data = await ApiClient.instance.get('/invitations/$token');
     return data is Map ? Map<String, dynamic>.from(data) : {};
   }
 
   Future<void> acceptInvitation(String token) async {
-    await ApiClient.instance.post('/invitations/$token/accept');
+    await ApiClient.instance.post('/invitations/$token/claim');
   }
 
-  Future<void> rejectInvitation(String token) async {
-    await ApiClient.instance.post('/invitations/$token/reject');
+  Future<void> rejectInvitation(String _) async {
+    // The current backend no longer exposes a public token reject endpoint.
+    // Ignoring the invite locally is enough for the invitee flow.
+  }
+
+  static List<dynamic> _extractList(dynamic data) {
+    if (data is List) return data;
+    if (data is! Map) return const <dynamic>[];
+    for (final key in const ['items', 'data', 'invitations', 'results']) {
+      final value = data[key];
+      if (value is List) return value;
+      if (value is Map) {
+        final nested = _extractList(value);
+        if (nested.isNotEmpty) return nested;
+      }
+    }
+    return const <dynamic>[];
   }
 }

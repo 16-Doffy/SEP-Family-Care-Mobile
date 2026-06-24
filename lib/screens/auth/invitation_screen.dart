@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
@@ -18,6 +17,7 @@ class _InvitationScreenState extends State<InvitationScreen> {
   Map<String, dynamic>? _invite;
   bool _loading = true;
   bool _acting = false;
+  bool _claimed = false;
   String? _error;
 
   @override
@@ -47,17 +47,18 @@ class _InvitationScreenState extends State<InvitationScreen> {
       await context.read<FamilyProvider>().acceptInvitation(widget.token);
       if (mounted) {
         context.read<AuthProvider>().clearPendingInvite();
-        // Set role từ invitation data và persist
-        final rawRole = (_invite?['familyRole'] as String? ?? '').toUpperCase();
-        final role = rawRole.contains('MANAGER')
-            ? UserRole.manager
-            : rawRole.contains('DEPUTY')
-                ? UserRole.deputy
-                : UserRole.member;
-        await context.read<AuthProvider>().setFamilyRole(role);
-        if (mounted) {
-          context.go(role == UserRole.manager ? '/manager/home' : '/member/home');
-        }
+        setState(() {
+          _claimed = true;
+          _acting = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Đã gửi yêu cầu tham gia. Vui lòng chờ quản lý phê duyệt.',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -187,8 +188,28 @@ class _InvitationScreenState extends State<InvitationScreen> {
             ),
           ],
 
-          // Đã đăng nhập → hiện nút Accept / Reject
+          // Đã đăng nhập → gửi join request, sau đó chờ quản lý duyệt
           if (isLoggedIn) ...[
+            if (_claimed) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  'Yêu cầu tham gia đã được gửi. Bạn sẽ vào được gia đình sau khi quản lý phê duyệt.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: const Color(0xFF166534),
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             SizedBox(
               width: double.infinity,
               height: 56,
@@ -198,10 +219,10 @@ class _InvitationScreenState extends State<InvitationScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
                 ),
-                onPressed: _acting ? null : _accept,
+                onPressed: _acting || _claimed ? null : _accept,
                 child: _acting
                     ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                    : Text('Chấp nhận lời mời', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
+                    : Text(_claimed ? 'Đang chờ phê duyệt' : 'Gửi yêu cầu tham gia', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
             const SizedBox(height: 12),
@@ -215,7 +236,7 @@ class _InvitationScreenState extends State<InvitationScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
                 onPressed: _acting ? null : _reject,
-                child: Text('Từ chối', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+                child: Text('Bỏ qua', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
               ),
             ),
           ],
