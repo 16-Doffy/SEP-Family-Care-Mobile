@@ -233,7 +233,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await provider.removeMember(m.id);
+                await provider.removeMember(m.userId);
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
                     content: Text('Đã xoá ${m.name}'),
