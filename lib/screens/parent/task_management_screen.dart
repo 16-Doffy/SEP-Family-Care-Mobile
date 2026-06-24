@@ -1340,19 +1340,13 @@ class _RewardsTabState extends State<_RewardsTab> {
   }
 
   Widget _settlementCard(TaskProvider tp, RewardSettlement s) {
-    const statusCfg = {
-      'PENDING':          (label: 'Chờ trả',       color: Color(0xFFD97706)),
-      'PAID':             (label: 'Đã trả',         color: AppColors.success),
-      'CONFIRMED':        (label: 'Đã nhận',        color: Color(0xFF16A34A)),
-      'CANCELLED':        (label: 'Đã hủy',         color: AppColors.textMuted),
-      'DISPUTED':         (label: 'Tranh chấp',     color: AppColors.danger),
-    };
     final st = switch (s.status) {
-      'PENDING_SETTLEMENT' => (label: 'Cho tra', color: const Color(0xFFD97706)),
-      'WAITING_CONFIRMATION' => (label: 'Cho xac nhan', color: AppColors.link),
-      'SETTLED' => (label: 'Da nhan', color: const Color(0xFF16A34A)),
-      'CANCELED' => (label: 'Da huy', color: AppColors.textMuted),
-      _ => statusCfg[s.status] ?? (label: s.status, color: AppColors.textMuted),
+      'PENDING_SETTLEMENT' => (label: 'Chờ trả thưởng', color: const Color(0xFFD97706)),
+      'WAITING_CONFIRMATION' => (label: 'Chờ thành viên xác nhận', color: AppColors.link),
+      'SETTLED' => (label: 'Đã hoàn tất', color: const Color(0xFF16A34A)),
+      'CANCELED' => (label: 'Đã hủy', color: AppColors.textMuted),
+      'DISPUTED' => (label: 'Đang tranh chấp', color: AppColors.danger),
+      _ => (label: s.status, color: AppColors.textMuted),
     };
 
     return Container(
@@ -1433,8 +1427,9 @@ class _RewardsTabState extends State<_RewardsTab> {
 
   void _showAllocateSheet(BuildContext context, TaskProvider tp, RewardSettlement s) {
     final amountCtrl = TextEditingController();
-    final jarIdCtrl  = TextEditingController();
-    final goalIdCtrl = TextEditingController();
+    var targetType = 'JAR';
+    String? selectedJarId;
+    String? selectedGoalId;
     amountCtrl.text = s.amount.round().toString();
     context.read<FinanceProvider>().fetchAll();
     showModalBottomSheet(
@@ -1443,55 +1438,146 @@ class _RewardsTabState extends State<_RewardsTab> {
       backgroundColor: Colors.transparent,
       builder: (_) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: _sheetWrap(StatefulBuilder(builder: (ctx, set) => Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Phân bổ thưởng', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            const SizedBox(height: 4),
-            Text('Tổng: ${_fmt(s.amount)}', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
-            const SizedBox(height: 16),
-            _fieldLabel('Số tiền phân bổ'),
-            const SizedBox(height: 6),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12)),
-              child: Text(
-                'Day la ghi nhan noi bo sau khi thanh vien da xac nhan nhan thuong. App khong chuyen tien that; chi gan khoan thuong vao hu tai chinh hoac muc tieu de bao cao.',
-                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E), height: 1.35),
+        child: _sheetWrap(StatefulBuilder(builder: (ctx, set) {
+          final finance = ctx.watch<FinanceProvider>();
+          final jars = finance.activeJars;
+          final goals = finance.goals;
+          if (jars.isEmpty) {
+            selectedJarId = null;
+          } else if (selectedJarId == null || !jars.any((jar) => jar.id == selectedJarId)) {
+            selectedJarId = jars.first.id;
+          }
+          if (goals.isEmpty) {
+            selectedGoalId = null;
+          } else if (selectedGoalId == null || !goals.any((goal) => goal.id == selectedGoalId)) {
+            selectedGoalId = goals.first.id;
+          }
+
+          Widget targetButton(String value, String label) {
+            final active = targetType == value;
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => set(() => targetType = value),
+                child: Container(
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: active ? AppColors.link : AppColors.background,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: active ? AppColors.link : const Color(0xFFE5E7EB)),
+                  ),
+                  child: Text(
+                    label,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: active ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            _inputBox(amountCtrl, '50000'),
-            const SizedBox(height: 12),
-            _fieldLabel('ID Quỹ (jarId) — hoặc để trống nếu dùng goalId'),
-            const SizedBox(height: 6),
-            _inputBox(jarIdCtrl, 'UUID của quỹ...'),
-            const SizedBox(height: 12),
-            _fieldLabel('ID Mục tiêu (goalId) — hoặc để trống nếu dùng jarId'),
-            const SizedBox(height: 6),
-            _inputBox(goalIdCtrl, 'UUID của mục tiêu...'),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-              onPressed: () async {
-                final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
-                if (amount <= 0) return;
-                final alloc = <String, dynamic>{'amount': amount};
-                if (jarIdCtrl.text.trim().isNotEmpty) alloc['jarId'] = jarIdCtrl.text.trim();
-                if (goalIdCtrl.text.trim().isNotEmpty) alloc['goalId'] = goalIdCtrl.text.trim();
-                try {
-                  await tp.allocateSettlement(s.id, allocations: [alloc]);
-                  if (context.mounted) Navigator.pop(context);
-                } catch (e) {
-                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-                }
-              },
-              child: Text('Phân bổ', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-            ),
-          ],
-        ))),
+            );
+          }
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Phân bổ thưởng', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 4),
+              Text('Tổng: ${_fmt(s.amount)}', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
+              const SizedBox(height: 16),
+              _fieldLabel('Số tiền phân bổ'),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12)),
+                child: Text(
+                  'Đây là ghi nhận nội bộ sau khi thành viên đã xác nhận nhận thưởng. App không chuyển tiền thật; chỉ gán khoản thưởng vào hũ tài chính hoặc mục tiêu để báo cáo.',
+                  style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E), height: 1.35),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _inputBox(amountCtrl, '50000'),
+              const SizedBox(height: 12),
+              Row(children: [
+                targetButton('JAR', 'Hũ chi tiêu'),
+                const SizedBox(width: 8),
+                targetButton('GOAL', 'Mục tiêu tiết kiệm'),
+              ]),
+              const SizedBox(height: 12),
+              if (targetType == 'JAR') ...[
+                _fieldLabel('Chọn hũ chi tiêu'),
+                const SizedBox(height: 6),
+                if (jars.isEmpty)
+                  Text('Chưa có hũ nào, hãy tạo trước', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted))
+                else
+                  DropdownButtonFormField<String>(
+                    value: selectedJarId,
+                    items: jars
+                        .map((jar) => DropdownMenuItem(
+                              value: jar.id,
+                              child: Text('${jar.name} (${jar.allocationPercentage.round()}%)'),
+                            ))
+                        .toList(),
+                    onChanged: (value) => set(() => selectedJarId = value),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+              ] else ...[
+                _fieldLabel('Chọn mục tiêu tiết kiệm'),
+                const SizedBox(height: 6),
+                if (goals.isEmpty)
+                  Text('Chưa có mục tiêu nào, hãy tạo trước', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted))
+                else
+                  DropdownButtonFormField<String>(
+                    value: selectedGoalId,
+                    items: goals
+                        .map((goal) => DropdownMenuItem(
+                              value: goal.id,
+                              child: Text(goal.goalName),
+                            ))
+                        .toList(),
+                    onChanged: (value) => set(() => selectedGoalId = value),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: AppColors.background,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    ),
+                  ),
+              ],
+              const SizedBox(height: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                onPressed: () async {
+                  final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+                  if (amount <= 0) return;
+                  final alloc = <String, dynamic>{'amount': amount};
+                  if (targetType == 'JAR') {
+                    if (selectedJarId == null) return;
+                    alloc['jarId'] = selectedJarId;
+                  } else {
+                    if (selectedGoalId == null) return;
+                    alloc['goalId'] = selectedGoalId;
+                  }
+                  try {
+                    await tp.allocateSettlement(s.id, allocations: [alloc]);
+                    if (context.mounted) Navigator.pop(context);
+                  } catch (e) {
+                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                  }
+                },
+                child: Text('Phân bổ', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ],
+          );
+        })),
       ),
     );
   }

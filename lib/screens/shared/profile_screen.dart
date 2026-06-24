@@ -36,7 +36,7 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    user?.name ?? 'Thanh vien',
+                    user?.name ?? 'Thành viên',
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -110,7 +110,7 @@ class ProfileScreen extends StatelessWidget {
                 _tile(
                   context,
                   Icons.how_to_reg_rounded,
-                  'Yeu cau cho duyet',
+                  'Yêu cầu chờ duyệt',
                   onTap: () => _showPendingInvitations(context, family),
                 ),
               if (user?.canManageFamilySettings == true)
@@ -236,13 +236,13 @@ class ProfileScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Thanh vien (${family.members.length})'),
+        title: Text('Thành viên (${family.members.length})'),
         content: SizedBox(
           width: double.maxFinite,
           child: family.isLoading
               ? const Center(child: CircularProgressIndicator())
               : family.members.isEmpty
-                  ? const Text('Chua co thanh vien')
+                  ? const Text('Chưa có thành viên')
                   : ListView.separated(
                       shrinkWrap: true,
                       itemCount: family.members.length,
@@ -358,7 +358,7 @@ class ProfileScreen extends StatelessWidget {
       builder: (ctx) {
         final invitations = family.claimedInvitations;
         return AlertDialog(
-          title: Text('Yeu cau cho duyet (${invitations.length})'),
+          title: Text('Yêu cầu chờ duyệt (${invitations.length})'),
           content: SizedBox(
             width: double.maxFinite,
             child: invitations.isEmpty
@@ -401,7 +401,7 @@ class ProfileScreen extends StatelessWidget {
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('Da duyet yeu cau'),
+                                        content: Text('Đã duyệt yêu cầu'),
                                       ),
                                     );
                                   }
@@ -418,7 +418,7 @@ class ProfileScreen extends StatelessWidget {
                               },
                             ),
                             IconButton(
-                              tooltip: 'Tu choi',
+                              tooltip: 'Từ chối',
                               icon: const Icon(
                                 Icons.cancel_rounded,
                                 color: AppColors.danger,
@@ -491,7 +491,7 @@ class ProfileScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Huy'),
+            child: const Text('Hủy'),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -757,7 +757,7 @@ class _InviteDialogState extends State<_InviteDialog> {
             items: const [
               DropdownMenuItem(
                 value: 'FAMILY_MEMBER',
-                child: Text('Thanh vien'),
+                child: Text('Thành viên'),
               ),
               DropdownMenuItem(
                 value: 'DEPUTY_MEMBER',
@@ -777,7 +777,7 @@ class _InviteDialogState extends State<_InviteDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Huy'),
+          child: const Text('Hủy'),
         ),
         ElevatedButton(
           onPressed: _loading ? null : _send,

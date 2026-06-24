@@ -107,7 +107,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                             border: Border.all(color: const Color(0xFFBFDBFE)),
                           ),
                           child: Text(
-                            'Ung dung chi tinh tien theo mo hinh dang dung. Cac mo hinh cu duoc giu nhu lich su nen co the trung ten, nhung khong tao them hu tren man nay.',
+                            'Ứng dụng chỉ tính tiền theo mô hình đang dùng. Các mô hình cũ được giữ như lịch sử nên có thể trùng tên, nhưng không tạo thêm hũ trên màn này.',
                             style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF1D4ED8), height: 1.35),
                           ),
                         ),

@@ -17,7 +17,7 @@ String _fmtMoney(double value) {
         RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
         (m) => '${m[1]},',
       );
-  return '$text d';
+  return '$text đ';
 }
 
 class ChildWalletScreen extends StatefulWidget {
@@ -71,7 +71,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                   children: [
                     const SizedBox(height: 20),
                     Text(
-                      'So thu chi ca nhan',
+                      'Sổ thu chi cá nhân',
                       style: GoogleFonts.inter(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
@@ -93,7 +93,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'Man nay chi hien thu/chi ca nhan cua ban. Tong quy gia dinh va so du thanh vien do quan ly xem/ghi nhan, nen member se khong thay tien quy chung neu BE chua cap quyen endpoint rieng.',
+                              'Màn này chỉ hiển thị thu/chi cá nhân của bạn. Tổng quỹ gia đình và số dư thành viên do quản lý xem/ghi nhận, nên thành viên sẽ không thấy tiền quỹ chung nếu BE chưa cấp quyền endpoint riêng.',
                               style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF1D4ED8), height: 1.35),
                             ),
                           ),
@@ -132,7 +132,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                         onPressed: () => RequestMoneySheet.show(context),
                         icon: const Icon(Icons.volunteer_activism_rounded),
                         label: Text(
-                          'Gui yeu cau ho tro chi tieu',
+                          'Gửi yêu cầu hỗ trợ chi tiêu',
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -143,7 +143,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      'Lich su yeu cau cua toi',
+                      'Lịch sử yêu cầu của tôi',
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -156,7 +156,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 24),
                         child: Center(
                           child: Text(
-                            'Chua co yeu cau nao',
+                            'Chưa có yêu cầu nào',
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               color: AppColors.textMuted,
@@ -200,7 +200,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Da chi trong thang nay',
+            'Đã chi trong tháng này',
             style: GoogleFonts.inter(fontSize: 13, color: Colors.white70),
           ),
           const SizedBox(height: 4),
@@ -216,12 +216,12 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
           Row(
             children: [
               Expanded(
-                child: _summaryMetric('Han muc thang',
-                    limit > 0 ? _fmtMoney(limit) : 'Chua dat'),
+                child: _summaryMetric('Hạn mức tháng',
+                    limit > 0 ? _fmtMoney(limit) : 'Chưa đặt'),
               ),
               Expanded(
                 child: _summaryMetric(
-                    'Thu nhap ca nhan', income > 0 ? _fmtMoney(income) : 'Chua khai bao'),
+                    'Thu nhập cá nhân', income > 0 ? _fmtMoney(income) : 'Chưa khai báo'),
               ),
             ],
           ),
@@ -295,7 +295,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Da dung ${(pct * 100).round()}% han muc',
+                  'Đã dùng ${(pct * 100).round()}% hạn mức',
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -304,7 +304,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${_fmtMoney(spent)} / ${_fmtMoney(limit)} - Con lai ${_fmtMoney(remaining)}',
+                  '${_fmtMoney(spent)} / ${_fmtMoney(limit)} · Còn lại ${_fmtMoney(remaining)}',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     color: AppColors.textSecondary,
@@ -350,8 +350,8 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                 children: [
                   Text(
                     hasData
-                        ? 'Cap nhat khai bao thu/chi'
-                        : 'Khai bao tai chinh thang nay',
+                        ? 'Cập nhật khai báo thu/chi'
+                        : 'Khai báo tài chính tháng này',
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -361,7 +361,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                     ),
                   ),
                   Text(
-                    'Thu nhap, chi tieu ca nhan va muc hien thi voi gia dinh',
+                    'Thu nhập, chi tiêu cá nhân và mức hiển thị với gia đình',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: hasData
@@ -469,7 +469,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
                     }
                   },
                   child: Text(
-                    'Huy',
+                    'Hủy',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -487,10 +487,10 @@ class _ChildWalletScreenState extends State<ChildWalletScreen> {
 
   ({String label, Color color}) _requestStatus(MoneyRequestStatus status) {
     return switch (status) {
-      MoneyRequestStatus.pending => (label: 'Cho duyet', color: AppColors.planned),
-      MoneyRequestStatus.approved => (label: 'Da duyet', color: AppColors.success),
-      MoneyRequestStatus.rejected => (label: 'Tu choi', color: AppColors.danger),
-      MoneyRequestStatus.canceled => (label: 'Da huy', color: AppColors.textMuted),
+      MoneyRequestStatus.pending => (label: 'Chờ duyệt', color: AppColors.planned),
+      MoneyRequestStatus.approved => (label: 'Đã duyệt', color: AppColors.success),
+      MoneyRequestStatus.rejected => (label: 'Từ chối', color: AppColors.danger),
+      MoneyRequestStatus.canceled => (label: 'Đã hủy', color: AppColors.textMuted),
     };
   }
 }

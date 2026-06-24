@@ -45,7 +45,7 @@ class MemberShell extends StatelessWidget {
                 ),
                 _NavItem(
                   icon: Icons.account_balance_wallet_rounded,
-                  label: 'So chi',
+                  label: 'Sổ chi',
                   index: 2,
                   current: navigationShell.currentIndex,
                   onTap: () => _go(context, 2),

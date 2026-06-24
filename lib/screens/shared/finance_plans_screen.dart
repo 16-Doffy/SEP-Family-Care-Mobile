@@ -495,7 +495,7 @@ class _GoalsTabState extends State<_GoalsTab> {
                 border: Border.all(color: const Color(0xFFBFDBFE)),
               ),
               child: Text(
-                'Muc tieu la khoan can danh dum, vi du mua xe hoac du lich. Tien chi tang tien do khi manager phan bo mot giao dich/thuong vao muc tieu; app khong tu dong chuyen tien that.',
+                'Mục tiêu là khoản cần dành dụm, ví dụ mua xe hoặc du lịch. Tiến độ chỉ tăng khi manager phân bổ một giao dịch/thưởng vào mục tiêu; app không tự động chuyển tiền thật.',
                 style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF1D4ED8), height: 1.35),
               ),
             ),

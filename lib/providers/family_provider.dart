@@ -115,7 +115,7 @@ class FamilyInvitation {
   String get roleLabel => switch (familyRole) {
         'FAMILY_MANAGER' => 'Truong nhom',
         'DEPUTY_MEMBER' => 'Pho nhom',
-        _ => 'Thanh vien',
+        _ => 'Thành viên',
       };
 }
 
@@ -232,7 +232,7 @@ class FamilyProvider extends ChangeNotifier {
   }
 
   Future<void> approveInvitation(FamilyInvitation invitation) async {
-    if (_familyId == null) throw Exception('Chua co gia dinh');
+    if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.post(
       '/families/$_familyId/invitations/${invitation.id}/approve',
       {
@@ -245,7 +245,7 @@ class FamilyProvider extends ChangeNotifier {
   }
 
   Future<void> rejectClaimedInvitation(String invitationId) async {
-    if (_familyId == null) throw Exception('Chua co gia dinh');
+    if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.post(
       '/families/$_familyId/invitations/$invitationId/reject',
     );

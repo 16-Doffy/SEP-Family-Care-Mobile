@@ -78,11 +78,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       a.year == b.year && a.month == b.month && a.day == b.day;
 
   String _statusLabel(String status) => switch (status.toUpperCase()) {
-        'ACTIVE' => 'Dang lam',
-        'COMPLETED' || 'DONE' || 'APPROVED' => 'Hoan thanh',
-        'SUBMITTED' => 'Cho duyet',
-        'CANCELED' || 'CANCELLED' => 'Da huy',
-        'TODO' => 'Can lam',
+        'ACTIVE' => 'Đang làm',
+        'COMPLETED' || 'DONE' || 'APPROVED' => 'Hoàn thành',
+        'SUBMITTED' => 'Chờ duyệt',
+        'CANCELED' || 'CANCELLED' => 'Đã hủy',
+        'TODO' => 'Cần làm',
         _ => status,
       };
 
