@@ -1,5 +1,5 @@
 # API Backend Analysis — Family Care
-**Server:** http://103.110.84.66/api/v1
+**Server:** https://api.familycare-digital.com/api/v1
 **Date:** 2026-06-21 (re-verified trực tiếp qua `GET /api/docs-json`)
 
 ## Endpoints (145 operations / 107 paths total)

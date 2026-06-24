@@ -14,8 +14,8 @@
 | **Tên dự án** | Family Care |
 | **Mã dự án** | SU26SE032 |
 | **Platform** | Flutter (Android / Web). Wear OS: UI có sẵn ở `lib/wear/`, chưa cấu hình build app riêng. iOS: chưa setup (không có thư mục `ios/`) |
-| **Backend** | `http://103.110.84.66/api/v1` |
-| **API Docs** | `http://103.110.84.66/api/docs` |
+| **Backend** | `https://api.familycare-digital.com/api/v1` |
+| **API Docs** | `https://api.familycare-digital.com/api/docs` |
 | **Branch chính** | `main` |
 | **Version** | 1.0.0+1 |
 
@@ -120,8 +120,8 @@ flutter pub get
 # Android emulator / device
 flutter run
 
-# Chỉ định API URL khác (mặc định: http://103.110.84.66/api/v1)
-flutter run --dart-define=API_BASE_URL=http://your-server/api/v1
+# Chỉ định API URL khác (mặc định: https://api.familycare-digital.com/api/v1)
+flutter run --dart-define=API_BASE_URL=https://your-server/api/v1
 ```
 
 ### Build APK
@@ -211,7 +211,7 @@ flutter build apk --release
 
 ## API Reference
 
-Xem chi tiết tại [`API_DOCS.md`](API_DOCS.md) hoặc Swagger UI: `http://103.110.84.66/api/docs`
+Xem chi tiết tại [`API_DOCS.md`](API_DOCS.md) hoặc Swagger UI: `https://api.familycare-digital.com/api/docs`
 
 ---
 

@@ -98,9 +98,11 @@ DELETE /api/v1/families/{familyId}/invitations/{invitationId}
 - Cần xác nhận: `POST /invitations/{token}/accept` có yêu cầu user đăng nhập khớp `email` trong
   `CreateInvitationDto` không? Ảnh hưởng tới việc link mời có thể chia sẻ rộng (ai bấm cũng join được)
   hay chỉ dùng được bởi đúng người được nhắm tới qua email.
-- Link mời hiện là HTTP thường tới IP backend (`http://103.110.84.66/join?token=...`), chưa phải App
-  Link/Universal Link — muốn OS tự mở app khi bấm link cần domain HTTPS ổn định + file xác minh
-  (`assetlinks.json`/`apple-app-site-association`), không làm được với IP thô.
+- **Cập nhật 2026 — đã có domain HTTPS (`api.familycare-digital.com`)**: trước đây không làm được App
+  Link/Universal Link vì chỉ có IP thô. Giờ domain ổn định + HTTPS rồi nên **khả thi** — chỉ cần BE host
+  thêm `/.well-known/assetlinks.json` (Android) / `apple-app-site-association` (iOS, khi có ios/) để OS
+  tự mở app khi bấm link `https://api.familycare-digital.com/join?token=...`, không cần copy/paste token
+  tay nữa. Đây là việc nên làm tiếp sau khi domain ổn định.
 
 ---
 
