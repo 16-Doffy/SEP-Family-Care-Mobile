@@ -44,7 +44,7 @@ class ProfileScreen extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Gia dinh ${family.family?.name ?? user?.familyName ?? ""}',
+                    'Gia đình ${family.family?.name ?? user?.familyName ?? ""}',
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       color: AppColors.textMuted,
@@ -71,39 +71,39 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 32),
-            _section('Tai khoan', [
+            _section('Tài khoản', [
               _tile(
                 context,
                 Icons.person_outline_rounded,
-                'Ho so ca nhan',
+                'Hồ sơ cá nhân',
                 onTap: () => _showProfileInfo(context, auth),
               ),
               _tile(
                 context,
                 Icons.lock_outline_rounded,
-                'Bao mat',
+                'Bảo mật',
                 onTap: () {},
               ),
               _tile(
                 context,
                 Icons.notifications_none_rounded,
-                'Thong bao',
+                'Thông báo',
                 onTap: () => context.push('/notifications'),
               ),
             ]),
             const SizedBox(height: 16),
-            _section('Gia dinh', [
+            _section('Gia đình', [
               _tile(
                 context,
                 Icons.groups_2_outlined,
-                'Xem thanh vien',
+                'Xem thành viên',
                 onTap: () => _showMembers(context, family),
               ),
               if (user?.canInviteMembers == true)
                 _tile(
                   context,
                   Icons.person_add_alt_1_rounded,
-                  'Moi thanh vien',
+                  'Mời thành viên',
                   onTap: () => _showInvite(context, family),
                 ),
               if (user?.canInviteMembers == true)
@@ -113,26 +113,33 @@ class ProfileScreen extends StatelessWidget {
                   'Yêu cầu chờ duyệt',
                   onTap: () => _showPendingInvitations(context, family),
                 ),
+              if (user?.canManageSubscription == true)
+                _tile(
+                  context,
+                  Icons.workspace_premium_outlined,
+                  'Gói đăng ký',
+                  onTap: () => context.push('/subscription'),
+                ),
               if (user?.canManageFamilySettings == true)
                 _tile(
                   context,
                   Icons.settings_outlined,
-                  'Cai dat gia dinh',
+                  'Cài đặt gia đình',
                   onTap: () => _showEditFamily(context, family),
                 ),
             ]),
             const SizedBox(height: 16),
-            _section('Khac', [
+            _section('Khác', [
               _tile(
                 context,
                 Icons.help_outline_rounded,
-                'Tro giup va FAQ',
+                'Trợ giúp và FAQ',
                 onTap: () {},
               ),
               _tile(
                 context,
                 Icons.description_outlined,
-                'Dieu khoan su dung',
+                'Điều khoản sử dụng',
                 onTap: () {},
               ),
             ]),
@@ -149,7 +156,7 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 onPressed: auth.logout,
                 child: Text(
-                  'Dang xuat',
+                  'Đăng xuất',
                   style: GoogleFonts.inter(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -170,17 +177,17 @@ class ProfileScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Ho so ca nhan'),
+        title: const Text('Hồ sơ cá nhân'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow('Ho ten', user?.name ?? '-'),
+            _infoRow('Họ tên', user?.name ?? '-'),
             const SizedBox(height: 8),
-            _infoRow('Vai tro', _getRoleName(user?.role)),
+            _infoRow('Vai trò', _getRoleName(user?.role)),
             const SizedBox(height: 8),
             _infoRow(
-              'Gia dinh',
+              'Gia đình',
               user?.familyName.isNotEmpty == true ? user!.familyName : '-',
             ),
             const SizedBox(height: 16),
@@ -191,7 +198,7 @@ class ProfileScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Text(
-                'Chinh sua ho so chua duoc ho tro trong phien ban nay.',
+                'Chỉnh sửa hồ sơ chưa được hỗ trợ trong phiên bản này.',
                 style: TextStyle(fontSize: 13, color: Color(0xFF92400E)),
               ),
             ),
@@ -200,7 +207,7 @@ class ProfileScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Dong'),
+            child: const Text('Đóng'),
           ),
         ],
       ),
@@ -287,7 +294,7 @@ class ProfileScreen extends StatelessWidget {
                                             .showSnackBar(
                                           SnackBar(
                                             content: Text(
-                                              'Da xoa ${member.displayName}',
+                                              'Đã xóa ${member.displayName}',
                                             ),
                                           ),
                                         );
@@ -312,7 +319,7 @@ class ProfileScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Dong'),
+            child: const Text('Đóng'),
           ),
         ],
       ),
@@ -362,7 +369,7 @@ class ProfileScreen extends StatelessWidget {
           content: SizedBox(
             width: double.maxFinite,
             child: invitations.isEmpty
-                ? const Text('Khong co yeu cau nao dang cho duyet')
+                ? const Text('Không có yêu cầu nào đang chờ duyệt')
                 : ListView.separated(
                     shrinkWrap: true,
                     itemCount: invitations.length,
@@ -378,7 +385,7 @@ class ProfileScreen extends StatelessWidget {
                           style: GoogleFonts.inter(fontWeight: FontWeight.w600),
                         ),
                         subtitle: Text(
-                          '${invitation.email}\nVai tro: ${invitation.roleLabel}',
+                          '${invitation.email}\nVai trò: ${invitation.roleLabel}',
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             color: AppColors.textMuted,
@@ -389,7 +396,7 @@ class ProfileScreen extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
-                              tooltip: 'Duyet',
+                              tooltip: 'Duyệt',
                               icon: const Icon(
                                 Icons.check_circle_rounded,
                                 color: AppColors.success,
@@ -431,7 +438,7 @@ class ProfileScreen extends StatelessWidget {
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
-                                        content: Text('Da tu choi yeu cau'),
+                                        content: Text('Đã từ chối yêu cầu'),
                                       ),
                                     );
                                   }
@@ -456,7 +463,7 @@ class ProfileScreen extends StatelessWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Dong'),
+              child: const Text('Đóng'),
             ),
           ],
         );
@@ -472,18 +479,18 @@ class ProfileScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Cai dat gia dinh'),
+        title: const Text('Cài đặt gia đình'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'Ten gia dinh'),
+              decoration: const InputDecoration(labelText: 'Tên gia đình'),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: descCtrl,
-              decoration: const InputDecoration(labelText: 'Mo ta'),
+              decoration: const InputDecoration(labelText: 'Mô tả'),
               maxLines: 2,
             ),
           ],
@@ -507,7 +514,7 @@ class ProfileScreen extends StatelessWidget {
                 );
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Da cap nhat gia dinh')),
+                    const SnackBar(content: Text('Đã cập nhật gia đình')),
                   );
                 }
               } catch (e) {
@@ -521,7 +528,7 @@ class ProfileScreen extends StatelessWidget {
                 }
               }
             },
-            child: const Text('Luu'),
+            child: const Text('Lưu'),
           ),
         ],
       ),
@@ -530,10 +537,10 @@ class ProfileScreen extends StatelessWidget {
 
   String _getRoleName(UserRole? role) {
     return switch (role) {
-      UserRole.manager => 'TRUONG NHOM',
-      UserRole.deputy => 'PHO NHOM',
-      UserRole.member => 'THANH VIEN',
-      null => 'KHACH',
+      UserRole.manager => 'TRƯỞNG NHÓM',
+      UserRole.deputy => 'PHÓ NHÓM',
+      UserRole.member => 'THÀNH VIÊN',
+      null => 'KHÁCH',
     };
   }
 
@@ -664,13 +671,13 @@ class _InviteDialogState extends State<_InviteDialog> {
   Widget build(BuildContext context) {
     if (_inviteLink != null) {
       return AlertDialog(
-        title: const Text('Loi moi da tao'),
+        title: const Text('Lời mời đã tạo'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Gui link nay cho ${widget.emailCtrl.text.trim()}:',
+              'Gửi link này cho ${widget.emailCtrl.text.trim()}:',
               style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
             ),
             const SizedBox(height: 12),
@@ -686,7 +693,7 @@ class _InviteDialogState extends State<_InviteDialog> {
                     child: Text(
                       _inviteLink!.isNotEmpty
                           ? _inviteLink!
-                          : '(API khong tra ve invite token)',
+                          : '(API không trả về invite token)',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: AppColors.textPrimary,
@@ -704,7 +711,7 @@ class _InviteDialogState extends State<_InviteDialog> {
                         Clipboard.setData(ClipboardData(text: _inviteLink!));
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Da copy link'),
+                            content: Text('Đã copy link'),
                             duration: Duration(seconds: 2),
                           ),
                         );
@@ -715,7 +722,7 @@ class _InviteDialogState extends State<_InviteDialog> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Link chi dung duoc 1 lan va co thoi han.',
+              'Link chỉ dùng được 1 lần và có thời hạn.',
               style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
             ),
           ],
@@ -736,7 +743,7 @@ class _InviteDialogState extends State<_InviteDialog> {
     }
 
     return AlertDialog(
-      title: const Text('Moi thanh vien'),
+      title: const Text('Mời thành viên'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -753,7 +760,7 @@ class _InviteDialogState extends State<_InviteDialog> {
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
             value: _familyRole,
-            decoration: const InputDecoration(labelText: 'Vai tro'),
+            decoration: const InputDecoration(labelText: 'Vai trò'),
             items: const [
               DropdownMenuItem(
                 value: 'FAMILY_MEMBER',
@@ -761,7 +768,7 @@ class _InviteDialogState extends State<_InviteDialog> {
               ),
               DropdownMenuItem(
                 value: 'DEPUTY_MEMBER',
-                child: Text('Pho nhom'),
+                child: Text('Phó nhóm'),
               ),
             ],
             onChanged: _loading
@@ -786,7 +793,7 @@ class _InviteDialogState extends State<_InviteDialog> {
                   dimension: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Gui loi moi'),
+              : const Text('Gửi lời mời'),
         ),
       ],
     );

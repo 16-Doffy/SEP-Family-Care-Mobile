@@ -464,7 +464,7 @@ class _TasksTabState extends State<_TasksTab> {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(color: const Color(0xFFFEF3C7), borderRadius: BorderRadius.circular(12)),
-          child: Text('Khong tai duoc minh chung nop bai cho assignment nay.', style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFFD97706))),
+          child: Text('Không tải được minh chứng nộp bài cho assignment này.', style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFFD97706))),
         ),
       ] else ...[
         if (_submissionNote != null && _submissionNote!.isNotEmpty) ...[
@@ -514,9 +514,21 @@ class _TasksTabState extends State<_TasksTab> {
             ),
             onPressed: (_submitting || _loadingSubmission || !hasSubmission) ? null : () async {
               setState(() => _submitting = true);
+              final messenger = ScaffoldMessenger.of(context);
               try {
                 await context.read<TaskProvider>().reviewSubmission(_submissionId!, approved: true);
-                try { await context.read<TaskProvider>().createSettlement(_submissionId!); } catch (_) {}
+                try {
+                  await context.read<TaskProvider>().createSettlement(_submissionId!);
+                } catch (settlementErr) {
+                  final msg = settlementErr.toString().toLowerCase();
+                  final alreadyExists = msg.contains('exist') || msg.contains('already') || msg.contains('đã tồn tại');
+                  if (!alreadyExists) {
+                    messenger.showSnackBar(SnackBar(
+                      content: Text('Duyệt thành công nhưng chưa tạo được thưởng: ${settlementErr.toString().replaceFirst('Exception: ', '')}'),
+                      backgroundColor: AppColors.heroOrange,
+                    ));
+                  }
+                }
                 if (mounted) {
                   setState(() { _approveTask = null; _submitting = false; });
                   context.read<TaskProvider>().fetchTasks();

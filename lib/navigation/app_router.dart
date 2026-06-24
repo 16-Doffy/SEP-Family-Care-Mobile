@@ -23,9 +23,15 @@ import '../screens/child/child_wallet_screen.dart';
 // Shared
 import '../screens/shared/chat_screen.dart';
 import '../screens/shared/sos_screen.dart';
+import '../screens/shared/sos_alert_detail_screen.dart';
+import '../screens/shared/monthly_finance_screen.dart';
 import '../screens/shared/profile_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
+import '../screens/shared/finance_model_screen.dart';
+import '../screens/shared/finance_plans_screen.dart';
+import '../screens/shared/budget_plan_detail_screen.dart';
+import '../screens/shared/subscription_screen.dart';
 
 // Shells
 import 'manager_shell.dart';
@@ -52,12 +58,12 @@ GoRouter createRouter(AuthProvider auth) {
       if (loggedIn && onAuth) {
         if (auth.pendingInviteToken != null) return '/invite/${auth.pendingInviteToken}';
         if (auth.familyId == null || auth.familyId!.isEmpty) return '/create-family';
-        return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
+        return auth.user!.canAccessManagerWorkspace ? '/manager/home' : '/member/home';
       }
 
       // Guard: manager không được ở /member shell và ngược lại
       if (loggedIn && auth.familyId != null) {
-        final isAdmin = auth.user!.isAdministrative;
+        final isAdmin = auth.user!.canAccessManagerWorkspace;
         if (isAdmin && loc.startsWith('/member/')) return '/manager/home';
         if (!isAdmin && loc.startsWith('/manager/')) return '/member/home';
       }
@@ -65,7 +71,7 @@ GoRouter createRouter(AuthProvider auth) {
       if (loggedIn && onNoFamily) {
         if (auth.pendingInviteToken != null) return '/invite/${auth.pendingInviteToken}';
         if (auth.familyId != null && auth.familyId!.isNotEmpty) {
-          return auth.user!.isAdministrative ? '/manager/home' : '/member/home';
+          return auth.user!.canAccessManagerWorkspace ? '/manager/home' : '/member/home';
         }
       }
       return null;
@@ -83,6 +89,26 @@ GoRouter createRouter(AuthProvider auth) {
       // ── Shared overlays (full-screen) ──────────────────────
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
       GoRoute(path: '/ai',            builder: (_, __) => const AIAssistantScreen()),
+      GoRoute(path: '/sos/alert',     builder: (_, __) => const SOSScreen()),
+      GoRoute(
+        path: '/sos/alert/:id',
+        builder: (_, state) => SosAlertDetailScreen(alertId: state.pathParameters['id'] ?? ''),
+      ),
+      GoRoute(path: '/monthly-finance', builder: (_, __) => const MonthlyFinanceScreen()),
+      GoRoute(path: '/finance-model', builder: (_, __) => const FinanceModelScreen()),
+      GoRoute(path: '/finance-plans', builder: (_, __) => const FinancePlansScreen()),
+      GoRoute(path: '/subscription', builder: (_, __) => const SubscriptionScreen()),
+      GoRoute(
+        path: '/finance-plans/budget/:id',
+        builder: (_, state) {
+          final extra = state.extra is Map ? state.extra as Map : const {};
+          return BudgetPlanDetailScreen(
+            planId: state.pathParameters['id'] ?? '',
+            planName: extra['planName']?.toString() ?? 'Kế hoạch ngân sách',
+            status: extra['status']?.toString() ?? 'DRAFT',
+          );
+        },
+      ),
 
       // ── Manager/Deputy Shell ──────────────────────────────
       StatefulShellRoute.indexedStack(
