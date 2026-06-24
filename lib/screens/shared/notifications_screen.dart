@@ -28,8 +28,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       final dt = DateTime.parse(iso).toLocal();
       final diff = DateTime.now().difference(dt);
-      if (diff.inMinutes < 60) return '${diff.inMinutes} phut truoc';
-      if (diff.inHours < 24) return '${diff.inHours} gio truoc';
+      if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
+      if (diff.inHours < 24) return '${diff.inHours} giờ trước';
       if (diff.inDays == 1) return 'Hom qua';
       return '${dt.day}/${dt.month}';
     } catch (_) {
@@ -84,7 +84,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Chua tim thay chi tiet canh bao SOS'),
+        content: Text('Chưa tìm thấy chi tiết cảnh báo SOS'),
         backgroundColor: AppColors.danger,
       ),
     );
@@ -128,7 +128,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   const Expanded(
                     child: Center(
                       child: Text(
-                        'Thong bao',
+                        'Thông báo',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,

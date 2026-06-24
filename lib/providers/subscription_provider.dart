@@ -3,22 +3,26 @@ import '../services/api_client.dart';
 
 class SubscriptionPlan {
   final String id;
+  final String planCode;
   final String name;
   final String description;
   final double price;
   final String currency;
   final String billingCycle;
   final List<String> features;
+  final Map<String, bool> featureAccess;
   final bool isActive;
 
   const SubscriptionPlan({
     required this.id,
+    this.planCode = 'FREE',
     required this.name,
     this.description = '',
     required this.price,
     this.currency = 'VND',
-    this.billingCycle = 'MONTHLY',
+    this.billingCycle = 'YEARLY',
     this.features = const [],
+    this.featureAccess = const {},
     this.isActive = true,
   });
 
@@ -27,17 +31,28 @@ class SubscriptionPlan {
     final features = rawFeatures is List
         ? rawFeatures.whereType<String>().toList()
         : <String>[];
+    final rawFeatureAccess = j['featureAccess'];
+    final featureAccess = rawFeatureAccess is Map
+        ? <String, bool>{
+            for (final entry in rawFeatureAccess.entries)
+              entry.key.toString(): entry.value == true,
+          }
+        : <String, bool>{};
     return SubscriptionPlan(
       id: j['id']?.toString() ?? '',
+      planCode: j['planCode']?.toString() ?? 'FREE',
       name: j['name']?.toString() ?? '',
       description: j['description']?.toString() ?? '',
-      price: _parseDouble(j['price'] ?? j['amount']),
+      price: _parseDouble(j['annualPrice'] ?? j['price'] ?? j['amount']),
       currency: j['currency']?.toString() ?? 'VND',
-      billingCycle: j['billingCycle']?.toString() ?? 'MONTHLY',
+      billingCycle: j['billingCycle']?.toString() ?? 'YEARLY',
       features: features,
+      featureAccess: featureAccess,
       isActive: j['isActive'] as bool? ?? true,
     );
   }
+
+  bool hasFeature(String key) => featureAccess[key] == true;
 
   static double _parseDouble(dynamic v) {
     if (v is num) return v.toDouble();
@@ -50,29 +65,44 @@ class FamilySubscription {
   final String planCode;
   final String planName;
   final String status;
+  final String? currentPeriodStart;
   final String? currentPeriodEnd;
   final bool cancelAtPeriodEnd;
+  final Map<String, bool> featureAccess;
 
   const FamilySubscription({
     required this.id,
     required this.planCode,
     required this.planName,
     required this.status,
+    this.currentPeriodStart,
     this.currentPeriodEnd,
     this.cancelAtPeriodEnd = false,
+    this.featureAccess = const {},
   });
 
   factory FamilySubscription.fromJson(Map<String, dynamic> j) {
     final plan = j['plan'] as Map<String, dynamic>? ?? {};
+    final rawFeatureAccess = plan['featureAccess'] ?? j['featureAccess'];
+    final featureAccess = rawFeatureAccess is Map
+        ? <String, bool>{
+            for (final entry in rawFeatureAccess.entries)
+              entry.key.toString(): entry.value == true,
+          }
+        : <String, bool>{};
     return FamilySubscription(
       id: j['id']?.toString() ?? '',
       planCode: plan['planCode']?.toString() ?? j['planCode']?.toString() ?? 'FREE',
       planName: plan['name']?.toString() ?? j['planName']?.toString() ?? 'Free',
       status: j['status']?.toString() ?? 'ACTIVE',
+      currentPeriodStart: j['currentPeriodStart']?.toString(),
       currentPeriodEnd: j['currentPeriodEnd']?.toString(),
       cancelAtPeriodEnd: j['cancelAtPeriodEnd'] as bool? ?? false,
+      featureAccess: featureAccess,
     );
   }
+
+  bool hasFeature(String key) => featureAccess[key] == true;
 }
 
 class SubscriptionProvider extends ChangeNotifier {

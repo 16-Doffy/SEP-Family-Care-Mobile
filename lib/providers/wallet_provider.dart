@@ -31,6 +31,11 @@ class TransactionData {
   });
 }
 
+T? _firstOrNull<T>(Iterable<T> values) {
+  final iterator = values.iterator;
+  return iterator.moveNext() ? iterator.current : null;
+}
+
 class WalletProvider extends ChangeNotifier {
   String? _familyId;
 
@@ -47,11 +52,23 @@ class WalletProvider extends ChangeNotifier {
   double get totalBalance => _wallets.fold(0, (s, w) => s + w.balance);
 
   WalletData? get familyWallet =>
-      _wallets.where((w) => w.type == 'JOINT').firstOrNull ??
-      _wallets.firstOrNull;
+      _firstOrNull(_wallets.where((w) => w.type == 'JOINT')) ??
+      _firstOrNull(_wallets);
 
   List<WalletData> get memberWallets =>
       _wallets.where((w) => w.type != 'JOINT').toList();
+
+  void clear() {
+    if (_familyId == null && _wallets.isEmpty && _transactions.isEmpty && !_loading && _error == null) {
+      return;
+    }
+    _familyId = null;
+    _wallets = [];
+    _transactions = [];
+    _loading = false;
+    _error = null;
+    notifyListeners();
+  }
 
   set familyId(String id) {
     if (_familyId != id) {

@@ -1,136 +1,166 @@
-# Family Care Mobile - Latest AI Handoff
+# Family Care Mobile — AI Handoff (Latest)
 
-Last updated: 2026-06-24
+Last updated: **2026-06-24**
 Branch: `NDuy`
-Latest local commit before this patch: `781ede8 docs: add latest AI handoff`
-Backend Swagger: `http://103.110.84.66/api/docs-json`
+Latest commit: `8208cd2 Restore finance allocation UX and Vietnamese labels`
+Backend Swagger (live): `http://103.110.84.66/api/docs-json`
 API base in app: `http://103.110.84.66/api/v1`
 
-## Current Status
+---
 
-This Flutter project has already been wired to the backend Swagger for the main available modules. Do not restart from mock data unless the backend endpoint is missing from Swagger.
+## Project Structure
 
-Important: the live Swagger differs from the older local `family-care-api.json` in the invitation flow:
+```
+lib/
+├── main.dart
+├── models/
+│   ├── user.dart
+│   └── money_request.dart
+├── navigation/
+│   ├── app_router.dart
+│   ├── manager_shell.dart
+│   └── member_shell.dart
+├── providers/
+│   ├── auth_provider.dart
+│   ├── family_provider.dart
+│   ├── finance_provider.dart
+│   ├── gps_provider.dart
+│   ├── money_provider.dart
+│   ├── notification_provider.dart
+│   ├── sos_provider.dart
+│   ├── subscription_provider.dart
+│   ├── task_provider.dart
+│   └── wallet_provider.dart
+├── screens/
+│   ├── auth/
+│   │   ├── create_family_screen.dart
+│   │   ├── invitation_screen.dart
+│   │   ├── login_screen.dart
+│   │   └── register_screen.dart
+│   ├── child/
+│   │   ├── child_home_screen.dart
+│   │   ├── child_tasks_screen.dart
+│   │   └── child_wallet_screen.dart
+│   ├── parent/
+│   │   ├── calendar_screen.dart
+│   │   ├── home_dashboard_screen.dart
+│   │   ├── task_management_screen.dart
+│   │   └── wallet_screen.dart
+│   └── shared/
+│       ├── ai_assistant_screen.dart
+│       ├── album_screen.dart
+│       ├── budget_plan_detail_screen.dart
+│       ├── chat_screen.dart
+│       ├── finance_model_screen.dart
+│       ├── finance_plans_screen.dart
+│       ├── monthly_finance_screen.dart
+│       ├── notifications_screen.dart
+│       ├── profile_screen.dart
+│       ├── sos_alert_detail_screen.dart
+│       └── sos_screen.dart
+├── services/
+│   └── api_client.dart
+├── theme/
+│   ├── app_colors.dart
+│   └── app_theme.dart
+└── widgets/
+    ├── active_sos_banner.dart
+    ├── avatar_widget.dart
+    ├── request_money_sheet.dart
+    ├── ring_chart.dart
+    └── waffle_chart.dart
+```
 
-- Old local spec had `POST /invitations/{token}/accept`
-- Live Swagger has `POST /invitations/{token}/claim`
-- Live Swagger also has manager approval endpoints:
-  - `GET /families/{familyId}/invitations?status=CLAIMED`
-  - `POST /families/{familyId}/invitations/{id}/approve`
-  - `POST /families/{familyId}/invitations/{id}/reject`
+---
 
-## Completed API Wiring
+## Current Status — What Is Wired
 
-### Auth and Session
+Do not restart from mock data unless the backend endpoint is explicitly missing from live Swagger.
 
-- Login/register/logout/refresh/me are wired.
-- Tokens are persisted with `SharedPreferences`.
-- `ApiClient` sends `Authorization: Bearer <token>`.
+### Auth & Session
+
+- Login / register / logout / refresh / me — wired.
+- Tokens persisted in `SharedPreferences`.
+- `ApiClient` sends `Authorization: Bearer <token>` and retries once on 401 with refresh token.
 - `ApiClient` unwraps backend envelope `{ success, message, data }`.
-- `ApiClient` retries once on `401` with refresh token.
 
-Main files:
+Key files: `lib/services/api_client.dart`, `lib/providers/auth_provider.dart`, `lib/models/user.dart`
 
-- `lib/services/api_client.dart`
-- `lib/providers/auth_provider.dart`
-- `lib/models/user.dart`
+---
 
-### Role and Route Flow
+### Role & Route Flow
 
-Family role is parsed from `familyRole`:
+Family role is parsed from the `familyRole` field returned by `/auth/me`:
 
-- `FAMILY_MANAGER` -> manager
-- `DEPUTY_MEMBER` -> deputy
-- `FAMILY_MEMBER` -> member
+| `familyRole` value | Internal role | Access |
+|---|---|---|
+| `FAMILY_MANAGER` | `manager` | Manager shell + all permissions |
+| `DEPUTY_MEMBER` | `deputy` | Manager shell + most permissions |
+| `FAMILY_MEMBER` | `member` | Member shell |
 
-Permissions are derived from role in `AppUser`:
+Permissions are computed in `AppUser`:
+- `canManageTasks`, `canManageSharedFinance`, `canResolveSos`, `canInviteMembers`, `canManageFamilyMembers`, `canManageFamilySettings`
 
-- Manager/Deputy can access manager workspace.
-- Manager/Deputy can manage finance/tasks/SOS.
-- Manager can invite/manage members/subscription.
-- Member is routed to member workspace.
+Router guards prevent cross-shell navigation.
 
-Router guards prevent manager/member from entering the wrong shell.
+Key files: `lib/models/user.dart`, `lib/navigation/app_router.dart`, `lib/navigation/manager_shell.dart`, `lib/navigation/member_shell.dart`
 
-Main files:
+---
 
-- `lib/models/user.dart`
-- `lib/navigation/app_router.dart`
-- `lib/navigation/manager_shell.dart`
-- `lib/navigation/member_shell.dart`
+### Family & Invitation Flow
 
-### Family and Invitation Flow
+Wired endpoints:
+- GET/PATCH `/families/{id}`
+- DELETE `/families/{id}/members/{userId}`
+- POST `/families/{id}/invitations`
+- GET `/invitations/{token}` (lookup)
+- POST `/invitations/{token}/claim` ← live Swagger (not `/accept`)
+- GET `/families/{id}/invitations?status=CLAIMED`
+- POST `/families/{id}/invitations/{id}/approve`
+- POST `/families/{id}/invitations/{id}/reject`
 
-Family APIs are wired:
+Invitation flow:
+1. Manager creates invite → gets link with token.
+2. Invitee opens `/invite/:token`, calls `claim`.
+3. Manager approves in Profile → "Yêu cầu chờ duyệt".
 
-- Create family
-- Fetch family detail and members
-- Update family
-- Remove member
-- Create invitation
-- Lookup invite by token
-- Claim invite by token
-- Manager list claimed invitations
-- Manager approve/reject join request
+`family_provider.dart` also exposes `roleLabel` which returns `'Trưởng nhóm'` / `'Phó nhóm'` / `'Thành viên'`.
 
-Important current flow:
+Key files: `lib/providers/family_provider.dart`, `lib/screens/auth/invitation_screen.dart`, `lib/screens/shared/profile_screen.dart`
 
-1. Manager creates invite link.
-2. Invitee opens `/invite/:token`.
-3. If logged out, invitee is sent to login/register with pending token.
-4. Logged-in invitee calls `POST /invitations/{token}/claim`.
-5. Invitee waits for approval.
-6. Manager opens Profile -> `Yeu cau cho duyet`.
-7. Manager approves/rejects with family-scoped invitation endpoints.
-
-Main files:
-
-- `lib/providers/family_provider.dart`
-- `lib/screens/auth/invitation_screen.dart`
-- `lib/screens/shared/profile_screen.dart`
+---
 
 ### Finance
 
-Finance provider has methods for available Swagger endpoints:
+Finance provider covers all available Swagger endpoints:
 
-- Overview
-- Ledger entries
-- Support requests and review/cancel
-- Finance model templates/models
-- Finance jars/funds
-- Categories
-- Budget plans and budget lines
-- Budget plan reports
-- Financial goals
-- Goal progress and allocations
+- Overview, ledger entries, income/expense recording
+- Support requests (create / review / cancel)
+- Finance model templates and jars/funds
+- Categories, budget plans, budget lines, plan reports
+- Financial goals, goal progress, goal allocations
 - Finance alerts
-- Monthly finance for current member
+- Monthly finance for current member (`/monthly-finances/me`)
 - Finance reports
 
-Main files:
+Member finance tab shows personal monthly finance + support requests — **not** the family fund balance (no such endpoint in Swagger).
 
-- `lib/providers/finance_provider.dart`
-- `lib/providers/wallet_provider.dart`
-- `lib/providers/money_provider.dart`
-- `lib/screens/shared/monthly_finance_screen.dart`
-- `lib/screens/shared/finance_model_screen.dart`
-- `lib/screens/shared/finance_plans_screen.dart`
-- `lib/screens/shared/budget_plan_detail_screen.dart`
-- `lib/screens/parent/wallet_screen.dart`
-- `lib/screens/child/child_wallet_screen.dart`
+Active jars: use `financeProvider.activeJars` (filtered from `jars`, not raw model jars).
 
-### Task and Reward / Score Flow
+Key files: `lib/providers/finance_provider.dart`, `lib/providers/wallet_provider.dart`, `lib/providers/money_provider.dart`, `lib/screens/parent/wallet_screen.dart`, `lib/screens/shared/monthly_finance_screen.dart`, `lib/screens/shared/finance_model_screen.dart`, `lib/screens/shared/finance_plans_screen.dart`, `lib/screens/shared/budget_plan_detail_screen.dart`
 
-Task APIs are wired:
+---
 
+### Tasks & Reward/Score Flow
+
+Wired endpoints:
 - Task categories
-- Create/update/cancel task
+- Create / update / cancel task
 - Recurring tasks and schedules
-- Assign/reassign/start/cancel assignments
-- My assignments
-- Submit completion with proof
-- Upload proof file
-- Review submission
+- Assign / reassign / start / cancel assignments
+- My assignments (`/assignments/me`)
+- Submit completion with proof upload
+- Review submission (approve/reject)
 - Reward settings
 - Reward settlement records
 - Mark reward paid externally
@@ -139,149 +169,145 @@ Task APIs are wired:
 - Task unavailability
 - Allocate reward settlement to finance jar/goal
 
-Current score/reward status:
+Score/XP: computed from real task status (DONE count). There is **no XP/gamification endpoint** in live Swagger — do not invent one.
 
-- Real reward settlement flow is implemented against backend APIs.
-- Child task progress is computed from real task status.
-- There is no separate XP/score/gamification endpoint in live Swagger, so do not invent one.
-- If asked to finish "score flow", continue from reward settlement/task completion first, then only add XP if BE adds an endpoint.
+Key files: `lib/providers/task_provider.dart`, `lib/screens/parent/task_management_screen.dart`, `lib/screens/child/child_tasks_screen.dart`, `lib/screens/child/child_home_screen.dart`
 
-Main files:
-
-- `lib/providers/task_provider.dart`
-- `lib/screens/parent/task_management_screen.dart`
-- `lib/screens/child/child_tasks_screen.dart`
-- `lib/screens/child/child_home_screen.dart`
+---
 
 ### Calendar
 
-Live Swagger does not expose a standalone calendar event endpoint.
+No standalone calendar event endpoint in live Swagger.
 
-Current implementation:
+`CalendarScreen` uses `TaskProvider.fetchTasks()` and maps `task.dueDate / task.startAt` onto month/day cells. Selecting a day shows task list for that day.
 
-- `CalendarScreen` is no longer a placeholder.
-- It uses `TaskProvider.fetchTasks()`.
-- It maps task `dueDate/startAt` onto month/day cells.
-- It shows task list by selected day.
+Key file: `lib/screens/parent/calendar_screen.dart`
 
-Main file:
-
-- `lib/screens/parent/calendar_screen.dart`
+---
 
 ### SOS
 
-SOS APIs are wired:
+Wired endpoints:
+- POST create alert, GET alerts, GET alert detail
+- POST respond to alert (field: `responseType` — required by `CreateSosResponseDto`)
+- POST confirm safety
+- POST send location to alert
+- POST resolve alert (field: `resolutionNote` — required by `ResolveSosAlertDto`)
+- POST cancel alert
 
-- Create alert
-- Fetch alerts
-- Fetch alert detail
-- Respond to alert
-- Confirm safety
-- Send location to alert
-- Resolve/cancel alert
+UI:
+- `ActiveSosBanner` — shows on any screen when active SOS exists; taps to detail.
+- `SosAlertDetailScreen` — status/severity badges, quick response chips, confirm safe / resolve / cancel buttons.
+- `SosScreen` — trigger SOS.
+- SOS notifications route to `SosAlertDetailScreen` if `referenceId` is available.
 
-UI includes:
+Quick response chips: `Đã xem` / `Tôi an toàn` / `Cần giúp đỡ`
 
-- Active SOS banner
-- SOS detail screen
-- Notification route into SOS detail when reference exists
+Key files: `lib/providers/sos_provider.dart`, `lib/widgets/active_sos_banner.dart`, `lib/screens/shared/sos_screen.dart`, `lib/screens/shared/sos_alert_detail_screen.dart`
 
-Main files:
-
-- `lib/providers/sos_provider.dart`
-- `lib/widgets/active_sos_banner.dart`
-- `lib/screens/shared/sos_screen.dart`
-- `lib/screens/shared/sos_alert_detail_screen.dart`
+---
 
 ### Notifications
 
-Notification APIs are wired:
+Wired endpoints:
+- GET `/families/{id}/notifications`
+- PATCH `.../notifications/{id}/read`
+- PATCH `.../notifications/read-all`
 
-- Fetch family notifications
-- Mark one notification as read
-- Mark all as read
+Tap routing:
+- Task/assignment/submission notification → task screen
+- Finance notification → wallet/finance screen
+- SOS notification → SOS detail (uses `referenceId` or falls back to active alert)
 
-Notification tap routing:
+`AppNotification.fromJson` defensively parses many field name variants (`data`, `metadata`, `payload`, `target` sub-objects).
 
-- Task notification -> task screen
-- Finance notification -> finance/wallet screen
-- SOS notification -> SOS detail if reference is available
+Default title fallback: `'Thông báo'`
 
-Main files:
+Key files: `lib/providers/notification_provider.dart`, `lib/screens/shared/notifications_screen.dart`
 
-- `lib/providers/notification_provider.dart`
-- `lib/screens/shared/notifications_screen.dart`
+---
 
 ### Subscription
 
-Subscription/plans/checkout provider wiring exists.
+Subscription / plans / checkout provider exists. No major changes recently.
 
-Main file:
+Key file: `lib/providers/subscription_provider.dart`
 
-- `lib/providers/subscription_provider.dart`
+---
 
-## Backend Gaps - Do Not Fake API Calls
+## Backend Gaps — Do Not Fake API Calls
 
-Live Swagger currently does not expose real endpoints for:
-
+Live Swagger does **not** expose endpoints for:
 - Chat
-- Album/photo
+- Album / photo
 - AI assistant
 - Standalone calendar events
-- Normal GPS/location sharing outside active SOS
-- Wearable pairing/device SOS settings
-- Separate XP/score gamification
+- GPS/location sharing outside active SOS
+- Wearable pairing / device SOS settings
+- XP / score / gamification
 
-For these modules, either keep local placeholder UI or wait for backend endpoints.
+For these: keep placeholder UI, do not call fake endpoints.
 
-## Project Notes
+---
 
-- `file.zip` was moved out of the project to `D:\Desktop\file.zip`.
-- Do not commit generated ZIP files inside the project.
-- There are many pre-existing dirty files in the working tree. Be careful to stage only files related to the current task.
-- Local branch may be ahead of `origin/NDuy`; previous push attempts hung at `git-remote-https`.
-- The local commit `a0a1bea` includes:
-  - Invitation claim/approval flow
-  - Manager pending invitation approval UI
-  - Task-backed calendar screen
+## 2026-06-24 — Patch Notes (Current Session)
 
-## 2026-06-24 Current Patch Notes
+### Vietnamese Diacritics — Full Pass
 
-User-tested issues addressed in the current working tree:
+All unaccented Vietnamese strings across `lib/` have been fixed (two full scan passes). Files changed:
 
-- Manager task approval proof preview now parses proof lists and URLs defensively:
-  - `proofs`, `taskProofs`, `proofFiles`, `files`, `attachments`, `evidences`
-  - nested `data/submission/latestSubmission`
-  - URL fields such as `fileUrl`, `url`, `publicUrl`, `path`, `filePath`, `storagePath`
-- Proof upload parsing now accepts nested upload responses and more URL field names.
-- `ApiClient.absoluteUrl()` now builds static file URLs from the API origin instead of replacing paths under `/api/v1`.
-- Finance support request review is optimistic: approving/rejecting removes the pending item immediately and restores it if the API fails.
-- Member finance tab was renamed conceptually to personal spending ledger; UI explains that members see their own monthly finance/support requests, not the manager family fund balance.
-- Finance model screen uses `activeJars` so old model jars do not appear as duplicate active jars.
-- Budget plan jar dropdown also uses active model jars.
-- Goal tab explains the flow: goals are tracking targets, progress changes when ledger/reward allocation is recorded, not by real money transfer.
-- Reward allocation sheet now clarifies that "paid reward" and allocation are internal records after external/manual reward payment confirmation.
+| File | Changes |
+|---|---|
+| `lib/widgets/active_sos_banner.dart` | Cảnh báo SOS đang hoạt động, Chưa tìm thấy mã cảnh báo SOS, Bấm để xem |
+| `lib/screens/parent/calendar_screen.dart` | Lịch gia đình, Tháng, Công việc ngày, Không có công việc nào |
+| `lib/navigation/member_shell.dart` | Trang chủ, Nhiệm vụ, Tôi |
+| `lib/providers/notification_provider.dart` | Thông báo (default title), nhiệm vụ (search match) |
+| `lib/screens/shared/notifications_screen.dart` | Thông báo (title), Chưa tìm thấy chi tiết cảnh báo SOS, phút trước / giờ trước |
+| `lib/screens/shared/profile_screen.dart` | **Full rewrite** — ~35 strings: Tài khoản, Gia đình, Hồ sơ cá nhân, TRƯỞNG NHÓM, THÀNH VIÊN, Gửi lời mời, Cài đặt gia đình, Đã cập nhật gia đình, v.v. |
+| `lib/screens/auth/register_screen.dart` | Tạo tài khoản, Tên gia đình, Gia đình Nguyễn, Mật khẩu, Đăng ký, v.v. |
+| `lib/screens/shared/sos_alert_detail_screen.dart` | **Full rewrite** — ~20 strings: Chi tiết SOS, Giải quyết cảnh báo SOS, Đã xác nhận an toàn, Người gửi, Vị trí, v.v. |
+| `lib/providers/family_provider.dart` | Trưởng nhóm, Phó nhóm (roleLabel) |
+| `lib/screens/parent/task_management_screen.dart` | Không tải được minh chứng nộp bài cho assignment này |
 
-Backend items to verify/report:
+### File Cleanup
 
-- Static proof image URLs must be publicly readable by the authenticated web app. Swagger examples return `/uploads/task-proofs/...`; if browser cannot load that path, BE should expose/serve it correctly or return a full `fileUrl`.
-- There is no Swagger endpoint for a member-visible family fund balance/personal wallet balance separate from `monthly-finances/me` and support requests.
-- Reward allocation requires raw `jarId` or `goalId`; a richer response linking settlements to available jars/goals would improve UX, but current FE can use existing `/finance/jars` and `/finance/financial-goals`.
+Deleted from project root:
+- `PENDING_API.md` — mô tả vấn đề cũ đã fix (task endpoint, calendar hardcode, v.v.), thay bằng file này
+- `FAMILY_CARE_HANDOFF.md` — tài liệu tạm để apply code từ zip, đã apply xong
+- `family_care_mobile.iml`, `family_care.iml` — IntelliJ IDE artifacts
+- `update_skill.ps1` — script hardcode path máy cũ
+- `swagger.json` — API spec cũ (Jun 20), thay bằng `family-care-api.json` (Jun 21)
+- `.codex/` — AI tool directory với docs cũ
 
-## Verification Notes
+---
 
-`dart format`, `dart --version`, and `flutter analyze --no-pub` were attempted but the Dart/Flutter process hung on this machine. If the toolchain is fixed, run:
+## Previous Patch Notes (2026-06-24 earlier)
+
+- Manager task proof preview parses proof lists/URLs defensively (many field name variants).
+- `ApiClient.absoluteUrl()` builds file URLs from API origin.
+- Finance support request review is optimistic (remove → restore on failure).
+- Finance model screen uses `activeJars` to avoid duplicate jars.
+- Reward allocation sheet clarifies flow: records after external payment, not money transfer.
+- Goal tab explains: progress changes via ledger/reward allocation, not real transfer.
+
+---
+
+## Verification
+
+`dart format`, `dart analyze`, and `flutter analyze` may hang on this machine. If toolchain is fixed, run:
 
 ```powershell
 dart format lib
 flutter analyze --no-pub
 ```
 
-If `git push origin NDuy` hangs at `git-remote-https`, check GitHub credential manager/token login.
+Push: `git push origin NDuy` may hang at `git-remote-https` — check GitHub credential manager.
+
+---
 
 ## Next Suggested Work
 
-1. Continue with any unfinished finance UI screens against existing `FinanceProvider`.
-2. Improve reward/score UX using existing task reward settlement APIs.
-3. Only add XP/score API calls after backend exposes a Swagger endpoint.
-4. Keep committing after each completed flow/API module.
+1. Test invitation flow end-to-end on device (claim → manager approval).
+2. Test SOS flow: create → respond → confirm safe → resolve.
+3. Continue finance UI if any remaining screens need wiring.
+4. Commit current working tree changes.

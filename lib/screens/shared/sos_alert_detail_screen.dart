@@ -82,13 +82,13 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
           controller: ctrl,
           maxLines: 3,
           decoration: const InputDecoration(
-            hintText: 'Ghi chu xu ly hoac ly do...',
+            hintText: 'Ghi chú xử lý hoặc lý do...',
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Dong'),
+            child: const Text('Đóng'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -105,9 +105,9 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
   }
 
   String _statusLabel(String status) => switch (status) {
-        'ACTIVE' => 'Dang hoat dong',
-        'ACKNOWLEDGED' => 'Da tiep nhan',
-        'RESOLVED' => 'Da giai quyet',
+        'ACTIVE' => 'Đang hoạt động',
+        'ACKNOWLEDGED' => 'Đã tiếp nhận',
+        'RESOLVED' => 'Đã giải quyết',
         'CANCELED' || 'CANCELLED' => 'Đã hủy',
         _ => status,
       };
@@ -120,10 +120,10 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
       };
 
   String _severityLabel(String severity) => switch (severity) {
-        'CRITICAL' => 'Nguy cap',
+        'CRITICAL' => 'Nguy cấp',
         'HIGH' => 'Cao',
-        'MEDIUM' => 'Trung binh',
-        'LOW' => 'Thap',
+        'MEDIUM' => 'Trung bình',
+        'LOW' => 'Thấp',
         _ => severity,
       };
 
@@ -148,7 +148,7 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
           ),
         ),
         title: Text(
-          'Chi tiet SOS',
+          'Chi tiết SOS',
           style: GoogleFonts.inter(
             fontSize: 17,
             fontWeight: FontWeight.w700,
@@ -162,7 +162,7 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
           : _alert == null
               ? Center(
                   child: Text(
-                    'Khong tim thay canh bao nay',
+                    'Không tìm thấy cảnh báo này',
                     style: GoogleFonts.inter(color: AppColors.textMuted),
                   ),
                 )
@@ -175,11 +175,11 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
                       const SizedBox(height: 20),
                       if (_error != null) _buildErrorBanner(),
                       if (_alert!.isActive) ...[
-                        _buildSectionTitle('Phan hoi nhanh'),
+                        _buildSectionTitle('Phản hồi nhanh'),
                         const SizedBox(height: 10),
                         _buildQuickResponses(),
                         const SizedBox(height: 24),
-                        _buildSectionTitle('Hanh dong'),
+                        _buildSectionTitle('Hành động'),
                         const SizedBox(height: 10),
                         _buildConfirmSafetyButton(),
                         const SizedBox(height: 10),
@@ -243,7 +243,7 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
               ),
               const SizedBox(width: 8),
               _badge(
-                'Muc do: ${_severityLabel(alert.severity)}',
+                'Mức độ: ${_severityLabel(alert.severity)}',
                 AppColors.textSecondary,
                 AppColors.background,
               ),
@@ -260,19 +260,19 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Nguoi gui: ${alert.senderName}',
+            'Người gửi: ${alert.senderName}',
             style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
           ),
           if (alert.address.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
-              'Vi tri: ${alert.address}',
+              'Vị trí: ${alert.address}',
               style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
             ),
           ],
           const SizedBox(height: 4),
           Text(
-            'Thoi gian: ${alert.createdAt}',
+            'Thời gian: ${alert.createdAt}',
             style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
           ),
         ],
@@ -298,9 +298,9 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
 
   Widget _buildQuickResponses() {
     const chips = [
-      ('VIEWED', 'Da xem'),
-      ('CONFIRM_SAFE', 'Toi an toan'),
-      ('NEED_HELP', 'Can giup do'),
+      ('VIEWED', 'Đã xem'),
+      ('CONFIRM_SAFE', 'Tôi an toàn'),
+      ('NEED_HELP', 'Cần giúp đỡ'),
     ];
     return Wrap(
       spacing: 10,
@@ -344,7 +344,7 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
               ? null
               : () => _run(
                     () => context.read<SosProvider>().confirmSafety(widget.alertId),
-                    successMessage: 'Da xac nhan an toan',
+                    successMessage: 'Đã xác nhận an toàn',
                   ),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.safe,
@@ -352,7 +352,7 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
-          child: const Text('Xac nhan an toan'),
+          child: const Text('Xác nhận an toàn'),
         ),
       );
 
@@ -362,15 +362,15 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
           onPressed: _busy
               ? null
               : () => _showNoteDialog(
-                    title: 'Giai quyet canh bao SOS',
-                    confirmLabel: 'Giai quyet',
+                    title: 'Giải quyết cảnh báo SOS',
+                    confirmLabel: 'Giải quyết',
                     confirmColor: AppColors.primary500,
                     onConfirm: (note) => _run(
                       () => context.read<SosProvider>().resolveAlert(
                             widget.alertId,
                             note: note.isNotEmpty ? note : 'Safety confirmed',
                           ),
-                      successMessage: 'Da giai quyet canh bao',
+                      successMessage: 'Đã giải quyết cảnh báo',
                     ),
                   ),
           style: OutlinedButton.styleFrom(
@@ -379,7 +379,7 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
-          child: const Text('Giai quyet canh bao'),
+          child: const Text('Giải quyết cảnh báo'),
         ),
       );
 
@@ -420,7 +420,7 @@ class _SosAlertDetailScreenState extends State<SosAlertDetailScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Canh bao nay da ${_statusLabel(_alert!.status).toLowerCase()}.',
+                'Cảnh báo này đã ${_statusLabel(_alert!.status).toLowerCase()}.',
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   color: AppColors.textSecondary,

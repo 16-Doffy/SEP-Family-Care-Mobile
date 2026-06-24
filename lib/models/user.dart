@@ -97,8 +97,20 @@ class AppUser {
         UserRole.member => 0xFFEA580C,
       };
 
-  bool get isAdministrative => role == UserRole.manager || role == UserRole.deputy;
-  bool get canAccessSensitiveFinance => isAdministrative;
-  bool get canApproveWithdrawals => isAdministrative;
-  bool get canManageTasks => isAdministrative;
+  bool get isFamilyManager => role == UserRole.manager;
+  bool get hasDeputyPermission => role == UserRole.deputy;
+  bool get isMember => role == UserRole.member;
+
+  bool get canAccessManagerWorkspace => isFamilyManager || hasDeputyPermission;
+  bool get canManageSharedFinance => isFamilyManager || hasDeputyPermission;
+  bool get canAccessSensitiveFinance => canManageSharedFinance;
+  bool get canApproveWithdrawals => canManageSharedFinance;
+  bool get canManageTasks => isFamilyManager || hasDeputyPermission;
+  bool get canResolveSos => isFamilyManager || hasDeputyPermission;
+  bool get canInviteMembers => isFamilyManager;
+  bool get canManageFamilyMembers => isFamilyManager;
+  bool get canManageFamilySettings => isFamilyManager;
+  bool get canManageSubscription => isFamilyManager;
+
+  bool get isAdministrative => canAccessManagerWorkspace;
 }

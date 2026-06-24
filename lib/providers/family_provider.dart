@@ -113,8 +113,8 @@ class FamilyInvitation {
   }
 
   String get roleLabel => switch (familyRole) {
-        'FAMILY_MANAGER' => 'Truong nhom',
-        'DEPUTY_MEMBER' => 'Pho nhom',
+        'FAMILY_MANAGER' => 'Trưởng nhóm',
+        'DEPUTY_MEMBER' => 'Phó nhóm',
         _ => 'Thành viên',
       };
 }

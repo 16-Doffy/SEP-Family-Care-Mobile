@@ -81,6 +81,27 @@ class AuthProvider extends ChangeNotifier {
       'fullName': fullName.trim(),
     });
     await _applySession(data as Map<String, dynamic>);
+    if ((_user?.familyId == null || _user!.familyId!.isEmpty) &&
+        familyName.trim().isNotEmpty) {
+      try {
+        final family = await ApiClient.instance.post('/families', {
+          'name': familyName.trim(),
+        });
+        if (family is Map) {
+          final id = family['id']?.toString() ?? '';
+          final name = family['name']?.toString() ?? familyName.trim();
+          if (id.isNotEmpty && _user != null) {
+            _user = _user!.copyWith(
+              familyId: id,
+              familyName: name,
+              role: UserRole.manager,
+            );
+            await setFamilyRole(UserRole.manager);
+          }
+        }
+      } catch (_) {}
+      notifyListeners();
+    }
   }
 
   Future<void> _applySession(Map<String, dynamic> data) async {

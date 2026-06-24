@@ -81,7 +81,11 @@ class _SOSScreenState extends State<SOSScreen> with SingleTickerProviderStateMix
     final latestId = sosState.alerts.isNotEmpty ? sosState.alerts.first.id : null;
     if (latestId != null) {
       try {
-        await sosState.updateAlert(latestId, 'CANCELLED');
+        await sosState.updateAlert(
+          latestId,
+          'CANCELED',
+          note: 'False alarm canceled by sender',
+        );
       } catch (_) {}
     }
     if (mounted) setState(() => _sent = false);

@@ -122,7 +122,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _header() => Row(
         children: [
           Text(
-            'Lich gia dinh',
+            'Lịch gia đình',
             style: GoogleFonts.inter(
               fontSize: 22,
               fontWeight: FontWeight.w800,
@@ -158,7 +158,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _monthCard(Map<DateTime, List<TaskItem>> grouped) {
     final cells = _calendarCells();
-    final monthLabel = 'Thang ${_visibleMonth.month}/${_visibleMonth.year}';
+    final monthLabel = 'Tháng ${_visibleMonth.month}/${_visibleMonth.year}';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -288,7 +288,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Cong viec ngay $label',
+                  'Công việc ngày $label',
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -311,7 +311,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           else if (taskState.error != null)
             _emptyMessage(taskState.error!)
           else if (tasks.isEmpty)
-            _emptyMessage('Khong co cong viec nao trong ngay nay')
+            _emptyMessage('Không có công việc nào trong ngày này')
           else
             ...tasks.map(_taskTile),
         ],

@@ -24,7 +24,12 @@ void main() {
           create: (_) => WalletProvider(),
           update: (_, auth, wallet) {
             final fid = auth.familyId;
-            if (fid != null) wallet!.familyId = fid;
+            final canManageFinance = auth.user?.canManageSharedFinance ?? false;
+            if (fid != null && canManageFinance) {
+              wallet!.familyId = fid;
+            } else {
+              wallet!.clear();
+            }
             return wallet!;
           },
         ),

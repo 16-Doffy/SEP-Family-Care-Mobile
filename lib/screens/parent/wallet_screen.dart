@@ -48,7 +48,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   _backBtn(context),
                   const Expanded(
                     child: Center(
-                      child: Text('Tài chính Gia Đình', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                      child: Text('Quỹ Gia Đình', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                     ),
                   ),
                   const SizedBox(width: 40),
@@ -141,6 +141,8 @@ class _WalletScreenState extends State<WalletScreen> {
     final remaining = income - expense;
     final spentRatio = income > 0 ? expense / income : 0.0;
     final bufferPct  = income > 0 ? ((remaining / income) * 100).round() : 0;
+    final expenseFlex = expense.round().clamp(1, 999999999).toInt();
+    final remainingFlex = remaining.round().clamp(1, 999999999).toInt();
     final badgeBg    = bufferPct < 10 ? const Color(0xFFFEE2E2) : bufferPct < 30 ? const Color(0xFFFFFBEB) : const Color(0xFFDCFCE7);
     final badgeTxt   = bufferPct < 10 ? const Color(0xFF991B1B) : bufferPct < 30 ? const Color(0xFF92400E) : const Color(0xFF166534);
 
@@ -152,7 +154,7 @@ class _WalletScreenState extends State<WalletScreen> {
             Row(
               children: [
                 RingChart(
-                  progress: spentRatio.clamp(0.0, 1.0),
+                  progress: spentRatio.clamp(0.0, 1.0).toDouble(),
                   size: 110, strokeWidth: 14,
                   color: AppColors.shared, trackColor: const Color(0xFFDCFCE7),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -179,8 +181,8 @@ class _WalletScreenState extends State<WalletScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: Row(children: [
-                Flexible(flex: expense.round(), fit: FlexFit.tight, child: Container(height: 12, color: AppColors.shared)),
-                Flexible(flex: remaining.round().clamp(0, 999999999), fit: FlexFit.tight, child: Container(height: 12, color: AppColors.safe)),
+                Flexible(flex: expenseFlex, fit: FlexFit.tight, child: Container(height: 12, color: AppColors.shared)),
+                Flexible(flex: remainingFlex, fit: FlexFit.tight, child: Container(height: 12, color: AppColors.safe)),
               ]),
             ),
             const SizedBox(height: 8),
@@ -221,6 +223,17 @@ class _WalletScreenState extends State<WalletScreen> {
       const SizedBox(height: 16),
 
       _alertBar(remaining.round(), bufferPct),
+
+      // Finance quick links
+      _sectionCard(
+        title: 'Công cụ tài chính',
+        child: Column(children: [
+          _financeLink(context, '🏺', 'Mô hình tài chính', 'Cấu hình 5 hũ / 80-20 / tùy chỉnh', '/finance-model'),
+          const SizedBox(height: 8),
+          _financeLink(context, '📋', 'Kế hoạch & Mục tiêu', 'Budget plan · Mục tiêu · Cảnh báo', '/finance-plans'),
+        ]),
+      ),
+      const SizedBox(height: 16),
 
       _sectionCard(
         title: 'Ví thành viên',
@@ -346,7 +359,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
                 }
               },
-              child: Text('Xác nhận nạp tiền', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+              child: Text('Xác nhận ghi thu', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
             ),
           ),
         ]),
@@ -404,6 +417,29 @@ class _WalletScreenState extends State<WalletScreen> {
       ElevatedButton(onPressed: onRetry, child: const Text('Thử lại')),
     ]),
   );
+
+  Widget _financeLink(BuildContext context, String icon, String title, String desc, String route) {
+    return GestureDetector(
+      onTap: () => context.push(route),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Row(children: [
+          Text(icon, style: const TextStyle(fontSize: 24)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text(desc, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+          ])),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+        ]),
+      ),
+    );
+  }
 
   Widget _sectionCard({required String title, required Widget child}) => Container(
     padding: const EdgeInsets.all(20),

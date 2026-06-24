@@ -31,14 +31,14 @@ class MemberShell extends StatelessWidget {
               children: [
                 _NavItem(
                   icon: Icons.home_rounded,
-                  label: 'Trang chu',
+                  label: 'Trang chủ',
                   index: 0,
                   current: navigationShell.currentIndex,
                   onTap: () => _go(context, 0),
                 ),
                 _NavItem(
                   icon: Icons.task_alt_rounded,
-                  label: 'Nhiem vu',
+                  label: 'Nhiệm vụ',
                   index: 1,
                   current: navigationShell.currentIndex,
                   onTap: () => _go(context, 1),
@@ -63,7 +63,7 @@ class MemberShell extends StatelessWidget {
                 ),
                 _NavItem(
                   icon: Icons.person_rounded,
-                  label: 'Toi',
+                  label: 'Tôi',
                   index: 5,
                   current: navigationShell.currentIndex,
                   onTap: () => _go(context, 5),

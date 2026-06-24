@@ -7,6 +7,7 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/active_sos_banner.dart';
 
 String _fmt(double n) => '${n.round().toString().replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')} ₫';
@@ -83,6 +84,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 ),
                 const SizedBox(height: 20),
 
+                const ActiveSosBanner(),
+
                 // Hero wallet card
                 GestureDetector(
                   onTap: () => context.go('/manager/finance'),
@@ -115,7 +118,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 // Quick actions
                 Row(
                   children: [
-                    _quickCard('📊', 'Tài chính', () => context.go('/manager/finance')),
+                    _quickCard('💰', 'Quỹ gia đình', () => context.go('/manager/finance')),
                     const SizedBox(width: 12),
                     _quickCard('📝', 'Ghi chi', () => context.go('/manager/finance')),
                     const SizedBox(width: 12),

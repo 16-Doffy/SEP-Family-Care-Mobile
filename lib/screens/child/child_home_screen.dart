@@ -9,6 +9,7 @@ import '../../providers/finance_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/ring_chart.dart';
+import '../../widgets/active_sos_banner.dart';
 
 const _dayLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
@@ -68,7 +69,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
     final maxTotal = totals.reduce((a, b) => a > b ? a : b);
     setState(() {
       _barData = List.generate(7, (i) => maxTotal > 0 ? totals[i] / maxTotal : 0.05);
-      _barAnims = _barData.map((v) => Tween<double>(begin: 0, end: v.clamp(0.05, 1.0)).animate(
+      _barAnims = _barData.map((v) => Tween<double>(begin: 0, end: v.clamp(0.05, 1.0).toDouble()).animate(
         CurvedAnimation(parent: _barCtrl, curve: Curves.easeOut),
       )).toList();
     });
@@ -184,7 +185,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
                                         child: Align(
                                           alignment: Alignment.bottomCenter,
                                           child: FractionallySizedBox(
-                                            heightFactor: pct.clamp(0.05, 1.0),
+                                            heightFactor: pct.clamp(0.05, 1.0).toDouble(),
                                             child: Container(
                                               margin: const EdgeInsets.symmetric(horizontal: 2),
                                               decoration: BoxDecoration(color: AppColors.heroOrange, borderRadius: BorderRadius.circular(4)),
@@ -206,6 +207,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> with SingleTickerProv
                   ),
                 ],
               ),
+            ),
+
+            // SOS đang hoạt động (nếu có)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: const ActiveSosBanner(),
             ),
 
             // Progress ring + stats

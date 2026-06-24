@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
@@ -126,6 +127,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
 
   Future<void> _submitTask(TaskItem t) async {
     final noteCtrl = TextEditingController();
+    final picker = ImagePicker();
+    final pickedImages = <XFile>[];
     bool submitting = false;
 
     await showModalBottomSheet(
@@ -143,21 +146,19 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
             ),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Text('Nộp nhiệm vụ',
-                  style: GoogleFonts.inter(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 8),
+                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 4),
               Text(t.title,
-                  style: GoogleFonts.inter(
-                      fontSize: 14, color: AppColors.textSecondary),
+                  style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
                   textAlign: TextAlign.center),
               const SizedBox(height: 20),
+
+              // Note field
               TextField(
                 controller: noteCtrl,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  hintText: 'Thêm ghi chú cho Ba/Mẹ...',
+                  hintText: 'Ghi chú minh chứng cho Ba/Mẹ...',
                   hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
                   filled: true,
                   fillColor: AppColors.background,
@@ -167,6 +168,92 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                   contentPadding: const EdgeInsets.all(16),
                 ),
               ),
+              const SizedBox(height: 12),
+
+              // Image picker row
+              GestureDetector(
+                onTap: () async {
+                  final imgs = await picker.pickMultiImage(imageQuality: 70);
+                  if (imgs.isNotEmpty) {
+                    setBS(() {
+                      pickedImages.clear();
+                      pickedImages.addAll(imgs.take(4));
+                    });
+                  }
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.progressTrack),
+                  ),
+                  child: Column(children: [
+                    const Icon(Icons.add_photo_alternate_outlined, size: 28, color: AppColors.textMuted),
+                    const SizedBox(height: 4),
+                    Text('Thêm ảnh minh chứng (tối đa 4)',
+                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
+                  ]),
+                ),
+              ),
+
+              // Preview thumbnails
+              if (pickedImages.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 72,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: pickedImages.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) => Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: FutureBuilder(
+                            future: pickedImages[i].readAsBytes(),
+                            builder: (context, snapshot) {
+                              if (!snapshot.hasData) {
+                                return Container(
+                                  width: 72,
+                                  height: 72,
+                                  color: AppColors.background,
+                                  alignment: Alignment.center,
+                                  child: const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                );
+                              }
+                              return Image.memory(
+                                snapshot.data!,
+                                width: 72,
+                                height: 72,
+                                fit: BoxFit.cover,
+                              );
+                            },
+                          ),
+                        ),
+                        Positioned(
+                          top: 2, right: 2,
+                          child: GestureDetector(
+                            onTap: () => setBS(() => pickedImages.removeAt(i)),
+                            child: Container(
+                              width: 18, height: 18,
+                              decoration: const BoxDecoration(color: AppColors.sos, shape: BoxShape.circle),
+                              alignment: Alignment.center,
+                              child: const Icon(Icons.close, size: 12, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -175,51 +262,56 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.safe,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   onPressed: submitting
                       ? null
                       : () async {
                           setBS(() => submitting = true);
                           try {
-                            final assignmentId =
-                                t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
-                            await context
-                                .read<TaskProvider>()
-                                .submitCompletion(assignmentId,
-                                    note: noteCtrl.text);
+                            final provider = context.read<TaskProvider>();
+                            final assignmentId = t.assignmentId.isNotEmpty ? t.assignmentId : t.id;
+
+                            // Upload images → collect proofs
+                            final extraProofs = <Map<String, dynamic>>[];
+                            for (final img in pickedImages) {
+                              final bytes = await img.readAsBytes();
+                              final filename = img.name.isNotEmpty ? img.name : 'proof.jpg';
+                              try {
+                                final url = await provider.uploadProofFile(bytes, filename);
+                                if (url.isNotEmpty) {
+                                  extraProofs.add({'proofType': 'IMAGE', 'fileUrl': url});
+                                }
+                              } catch (_) {
+                                // Tiếp tục nếu upload 1 ảnh lỗi
+                              }
+                            }
+
+                            await provider.submitCompletion(
+                              assignmentId,
+                              note: noteCtrl.text,
+                              extraProofs: extraProofs,
+                            );
                             if (mounted) {
                               Navigator.pop(context);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'),
-                                  backgroundColor: AppColors.safe,
-                                ),
+                                const SnackBar(content: Text('Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉'), backgroundColor: AppColors.safe),
                               );
-                              context
-                                  .read<TaskProvider>()
-                                  .fetchMyAssignments();
+                              provider.fetchMyAssignments();
                             }
                           } catch (e) {
                             setBS(() => submitting = false);
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(e.toString()),
-                                    backgroundColor: AppColors.danger),
+                                SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
                               );
                             }
                           }
                         },
                   child: submitting
-                      ? const CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2)
-                      : Text('Xác nhận nộp',
-                          style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white)),
+                      ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                      : Text('Xác nhận nộp bài',
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                 ),
               ),
               const SizedBox(height: 8),
@@ -343,7 +435,9 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   /// Xác nhận đã nhận thưởng — chỉ gọi khi settlement.status == WAITING_CONFIRMATION
   Future<void> _confirmReceived(String settlementId) async {
     try {
-      await context.read<TaskProvider>().confirmSettlementReceived(settlementId);
+      final taskProvider = context.read<TaskProvider>();
+      await taskProvider.confirmSettlementReceived(settlementId);
+      await taskProvider.fetchMyAssignments();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
