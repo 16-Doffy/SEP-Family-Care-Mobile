@@ -46,7 +46,18 @@ class _InvitationScreenState extends State<InvitationScreen> {
     try {
       await context.read<FamilyProvider>().acceptInvitation(widget.token);
       if (mounted) {
-        context.read<AuthProvider>().clearPendingInvite();
+        final family = _invite?['family'] is Map ? _invite!['family'] as Map : {};
+        final familyId = family['id']?.toString() ?? '';
+        final familyName = family['name']?.toString();
+        final auth = context.read<AuthProvider>();
+        if (familyId.isNotEmpty) {
+          await auth.setActiveFamily(
+            familyId,
+            familyName: familyName,
+            syncRole: false,
+          );
+        }
+        auth.clearPendingInvite();
         setState(() {
           _claimed = true;
           _acting = false;

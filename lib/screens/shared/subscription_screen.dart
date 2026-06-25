@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -57,12 +58,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       if (url != null && url.isNotEmpty) {
         final uri = Uri.tryParse(url);
         if (uri != null) {
-          final canLaunch = await canLaunchUrl(uri);
-          if (canLaunch) {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          } else {
+          try {
+            if (kIsWeb) {
+              await launchUrl(uri, webOnlyWindowName: '_blank');
+            } else {
+              final canLaunch = await canLaunchUrl(uri);
+              if (canLaunch) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              } else {
+                throw Exception('Không thể mở trang thanh toán');
+              }
+            }
+          } catch (e) {
             messenger.showSnackBar(
-              SnackBar(content: Text('Không thể mở trang thanh toán: $url'), backgroundColor: AppColors.danger),
+              SnackBar(
+                content: Text('Không thể mở trang thanh toán: ${e.toString()}'),
+                backgroundColor: AppColors.danger,
+              ),
             );
           }
         } else {

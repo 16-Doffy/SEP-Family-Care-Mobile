@@ -10,8 +10,15 @@ import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _openingPendingDialog = false;
 
   @override
   Widget build(BuildContext context) {
@@ -338,136 +345,263 @@ class ProfileScreen extends StatelessWidget {
     BuildContext context,
     FamilyProvider family,
   ) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-    try {
-      await family.fetchInvitations(status: 'CLAIMED');
-      if (context.mounted) Navigator.pop(context);
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.danger,
-          ),
-        );
-      }
-      return;
-    }
-    if (!context.mounted) return;
+    if (_openingPendingDialog) return;
+    _openingPendingDialog = true;
+    final loadInvitations = family.fetchInvitations(status: 'CLAIMED');
 
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final invitations = family.claimedInvitations;
-        return AlertDialog(
-          title: Text('Yêu cầu chờ duyệt (${invitations.length})'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: invitations.isEmpty
-                ? const Text('Không có yêu cầu nào đang chờ duyệt')
-                : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: invitations.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final invitation = invitations[i];
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          invitation.claimedByName?.isNotEmpty == true
-                              ? invitation.claimedByName!
-                              : invitation.email,
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(
-                          '${invitation.email}\nVai trò: ${invitation.roleLabel}',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                        isThreeLine: true,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              tooltip: 'Duyệt',
-                              icon: const Icon(
-                                Icons.check_circle_rounded,
-                                color: AppColors.success,
-                              ),
-                              onPressed: () async {
-                                Navigator.pop(ctx);
-                                try {
-                                  await family.approveInvitation(invitation);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Đã duyệt yêu cầu'),
+    try {
+      await showDialog(
+        context: context,
+        builder: (ctx) => FutureBuilder<void>(
+          future: loadInvitations,
+          builder: (ctx, snapshot) => ListenableBuilder(
+            listenable: family,
+            builder: (ctx, _) {
+              final loading = snapshot.connectionState == ConnectionState.waiting;
+              final invitations = family.claimedInvitations;
+              return AlertDialog(
+                title: Text('Yêu cầu chờ duyệt (${invitations.length})'),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: loading
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      : snapshot.hasError
+                          ? Text(
+                              snapshot.error.toString(),
+                              style: const TextStyle(color: AppColors.danger),
+                            )
+                          : invitations.isEmpty
+                              ? const Text('Không có yêu cầu nào đang chờ duyệt')
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: invitations.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (_, i) {
+                                    final invitation = invitations[i];
+                                    return ListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: Text(
+                                        invitation.claimedByName?.isNotEmpty ==
+                                                true
+                                            ? invitation.claimedByName!
+                                            : invitation.email,
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        '${invitation.email}\nVai trò: ${invitation.roleLabel}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          color: AppColors.textMuted,
+                                        ),
+                                      ),
+                                      isThreeLine: true,
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            tooltip: 'Duyệt',
+                                            icon: const Icon(
+                                              Icons.check_circle_rounded,
+                                              color: AppColors.success,
+                                            ),
+                                            onPressed: () async {
+                                              try {
+                                                final approval =
+                                                    await _confirmApproveInvitation(
+                                                  ctx,
+                                                  invitation,
+                                                );
+                                                if (approval == null) return;
+                                                await family.approveInvitation(
+                                                  invitation,
+                                                  familyRole:
+                                                      approval.familyRole,
+                                                  relationship:
+                                                      approval.relationship,
+                                                );
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Đã duyệt yêu cầu',
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                      content:
+                                                          Text(e.toString()),
+                                                      backgroundColor:
+                                                          AppColors.danger,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                          ),
+                                          IconButton(
+                                            tooltip: 'Từ chối',
+                                            icon: const Icon(
+                                              Icons.cancel_rounded,
+                                              color: AppColors.danger,
+                                            ),
+                                            onPressed: () async {
+                                              try {
+                                                await family
+                                                    .rejectClaimedInvitation(
+                                                  invitation.id,
+                                                );
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Đã từ chối yêu cầu',
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    SnackBar(
+                                                      content:
+                                                          Text(e.toString()),
+                                                      backgroundColor:
+                                                          AppColors.danger,
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                          ),
+                                        ],
                                       ),
                                     );
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(e.toString()),
-                                        backgroundColor: AppColors.danger,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                            ),
-                            IconButton(
-                              tooltip: 'Từ chối',
-                              icon: const Icon(
-                                Icons.cancel_rounded,
-                                color: AppColors.danger,
-                              ),
-                              onPressed: () async {
-                                Navigator.pop(ctx);
-                                try {
-                                  await family
-                                      .rejectClaimedInvitation(invitation.id);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Đã từ chối yêu cầu'),
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(e.toString()),
-                                        backgroundColor: AppColors.danger,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                                  },
+                                ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Đóng'),
                   ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    } finally {
+      _openingPendingDialog = false;
+    }
+  }
+
+  Future<_InvitationApproval?> _confirmApproveInvitation(
+    BuildContext context,
+    FamilyInvitation invitation,
+  ) {
+    var familyRole = invitation.familyRole.isNotEmpty
+        ? invitation.familyRole
+        : 'FAMILY_MEMBER';
+    var relationship = invitation.relationship.isNotEmpty
+        ? invitation.relationship
+        : 'OTHER';
+
+    return showDialog<_InvitationApproval>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Duyệt thành viên'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                invitation.claimedByName?.isNotEmpty == true
+                    ? invitation.claimedByName!
+                    : invitation.email,
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: familyRole,
+                decoration: const InputDecoration(labelText: 'Vai trò'),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'FAMILY_MEMBER',
+                    child: Text('Thành viên'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'DEPUTY_MEMBER',
+                    child: Text('Phó nhóm'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'FAMILY_MANAGER',
+                    child: Text('Trưởng nhóm'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => familyRole = value);
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: relationship,
+                decoration: const InputDecoration(labelText: 'Quan hệ'),
+                items: const [
+                  DropdownMenuItem(value: 'FATHER', child: Text('Bố')),
+                  DropdownMenuItem(value: 'MOTHER', child: Text('Mẹ')),
+                  DropdownMenuItem(value: 'SPOUSE', child: Text('Vợ/chồng')),
+                  DropdownMenuItem(value: 'CHILD', child: Text('Con')),
+                  DropdownMenuItem(value: 'SISTER', child: Text('Chị/em gái')),
+                  DropdownMenuItem(value: 'BROTHER', child: Text('Anh/em trai')),
+                  DropdownMenuItem(
+                    value: 'GRANDPARENT',
+                    child: Text('Ông/bà'),
+                  ),
+                  DropdownMenuItem(value: 'OTHER', child: Text('Khác')),
+                ],
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => relationship = value);
+                  }
+                },
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Đóng'),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(
+                ctx,
+                _InvitationApproval(
+                  familyRole: familyRole,
+                  relationship: relationship,
+                ),
+              ),
+              child: const Text('Duyệt'),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -613,6 +747,16 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
+class _InvitationApproval {
+  const _InvitationApproval({
+    required this.familyRole,
+    required this.relationship,
+  });
+
+  final String familyRole;
+  final String relationship;
+}
+
 class _InviteDialog extends StatefulWidget {
   const _InviteDialog({
     required this.emailCtrl,
@@ -627,18 +771,25 @@ class _InviteDialog extends StatefulWidget {
 }
 
 class _InviteDialogState extends State<_InviteDialog> {
+  static const _fallbackInviteBaseUrl = String.fromEnvironment(
+    'INVITE_WEB_BASE_URL',
+    defaultValue: 'http://localhost:8080',
+  );
+
   bool _loading = false;
   String? _inviteLink;
-  String _familyRole = 'FAMILY_MEMBER';
 
   String get _baseUrl {
     try {
       final uri = Uri.base;
+      if (uri.scheme != 'http' && uri.scheme != 'https') {
+        return _fallbackInviteBaseUrl;
+      }
       final port =
           uri.hasPort && uri.port != 80 && uri.port != 443 ? ':${uri.port}' : '';
       return '${uri.scheme}://${uri.host}$port';
     } catch (_) {
-      return 'http://localhost:8080';
+      return _fallbackInviteBaseUrl;
     }
   }
 
@@ -650,7 +801,7 @@ class _InviteDialogState extends State<_InviteDialog> {
     try {
       final token = await widget.family.inviteMember(
         email,
-        familyRole: _familyRole,
+        familyRole: 'FAMILY_MEMBER',
       );
       if (!mounted) return;
       final link = token.isNotEmpty ? '$_baseUrl/#/invite/$token' : '';
@@ -756,28 +907,6 @@ class _InviteDialogState extends State<_InviteDialog> {
             keyboardType: TextInputType.emailAddress,
             autofocus: true,
             onSubmitted: (_) => _send(),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _familyRole,
-            decoration: const InputDecoration(labelText: 'Vai trò'),
-            items: const [
-              DropdownMenuItem(
-                value: 'FAMILY_MEMBER',
-                child: Text('Thành viên'),
-              ),
-              DropdownMenuItem(
-                value: 'DEPUTY_MEMBER',
-                child: Text('Phó nhóm'),
-              ),
-            ],
-            onChanged: _loading
-                ? null
-                : (value) {
-                    if (value != null) {
-                      setState(() => _familyRole = value);
-                    }
-                  },
           ),
         ],
       ),

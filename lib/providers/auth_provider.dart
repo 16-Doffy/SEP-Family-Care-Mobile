@@ -6,6 +6,7 @@ import '../services/api_client.dart';
 const _kAccessToken = 'access_token';
 const _kRefreshToken = 'refresh_token';
 const _kFamilyRole  = 'family_role';
+const _kActiveFamilyId = 'active_family_id';
 
 class AuthProvider extends ChangeNotifier {
   AppUser? _user;
@@ -22,6 +23,21 @@ class AuthProvider extends ChangeNotifier {
 
   void clearPendingInvite() {
     _pendingInviteToken = null;
+    notifyListeners();
+  }
+
+  Future<void> setActiveFamily(
+    String familyId, {
+    String? familyName,
+    bool syncRole = true,
+  }) async {
+    if (_user == null || familyId.isEmpty) return;
+    _user = _user!.copyWith(familyId: familyId, familyName: familyName);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kActiveFamilyId, familyId);
+    if (syncRole) {
+      await _syncRoleFromMembers(familyId);
+    }
     notifyListeners();
   }
 
@@ -51,12 +67,7 @@ class AuthProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get('/auth/me');
       if (data is Map<String, dynamic>) {
         _user = AppUser.fromJson(data, accessToken: access, refreshToken: refresh);
-        if (_user!.familyId == null) {
-          await _fetchAndSetFamily();
-        } else {
-          // familyId có rồi — đồng bộ role từ members list
-          await _syncRoleFromMembers(_user!.familyId!);
-        }
+        await _fetchAndSetFamily();
       }
     } catch (_) {
       await _clearPersistedTokens();
@@ -117,11 +128,7 @@ class AuthProvider extends ChangeNotifier {
     );
     await _persistTokens(access, refresh);
 
-    if (_user!.familyId == null) {
-      await _fetchAndSetFamily();
-    } else {
-      await _syncRoleFromMembers(_user!.familyId!);
-    }
+    await _fetchAndSetFamily();
 
     notifyListeners();
   }
@@ -131,15 +138,67 @@ class AuthProvider extends ChangeNotifier {
     try {
       final list = await ApiClient.instance.get('/families/my');
       if (list is List && list.isNotEmpty) {
-        final first = list.first as Map<String, dynamic>;
-        final id   = first['id']?.toString();
-        final name = first['name']?.toString() ?? '';
+        final prefs = await SharedPreferences.getInstance();
+        final activeFamilyId = prefs.getString(_kActiveFamilyId);
+        final currentFamilyId = _user?.familyId;
+        Map<String, dynamic>? selected;
+        final families = list
+            .whereType<Map>()
+            .map((raw) => Map<String, dynamic>.from(raw))
+            .toList();
+
+        for (final family in families) {
+          final id = family['id']?.toString();
+          if (id == null || id.isEmpty) continue;
+          final role = await _familyRoleForCurrentUser(id);
+          if (role == UserRole.member || role == UserRole.deputy) {
+            selected = family;
+            break;
+          }
+        }
+        if (selected == null) {
+          selected = families.firstWhere(
+            (family) => family['id']?.toString() == activeFamilyId,
+            orElse: () => families.firstWhere(
+              (family) => family['id']?.toString() == currentFamilyId,
+              orElse: () => families.first,
+            ),
+          );
+        }
+
+        final id   = selected['id']?.toString();
+        final name = selected['name']?.toString() ?? '';
         if (id != null) {
           _user = _user!.copyWith(familyId: id, familyName: name);
+          await prefs.setString(_kActiveFamilyId, id);
           await _syncRoleFromMembers(id);
         }
+      } else if (_user?.familyId != null) {
+        await _syncRoleFromMembers(_user!.familyId!);
       }
     } catch (_) {}
+  }
+
+  Future<UserRole?> _familyRoleForCurrentUser(String familyId) async {
+    try {
+      final data = await ApiClient.instance.get('/families/$familyId');
+      if (data is! Map<String, dynamic>) return null;
+      final rawMembers = data['members'] as List<dynamic>? ?? [];
+      final currentId = _user?.id;
+      for (final raw in rawMembers) {
+        final m = raw as Map<String, dynamic>? ?? {};
+        final uid = m['userId']?.toString() ??
+            (m['user'] as Map?)?['id']?.toString() ??
+            '';
+        if (uid != currentId) continue;
+
+        final roleStr = (m['familyRole'] as String? ?? '').toUpperCase();
+        if (roleStr.contains('MANAGER')) return UserRole.manager;
+        if (roleStr.contains('DEPUTY')) return UserRole.deputy;
+        return UserRole.member;
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Fetch GET /families/{id} → tìm current user trong members → set role đúng
@@ -178,29 +237,11 @@ class AuthProvider extends ChangeNotifier {
         return;
       }
 
-      // Nếu không tìm thấy trong members (chưa join) → thử restore từ prefs
-      final prefs     = await SharedPreferences.getInstance();
-      final savedRole = prefs.getString(_kFamilyRole);
-      if (savedRole != null && _user!.role == UserRole.member) {
-        final r = UserRole.values.firstWhere(
-          (r) => r.name == savedRole,
-          orElse: () => UserRole.member,
-        );
-        _user = _user!.copyWith(role: r);
-      }
+      _user = _user!.copyWith(role: UserRole.member);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kFamilyRole);
     } catch (_) {
-      // Fallback: restore role từ prefs
-      try {
-        final prefs     = await SharedPreferences.getInstance();
-        final savedRole = prefs.getString(_kFamilyRole);
-        if (savedRole != null && _user!.role == UserRole.member) {
-          final r = UserRole.values.firstWhere(
-            (r) => r.name == savedRole,
-            orElse: () => UserRole.member,
-          );
-          _user = _user!.copyWith(role: r);
-        }
-      } catch (_) {}
+      _user = _user?.copyWith(role: UserRole.member);
     }
   }
 
@@ -230,5 +271,6 @@ class AuthProvider extends ChangeNotifier {
     await prefs.remove(_kAccessToken);
     await prefs.remove(_kRefreshToken);
     await prefs.remove(_kFamilyRole);
+    await prefs.remove(_kActiveFamilyId);
   }
 }

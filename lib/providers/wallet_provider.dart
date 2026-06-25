@@ -148,9 +148,14 @@ class WalletProvider extends ChangeNotifier {
         id: json['id']?.toString() ?? '',
         amount: isIncome ? raw : -raw.abs(),
         description: json['description']?.toString() ?? type,
-        createdAt: json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
+        createdAt: json['createdAt']?.toString() ?? json['entryDate']?.toString() ?? '',
       );
     }).toList();
+    _transactions.sort((a, b) {
+      final da = DateTime.tryParse(a.createdAt) ?? DateTime(1970);
+      final db = DateTime.tryParse(b.createdAt) ?? DateTime(1970);
+      return db.compareTo(da);
+    });
   }
 
   List<dynamic> _extractEntryList(dynamic data) {
@@ -171,7 +176,7 @@ class WalletProvider extends ChangeNotifier {
       'entryType': 'INCOME',
       'amount': amount,
       'description': description,
-      'entryDate': DateTime.now().toIso8601String().substring(0, 10),
+      'entryDate': DateTime.now().toUtc().toIso8601String(),
     });
     await fetchWallets();
   }
@@ -183,7 +188,7 @@ class WalletProvider extends ChangeNotifier {
       'entryType': 'EXPENSE',
       'amount': amount,
       'description': description,
-      'entryDate': DateTime.now().toIso8601String().substring(0, 10),
+      'entryDate': DateTime.now().toUtc().toIso8601String(),
       if (categoryId != null) 'categoryId': categoryId,
     });
     await fetchWallets();

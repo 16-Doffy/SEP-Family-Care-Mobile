@@ -999,6 +999,11 @@ class _AssignmentsTabState extends State<_AssignmentsTab> {
     super.dispose();
   }
 
+  String _assignableMemberId(dynamic member) {
+    final memberId = member.id.toString();
+    return memberId.isNotEmpty ? memberId : member.userId.toString();
+  }
+
   Future<void> _loadAssignments(TaskItem task) async {
     setState(() { _selected = task; _assignments = []; _loadingAssign = true; });
     try {
@@ -1154,24 +1159,27 @@ class _AssignmentsTabState extends State<_AssignmentsTab> {
             child: Text('Không có thành viên', style: GoogleFonts.inter(color: AppColors.textMuted)),
           )
         else
-          ...members.map((m) => ListTile(
-            leading: CircleAvatar(
-              backgroundColor: AppColors.link.withOpacity(0.15),
-              child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+          ...members.map((m) => Material(
+            color: Colors.transparent,
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppColors.link.withOpacity(0.15),
+                child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+              ),
+              title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+              subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await context.read<TaskProvider>().assignTask(_selected!.id, _assignableMemberId(m));
+                  if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                }
+              },
             ),
-            title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            onTap: () async {
-              Navigator.pop(context);
-              try {
-                await context.read<TaskProvider>().assignTask(_selected!.id, m.id);
-                if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
-              } catch (e) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-              }
-            },
           )),
         const SizedBox(height: 8),
       ])),
@@ -1224,28 +1232,31 @@ class _AssignmentsTabState extends State<_AssignmentsTab> {
         if (members.isEmpty)
           Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Text('Không có thành viên', style: GoogleFonts.inter(color: AppColors.textMuted)))
         else
-          ...members.map((m) => ListTile(
-            leading: CircleAvatar(
-              backgroundColor: AppColors.link.withOpacity(0.15),
-              child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+          ...members.map((m) => Material(
+            color: Colors.transparent,
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppColors.link.withOpacity(0.15),
+                child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?', style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+              ),
+              title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+              subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await context.read<TaskProvider>().generateAssignments(
+                    _selected!.id,
+                    memberId: _assignableMemberId(m),
+                    fromDate: fromDate,
+                    toDate: toDate,
+                  );
+                  if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                }
+              },
             ),
-            title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            onTap: () async {
-              Navigator.pop(context);
-              try {
-                await context.read<TaskProvider>().generateAssignments(
-                  _selected!.id,
-                  memberId: m.id,
-                  fromDate: fromDate,
-                  toDate: toDate,
-                );
-                if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
-              } catch (e) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-              }
-            },
           )),
         const SizedBox(height: 8),
       ]))),
@@ -1277,24 +1288,27 @@ class _AssignmentsTabState extends State<_AssignmentsTab> {
             child: Text('Không có thành viên', style: GoogleFonts.inter(color: AppColors.textMuted)),
           )
         else
-          ...members.map((m) => ListTile(
-            leading: CircleAvatar(
-              backgroundColor: AppColors.link.withOpacity(0.15),
-              child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+          ...members.map((m) => Material(
+            color: Colors.transparent,
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: AppColors.link.withOpacity(0.15),
+                child: Text(m.displayName.isNotEmpty ? m.displayName[0].toUpperCase() : '?',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: AppColors.link)),
+              ),
+              title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+              subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              onTap: () async {
+                Navigator.pop(context);
+                try {
+                  await context.read<TaskProvider>().reassignTask(assignmentId, newMemberId: _assignableMemberId(m));
+                  if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
+                } catch (e) {
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                }
+              },
             ),
-            title: Text(m.displayName, style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-            subtitle: Text(_roleLabel(m.familyRole), style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            onTap: () async {
-              Navigator.pop(context);
-              try {
-                await context.read<TaskProvider>().reassignTask(assignmentId, newMemberId: m.id);
-                if (mounted) { if (_selected != null) _loadAssignments(_selected!); }
-              } catch (e) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-              }
-            },
           )),
         const SizedBox(height: 8),
       ])),

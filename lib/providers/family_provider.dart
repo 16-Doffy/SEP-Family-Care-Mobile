@@ -231,13 +231,17 @@ class FamilyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> approveInvitation(FamilyInvitation invitation) async {
+  Future<void> approveInvitation(
+    FamilyInvitation invitation, {
+    String? familyRole,
+    String? relationship,
+  }) async {
     if (_familyId == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.post(
       '/families/$_familyId/invitations/${invitation.id}/approve',
       {
-        'familyRole': invitation.familyRole,
-        'relationship': invitation.relationship,
+        'familyRole': familyRole ?? invitation.familyRole,
+        'relationship': relationship ?? invitation.relationship,
       },
     );
     await fetchInvitations(status: 'CLAIMED');
