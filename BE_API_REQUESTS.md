@@ -1,9 +1,9 @@
 # Danh sách API cần BE bổ sung — Family Care Mobile
 
-> Cập nhật: 2026-06-21
+> Cập nhật: 2026-06-24
 > Người tổng hợp: FE Team
 > Mục đích: Gửi BE để ưu tiên triển khai, unblock các tính năng FE đang bị chặn.
-> Đã re-verify trực tiếp qua Swagger (`GET /api/docs-json`) ngày 2026-06-21 — xem mục ✅ RESOLVED bên dưới.
+> Đã re-verify trực tiếp qua Swagger (`GET /api/docs-json`) ngày 2026-06-24 — xem mục ✅ RESOLVED bên dưới.
 
 ---
 
@@ -93,31 +93,43 @@ Body: { fullName?, phone?, avatarUrl? }
 
 ### 3. Invite Management (Quản lý lời mời)
 
+> ✅ **Cập nhật 2026-06-24**: BE đã đổi flow sang 2 bước có duyệt (claim → approve) và đã có
+> `GET /families/{familyId}/invitations` (lọc qua query `status`, KHÔNG nhận `limit`) — phần đề xuất
+> GET ở dưới đã xong, FE đã dùng (`InvitationProvider`, `InvitationRequestsScreen`). Chỉ còn thiếu
+> DELETE/cancel lời mời.
+
 | | |
 |---|---|
-| **Chức năng** | Xem danh sách lời mời đang pending, hủy lời mời đã gửi |
-| **FE đã làm** | Màn hình invite gửi được, join bằng UUID token hoạt động |
-| **Vấn đề** | Không có endpoint user-facing để liệt kê/hủy lời mời. Admin endpoint có nhưng không dùng được từ FE. |
+| **Chức năng** | Hủy lời mời đã gửi (chưa được claim) |
+| **FE đã làm** | Màn hình invite gửi được; `GET .../invitations` + claim/approve/reject hoạt động đầy đủ |
+| **Vấn đề** | Không có endpoint user-facing để hủy lời mời đã tạo nhưng chưa ai claim. Admin endpoint
+(`DELETE /admin/invitations/{id}`) có nhưng không dùng được từ FE (SYSTEM_ADMIN only). |
 | **Cần thêm** | |
 
 ```
-GET    /api/v1/families/{familyId}/invitations
-→ Danh sách lời mời pending của gia đình (hiện cho manager)
-
 DELETE /api/v1/families/{familyId}/invitations/{invitationId}
-→ Hủy lời mời chưa được chấp nhận
+→ Hủy lời mời chưa được claim/approve (Manager only)
 ```
 
-| **Lý do** | `POST /families/{familyId}/invitations` đã có → thiếu GET/DELETE để quản lý. |
+| **Lý do** | Manager mời nhầm email/role thì hiện không có cách rút lại — lời mời cứ tồn tại đến khi hết hạn. |
 |---|---|
 
-**Gap khác (chưa cần BE làm ngay, ghi lại để theo dõi — 2026-06-22):**
+**Đề xuất quan trọng — bỏ bước duyệt thừa (2026-06-24, đã thống nhất với user, CHƯA áp dụng vào FE):**
+
+| | |
+|---|---|
+| **Chức năng** | Member nhập token join thẳng vào gia đình, không cần Manager duyệt lại lần 2 |
+| **Vấn đề hiện tại** | `POST /invitations/{token}/claim` chỉ tạo invitation status `CLAIMED`, phải gọi thêm `POST /families/{id}/invitations/{id}/approve` (Manager) mới tạo `family_member` — 2 bước cho một việc Manager đã "duyệt trước" khi tạo lời mời nhắm đúng email/role/relationship |
+| **Cần đổi** | `claim` tạo `family_member` ngay (status `ACTIVE`) bằng `familyRole`/`relationship` đã ghi sẵn trong invitation lúc tạo, trả status `ACCEPTED` luôn — không cần endpoint mới, chỉ đổi logic nội bộ của `claim` |
+| **Mức độ** | Nên có — không bắt buộc vì flow hiện tại (claim→approve) đã chạy đúng, chỉ là UX chậm hơn 1 bước |
+
+**Gap khác (chưa cần BE làm ngay, ghi lại để theo dõi):**
 - Design họp 19/05 (`COMPONENT_PATTERNS.md`) có mã mời 6 ký tự (vd `A7X-9P2`) để chia sẻ bằng lời
-  nói/SMS thường, nhưng BE hiện **chỉ có UUID token** (36 ký tự, không nhập tay được). Cần BE thêm
-  `POST /invitations/code/{shortCode}/accept` (hoặc tương đương) nếu muốn giữ UX nhập mã tay.
-- Cần xác nhận: `POST /invitations/{token}/accept` có yêu cầu user đăng nhập khớp `email` trong
-  `CreateInvitationDto` không? Ảnh hưởng tới việc link mời có thể chia sẻ rộng (ai bấm cũng join được)
-  hay chỉ dùng được bởi đúng người được nhắm tới qua email.
+  nói/SMS thường, nhưng BE hiện **chỉ có secure token** (64 ký tự hex, không nhập tay được). Cần BE thêm
+  `POST /invitations/code/{shortCode}/claim` (hoặc tương đương) nếu muốn giữ UX nhập mã tay.
+- Đã xác nhận (2026-06-24): `claim` **cần đăng nhập** (khác `/accept` cũ là public) — token không tự
+  khớp theo email, ai có token + đã login đều claim được, Manager mới là người quyết định duyệt hay
+  không qua `approve`/`reject`.
 - **Cập nhật 2026 — đã có domain HTTPS (`api.familycare-digital.com`)**: trước đây không làm được App
   Link/Universal Link vì chỉ có IP thô. Giờ domain ổn định + HTTPS rồi nên **khả thi** — chỉ cần BE host
   thêm `/.well-known/assetlinks.json` (Android) / `apple-app-site-association` (iOS, khi có ios/) để OS

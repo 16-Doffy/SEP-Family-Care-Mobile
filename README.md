@@ -160,22 +160,37 @@ flutter build apk --release
 - Reward settlement flow: PENDING → SETTLED → CONFIRMED / DISPUTED (UC46–48)
 
 ### ✅ Family Management
-- Mời thành viên: QR / link / mã mời (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403
-- Tham gia qua token (`/invitations/{token}/accept`) (UC13) — `JoinFamilyScreen` lookup + accept không
-  cần đăng nhập (public). Route `/join` không còn bị router tự đẩy về `/login` khi chưa đăng nhập; nếu
-  vẫn cần đăng nhập trước (accept đòi auth), token được lưu lại (`AuthProvider.pendingInviteToken`, qua
-  `flutter_secure_storage` — sống sót qua cold-start) và tự điều hướng lại `/join?token=...` sau khi
-  login/register xong, không bị mất (2026-06-22)
-  - ⚠️ Link mời hiện là `http://<BE-IP>/join?token=<UUID>` (chưa phải App Link/Universal Link thật, vì
-    chưa có domain HTTPS ổn định) — chỉ hoạt động qua copy/dán/clipboard trong `JoinFamilyScreen`,
+- Mời thành viên: QR / link / token (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403
+- Tham gia qua token — **BE đổi flow 2026-06-24, không còn join tức thì**:
+  1. Member dán token vào `JoinFamilyScreen` → `POST /invitations/{token}/claim` (**cần đăng nhập**,
+     khác với `/accept` cũ là public) → status `CLAIMED`, chờ Manager duyệt
+  2. Manager duyệt/từ chối qua `InvitationRequestsScreen` (`/manager/invite-requests`, manager-only,
+     badge đỏ số người chờ ở `member_list_screen`) → `POST .../invitations/{id}/approve|reject` → tạo
+     `family_member` thật
+  - `claim` cần đăng nhập nên nếu user chưa login, token được lưu lại (`AuthProvider.pendingInviteToken`,
+    qua `flutter_secure_storage` — sống sót qua cold-start) và tự điều hướng lại `/join?token=...` sau
+    khi login/register xong, không bị mất
+  - Đã fix (2026-06-24): `InvitationProvider.fetchInvitations()` gọi thừa `?limit=100` — BE chỉ nhận
+    query `status` (enum), gửi `limit` bị validation chặn toàn bộ request → màn duyệt luôn báo
+    "Lỗi tải dữ liệu", badge luôn 0. Đã bỏ param thừa.
+  - ⚠️ Đã đề xuất BE (chưa áp dụng): đổi `claim` tự tạo member ngay (bỏ bước `approve` riêng) vì
+    invitation đã được Manager target sẵn 1 email/role/relationship cụ thể lúc tạo — coi như đã duyệt
+    trước. Khi BE đổi, cần sửa lại `join_family_screen.dart` (bỏ dialog "chờ duyệt"),
+    `invitation_provider.dart`, có thể bỏ badge "Yêu cầu" ở `member_list_screen.dart`
+  - ⚠️ Link mời hiện là `https://api.familycare-digital.com/join?token=<64-hex>` (chưa phải App
+    Link/Universal Link thật) — chỉ hoạt động qua copy/dán/clipboard trong `JoinFamilyScreen`,
     **chưa wire Android Intent Filter / iOS Universal Link** nên OS chưa tự mở app khi bấm link
-  - ⚠️ Mã mời 6 ký tự trong design (COMPONENT_PATTERNS) chưa có endpoint BE tương ứng — chỉ UUID token,
-    xem `BE_API_REQUESTS.md` mục Invite Management
+  - ⚠️ Mã mời 6 ký tự trong design (COMPONENT_PATTERNS) chưa có endpoint BE tương ứng — chỉ token
+    64-hex, xem `BE_API_REQUESTS.md` mục Invite Management
 - Danh sách thành viên (UC20) — Manager/Deputy xem đầy đủ + có hành động quản lý; Member xem read-only
   qua route dùng chung `/manager/members`
 - Cấp/thu quyền Phó nhóm (UC18) — **Manager only**, đang chờ BE endpoint user-facing (xem
   `BE_API_REQUESTS.md` mục 4), FE chỉ hiện action khi `canManageMemberRoles`
-- Xoá thành viên (UC19) — **Manager only** (`canRemoveMembers`)
+- Xoá thành viên (UC19) — **Manager only** (`canRemoveMembers`). BE **soft-delete**
+  (`DELETE /families/{id}/members/{userId}` chỉ set `status: REMOVED`, không xoá khỏi `members` array
+  của `GET /families/{id}`) — đã fix (2026-06-24): `FamilyProvider.fetchMembers()` lọc
+  `status == ACTIVE`, `removeMember()` nuốt lỗi 404 "not found" (nghĩa là đã xoá trước đó) thay vì ném
+  lỗi gây bối rối
 
 ### ✅ SOS & Safety (kết nối API thực, `/families/{id}/sos/alerts...`)
 - Nút SOS giữ 3 giây (UC50)
