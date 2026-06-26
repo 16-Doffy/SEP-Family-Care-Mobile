@@ -320,6 +320,25 @@ Response: { reply, suggestions? }
 
 ---
 
+## ❓ CẦN BE/PRODUCT XÁC NHẬN — Jar không liên kết với Ledger Entry
+
+> Verify 2026-06-26: `CreateLedgerEntryDto` chỉ có `categoryId`, không có `jarId`/`financeModelId`.
+> Nghĩa là khi ghi nhận 1 giao dịch thu/chi thật (`POST /finance/ledger/entries`), tiền **không tự
+> động được phân bổ vào lọ nào** trong mô hình tài chính (5 Jars/80-20/Custom) — Jar chỉ là % mục
+> tiêu tĩnh, không có field số dư (`balance`), không track được "đã tiêu bao nhiêu % so với target
+> của lọ X".
+
+**Cần xác nhận**: đây có phải thiết kế chủ ý (Jar chỉ mang tính tham khảo/giáo dục, Budget Plan +
+Category mới là cơ chế theo dõi thật) hay là gap cần bổ sung? Nếu muốn Jar có tác dụng thật, cần thêm:
+```
+- categoryId trên Jar (hoặc ngược lại) để biết category nào thuộc lọ nào
+- Báo cáo "đã chi theo lọ" tương tự reports/overview nhưng group theo jar
+```
+FE hiện đã sửa màn "Mô hình tài chính" để lưu đúng % người dùng chỉnh + activate đúng flow, nhưng
+không thể hiện được "tiến độ chi tiêu theo lọ" vì BE chưa có cơ chế liên kết.
+
+---
+
 ## ❓ CẦN BE XÁC NHẬN TRƯỚC KHI HOÀN THIỆN — Subscription Checkout (Stripe)
 
 > Cập nhật 2026-06-26: đã wire checkout cơ bản (xem mục 11). Còn 3/4 điểm dưới đây vẫn cần xác nhận

@@ -26,6 +26,7 @@ class FinanceJar {
   final String jarCode;
   final double allocationPercentage;
   final bool isActive;
+  final String? financeModelId;
 
   const FinanceJar({
     required this.id,
@@ -33,6 +34,7 @@ class FinanceJar {
     required this.jarCode,
     required this.allocationPercentage,
     required this.isActive,
+    this.financeModelId,
   });
 
   factory FinanceJar.fromJson(Map<String, dynamic> j) => FinanceJar(
@@ -41,6 +43,7 @@ class FinanceJar {
         jarCode: j['jarCode']?.toString() ?? '',
         allocationPercentage: _money(j['allocationPercentage']),
         isActive: j['isActive'] as bool? ?? true,
+        financeModelId: j['financeModelId']?.toString(),
       );
 }
 
@@ -316,13 +319,17 @@ class FinanceProvider extends ChangeNotifier {
 
   // ── Mutations: Model / Jar ───────────────────────────────────────────────
 
-  Future<void> createModel({required String modelType, required String name}) async {
-    await ApiClient.instance.post('/families/$_fid/finance/models', {
+  // Trả về FinanceModel vừa tạo (kèm jars BE tự sinh cho FIVE_JARS/EIGHTY_TWENTY,
+  // rỗng cho CUSTOM) — caller cần model.id để activate/tạo thêm jar ngay,
+  // không đợi round-trip fetchModels().
+  Future<FinanceModel> createModel({required String modelType, required String name}) async {
+    final res = await ApiClient.instance.post('/families/$_fid/finance/models', {
       'modelType': modelType,
       'name': name,
     });
     await _fetchModels();
     notifyListeners();
+    return FinanceModel.fromJson(res);
   }
 
   Future<void> activateModel(String modelId) async {
@@ -338,6 +345,25 @@ class FinanceProvider extends ChangeNotifier {
     });
     await _fetchJars();
     notifyListeners();
+  }
+
+  // Tạo jar mới thuộc 1 model (chỉ cần cho CUSTOM — FIVE_JARS/EIGHTY_TWENTY
+  // đã có jar mặc định do BE tự sinh kèm theo lúc createModel()).
+  Future<FinanceJar> createJar({
+    required String financeModelId,
+    required String name,
+    required String jarCode,
+    required double allocationPercentage,
+  }) async {
+    final res = await ApiClient.instance.post('/families/$_fid/finance/jars', {
+      'financeModelId': financeModelId,
+      'name': name,
+      'jarCode': jarCode,
+      'allocationPercentage': allocationPercentage,
+    });
+    await _fetchJars();
+    notifyListeners();
+    return FinanceJar.fromJson(res);
   }
 
   Future<void> createCategory({
