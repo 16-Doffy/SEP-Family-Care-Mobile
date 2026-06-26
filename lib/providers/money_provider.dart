@@ -60,7 +60,9 @@ class MoneyProvider extends ChangeNotifier {
   }
 
   // UC35 — Duyệt/từ chối: PATCH .../support-requests/{id}/review
-  // ReviewSpendingSupportRequestDto: { decision: APPROVED|REJECTED, decisionNote?, occurredAt? }
+  // ReviewSpendingSupportRequestDto: { decision: APPROVE|REJECT, decisionNote?, occurredAt? }
+  // (verify qua Swagger 2026-06-26 — KHÔNG có "D" cuối như comment cũ ghi nhầm,
+  // gửi 'APPROVED'/'REJECTED' bị BE trả 400 "Quyết định duyệt không hợp lệ")
   Future<void> updateStatus(String requestId, MoneyRequestStatus status) async {
     if (ApiClient.instance.familyId == null) {
       // Fallback local
@@ -71,7 +73,7 @@ class MoneyProvider extends ChangeNotifier {
       }
       return;
     }
-    final decision = status == MoneyRequestStatus.approved ? 'APPROVED' : 'REJECTED';
+    final decision = status == MoneyRequestStatus.approved ? 'APPROVE' : 'REJECT';
     await ApiClient.instance.patch(
       ApiClient.instance.familyPath('/finance/support-requests/$requestId/review'),
       {

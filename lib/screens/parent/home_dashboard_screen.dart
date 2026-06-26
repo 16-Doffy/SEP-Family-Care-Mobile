@@ -76,7 +76,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
     // income delta từ tháng trước — tính từ income transactions
     final totalIn = transactions
-        .where((t) => t.entryType == 'INCOME' || t.entryType == 'TRANSFER_IN')
+        .where((t) => t.entryType == 'INCOME')
         .fold(0.0, (s, t) => s + t.amount.abs());
 
     return Scaffold(

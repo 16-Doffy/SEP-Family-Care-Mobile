@@ -34,7 +34,10 @@ class JarData {
 // Đại diện cho 1 ledger entry (thu/chi)
 class LedgerEntry {
   final String id;
-  final String entryType; // INCOME | EXPENSE | TRANSFER_IN | TRANSFER_OUT
+  // entryType thật theo CreateLedgerEntryDto (verify qua Swagger 2026-06-26):
+  // INCOME | EXPENSE | CONTRIBUTION | ALLOWANCE | REWARD | SUPPORT | ADJUSTMENT
+  // (KHÔNG có TRANSFER_IN/TRANSFER_OUT như comment cũ ghi nhầm)
+  final String entryType;
   final double amount;
   final String description;
   final String? note;
@@ -53,10 +56,17 @@ class LedgerEntry {
     this.sourceType,
   });
 
-  // amount dương = thu, âm = chi (tính theo entryType)
+  // amount từ BE LUÔN dương (đã verify) — dấu +/- phải tự tính theo entryType.
+  // EXPENSE/SUPPORT: verify bằng kịch bản thật (duyệt support-request →
+  // BE tự tạo ledger entry entryType=SUPPORT, đây chính là tiền Hoh/Dup chi
+  // ra cho Mem, phải hiện dấu "-"). CONTRIBUTION/ALLOWANCE/ADJUSTMENT suy
+  // luận theo nghiệp vụ (chưa verify được bằng cách tự tạo entry thật —
+  // REWARD không tự sinh ledger entry qua flow settlement chuẩn nên cũng
+  // chưa verify), cần xác nhận lại với BE nếu sai.
   double get signedAmount {
-    if (entryType == 'EXPENSE' || entryType == 'TRANSFER_OUT') return -amount.abs();
-    return amount.abs();
+    const expenseTypes = {'EXPENSE', 'ALLOWANCE', 'REWARD', 'SUPPORT'};
+    if (expenseTypes.contains(entryType)) return -amount.abs();
+    return amount.abs(); // INCOME, CONTRIBUTION, ADJUSTMENT (mặc định coi là thu)
   }
 
   factory LedgerEntry.fromJson(Map<String, dynamic> json) {
