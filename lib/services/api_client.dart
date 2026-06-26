@@ -57,6 +57,18 @@ class ApiClient {
     return '/families/$_familyId$subPath';
   }
 
+  /// BE trả `fileUrl`/`thumbnailUrl` (proof ảnh task, avatar...) dạng path
+  /// tương đối (`/uploads/xxx.jpg`) — ghép với origin của `_kBase` (bỏ
+  /// `/api/v1`) để ra URL tải được. Nếu đã là URL tuyệt đối thì giữ nguyên.
+  static String absoluteUrl(String value) {
+    if (value.isEmpty) return value;
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    final origin = _kBase.replaceFirst(RegExp(r'/api/v\d+$'), '');
+    return value.startsWith('/') ? '$origin$value' : '$origin/$value';
+  }
+
   // ── HTTP methods ─────────────────────────────────────────────────────────
 
   /// POST — trả Map (body thực), hoặc {} nếu 204 No Content

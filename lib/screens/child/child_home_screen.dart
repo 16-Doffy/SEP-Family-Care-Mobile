@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
@@ -77,6 +78,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     if (!mounted) return;
     context.read<TaskProvider>().fetchMyAssignments();
     context.read<WalletProvider>().fetchWallets();
+    context.read<NotificationProvider>().fetchNotifications();
   }
 
   @override
@@ -143,26 +145,30 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               fontSize: 12, color: Colors.white60)),
                     ]),
                     const Spacer(),
-                    Stack(children: [
-                      Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white.withValues(alpha: 0.15)),
-                          alignment: Alignment.center,
-                          child: const Text('🔔',
-                              style: TextStyle(fontSize: 20))),
-                      Positioned(
-                          top: 6,
-                          right: 6,
-                          child: Container(
-                              width: 8,
-                              height: 8,
-                              decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: AppColors.danger))),
-                    ]),
+                    GestureDetector(
+                      onTap: () => context.push('/notifications'),
+                      child: Stack(children: [
+                        Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white.withValues(alpha: 0.15)),
+                            alignment: Alignment.center,
+                            child: const Text('🔔',
+                                style: TextStyle(fontSize: 20))),
+                        if (context.watch<NotificationProvider>().unreadCount > 0)
+                          Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: AppColors.danger))),
+                      ]),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),

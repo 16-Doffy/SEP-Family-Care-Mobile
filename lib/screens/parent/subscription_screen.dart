@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
@@ -14,9 +15,12 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-  final String _currentPlan = 'FREE';
+  String _currentPlan = 'FREE';
   bool _plansLoading = false;
   List<_PlanData> _plans = [];
+  // planCode đang gọi checkout — khoá nút để tránh tạo nhiều Stripe session
+  // cùng lúc nếu user bấm nhiều lần.
+  String? _checkingOutPlan;
 
   static const _fallbackPlans = [
     _PlanData(
@@ -42,7 +46,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       ],
     ),
     _PlanData(
-      id: 'FAMILY',
+      id: 'PLUS',
       name: 'Family',
       price: '99,000 ₫',
       period: '/tháng',
@@ -91,7 +95,25 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   void initState() {
     super.initState();
     _plans = List.from(_fallbackPlans);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchPlans());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchPlans();
+      _fetchCurrentSubscription();
+    });
+  }
+
+  // GET /families/{id}/subscription — gói thật gia đình đang dùng, thay cho
+  // hardcode 'FREE'. Response: { plan: { planCode, ... }, status, ... }
+  Future<void> _fetchCurrentSubscription() async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) return;
+    try {
+      final data = await ApiClient.instance.get('/families/$fid/subscription');
+      final plan = data is Map ? data['plan'] : null;
+      final planCode = plan is Map ? plan['planCode']?.toString() : null;
+      if (mounted && planCode != null) setState(() => _currentPlan = planCode);
+    } catch (_) {
+      // Gia đình chưa có subscription record nào → giữ mặc định FREE
+    }
   }
 
   Future<void> _fetchPlans() async {
@@ -175,29 +197,41 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return buf.toString();
   }
 
+  // POST /families/{id}/subscription/checkout — body { planCode } trả về
+  // link Stripe Checkout, mở bằng trình duyệt ngoài để hoàn tất thanh toán.
+  // BE redirect lại app qua deep link sau khi Stripe xử lý xong (ngoài scope
+  // màn này — xem mục Subscription/Stripe trong BE_API_REQUESTS.md).
+  //
+  // ⚠️ Response checkout chưa có schema công khai trên Swagger — field chứa
+  // URL được đoán theo convention phổ biến (`checkoutUrl`/`url`), thử nhiều
+  // tên trước khi báo lỗi. Cần xác nhận lại field thật khi test tay 1 lần.
   Future<void> _subscribe(_PlanData plan) async {
-    if (plan.id == _currentPlan) return;
-    // Chưa có upgrade API — hiện thông báo liên hệ
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
-          title: Text('Nâng cấp lên ${plan.name} ${plan.emoji}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          content: Text(
-              'Để nâng cấp gói, vui lòng liên hệ hỗ trợ qua email hoặc hotline. '
-              'Tính năng thanh toán tự động sẽ sớm ra mắt.',
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Đóng'),
-            ),
-          ],
-        ),
+    if (plan.id == _currentPlan || _checkingOutPlan != null) return;
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) return;
+
+    setState(() => _checkingOutPlan = plan.id);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final data = await ApiClient.instance.post(
+        '/families/$fid/subscription/checkout',
+        {'planCode': plan.id},
       );
+      final url = data['checkoutUrl']?.toString();
+      if (url == null) {
+        throw Exception('Không lấy được link thanh toán từ server');
+      }
+      final uri = Uri.parse(url);
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw Exception('Không mở được trang thanh toán');
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: AppColors.danger,
+      ));
+    } finally {
+      if (mounted) setState(() => _checkingOutPlan = null);
     }
   }
 
@@ -318,6 +352,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 ..._plans.map((plan) => _PlanCard(
                       plan: plan,
                       isCurrent: plan.id == _currentPlan,
+                      isCheckingOut: _checkingOutPlan == plan.id,
                       onSubscribe: () => _subscribe(plan),
                     )),
 
@@ -361,11 +396,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 class _PlanCard extends StatelessWidget {
   final _PlanData plan;
   final bool isCurrent;
+  final bool isCheckingOut;
   final VoidCallback onSubscribe;
 
   const _PlanCard({
     required this.plan,
     required this.isCurrent,
+    this.isCheckingOut = false,
     required this.onSubscribe,
   });
 
@@ -464,8 +501,15 @@ class _PlanCard extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
-                  onPressed: isCurrent ? null : onSubscribe,
-                  child: Text(
+                  onPressed: (isCurrent || isCheckingOut) ? null : onSubscribe,
+                  child: isCheckingOut
+                      ? SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: plan.id == 'FREE' ? AppColors.textPrimary : Colors.white),
+                        )
+                      : Text(
                           isCurrent ? '✓ Đang sử dụng' : 'Nâng cấp ${plan.name}',
                           style: GoogleFonts.inter(
                               fontSize: 14,

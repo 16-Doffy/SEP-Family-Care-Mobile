@@ -244,17 +244,30 @@ DELETE /api/v1/families/{familyId}/albums/{albumId}/photos/{photoId}
 
 ### 9. Thông báo (Notifications)
 
+> ✅ **RESOLVED 2026-06-26**: 3 endpoint dưới **đã tồn tại trên BE** (verify trực tiếp bằng kịch bản
+> thật: trigger SOS alert → thấy notification sinh ra). FE đã wire đầy đủ — `NotificationProvider` +
+> `notifications_screen.dart` (badge unread ở home Manager/Member, tap-routing theo `type` về
+> `/manager|deputy|member/sos|tasks|wallet`). **Lưu ý field**: id thật là `notificationId`, KHÔNG phải
+> `id` như hầu hết resource khác trong API này.
+>
+> Response thật (verify qua SOS alert):
+> ```json
+> { "notificationId": "...", "familyId": "...", "recipientMemberId": "...",
+>   "type": "SOS", "priority": "CRITICAL", "title": "Cảnh báo SOS",
+>   "body": "...", "referenceType": "SOS_ALERT", "referenceId": "...",
+>   "isRead": false, "readAt": null, "createdAt": "..." }
+> ```
+> Chỉ verify được `type: SOS` (do tự trigger được) — chưa rõ BE còn sinh notification cho `TASK`/
+> `FINANCE`/`INVITATION` hay không (claim/approve invitation, assign task không tạo notification nào
+> khi test thử). FE đã code switch-case cho các type đó (`SOS|TASK|FINANCE`) phòng trường hợp BE sinh
+> sau, nhưng chưa verify được thực tế.
+
 | | |
 |---|---|
-| **Chức năng** | Xem lịch sử thông báo, đánh dấu đã đọc |
-| **FE đã làm** | UI notifications screen mock |
+| **Còn thiếu** | Push notification (FCM) — chỉ có in-app list, không có khi app background/closed |
 | **Cần thêm** | |
 
 ```
-GET   /api/v1/families/{familyId}/notifications?limit=20&page=1
-PATCH /api/v1/families/{familyId}/notifications/{notificationId}/read
-PATCH /api/v1/families/{familyId}/notifications/read-all
-
 Push notifications: Firebase FCM token registration
 POST /api/v1/auth/fcm-token
 Body: { token, platform: "android" | "ios" }
@@ -283,51 +296,46 @@ Response: { reply, suggestions? }
 
 ### 11. Subscription / Thanh toán
 
+> ✅ **RESOLVED 2026-06-26**: `GET .../subscription` và `POST .../subscription/checkout` **đã tồn
+> tại trên BE** (family-scoped, không phải admin-only → trong scope mobile). FE đã wire:
+> `_fetchCurrentSubscription()` lấy gói thật thay hardcode `'FREE'`, `_subscribe()` gọi checkout rồi
+> mở URL Stripe qua `url_launcher` (`LaunchMode.externalApplication`).
+>
+> Verify được response `GET .../subscription`:
+> ```json
+> { "id": "...", "familyId": "...", "planId": "...", "status": "ACTIVE",
+>   "stripeCustomerId": null, "stripeSubscriptionId": null,
+>   "currentPeriodEnd": null, "cancelAtPeriodEnd": false,
+>   "plan": { "id": "...", "planCode": "FREE", "name": "Gói Miễn phí",
+>             "annualPrice": "0", "maxMembers": 3, "storageLimit": 1024, ... } }
+> ```
+> **Bug FE đã fix**: fallback plan dùng sai mã `FAMILY` — `CreateCheckoutDto.planCode` enum thật là
+> `FREE | PLUS | PREMIUM` (verify qua Swagger), đã đổi `'FAMILY'` → `'PLUS'` trong
+> `subscription_screen.dart`.
+
 | | |
 |---|---|
-| **Chức năng** | Nâng cấp gói dịch vụ (FREE → PLUS → PREMIUM) |
-| **FE đã làm** | `GET /subscription-plans` đã kết nối, hiển thị danh sách gói. Nút "Nâng cấp" đang show dialog "liên hệ hỗ trợ". |
-| **Vấn đề** | Không có endpoint thanh toán/upgrade |
-| **Cần thêm** | |
-
-```
-POST /api/v1/families/{familyId}/subscription/upgrade
-Body: { planId, paymentMethod: "BANK_TRANSFER" | "MOMO" | ... }
-→ Tạo đơn nâng cấp / redirect đến payment gateway
-
-GET  /api/v1/families/{familyId}/subscription
-→ Xem gói hiện tại của gia đình, ngày hết hạn
-```
-
 | **Lưu ý quan trọng** | ⚠️ **Hệ thống KHÔNG giữ tiền người dùng** — chỉ xử lý thanh toán cho gói dịch vụ subscription. Mọi giao dịch tài chính trong app là ghi nhận/kế hoạch, không phải chuyển tiền thực. |
 |---|---|
 
 ---
 
-## ❓ CẦN BE XÁC NHẬN TRƯỚC KHI FE TRIỂN KHAI — Subscription Checkout (Stripe)
+## ❓ CẦN BE XÁC NHẬN TRƯỚC KHI HOÀN THIỆN — Subscription Checkout (Stripe)
 
-> Bối cảnh: FE đang lên kế hoạch nối nút "Nâng cấp" (`lib/screens/parent/subscription_screen.dart:178`) vào checkout thật qua
-> Stripe + deep link `familycare://subscription/success`. Trước khi sửa code, cần BE xác nhận 4 điểm sau để tránh đoán sai
-> contract dẫn đến lỗi thanh toán.
+> Cập nhật 2026-06-26: đã wire checkout cơ bản (xem mục 11). Còn 3/4 điểm dưới đây vẫn cần xác nhận
+> trước khi coi flow thanh toán là hoàn chỉnh — chưa test được full vòng đời thanh toán thật vì không
+> nên tự tạo Stripe session thật khi không có ý định thanh toán.
 
-### 1. Mã gói (planCode) chính xác
+### 1. ✅ Mã gói (planCode) — ĐÃ XÁC NHẬN
 
-BE được mô tả dùng `FREE | PLUS | PREMIUM`, trong khi FE đang fallback hardcode `FREE | FAMILY | PREMIUM`
-(`lib/screens/parent/subscription_screen.dart:17`). Nếu FE gửi sai mã gói, checkout có thể trả 400.
+Verify qua Swagger (`CreateCheckoutDto.planCode`): enum thật là `FREE | PLUS | PREMIUM`. FE đã sửa
+fallback plan từ `FAMILY` → `PLUS`, và `_fetchCurrentSubscription()` lấy `planCode` trực tiếp từ
+`GET .../subscription` response (không tự ánh xạ theo tên hiển thị).
 
-⚠️ **Cần xác nhận**: enum `planCode` chính xác trả về từ `GET /subscription-plans`. FE sẽ dùng trực tiếp giá trị này, không tự
-ánh xạ theo tên hiển thị.
+### 2. ✅ Response schema của checkout endpoint — ĐÃ XÁC NHẬN (2026-06-26)
 
-### 2. Response schema của checkout endpoint
-
-Tài liệu nội bộ hiện ghi `POST /subscription/upgrade` (mục 12 ở trên), nhưng cần xác nhận lại tên endpoint thật
-(`/subscription/checkout`?) và schema response chính xác, ví dụ:
-
-```
-{ "checkoutUrl": "https://checkout.stripe.com/...", "sessionId": "cs_..." }
-```
-
-⚠️ **Cần xác nhận**: tên field thật là `url`, `checkoutUrl`, hay nằm trong `data.url`; và danh sách mã lỗi có thể trả về.
+Verify bằng cách bấm "Nâng cấp" thật trên app + đọc log: response trả `{ checkoutUrl: "https://checkout.stripe.com/..." }`.
+FE đã hardcode field đúng, bỏ các fallback tên đoán mù.
 
 ### 3. Webhook là nguồn xác nhận thanh toán duy nhất
 
@@ -356,6 +364,8 @@ có lifecycle khác với nâng cấp trả phí (không qua Stripe Checkout).
 | Mức độ | API | Unblock tính năng |
 |--------|-----|-------------------|
 | ✅ Resolved | SOS endpoints | Đã có sẵn trên BE — bug nằm ở FE, đã sửa |
+| ✅ Resolved | Notifications (list/read/read-all) | Đã có sẵn trên BE, FE đã wire đầy đủ (2026-06-26) |
+| ✅ Resolved | Subscription GET + checkout cơ bản | Đã có sẵn trên BE, FE đã wire (2026-06-26) — còn 3 câu hỏi webhook/response/FREE ở mục riêng |
 | 🔴 Critical | Location sharing | Bản đồ gia đình — BE chưa có endpoint nào |
 | 🟠 High | `PATCH /auth/me` | Chỉnh sửa profile |
 | 🟠 High | Invite GET/DELETE | Quản lý lời mời |
@@ -364,9 +374,9 @@ có lifecycle khác với nâng cấp trả phí (không qua Stripe Checkout).
 | 🟡 Medium | Chat | Nhắn tin gia đình |
 | 🟡 Medium | Calendar CRUD | Lịch gia đình |
 | 🟡 Medium | Album + file upload | Album ảnh |
-| 🟡 Medium | Notifications + FCM | Push notifications |
+| 🟡 Medium | Push notification (FCM) | Notification khi app background/closed |
 | 🟡 Medium | AI chat | Trợ lý AI |
-| 🟡 Medium | Subscription upgrade | Nâng cấp gói |
+| 🟡 Medium | Subscription webhook + deep-link return | Xác nhận thanh toán Stripe an toàn (không dựa session_id từ deep link) |
 
 ---
 

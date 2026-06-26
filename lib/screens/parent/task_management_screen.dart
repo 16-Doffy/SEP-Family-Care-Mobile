@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
@@ -267,23 +268,27 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   Future<void> _showReviewSheet(BuildContext context, TaskAssignment a) async {
     // BE không embed submission trong response danh sách assignment (chỉ có
-    // status) nên latestSubmissionId hầu như luôn null dù đã SUBMITTED —
-    // phải gọi riêng endpoint submissions để lấy submission mới nhất.
-    var submissionId = a.latestSubmissionId;
-    if (submissionId == null) {
-      final messenger = ScaffoldMessenger.of(context);
-      final submission = await context.read<TaskProvider>().fetchLatestSubmission(a.id);
-      submissionId = submission?.id;
-      if (submissionId == null) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Không tìm thấy bài nộp để duyệt — thử tải lại'),
-          backgroundColor: AppColors.danger,
-        ));
-        return;
-      }
+    // status), nên KHÔNG có proofs sẵn trên TaskAssignment dù
+    // latestSubmissionId có giá trị — luôn phải gọi riêng endpoint
+    // submissions để lấy submission đầy đủ (kèm proofs) trước khi duyệt.
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final submission = await context.read<TaskProvider>().fetchLatestSubmission(a.id);
+    if (context.mounted) Navigator.of(context, rootNavigator: true).pop(); // đóng loading
+
+    if (submission == null) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Không tìm thấy bài nộp để duyệt — thử tải lại'),
+        backgroundColor: AppColors.danger,
+      ));
+      return;
     }
     if (!context.mounted) return;
-    final resolvedSubmissionId = submissionId;
+
     final noteCtrl = TextEditingController();
     bool submitting = false;
     showModalBottomSheet(
@@ -294,52 +299,119 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Duyệt công việc', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            Text(a.taskTitle ?? '', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
-            const SizedBox(height: 16),
-            _inputBox(noteCtrl, 'Ghi chú (tùy chọn)'),
-            const SizedBox(height: 16),
-            Row(children: [
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  onPressed: submitting ? null : () async {
-                    setSheet(() => submitting = true);
-                    final messenger = ScaffoldMessenger.of(context);
-                    try {
-                      await context.read<TaskProvider>().reviewSubmission(resolvedSubmissionId, approved: true, reviewNote: noteCtrl.text.trim());
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    } catch (e) {
-                      setSheet(() => submitting = false);
-                      messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-                    }
-                  },
-                  child: Text('✓ Duyệt', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Duyệt công việc', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text(a.taskTitle ?? '', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
+              if (submission.submissionNote != null && submission.submissionNote!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
+                  child: Text(submission.submissionNote!, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary)),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                  onPressed: submitting ? null : () async {
-                    setSheet(() => submitting = true);
-                    final messenger = ScaffoldMessenger.of(context);
-                    try {
-                      await context.read<TaskProvider>().reviewSubmission(resolvedSubmissionId, approved: false, reviewNote: noteCtrl.text.trim());
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    } catch (e) {
-                      setSheet(() => submitting = false);
-                      messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
-                    }
-                  },
-                  child: Text('✕ Từ chối', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+              ],
+              if (submission.proofs.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('Minh chứng (${submission.proofs.length})', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                const SizedBox(height: 8),
+                ...submission.proofs.map(_proofPreview),
+              ],
+              const SizedBox(height: 16),
+              _inputBox(noteCtrl, 'Ghi chú (tùy chọn)'),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    onPressed: submitting ? null : () async {
+                      setSheet(() => submitting = true);
+                      final sheetMessenger = ScaffoldMessenger.of(context);
+                      try {
+                        await context.read<TaskProvider>().reviewSubmission(submission.id, approved: true, reviewNote: noteCtrl.text.trim());
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      } catch (e) {
+                        setSheet(() => submitting = false);
+                        sheetMessenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                      }
+                    },
+                    child: Text('✓ Duyệt', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    onPressed: submitting ? null : () async {
+                      setSheet(() => submitting = true);
+                      final sheetMessenger = ScaffoldMessenger.of(context);
+                      try {
+                        await context.read<TaskProvider>().reviewSubmission(submission.id, approved: false, reviewNote: noteCtrl.text.trim());
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      } catch (e) {
+                        setSheet(() => submitting = false);
+                        sheetMessenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                      }
+                    },
+                    child: Text('✕ Từ chối', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
+                ),
+              ]),
             ]),
-          ]),
+          ),
         ),
       ),
+    );
+  }
+
+  // Preview 1 proof minh chứng: ảnh hiển thị trực tiếp, video/file/note hiện
+  // dạng card có icon (không có player video trong scope này).
+  Widget _proofPreview(TaskProof proof) {
+    if (proof.proofType == 'IMAGE' && (proof.fileUrl ?? '').isNotEmpty) {
+      final url = ApiClient.absoluteUrl(proof.fileUrl!);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.network(
+            url,
+            height: 180,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            loadingBuilder: (_, child, progress) => progress == null
+                ? child
+                : Container(
+                    height: 180,
+                    color: AppColors.background,
+                    alignment: Alignment.center,
+                    child: const CircularProgressIndicator(strokeWidth: 2),
+                  ),
+            errorBuilder: (_, _, _) => Container(
+              height: 100,
+              color: AppColors.background,
+              alignment: Alignment.center,
+              child: Text('Không tải được ảnh', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            ),
+          ),
+        ),
+      );
+    }
+    // NOTE / FILE / VIDEO không có ảnh preview — hiện card thông tin
+    final icon = switch (proof.proofType) { 'VIDEO' => '🎥', 'FILE' => '📎', _ => '📝' };
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Text(icon, style: const TextStyle(fontSize: 18)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            proof.note?.isNotEmpty == true ? proof.note! : (proof.fileUrl ?? proof.proofType),
+            style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+          ),
+        ),
+      ]),
     );
   }
 

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
@@ -41,6 +42,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     context.read<WalletProvider>().fetchWallets();
     context.read<TaskProvider>().fetchTasks();
     context.read<FamilyProvider>().fetchMembers();
+    context.read<NotificationProvider>().fetchNotifications();
   }
 
   @override
@@ -150,15 +152,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                               child: const Icon(Icons.notifications_outlined,
                                   size: 20, color: AppColors.textPrimary),
                             ),
-                            Positioned(
-                              top: 8, right: 8,
-                              child: Container(
-                                width: 8, height: 8,
-                                decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: AppColors.notification),
+                            if (context.watch<NotificationProvider>().unreadCount > 0)
+                              Positioned(
+                                top: 8, right: 8,
+                                child: Container(
+                                  width: 8, height: 8,
+                                  decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: AppColors.notification),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
