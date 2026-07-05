@@ -221,6 +221,8 @@ class SosProvider extends ChangeNotifier {
       {
         'latitude': latitude,
         'longitude': longitude,
+        // BE bắt buộc sourceType (PushSosLocationDto) — thiếu sẽ 400 "Nguồn không hợp lệ"
+        'sourceType': 'MOBILE_GPS',
         if (accuracy != null) 'accuracy': accuracy,
       },
     );
