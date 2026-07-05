@@ -10,6 +10,7 @@ class AppUser {
   final int avatarColor;
   final String? accessToken;
   final String? refreshToken;
+  final String verificationStatus; // UNVERIFIED / VERIFIED
 
   const AppUser({
     required this.id,
@@ -21,7 +22,10 @@ class AppUser {
     required this.avatarColor,
     this.accessToken,
     this.refreshToken,
+    this.verificationStatus = 'VERIFIED',
   });
+
+  bool get isEmailVerified => verificationStatus.toUpperCase() != 'UNVERIFIED';
 
   factory AppUser.fromJson(
     Map<String, dynamic> json, {
@@ -60,6 +64,9 @@ class AppUser {
       avatarColor: colorForRole(effectiveRole),
       accessToken: accessToken,
       refreshToken: refreshToken,
+      // Nếu BE không trả field này thì coi như đã verify để không chặn flow
+      verificationStatus:
+          json['verificationStatus']?.toString().toUpperCase() ?? 'VERIFIED',
     );
   }
 
@@ -69,7 +76,12 @@ class AppUser {
     return UserRole.member;
   }
 
-  AppUser copyWith({String? familyId, String? familyName, UserRole? role}) {
+  AppUser copyWith({
+    String? familyId,
+    String? familyName,
+    UserRole? role,
+    String? verificationStatus,
+  }) {
     final newRole = role ?? this.role;
     return AppUser(
       id: id,
@@ -81,6 +93,7 @@ class AppUser {
       avatarColor: colorForRole(newRole),
       accessToken: accessToken,
       refreshToken: refreshToken,
+      verificationStatus: verificationStatus ?? this.verificationStatus,
     );
   }
 

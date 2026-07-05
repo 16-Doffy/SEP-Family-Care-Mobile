@@ -8,6 +8,7 @@ import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
 import '../screens/auth/create_family_screen.dart';
 import '../screens/auth/invitation_screen.dart';
+import '../screens/auth/verify_email_screen.dart';
 
 // Manager/Deputy (Dùng chung bộ UI quản lý)
 import '../screens/parent/home_dashboard_screen.dart';
@@ -56,6 +57,8 @@ GoRouter createRouter(AuthProvider auth) {
       if (!loggedIn && !onAuth && !onInvite) return '/login';
 
       if (loggedIn && onAuth) {
+        // UC10: tài khoản chưa verify email → nhập OTP trước (có thể bỏ qua)
+        if (auth.needsVerification) return '/verify-email';
         if (auth.pendingInviteToken != null) return '/invite/${auth.pendingInviteToken}';
         if (auth.familyId == null || auth.familyId!.isEmpty) return '/create-family';
         return auth.user!.canAccessManagerWorkspace ? '/manager/home' : '/member/home';
@@ -80,6 +83,7 @@ GoRouter createRouter(AuthProvider auth) {
       // ── Auth ──────────────────────────────────────────────
       GoRoute(path: '/login',    builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
+      GoRoute(path: '/verify-email', builder: (_, __) => const VerifyEmailScreen()),
       GoRoute(path: '/create-family', builder: (_, __) => const CreateFamilyScreen()),
       GoRoute(
         path: '/invite/:token',

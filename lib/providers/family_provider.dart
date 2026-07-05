@@ -265,9 +265,8 @@ class FamilyProvider extends ChangeNotifier {
     await ApiClient.instance.post('/invitations/$token/claim');
   }
 
-  Future<void> rejectInvitation(String _) async {
-    // The current backend no longer exposes a public token reject endpoint.
-    // Ignoring the invite locally is enough for the invitee flow.
+  Future<void> rejectInvitation(String token) async {
+    await ApiClient.instance.post('/invitations/$token/reject');
   }
 
   static List<dynamic> _extractList(dynamic data) {

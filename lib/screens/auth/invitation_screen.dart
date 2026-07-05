@@ -85,17 +85,12 @@ class _InvitationScreenState extends State<InvitationScreen> {
     setState(() => _acting = true);
     try {
       await context.read<FamilyProvider>().rejectInvitation(widget.token);
-      if (mounted) {
-        context.read<AuthProvider>().clearPendingInvite();
-        context.go('/login');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _acting = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
-        );
-      }
+    } catch (_) {
+      // "Bỏ qua" vẫn tiếp tục kể cả khi BE từ chối (vd. lời mời đã claim/hết hạn)
+    }
+    if (mounted) {
+      context.read<AuthProvider>().clearPendingInvite();
+      context.go('/login');
     }
   }
 

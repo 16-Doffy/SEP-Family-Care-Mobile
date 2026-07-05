@@ -12,12 +12,22 @@ class AuthProvider extends ChangeNotifier {
   AppUser? _user;
   bool _initializing = true;
   String? _pendingInviteToken;
+  bool _verificationSkipped = false;
 
   AppUser? get user => _user;
   bool get isLoggedIn => _user != null;
   bool get initializing => _initializing;
   String? get familyId => _user?.familyId;
   String? get pendingInviteToken => _pendingInviteToken;
+
+  /// UC10 — true khi tài khoản chưa verify email và user chưa chọn "bỏ qua"
+  bool get needsVerification =>
+      _user != null && !_user!.isEmailVerified && !_verificationSkipped;
+
+  void skipVerification() {
+    _verificationSkipped = true;
+    notifyListeners();
+  }
 
   void setPendingInvite(String token) => _pendingInviteToken = token;
 
@@ -116,6 +126,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _applySession(Map<String, dynamic> data) async {
+    _verificationSkipped = false;
     final access  = data['accessToken'] as String;
     final refresh = data['refreshToken'] as String? ?? '';
     ApiClient.instance.setToken(access);
@@ -245,6 +256,29 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // ─── Email verification (UC10) ─────────────────────────────────────────────
+
+  /// POST /auth/verify-email với OTP 6 số; refresh lại /auth/me để cập nhật trạng thái
+  Future<void> verifyEmail(String code) async {
+    await ApiClient.instance.post('/auth/verify-email', {'code': code.trim()});
+    _user = _user?.copyWith(verificationStatus: 'VERIFIED');
+    try {
+      final data = await ApiClient.instance.get('/auth/me');
+      if (data is Map<String, dynamic> && _user != null) {
+        _user = _user!.copyWith(
+          verificationStatus:
+              data['verificationStatus']?.toString().toUpperCase() ?? 'VERIFIED',
+        );
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// POST /auth/resend-verification — BE rate-limit, lỗi 400 khi cooldown
+  Future<void> resendVerification() async {
+    await ApiClient.instance.post('/auth/resend-verification', null);
+  }
+
   Future<void> logout() async {
     try {
       final refresh = _user?.refreshToken;
@@ -254,6 +288,7 @@ class AuthProvider extends ChangeNotifier {
       );
     } catch (_) {}
     _user = null;
+    _verificationSkipped = false;
     ApiClient.instance.setToken(null);
     ApiClient.instance.setRefreshToken(null);
     await _clearPersistedTokens();
