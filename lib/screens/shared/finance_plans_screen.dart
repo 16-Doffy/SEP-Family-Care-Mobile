@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/money_input.dart';
 import '../../widgets/ring_chart.dart';
 import 'budget_plan_detail_screen.dart';
@@ -136,22 +137,23 @@ class _BudgetPlansTabState extends State<_BudgetPlansTab> {
 
   @override
   Widget build(BuildContext context) {
-    final plans = context.watch<FinanceProvider>().budgetPlans;
+    final finance = context.watch<FinanceProvider>();
+    final plans = finance.budgetPlans;
     return Stack(children: [
       RefreshIndicator(
         onRefresh: () => context.read<FinanceProvider>().fetchAll(),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
           children: [
-            if (plans.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 60),
-                child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('📋', style: TextStyle(fontSize: 48)),
-                  const SizedBox(height: 12),
-                  Text('Chưa có kế hoạch nào', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
-                  Text('Tạo kế hoạch để theo dõi ngân sách', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-                ])),
+            if (finance.isLoading && plans.isEmpty)
+              const SkeletonList(items: 3, cardHeight: 120)
+            else if (plans.isEmpty)
+              EmptyState(
+                emoji: '📋',
+                title: 'Chưa có kế hoạch ngân sách',
+                subtitle: 'Lập kế hoạch thu chi theo tháng để cả nhà cùng theo dõi và không vượt ngân sách.',
+                actionLabel: '+ Tạo kế hoạch đầu tiên',
+                onAction: () => setState(() => _showCreate = true),
               )
             else
               ...plans.map((p) {
@@ -387,12 +389,12 @@ class _BudgetPlansTabState extends State<_BudgetPlansTab> {
         Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _lbl('Từ ngày'),
-            _inp(_startCtrl, 'YYYY-MM-DD'),
+            _dateInp(ctx, _startCtrl, setS),
           ])),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _lbl('Đến ngày'),
-            _inp(_endCtrl, 'YYYY-MM-DD'),
+            _dateInp(ctx, _endCtrl, setS),
           ])),
         ]),
         const SizedBox(height: 12),
@@ -411,7 +413,16 @@ class _BudgetPlansTabState extends State<_BudgetPlansTab> {
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
           onPressed: _saving ? null : () async {
-            if (_nameCtrl.text.trim().isEmpty) return;
+            if (_nameCtrl.text.trim().isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập tên kế hoạch')));
+              return;
+            }
+            final start = DateTime.tryParse(_startCtrl.text.trim());
+            final end = DateTime.tryParse(_endCtrl.text.trim());
+            if (start == null || end == null || !end.isAfter(start)) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('"Đến ngày" phải sau "Từ ngày"')));
+              return;
+            }
             setS(() => _saving = true);
             try {
               await context.read<FinanceProvider>().createBudgetPlan(
@@ -447,6 +458,25 @@ class _BudgetPlansTabState extends State<_BudgetPlansTab> {
         decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5), borderRadius: BorderRadius.circular(12)),
         child: TextField(controller: c, decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13))),
       );
+  // BE chỉ nhận YYYY-MM-DD → chọn qua lịch, không cho gõ tay
+  Widget _dateInp(BuildContext ctx, TextEditingController c, void Function(void Function()) setS) =>
+      GestureDetector(
+        onTap: () async {
+          final now = DateTime.now();
+          final picked = await showDatePicker(
+            context: ctx,
+            initialDate: DateTime.tryParse(c.text) ?? now,
+            firstDate: DateTime(now.year - 1),
+            lastDate: DateTime(now.year + 10),
+          );
+          if (picked != null) {
+            setS(() => c.text =
+                '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}');
+          }
+        },
+        child: AbsorbPointer(child: _inp(c, 'Chọn ngày')),
+      );
+
   Widget _moneyInp(TextEditingController c) => Container(
         height: 48,
         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -500,15 +530,15 @@ class _GoalsTabState extends State<_GoalsTab> {
                 style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF1D4ED8), height: 1.35),
               ),
             ),
-            if (goals.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 60),
-                child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('🎯', style: TextStyle(fontSize: 48)),
-                  const SizedBox(height: 12),
-                  Text('Chưa có mục tiêu nào', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
-                  Text('Tạo mục tiêu tài chính để theo dõi tiến độ', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-                ])),
+            if (context.watch<FinanceProvider>().isLoading && goals.isEmpty)
+              const SkeletonList(items: 3)
+            else if (goals.isEmpty)
+              EmptyState(
+                emoji: '🎯',
+                title: 'Chưa có mục tiêu nào',
+                subtitle: 'Đặt mục tiêu tiết kiệm cho cả nhà — mua xe, du lịch, quỹ dự phòng — và cùng nhau đóng góp.',
+                actionLabel: '+ Tạo mục tiêu đầu tiên',
+                onAction: () => setState(() => _showCreate = true),
               )
             else
               ...goals.map((g) {
@@ -913,11 +943,14 @@ class _AlertsTab extends StatelessWidget {
       RefreshIndicator(
         onRefresh: () => context.read<FinanceProvider>().fetchAll(),
         child: alerts.isEmpty
-            ? const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('🎉', style: TextStyle(fontSize: 48)),
-                SizedBox(height: 12),
-                Text('Không có cảnh báo nào', style: TextStyle(color: AppColors.textMuted)),
-              ]))
+            ? ListView(children: const [
+                SizedBox(height: 40),
+                EmptyState(
+                  emoji: '🎉',
+                  title: 'Không có cảnh báo nào',
+                  subtitle: 'Chi tiêu của gia đình đang trong tầm kiểm soát. Cứ tiếp tục phát huy nhé!',
+                ),
+              ])
             : ListView.separated(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
                 itemCount: alerts.length,

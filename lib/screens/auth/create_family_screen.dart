@@ -6,6 +6,8 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/validators.dart';
+import '../../widgets/app_input.dart';
 
 class CreateFamilyScreen extends StatefulWidget {
   const CreateFamilyScreen({super.key});
@@ -14,6 +16,7 @@ class CreateFamilyScreen extends StatefulWidget {
 }
 
 class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   bool _loading = false;
@@ -33,8 +36,8 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
   }
 
   Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
     final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
     setState(() => _loading = true);
     try {
       final familyId = await context.read<FamilyProvider>().createFamily(
@@ -81,28 +84,32 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
               const SizedBox(height: 8),
               Text('Bạn sẽ là trưởng nhóm và có thể mời thành viên sau.', style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary)),
               const SizedBox(height: 40),
-              _label('Tên gia đình'),
-              const SizedBox(height: 8),
-              _input(_nameCtrl, 'VD: Gia đình Nguyễn'),
-              const SizedBox(height: 20),
-              _label('Mô tả (tùy chọn)'),
-              const SizedBox(height: 8),
-              _input(_descCtrl, 'Một vài điều về gia đình bạn...', maxLines: 3),
-              const Spacer(),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.link,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
-                  ),
-                  onPressed: _loading ? null : _submit,
-                  child: _loading
-                      ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                      : Text('Tạo gia đình', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
+              Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppTextField(
+                      controller: _nameCtrl,
+                      label: 'Tên gia đình',
+                      hint: 'VD: Gia đình Nguyễn',
+                      prefixIcon: Icons.home_outlined,
+                      validator: (v) => Validators.minLength(v, 2, 'Tên gia đình'),
+                    ),
+                    AppTextField(
+                      controller: _descCtrl,
+                      label: 'Mô tả (tùy chọn)',
+                      hint: 'Một vài điều về gia đình bạn...',
+                      maxLines: 3,
+                    ),
+                  ],
                 ),
+              ),
+              const Spacer(),
+              PrimaryButton(
+                label: 'Tạo gia đình',
+                loading: _loading,
+                onPressed: _submit,
               ),
               const SizedBox(height: 12),
               Center(
@@ -128,20 +135,4 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
     );
   }
 
-  Widget _label(String t) => Text(t, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary));
-
-  Widget _input(TextEditingController ctrl, String hint, {int maxLines = 1}) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
-        ),
-        child: TextField(
-          controller: ctrl,
-          maxLines: maxLines,
-          decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
-          style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
-        ),
-      );
 }

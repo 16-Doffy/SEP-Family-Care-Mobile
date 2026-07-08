@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/validators.dart';
+import '../../widgets/app_input.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,6 +14,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _showPass = false;
@@ -25,12 +28,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
     final email    = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
-    if (email.isEmpty || password.isEmpty) {
-      _showError('Vui lòng nhập email và mật khẩu');
-      return;
-    }
     setState(() => _loading = true);
     try {
       await context.read<AuthProvider>().signIn(email, password);
@@ -95,55 +95,52 @@ class _LoginScreenState extends State<LoginScreen> {
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Đăng nhập', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                        const SizedBox(height: 20),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Đăng nhập', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                          const SizedBox(height: 20),
 
-                        _label('Email'),
-                        _inputField(
-                          ctrl: _emailCtrl,
-                          hint: 'email@example.com',
-                          icon: '✉',
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-
-                        _label('Mật khẩu'),
-                        _inputField(
-                          ctrl: _passwordCtrl,
-                          hint: '••••••••',
-                          icon: '🔒',
-                          obscure: !_showPass,
-                          suffix: GestureDetector(
-                            onTap: () => setState(() => _showPass = !_showPass),
-                            child: Text(_showPass ? '🙈' : '👁', style: const TextStyle(fontSize: 18)),
+                          AppTextField(
+                            controller: _emailCtrl,
+                            label: 'Email',
+                            hint: 'email@example.com',
+                            prefixIcon: Icons.mail_outline_rounded,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            autofillHints: const [AutofillHints.email],
+                            validator: Validators.email,
                           ),
-                        ),
-
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Text('Quên mật khẩu?', style: GoogleFonts.inter(fontSize: 13, color: AppColors.link, fontWeight: FontWeight.w600)),
-                        ),
-                        const SizedBox(height: 20),
-
-                        SizedBox(
-                          width: double.infinity, height: 54,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.link,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          AppTextField(
+                            controller: _passwordCtrl,
+                            label: 'Mật khẩu',
+                            hint: '••••••••',
+                            prefixIcon: Icons.lock_outline_rounded,
+                            obscure: !_showPass,
+                            autofillHints: const [AutofillHints.password],
+                            validator: (v) => Validators.notEmpty(v, 'mật khẩu'),
+                            suffix: IconButton(
+                              icon: Icon(_showPass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                  size: 20, color: AppColors.textMuted),
+                              onPressed: () => setState(() => _showPass = !_showPass),
                             ),
-                            onPressed: _loading ? null : _submit,
-                            child: _loading
-                                ? const SizedBox.square(
-                                    dimension: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                  )
-                                : Text('Đăng nhập', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                           ),
-                        ),
-                      ],
+
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Text('Quên mật khẩu?', style: GoogleFonts.inter(fontSize: 13, color: AppColors.link, fontWeight: FontWeight.w600)),
+                          ),
+                          const SizedBox(height: 20),
+
+                          PrimaryButton(
+                            label: 'Đăng nhập',
+                            loading: _loading,
+                            onPressed: _submit,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -162,47 +159,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _label(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(text, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-  );
-
-  Widget _inputField({
-    required TextEditingController ctrl,
-    required String hint,
-    required String icon,
-    bool obscure = false,
-    TextInputType? keyboardType,
-    Widget? suffix,
-  }) {
-    return Container(
-      height: 52,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFAFAFA),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
-      ),
-      child: Row(
-        children: [
-          Text(icon, style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: TextField(
-              controller: ctrl,
-              obscureText: obscure,
-              keyboardType: keyboardType,
-              decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
-              style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
-            ),
-          ),
-          if (suffix != null) suffix,
         ],
       ),
     );

@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/validators.dart';
+import '../../widgets/app_input.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -14,10 +16,13 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
   final _famCtrl = TextEditingController();
+  bool _showPass = false;
   bool _loading = false;
 
   @override
@@ -25,41 +30,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
+    _confirmCtrl.dispose();
     _famCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
-    final name = _nameCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
-    final pass = _passCtrl.text;
-    final family = _famCtrl.text.trim();
-
-    if (name.isEmpty || email.isEmpty || pass.isEmpty || family.isEmpty) {
-      _showError('Vui lòng điền đầy đủ thông tin');
-      return;
-    }
-
+    if (!(_formKey.currentState?.validate() ?? false)) return;
     setState(() => _loading = true);
     try {
-      await context.read<AuthProvider>().register(email, pass, name, family);
+      await context.read<AuthProvider>().register(
+            _emailCtrl.text.trim(),
+            _passCtrl.text,
+            _nameCtrl.text.trim(),
+            _famCtrl.text.trim(),
+          );
     } catch (e) {
       if (mounted) {
-        _showError(e.toString().replaceFirst('Exception: ', ''));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: AppColors.danger,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.danger,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   @override
@@ -68,26 +65,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                    onPressed: () => context.pop(),
+              // ── Header gradient chào mừng ──
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.primary400, AppColors.secondary500],
                   ),
-                  Text(
-                    'Tạo tài khoản',
-                    style: GoogleFonts.inter(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => context.pop(),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.arrow_back_ios_new_rounded,
+                                size: 16, color: Colors.white),
+                          ),
+                        ),
+                        const Spacer(),
+                        const Text('👨‍👩‍👧‍👦', style: TextStyle(fontSize: 28)),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    Text('Tạo tài khoản',
+                        style: GoogleFonts.inter(
+                            fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
+                    const SizedBox(height: 4),
+                    Text('Bắt đầu hành trình chăm sóc gia đình bạn 💕',
+                        style: GoogleFonts.inter(
+                            fontSize: 13, color: Colors.white.withValues(alpha: 0.9))),
+                  ],
+                ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+
+              // ── Form ──
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -95,81 +123,110 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 20,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _field(
-                      ctrl: _nameCtrl,
-                      label: 'Họ tên',
-                      hint: 'Nguyen Van A',
-                    ),
-                    _field(
-                      ctrl: _famCtrl,
-                      label: 'Tên gia đình',
-                      hint: 'Gia đình Nguyễn',
-                    ),
-                    _field(
-                      ctrl: _emailCtrl,
-                      label: 'Email',
-                      hint: 'email@example.com',
-                    ),
-                    _field(
-                      ctrl: _passCtrl,
-                      label: 'Mật khẩu',
-                      hint: '********',
-                      obscure: true,
-                    ),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary50,
-                        borderRadius: BorderRadius.circular(14),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppTextField(
+                        controller: _nameCtrl,
+                        label: 'Họ tên',
+                        hint: 'Nguyễn Văn A',
+                        prefixIcon: Icons.person_outline_rounded,
+                        textInputAction: TextInputAction.next,
+                        validator: (v) => Validators.minLength(v, 2, 'Họ tên'),
                       ),
-                      child: Text(
-                        'Tài khoản đăng ký trực tiếp sẽ tạo gia đình mới và là Family Manager. Deputy/member tham gia bằng link mời.',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          height: 1.35,
+                      AppTextField(
+                        controller: _famCtrl,
+                        label: 'Tên gia đình',
+                        hint: 'Gia đình Nguyễn',
+                        prefixIcon: Icons.home_outlined,
+                        textInputAction: TextInputAction.next,
+                        validator: (v) => Validators.minLength(v, 2, 'Tên gia đình'),
+                      ),
+                      AppTextField(
+                        controller: _emailCtrl,
+                        label: 'Email',
+                        hint: 'email@example.com',
+                        prefixIcon: Icons.mail_outline_rounded,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.email],
+                        validator: Validators.email,
+                      ),
+                      AppTextField(
+                        controller: _passCtrl,
+                        label: 'Mật khẩu',
+                        hint: 'Ít nhất 8 ký tự, có hoa, số, ký tự đặc biệt',
+                        prefixIcon: Icons.lock_outline_rounded,
+                        obscure: !_showPass,
+                        textInputAction: TextInputAction.next,
+                        validator: Validators.strongPassword,
+                        suffix: IconButton(
+                          icon: Icon(
+                              _showPass
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                              size: 20,
+                              color: AppColors.textMuted),
+                          onPressed: () => setState(() => _showPass = !_showPass),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.link,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                      AppTextField(
+                        controller: _confirmCtrl,
+                        label: 'Nhập lại mật khẩu',
+                        hint: '••••••••',
+                        prefixIcon: Icons.lock_reset_rounded,
+                        obscure: !_showPass,
+                        validator: (v) =>
+                            v == _passCtrl.text ? null : 'Mật khẩu nhập lại không khớp',
+                      ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary50,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          '💡 Tài khoản đăng ký trực tiếp sẽ tạo gia đình mới và là Family Manager. Deputy/member tham gia bằng link mời.',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            height: 1.35,
                           ),
                         ),
-                        onPressed: _loading ? null : _submit,
-                        child: _loading
-                            ? const SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Text(
-                                'Đăng ký',
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
                       ),
+                      const SizedBox(height: 20),
+                      PrimaryButton(
+                        label: 'Đăng ký',
+                        loading: _loading,
+                        onPressed: _submit,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('Đã có tài khoản?  ',
+                        style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                    GestureDetector(
+                      onTap: () => context.go('/login'),
+                      child: Text('Đăng nhập',
+                          style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: AppColors.link,
+                              fontWeight: FontWeight.w700)),
                     ),
                   ],
                 ),
@@ -178,49 +235,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _field({
-    required TextEditingController ctrl,
-    required String label,
-    required String hint,
-    bool obscure = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ),
-        Container(
-          height: 52,
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
-          ),
-          child: TextField(
-            controller: ctrl,
-            obscureText: obscure,
-            decoration: InputDecoration(
-              hintText: hint,
-              border: InputBorder.none,
-              hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
-            ),
-            style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
-          ),
-        ),
-      ],
     );
   }
 }

@@ -135,6 +135,10 @@ class _TasksTabState extends State<_TasksTab> {
   bool _submitting = false;
   final _titleCtrl = TextEditingController();
   final _rewardCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  String? _selCategoryId;
+  String _selPriority = 'MEDIUM';
+  String _dueDate = '';
   final _recurTitleCtrl = TextEditingController();
   final _recurDescCtrl = TextEditingController();
   String _repeatType = 'WEEKLY';
@@ -153,6 +157,7 @@ class _TasksTabState extends State<_TasksTab> {
   void dispose() {
     _titleCtrl.dispose();
     _rewardCtrl.dispose();
+    _descCtrl.dispose();
     _recurTitleCtrl.dispose();
     _recurDescCtrl.dispose();
     super.dispose();
@@ -582,6 +587,8 @@ class _TasksTabState extends State<_TasksTab> {
   }
 
   Widget _createSheet(BuildContext context) {
+    final categories = context.watch<TaskProvider>().categories
+        .where((c) => c.status == 'ACTIVE').toList();
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('Tạo task mới', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
       const SizedBox(height: 16),
@@ -597,6 +604,64 @@ class _TasksTabState extends State<_TasksTab> {
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),
       ),
+      const SizedBox(height: 12),
+      Text('Mô tả (tùy chọn)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+      const SizedBox(height: 6),
+      _inputBox(_descCtrl, 'VD: Lau bàn ghế, hút bụi sofa...'),
+      const SizedBox(height: 12),
+      if (categories.isNotEmpty) ...[
+        Text('Danh mục', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8, runSpacing: 8,
+          children: categories.map((c) {
+            final sel = _selCategoryId == c.id;
+            return ChoiceChip(
+              selected: sel,
+              label: Text(c.name),
+              onSelected: (_) => setState(() => _selCategoryId = sel ? null : c.id),
+              selectedColor: AppColors.primary500,
+              backgroundColor: AppColors.primary50,
+              labelStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600,
+                  color: sel ? Colors.white : AppColors.primary600),
+              side: BorderSide(color: sel ? AppColors.primary500 : AppColors.progressTrack),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 12),
+      ],
+      Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Ưu tiên', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          const SizedBox(height: 6),
+          Row(children: [
+            for (final p in const [('LOW', 'Thấp'), ('MEDIUM', 'Vừa'), ('HIGH', 'Cao')])
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _selPriority = p.$1),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _selPriority == p.$1 ? AppColors.primary500 : AppColors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _selPriority == p.$1 ? AppColors.primary500 : AppColors.progressTrack),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(p.$2, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700,
+                        color: _selPriority == p.$1 ? Colors.white : AppColors.textSecondary)),
+                  ),
+                ),
+              ),
+          ]),
+        ])),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Hạn chót (tùy chọn)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          const SizedBox(height: 6),
+          _dateBox(_dueDate, (iso) => setState(() => _dueDate = iso)),
+        ])),
+      ]),
       const SizedBox(height: 12),
       Text('Thuong (VND)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
       const SizedBox(height: 6),
@@ -620,7 +685,16 @@ class _TasksTabState extends State<_TasksTab> {
           setState(() => _submitting = true);
           try {
             final provider = context.read<TaskProvider>();
-            final task = await provider.createTask(title: _titleCtrl.text.trim());
+            final task = await provider.createTask(
+              title: _titleCtrl.text.trim(),
+              description: _descCtrl.text.trim(),
+              categoryId: _selCategoryId,
+              priority: _selPriority,
+              // BE nhận ISO datetime — lấy cuối ngày đã chọn
+              dueAt: _dueDate.isNotEmpty
+                  ? DateTime.parse('$_dueDate 23:59:59').toUtc().toIso8601String()
+                  : null,
+            );
             final rewardAmount = parseMoneyInput(_rewardCtrl.text);
             if (task.id.isNotEmpty && rewardAmount > 0) {
               await provider.createRewardSetting(
@@ -634,7 +708,14 @@ class _TasksTabState extends State<_TasksTab> {
             if (mounted) {
               _titleCtrl.clear();
               _rewardCtrl.clear();
-              setState(() { _showCreate = false; _submitting = false; });
+              _descCtrl.clear();
+              setState(() {
+                _showCreate = false;
+                _submitting = false;
+                _selCategoryId = null;
+                _selPriority = 'MEDIUM';
+                _dueDate = '';
+              });
             }
           } catch (e) {
             if (mounted) {
@@ -698,13 +779,14 @@ class _TasksTabState extends State<_TasksTab> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _fieldLabel('Ngày bắt đầu'),
             const SizedBox(height: 6),
-            _inputBox(TextEditingController(text: _startDate)..addListener(() {}), 'YYYY-MM-DD'),
+            _dateBox(_startDate.isNotEmpty ? _startDate : defaultStart,
+                (iso) => setState(() => _startDate = iso)),
           ])),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _fieldLabel('Ngày kết thúc (tùy chọn)'),
             const SizedBox(height: 6),
-            _inputBox(TextEditingController(text: _endDate), 'YYYY-MM-DD'),
+            _dateBox(_endDate, (iso) => setState(() => _endDate = iso)),
           ])),
         ]),
         const SizedBox(height: 20),
@@ -755,6 +837,32 @@ class _TasksTabState extends State<_TasksTab> {
       ],
     ));
   }
+
+  // Ô chọn ngày cho task lặp lại — BE chỉ nhận YYYY-MM-DD nên dùng lịch
+  Widget _dateBox(String iso, ValueChanged<String> onPicked) => GestureDetector(
+        onTap: () async {
+          final now = DateTime.now();
+          final picked = await showDatePicker(
+            context: context,
+            initialDate: DateTime.tryParse(iso) ?? now,
+            firstDate: now,
+            lastDate: DateTime(now.year + 5),
+          );
+          if (picked != null) {
+            onPicked('${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}');
+          }
+        },
+        child: Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5), borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            Expanded(child: Text(iso.isEmpty ? 'Chọn ngày' : iso,
+                style: GoogleFonts.inter(fontSize: 14, color: iso.isEmpty ? AppColors.textMuted : AppColors.textPrimary))),
+            const Icon(Icons.calendar_month_rounded, size: 18, color: AppColors.textMuted),
+          ]),
+        ),
+      );
 
   Widget _errorView(String msg, VoidCallback onRetry) => Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [

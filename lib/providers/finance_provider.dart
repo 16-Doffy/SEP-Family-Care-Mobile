@@ -608,11 +608,11 @@ class FinanceProvider extends ChangeNotifier {
     return {};
   }
 
-  /// Các khoản thu trong sổ quỹ — dùng để chọn giao dịch phân bổ vào mục tiêu
+  /// Các khoản thu trong sổ quỹ — dùng để chọn giao dịch phân bổ vào mục tiêu.
+  /// Endpoint chỉ chấp nhận query month/year (không có limit/phân trang).
   Future<List<Map<String, dynamic>>> fetchIncomeEntries() async {
     final data = await ApiClient.instance.get(
       '/families/$_familyId/finance/ledger/entries',
-      params: {'limit': '50'},
     );
     final list = _parseList(data, (e) => e).cast<Map<String, dynamic>>();
     return list.where((e) {
