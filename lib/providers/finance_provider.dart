@@ -128,22 +128,30 @@ class FinancialGoal {
   final String id;
   final String goalName;
   final double targetAmount;
+  final double currentAmount;
   final String? deadline;
   final String status;
   final double? progressPercent;
 
   const FinancialGoal({required this.id, required this.goalName,
-      required this.targetAmount, this.deadline, required this.status,
-      this.progressPercent});
+      required this.targetAmount, this.currentAmount = 0, this.deadline,
+      required this.status, this.progressPercent});
 
-  factory FinancialGoal.fromJson(Map<String, dynamic> j) => FinancialGoal(
-        id: j['id']?.toString() ?? j['goalId']?.toString() ?? '',
-        goalName: j['goalName']?.toString() ?? j['name']?.toString() ?? '',
-        targetAmount: _money(j['targetAmount'] ?? j['target']),
-        deadline: j['deadline']?.toString(),
-        status: j['status']?.toString() ?? 'ACTIVE',
-        progressPercent: _moneyNull(j['progressPercent'] ?? j['percent'] ?? j['progress']),
-      );
+  // Với includeProgress=true BE bọc item thành {goal: {...}, progress: {...}}
+  factory FinancialGoal.fromJson(Map<String, dynamic> j) {
+    final goal = j['goal'] is Map ? Map<String, dynamic>.from(j['goal'] as Map) : j;
+    final progress = j['progress'] is Map ? Map<String, dynamic>.from(j['progress'] as Map) : null;
+    return FinancialGoal(
+      id: goal['id']?.toString() ?? goal['goalId']?.toString() ?? '',
+      goalName: goal['goalName']?.toString() ?? goal['name']?.toString() ?? '',
+      targetAmount: _money(goal['targetAmount'] ?? goal['target']),
+      currentAmount: _money(progress?['currentAmount'] ?? goal['currentAmount']),
+      deadline: goal['deadline']?.toString(),
+      status: goal['status']?.toString() ?? 'ACTIVE',
+      progressPercent: _moneyNull(progress?['progressPercent'] ??
+          goal['progressPercent'] ?? j['progressPercent'] ?? j['percent']),
+    );
+  }
 }
 
 class BudgetAlert {
@@ -591,7 +599,26 @@ class FinanceProvider extends ChangeNotifier {
     final data = await ApiClient.instance.get(
       '/families/$_familyId/finance/financial-goals/$goalId/progress',
     );
-    return data is Map<String, dynamic> ? data : {};
+    if (data is Map<String, dynamic>) {
+      // BE trả {goal: {...}, progress: {currentAmount, progressPercent...}}
+      final progress = data['progress'];
+      if (progress is Map) return Map<String, dynamic>.from(progress);
+      return data;
+    }
+    return {};
+  }
+
+  /// Các khoản thu trong sổ quỹ — dùng để chọn giao dịch phân bổ vào mục tiêu
+  Future<List<Map<String, dynamic>>> fetchIncomeEntries() async {
+    final data = await ApiClient.instance.get(
+      '/families/$_familyId/finance/ledger/entries',
+      params: {'limit': '50'},
+    );
+    final list = _parseList(data, (e) => e).cast<Map<String, dynamic>>();
+    return list.where((e) {
+      final t = e['entryType']?.toString() ?? '';
+      return t == 'INCOME' || t == 'CONTRIBUTION';
+    }).toList();
   }
 
   Future<void> createGoalAllocation(String goalId, {

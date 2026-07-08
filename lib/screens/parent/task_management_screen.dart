@@ -8,6 +8,7 @@ import '../../providers/finance_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/money_input.dart';
 
 class TaskManagementScreen extends StatefulWidget {
   const TaskManagementScreen({super.key});
@@ -606,7 +607,8 @@ class _TasksTabState extends State<_TasksTab> {
         child: TextField(
           controller: _rewardCtrl,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(hintText: 'VD: 50000', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
+          inputFormatters: const [ThousandsSeparatorInputFormatter()],
+          decoration: InputDecoration(hintText: 'VD: 50.000', suffixText: '₫', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),
       ),
@@ -619,7 +621,7 @@ class _TasksTabState extends State<_TasksTab> {
           try {
             final provider = context.read<TaskProvider>();
             final task = await provider.createTask(title: _titleCtrl.text.trim());
-            final rewardAmount = double.tryParse(_rewardCtrl.text.trim()) ?? 0;
+            final rewardAmount = parseMoneyInput(_rewardCtrl.text);
             if (task.id.isNotEmpty && rewardAmount > 0) {
               await provider.createRewardSetting(
                 task.id,
@@ -1456,7 +1458,7 @@ class _RewardsTabState extends State<_RewardsTab> {
     var targetType = 'JAR';
     String? selectedJarId;
     String? selectedGoalId;
-    amountCtrl.text = s.amount.round().toString();
+    amountCtrl.text = ThousandsSeparatorInputFormatter.formatThousands(s.amount.round().toString());
     context.read<FinanceProvider>().fetchAll();
     showModalBottomSheet(
       context: context,
@@ -1525,7 +1527,7 @@ class _RewardsTabState extends State<_RewardsTab> {
                 ),
               ),
               const SizedBox(height: 8),
-              _inputBox(amountCtrl, '50000'),
+              _inputBox(amountCtrl, '50.000', money: true),
               const SizedBox(height: 12),
               Row(children: [
                 targetButton('JAR', 'Hũ chi tiêu'),
@@ -1582,7 +1584,7 @@ class _RewardsTabState extends State<_RewardsTab> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                 onPressed: () async {
-                  final amount = double.tryParse(amountCtrl.text.trim()) ?? 0;
+                  final amount = parseMoneyInput(amountCtrl.text);
                   if (amount <= 0) return;
                   final alloc = <String, dynamic>{'amount': amount};
                   if (targetType == 'JAR') {
@@ -1796,13 +1798,15 @@ Widget _emptyState(String msg, String emoji) => Center(
 Widget _fieldLabel(String label) =>
     Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary));
 
-Widget _inputBox(TextEditingController ctrl, String hint, {int maxLines = 1}) => Container(
+Widget _inputBox(TextEditingController ctrl, String hint, {int maxLines = 1, bool money = false}) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5), borderRadius: BorderRadius.circular(14)),
       child: TextField(
         controller: ctrl,
         maxLines: maxLines,
-        decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
+        keyboardType: money ? TextInputType.number : null,
+        inputFormatters: money ? const [ThousandsSeparatorInputFormatter()] : null,
+        decoration: InputDecoration(hintText: hint, suffixText: money ? '₫' : null, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
         style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
       ),
     );

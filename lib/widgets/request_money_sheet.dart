@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/money_provider.dart';
+import 'money_input.dart';
 import '../theme/app_colors.dart';
 
 class RequestMoneySheet extends StatefulWidget {
@@ -33,7 +34,7 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
   static const _minAmount = 1000;
   static const _maxAmount = 10000000;
 
-  int get _amount => int.tryParse(_amountCtrl.text) ?? 0;
+  int get _amount => parseMoneyInput(_amountCtrl.text).round();
   bool get _isValid => _amount >= _minAmount && _amount <= _maxAmount;
 
   @override
@@ -147,7 +148,8 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
                   selected: active,
                   label: Text(_fmt(preset)),
                   onSelected: (_) {
-                    setState(() => _amountCtrl.text = preset.toString());
+                    setState(() => _amountCtrl.text =
+                        ThousandsSeparatorInputFormatter.formatThousands(preset.toString()));
                   },
                   selectedColor: AppColors.primary500,
                   labelStyle: GoogleFonts.inter(
@@ -165,7 +167,7 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
             TextField(
               controller: _amountCtrl,
               keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              inputFormatters: const [ThousandsSeparatorInputFormatter()],
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 labelText: 'Số tiền',

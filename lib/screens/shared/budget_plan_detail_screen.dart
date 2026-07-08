@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/money_input.dart';
 
 double _numValue(dynamic value) {
   if (value is num) return value.toDouble();
@@ -261,7 +262,8 @@ class _LineFormState extends State<_LineForm> {
     if (widget.existing != null) {
       _categoryId = widget.existing!['categoryId']?.toString();
       _jarId = widget.existing!['jarId']?.toString();
-      _amountCtrl.text = _numValue(widget.existing!['plannedAmount']).round().toString();
+      _amountCtrl.text = ThousandsSeparatorInputFormatter.formatThousands(
+          _numValue(widget.existing!['plannedAmount']).round().toString());
       _noteCtrl.text = widget.existing!['note']?.toString() ?? '';
       _essentialType = widget.existing!['essentialType']?.toString();
     }
@@ -275,8 +277,8 @@ class _LineFormState extends State<_LineForm> {
   }
 
   Future<void> _submit() async {
-    final amount = double.tryParse(_amountCtrl.text);
-    if (amount == null || amount <= 0) return;
+    final amount = parseMoneyInput(_amountCtrl.text);
+    if (amount <= 0) return;
     setState(() => _saving = true);
     try {
       final provider = context.read<FinanceProvider>();
@@ -359,8 +361,8 @@ class _LineFormState extends State<_LineForm> {
           child: TextField(
             controller: _amountCtrl,
             keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(hintText: '0 ₫', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
+            inputFormatters: const [ThousandsSeparatorInputFormatter()],
+            decoration: InputDecoration(hintText: '0 ₫', suffixText: '₫', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           ),
         ),
         const SizedBox(height: 12),

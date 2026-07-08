@@ -6,6 +6,7 @@ import '../../providers/money_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/money_input.dart';
 import '../../widgets/ring_chart.dart';
 import '../../widgets/waffle_chart.dart';
 
@@ -343,15 +344,15 @@ class _WalletScreenState extends State<WalletScreen> {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Ghi thu nhập vào quỹ', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
           const SizedBox(height: 16),
-          TextField(controller: ctrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'Số tiền (VD: 1000000)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
+          TextField(controller: ctrl, keyboardType: TextInputType.number, inputFormatters: const [ThousandsSeparatorInputFormatter()], decoration: InputDecoration(hintText: 'Số tiền (VD: 1.000.000)', suffixText: '₫', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity, height: 52,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
               onPressed: () async {
-                final amount = double.tryParse(ctrl.text);
-                if (amount == null || amount <= 0) return;
+                final amount = parseMoneyInput(ctrl.text);
+                if (amount <= 0) return;
                 try {
                   await context.read<WalletProvider>().deposit(amount);
                   if (ctx.mounted) Navigator.pop(ctx);
@@ -379,7 +380,7 @@ class _WalletScreenState extends State<WalletScreen> {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Ghi chi tiêu', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
           const SizedBox(height: 16),
-          TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(hintText: 'Số tiền (VD: 500000)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
+          TextField(controller: amountCtrl, keyboardType: TextInputType.number, inputFormatters: const [ThousandsSeparatorInputFormatter()], decoration: InputDecoration(hintText: 'Số tiền (VD: 500.000)', suffixText: '₫', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
           const SizedBox(height: 12),
           TextField(controller: descCtrl, decoration: InputDecoration(hintText: 'Mô tả (VD: Tiền điện tháng 6)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)))),
           const SizedBox(height: 16),
@@ -388,9 +389,9 @@ class _WalletScreenState extends State<WalletScreen> {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
               onPressed: () async {
-                final amount = double.tryParse(amountCtrl.text);
+                final amount = parseMoneyInput(amountCtrl.text);
                 final desc   = descCtrl.text.trim();
-                if (amount == null || amount <= 0 || desc.isEmpty) return;
+                if (amount <= 0 || desc.isEmpty) return;
                 try {
                   await context.read<WalletProvider>().addExpense(amount, description: desc);
                   if (ctx.mounted) Navigator.pop(ctx);

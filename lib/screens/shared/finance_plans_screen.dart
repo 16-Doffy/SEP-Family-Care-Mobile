@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/money_input.dart';
 import '../../widgets/ring_chart.dart';
 import 'budget_plan_detail_screen.dart';
 
@@ -418,8 +419,8 @@ class _BudgetPlansTabState extends State<_BudgetPlansTab> {
                 periodType: _periodType,
                 periodStart: _startCtrl.text.trim(),
                 periodEnd: _endCtrl.text.trim(),
-                expectedSharedIncome: double.tryParse(_incomeCtrl.text),
-                expectedSharedExpense: double.tryParse(_expenseCtrl.text),
+                expectedSharedIncome: _incomeCtrl.text.isEmpty ? null : parseMoneyInput(_incomeCtrl.text),
+                expectedSharedExpense: _expenseCtrl.text.isEmpty ? null : parseMoneyInput(_expenseCtrl.text),
               );
               context.read<FinanceProvider>().fetchAll();
               if (mounted) setState(() => _showCreate = false);
@@ -453,8 +454,8 @@ class _BudgetPlansTabState extends State<_BudgetPlansTab> {
         child: TextField(
           controller: c,
           keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: InputDecoration(hintText: '0', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
+          inputFormatters: const [ThousandsSeparatorInputFormatter()],
+          decoration: InputDecoration(hintText: '0 ₫', suffixText: '₫', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
         ),
       );
 }
@@ -543,7 +544,7 @@ class _GoalsTabState extends State<_GoalsTab> {
                           ),
                       ]),
                       const SizedBox(height: 4),
-                      Text(_fmt(g.targetAmount), style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                      Text('${_fmt(g.currentAmount)} / ${_fmt(g.targetAmount)}', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                       if (g.deadline != null)
                         Text('Hạn: ${g.deadline!.length >= 10 ? g.deadline!.substring(0, 10) : g.deadline}',
                             style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
@@ -618,7 +619,8 @@ class _GoalsTabState extends State<_GoalsTab> {
           Text('Mục tiêu: ${_fmt(goal.targetAmount)}', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
           const SizedBox(height: 16),
           Text(
-            'Tiến độ hiện tại: ${(progress?['progressPercent'] ?? progress?['percent'] ?? goal.progressPercent ?? 0).toString()}%',
+            'Đã góp: ${_fmt(_numValue(progress?['currentAmount'] ?? goal.currentAmount))}'
+            ' · Tiến độ: ${_numValue(progress?['progressPercent'] ?? goal.progressPercent ?? 0).toStringAsFixed(1)}%',
             style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.link),
           ),
           if (warning != null) ...[
@@ -642,9 +644,128 @@ class _GoalsTabState extends State<_GoalsTab> {
                 ]),
               );
             }),
+          if (goal.status == 'ACTIVE') ...[
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.link,
+                minimumSize: const Size.fromHeight(48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                _showAllocateSheet(context, goal);
+              },
+              icon: const Icon(Icons.savings_outlined, color: Colors.white, size: 18),
+              label: Text('Đóng góp vào mục tiêu',
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ],
         ]),
       ),
     );
+  }
+
+  /// Đóng góp = phân bổ một khoản THU trong sổ quỹ vào mục tiêu
+  /// (POST /financial-goals/{id}/allocations cần ledgerEntryId + amount)
+  Future<void> _showAllocateSheet(BuildContext context, FinancialGoal goal) async {
+    final finance = context.read<FinanceProvider>();
+    List<Map<String, dynamic>> entries = [];
+    try {
+      entries = await finance.fetchIncomeEntries();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    if (entries.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Chưa có khoản thu nào trong quỹ. Hãy Ghi thu ở màn hình Sổ quỹ trước, rồi quay lại phân bổ vào mục tiêu.')));
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetCtx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Chọn khoản thu để đóng góp', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          const SizedBox(height: 4),
+          Text('Vào "${goal.goalName}"', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
+          const SizedBox(height: 12),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: entries.length,
+              itemBuilder: (_, i) {
+                final e = entries[i];
+                final amount = _numValue(e['amount']);
+                final date = (e['entryDate'] ?? e['createdAt'])?.toString() ?? '';
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(e['description']?.toString() ?? 'Khoản thu',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                  subtitle: Text(date.length >= 10 ? date.substring(0, 10) : date,
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                  trailing: Text(_fmt(amount),
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.success)),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    _askAllocationAmount(goal, e['id']?.toString() ?? '', amount);
+                  },
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _askAllocationAmount(FinancialGoal goal, String entryId, double maxAmount) async {
+    final amountCtrl = TextEditingController(
+        text: ThousandsSeparatorInputFormatter.formatThousands(maxAmount.toStringAsFixed(0)));
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: AppColors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Số tiền đóng góp', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: amountCtrl,
+          keyboardType: TextInputType.number,
+          inputFormatters: const [ThousandsSeparatorInputFormatter()],
+          decoration: const InputDecoration(suffixText: '₫'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.pop(dCtx, true), child: const Text('Đóng góp')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final amount = parseMoneyInput(amountCtrl.text);
+    if (amount <= 0 || entryId.isEmpty) return;
+    try {
+      await context.read<FinanceProvider>().createGoalAllocation(
+            goal.id, ledgerEntryId: entryId, amount: amount);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Đã đóng góp ${_fmt(amount)} vào "${goal.goalName}"'),
+          backgroundColor: AppColors.success));
+      context.read<FinanceProvider>().fetchAll();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+      }
+    }
   }
 
   Widget _sheet(BuildContext context) {
@@ -664,13 +785,29 @@ class _GoalsTabState extends State<_GoalsTab> {
           child: TextField(
             controller: _targetCtrl,
             keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(hintText: '0 ₫', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
+            inputFormatters: const [ThousandsSeparatorInputFormatter()],
+            decoration: InputDecoration(hintText: '0 ₫', suffixText: '₫', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           ),
         ),
         const SizedBox(height: 12),
         _lbl('Hạn chót (tùy chọn)'),
-        _inp(_deadlineCtrl, 'YYYY-MM-DD'),
+        // BE chỉ chấp nhận YYYY-MM-DD → dùng date picker thay vì cho gõ tay
+        GestureDetector(
+          onTap: () async {
+            final now = DateTime.now();
+            final picked = await showDatePicker(
+              context: ctx,
+              initialDate: now.add(const Duration(days: 30)),
+              firstDate: now,
+              lastDate: DateTime(now.year + 20),
+            );
+            if (picked != null) {
+              setS(() => _deadlineCtrl.text =
+                  '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}');
+            }
+          },
+          child: AbsorbPointer(child: _inp(_deadlineCtrl, 'Chạm để chọn ngày')),
+        ),
         const SizedBox(height: 20),
         ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
@@ -680,7 +817,7 @@ class _GoalsTabState extends State<_GoalsTab> {
             try {
               await context.read<FinanceProvider>().createGoal(
                 goalName: _nameCtrl.text.trim(),
-                targetAmount: double.parse(_targetCtrl.text),
+                targetAmount: parseMoneyInput(_targetCtrl.text),
                 deadline: _deadlineCtrl.text.trim().isEmpty ? null : _deadlineCtrl.text.trim(),
               );
               context.read<FinanceProvider>().fetchAll();

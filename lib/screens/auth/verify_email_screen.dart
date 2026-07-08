@@ -95,6 +95,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     _goNext();
   }
 
+  /// Lỡ đăng ký nhầm email (không nhận được OTP) → đăng xuất và quay về đăng ký
+  Future<void> _backToRegister() async {
+    await context.read<AuthProvider>().logout();
+    if (mounted) context.go('/register');
+  }
+
   void _showSnack(String message, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -246,6 +252,17 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _backToRegister,
+                child: Text(
+                  'Sai email? Đăng ký lại',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMuted,
                   ),
                 ),
               ),

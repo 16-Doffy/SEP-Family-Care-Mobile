@@ -25,6 +25,13 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
     super.dispose();
   }
 
+  /// Đăng xuất thật (xóa token) rồi mới điều hướng — nếu chỉ go('/login')
+  /// thì router redirect sẽ đá ngược về màn hình này vì vẫn còn đăng nhập
+  Future<void> _logoutTo(String location) async {
+    await context.read<AuthProvider>().logout();
+    if (mounted) context.go(location);
+  }
+
   Future<void> _submit() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
@@ -40,6 +47,12 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
       // Người tạo gia đình LUÔN là FAMILY_MANAGER — set và persist role
       final auth = context.read<AuthProvider>();
       await auth.setFamilyRole(UserRole.manager);
+      // Cập nhật familyId vào AuthProvider — Wallet/Task/Finance/SOS provider
+      // đều nhận familyId từ đây (ProxyProvider trong main.dart), thiếu bước
+      // này sẽ lỗi "Chưa có gia đình" cho tới khi restart app
+      if (familyId.isNotEmpty) {
+        await auth.setActiveFamily(familyId, familyName: name, syncRole: false);
+      }
       if (mounted) {
         context.go('/manager/home');
       }
@@ -93,9 +106,19 @@ class _CreateFamilyScreenState extends State<CreateFamilyScreen> {
               ),
               const SizedBox(height: 12),
               Center(
-                child: TextButton(
-                  onPressed: () => context.go('/login'),
-                  child: Text('Đăng xuất', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: () => _logoutTo('/login'),
+                      child: Text('Đăng xuất', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                    ),
+                    Text('·', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                    TextButton(
+                      onPressed: () => _logoutTo('/register'),
+                      child: Text('Đăng ký tài khoản khác', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                    ),
+                  ],
                 ),
               ),
             ],

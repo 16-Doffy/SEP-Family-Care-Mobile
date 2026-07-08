@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
+import '../../widgets/money_input.dart';
 import '../../theme/app_colors.dart';
 
 /// UC22 Khai báo thu nhập cá nhân
@@ -38,10 +39,11 @@ class _MonthlyFinanceScreenState extends State<MonthlyFinanceScreen> {
     super.initState();
     final mf = context.read<FinanceProvider>().monthlyFinance;
     if (mf != null) {
-      if (mf.expectedIncome != null)          _expectedIncomeCtrl.text  = mf.expectedIncome!.round().toString();
-      if (mf.actualIncome != null)            _actualIncomeCtrl.text    = mf.actualIncome!.round().toString();
-      if (mf.expectedPersonalExpense != null) _expectedExpenseCtrl.text = mf.expectedPersonalExpense!.round().toString();
-      if (mf.actualPersonalExpense != null)   _actualExpenseCtrl.text   = mf.actualPersonalExpense!.round().toString();
+      String fmtM(double v) => ThousandsSeparatorInputFormatter.formatThousands(v.round().toString());
+      if (mf.expectedIncome != null)          _expectedIncomeCtrl.text  = fmtM(mf.expectedIncome!);
+      if (mf.actualIncome != null)            _actualIncomeCtrl.text    = fmtM(mf.actualIncome!);
+      if (mf.expectedPersonalExpense != null) _expectedExpenseCtrl.text = fmtM(mf.expectedPersonalExpense!);
+      if (mf.actualPersonalExpense != null)   _actualExpenseCtrl.text   = fmtM(mf.actualPersonalExpense!);
     }
   }
 
@@ -57,7 +59,7 @@ class _MonthlyFinanceScreenState extends State<MonthlyFinanceScreen> {
   double? _parse(String text) {
     final s = text.trim();
     if (s.isEmpty) return null;
-    return double.tryParse(s.replaceAll(',', ''));
+    return parseMoneyInput(s);
   }
 
   Future<void> _save() async {
@@ -227,7 +229,7 @@ class _MonthlyFinanceScreenState extends State<MonthlyFinanceScreen> {
       child: TextFormField(
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: false),
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        inputFormatters: const [ThousandsSeparatorInputFormatter()],
         style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
         decoration: InputDecoration(
           labelText: label,
@@ -241,8 +243,8 @@ class _MonthlyFinanceScreenState extends State<MonthlyFinanceScreen> {
         ),
         validator: (v) {
           if (v != null && v.isNotEmpty) {
-            final n = double.tryParse(v.replaceAll(',', ''));
-            if (n == null || n < 0) return 'Vui lòng nhập số hợp lệ';
+            final n = parseMoneyInput(v);
+            if (n < 0) return 'Vui lòng nhập số hợp lệ';
           }
           return null;
         },
