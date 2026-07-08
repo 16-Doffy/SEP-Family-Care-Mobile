@@ -98,7 +98,9 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
 
   Widget _goalCard(BuildContext context, FinancialGoal goal) {
     final pct = ((goal.progressPercent ?? 0) / 100).clamp(0.0, 1.0);
-    return Container(
+    return GestureDetector(
+      onTap: () => context.push('/manager/goal-detail?goalId=${goal.id}'),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [
@@ -154,8 +156,20 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
               ),
             ),
           ]),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 34,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(padding: EdgeInsets.zero, side: const BorderSide(color: Color(0xFFE5E7EB))),
+              onPressed: () => context.push('/manager/goal-contribution?goalId=${goal.id}'),
+              icon: const Icon(Icons.checklist_rtl_rounded, size: 15, color: AppColors.link),
+              label: Text('Kế hoạch đóng góp theo tháng', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.link)),
+            ),
+          ),
         ],
       ]),
+      ),
     );
   }
 

@@ -127,6 +127,15 @@ class FamilyProvider extends ChangeNotifier {
     throw Exception('Tính năng thay đổi quyền đang được cập nhật từ phía server.');
   }
 
+  // PATCH /families/{familyId} — đổi tên gia đình (Manager only).
+  Future<void> updateFamilyName(String name) async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) throw Exception('Chưa có familyId');
+    await ApiClient.instance.patch('/families/$familyId', {'name': name.trim()});
+    _familyName = name.trim();
+    notifyListeners();
+  }
+
   Future<void> grantDeputy(String memberId)  => updateRole(memberId, 'DEPUTY');
   Future<void> revokeDeputy(String memberId) => updateRole(memberId, 'MEMBER');
 }

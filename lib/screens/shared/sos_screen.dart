@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/json_report_view.dart';
 
 class SOSScreen extends StatefulWidget {
   const SOSScreen({super.key});
@@ -24,6 +25,7 @@ class _SOSScreenState extends State<SOSScreen>
   Timer? _countTimer;
   double? _localLat, _localLng; // GPS lưu local khi API chưa có
   String? _sentAlertId; // id alert vừa tạo, để Đóng/confirm-safety đúng alert
+  Timer? _locationStreamTimer; // gửi vị trí định kỳ trong lúc alert đang active
   late AnimationController _pulseCtrl;
   late Animation<double>   _ring1, _ring2, _ring3;
 
@@ -51,7 +53,27 @@ class _SOSScreenState extends State<SOSScreen>
   void dispose() {
     _pulseCtrl.dispose();
     _countTimer?.cancel();
+    _locationStreamTimer?.cancel();
     super.dispose();
+  }
+
+  // Gửi vị trí mỗi 20s cho tới khi alert được đóng (confirm-safety) hoặc màn
+  // hình bị huỷ — POST .../sos/alerts/{alertId}/locations (xem SosProvider).
+  void _startLocationStreaming(String alertId) {
+    _locationStreamTimer?.cancel();
+    _locationStreamTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+      final pos = await _getLocation();
+      if (pos == null || !mounted) return;
+      await context.read<SosProvider>().pushLocation(
+            alertId, pos.latitude, pos.longitude,
+            accuracy: pos.accuracy,
+          );
+    });
+  }
+
+  void _stopLocationStreaming() {
+    _locationStreamTimer?.cancel();
+    _locationStreamTimer = null;
   }
 
   // ── Hold-to-send countdown ───────────────────────────────────────────────
@@ -122,6 +144,7 @@ class _SOSScreenState extends State<SOSScreen>
       // Chỉ chuyển sang "đã gửi" khi API xác nhận thành công
       if (mounted) {
         setState(() { _sent = true; _sending = false; _apiOk = true; _sentAlertId = alertId; });
+        _startLocationStreaming(alertId);
       }
     } catch (e) {
       // API thất bại → KHÔNG báo thành công, show lỗi để user biết
@@ -225,6 +248,7 @@ class _SOSScreenState extends State<SOSScreen>
     }
     try {
       await sosState.confirmSafety(id);
+      _stopLocationStreaming();
       if (mounted) setState(() => _sent = false);
     } catch (e) {
       debugPrint('SOSScreen: confirmSafety failed: $e');
@@ -462,6 +486,12 @@ class _SOSScreenState extends State<SOSScreen>
                     fontWeight: FontWeight.w700,
                     color: Colors.white)),
           ),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () => _showAlertDetail(context, alert.id),
+            child: const Icon(Icons.info_outline_rounded,
+                size: 18, color: Colors.white54),
+          ),
         ]),
         const SizedBox(height: 12),
 
@@ -604,6 +634,16 @@ class _SOSScreenState extends State<SOSScreen>
     } else {
       await launchUrl(webUri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  void _showAlertDetail(BuildContext context, String alertId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => _SosAlertDetailSheet(alertId: alertId),
+    );
   }
 
   // ── Loading / Sent screens ───────────────────────────────────────────────
@@ -792,4 +832,51 @@ class _SOSScreenState extends State<SOSScreen>
             shape: BoxShape.circle,
             border: Border.all(color: color, width: 1)),
       );
+}
+
+// GET /families/{familyId}/sos/alerts/{alertId} — chi tiết đầy đủ (phản hồi
+// + vị trí lịch sử) — list chỉ trả tóm tắt.
+class _SosAlertDetailSheet extends StatefulWidget {
+  final String alertId;
+  const _SosAlertDetailSheet({required this.alertId});
+  @override
+  State<_SosAlertDetailSheet> createState() => _SosAlertDetailSheetState();
+}
+
+class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _detail;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final d = await context.read<SosProvider>().fetchAlertDetail(widget.alertId);
+      if (mounted) setState(() { _detail = d; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('🔍 Chi tiết cảnh báo SOS', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+        else if (_error != null)
+          Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))
+        else
+          JsonReportView(data: _detail ?? {}),
+      ]),
+    );
+  }
 }

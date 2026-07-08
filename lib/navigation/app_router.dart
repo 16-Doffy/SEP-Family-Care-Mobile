@@ -34,6 +34,7 @@ import '../screens/parent/member_list_screen.dart';
 import '../screens/parent/finance_model_screen.dart';
 import '../screens/auth/join_family_screen.dart';
 import '../screens/auth/family_setup_screen.dart';
+import '../screens/auth/verify_email_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
 import '../screens/shared/splash_screen.dart';
 import '../screens/parent/finance_alerts_screen.dart';
@@ -41,7 +42,12 @@ import '../screens/parent/support_request_screen.dart';
 import '../screens/parent/invitation_requests_screen.dart';
 import '../screens/shared/family_map_screen.dart';
 import '../screens/parent/budget_plan_screen.dart';
+import '../screens/parent/budget_plan_detail_screen.dart';
 import '../screens/parent/financial_goal_screen.dart';
+import '../screens/parent/finance_reports_screen.dart';
+import '../screens/parent/goal_contribution_screen.dart';
+import '../screens/parent/goal_detail_screen.dart';
+import '../screens/parent/reward_management_screen.dart';
 
 // Shell
 import 'family_shell.dart';
@@ -103,6 +109,10 @@ String? computeRedirect({
   // Token lời mời /join đang chờ (lưu khi user mở link lúc chưa đăng nhập) —
   // null nếu không có gì đang chờ.
   String? pendingInviteToken,
+  // true ngay sau register() hoặc khi POST /families trả 403 "chưa verify".
+  // Chỉ chặn đường vào /family-setup — KHÔNG chặn /join (claim invitation
+  // không yêu cầu verify, xem AuthProvider.createFamily).
+  bool pendingEmailVerification = false,
 }) {
   // Đang khôi phục session đã lưu (đọc token + gọi /auth/me) — giữ ở
   // splash để tránh nháy về /login rồi lại vào home.
@@ -110,8 +120,9 @@ String? computeRedirect({
     return loc == '/splash' ? null : '/splash';
   }
 
-  final onAuth  = loc == '/login' || loc == '/register' || loc == '/splash';
-  final onSetup = loc == '/family-setup';
+  final onAuth   = loc == '/login' || loc == '/register' || loc == '/splash';
+  final onSetup  = loc == '/family-setup';
+  final onVerify = loc == '/verify-email';
   // JoinFamilyScreen tự xử lý lookup public, còn claim sẽ yêu cầu đăng nhập.
   // endpoint) — không chặn về /login như các route khác.
   final onJoin  = loc == '/join';
@@ -136,8 +147,17 @@ String? computeRedirect({
 
   // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
   if (onAuth) {
+    if (pendingEmailVerification) return '/verify-email';
     if (!hasFamily) return '/family-setup';
     return homePath;
+  }
+
+  // Chưa verify email và chưa có gia đình → bắt về /verify-email trước khi
+  // được vào /family-setup (POST /families sẽ 403 nếu chưa verify). Một khi
+  // đã có gia đình (vd. join qua /invitations/{token}/claim — không yêu cầu
+  // verify) thì không chặn nữa, để không giam người dùng hợp lệ.
+  if (pendingEmailVerification && !hasFamily) {
+    return onVerify ? null : '/verify-email';
   }
 
   // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
@@ -190,12 +210,13 @@ GoRouter createRouter(AuthProvider auth) {
         }
       }
       final result = computeRedirect(
-        restoring:           auth.restoring,
-        loggedIn:            auth.isLoggedIn,
-        hasFamily:            auth.hasFamily,
-        role:                auth.isLoggedIn ? auth.user!.role : null,
-        loc:                 loc,
-        pendingInviteToken:  auth.pendingInviteToken,
+        restoring:                 auth.restoring,
+        loggedIn:                  auth.isLoggedIn,
+        hasFamily:                 auth.hasFamily,
+        role:                      auth.isLoggedIn ? auth.user!.role : null,
+        loc:                       loc,
+        pendingInviteToken:        auth.pendingInviteToken,
+        pendingEmailVerification:  auth.pendingEmailVerification,
       );
       // Token đã được dùng để quay lại /join — xoá để không lặp lại lần sau.
       if (result != null && result.startsWith('/join') && auth.pendingInviteToken != null) {
@@ -208,6 +229,7 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/splash',       builder: (_, _) => const SplashScreen()),
       GoRoute(path: '/login',        builder: (_, _) => const LoginScreen()),
       GoRoute(path: '/register',     builder: (_, _) => const RegisterScreen()),
+      GoRoute(path: '/verify-email', builder: (_, _) => const VerifyEmailScreen()),
       GoRoute(path: '/family-setup', builder: (_, _) => const FamilySetupScreen()),
 
       // ── Shared overlays (full-screen) ──────────────────────
@@ -296,6 +318,7 @@ GoRouter createRouter(AuthProvider auth) {
       // ── Manager Specific Routes ───────────────────────────
       GoRoute(path: '/manager/wallet',        builder: (_, _) => const WalletScreen()),
       GoRoute(path: '/manager/tasks',         builder: (_, _) => const TaskManagementScreen()),
+      GoRoute(path: '/manager/reward-management', builder: (_, _) => const RewardManagementScreen()),
       GoRoute(path: '/manager/subscription',  builder: (_, _) => const SubscriptionScreen()),
       GoRoute(path: '/manager/invite',        builder: (_, _) => const InviteMemberScreen()),
       GoRoute(path: '/manager/invite-requests', builder: (_, _) => const InvitationRequestsScreen()),
@@ -306,7 +329,20 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/finance/support-requests', builder: (_, _) => const SupportRequestScreen()),
       GoRoute(path: '/map', builder: (_, _) => const FamilyMapScreen()),
       GoRoute(path: '/manager/budget-plans', builder: (_, _) => const BudgetPlanScreen()),
+      GoRoute(
+        path: '/manager/budget-plans/detail',
+        builder: (_, state) => BudgetPlanDetailScreen(planId: state.uri.queryParameters['planId'] ?? ''),
+      ),
       GoRoute(path: '/manager/financial-goals', builder: (_, _) => const FinancialGoalScreen()),
+      GoRoute(path: '/manager/finance-reports', builder: (_, _) => const FinanceReportsScreen()),
+      GoRoute(
+        path: '/manager/goal-contribution',
+        builder: (_, state) => GoalContributionScreen(goalId: state.uri.queryParameters['goalId'] ?? ''),
+      ),
+      GoRoute(
+        path: '/manager/goal-detail',
+        builder: (_, state) => GoalDetailScreen(goalId: state.uri.queryParameters['goalId'] ?? ''),
+      ),
       GoRoute(
         path: '/join',
         builder: (_, state) => JoinFamilyScreen(

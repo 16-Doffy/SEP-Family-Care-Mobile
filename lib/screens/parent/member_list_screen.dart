@@ -99,6 +99,28 @@ class _MemberListScreenState extends State<MemberListScreen> {
             ]),
           ),
 
+          // Tên gia đình — PATCH /families/{id}, chỉ Manager sửa được.
+          if (provider.familyName.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(children: [
+                Expanded(
+                  child: Text('🏠 ${provider.familyName}',
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                ),
+                if (me?.role == UserRole.manager)
+                  GestureDetector(
+                    onTap: () => _showRenameFamilySheet(context, provider.familyName),
+                    child: const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: Icon(Icons.edit_rounded, size: 15, color: AppColors.link),
+                    ),
+                  ),
+              ]),
+            ),
+          const SizedBox(height: 4),
+
           // Body
           Expanded(
             child: provider.isLoading
@@ -174,6 +196,65 @@ class _MemberListScreenState extends State<MemberListScreen> {
             ),
           ),
       ]),
+    );
+  }
+
+  void _showRenameFamilySheet(BuildContext context, String currentName) {
+    final nameCtrl = TextEditingController(text: currentName);
+    bool submitting = false;
+    String? sheetError;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('✏️ Đổi tên gia đình', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5), borderRadius: BorderRadius.circular(14)),
+              child: TextField(
+                controller: nameCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: InputDecoration(hintText: 'Tên gia đình', border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
+                style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
+              ),
+            ),
+            if (sheetError != null) ...[
+              const SizedBox(height: 10),
+              Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(10)), child: Text(sheetError!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))),
+            ],
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: submitting ? null : () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) {
+                    setSheet(() => sheetError = 'Nhập tên gia đình');
+                    return;
+                  }
+                  setSheet(() { submitting = true; sheetError = null; });
+                  try {
+                    await context.read<FamilyProvider>().updateFamilyName(name);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } catch (e) {
+                    setSheet(() { submitting = false; sheetError = e.toString().replaceFirst('Exception: ', ''); });
+                  }
+                },
+                child: submitting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text('Lưu', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 

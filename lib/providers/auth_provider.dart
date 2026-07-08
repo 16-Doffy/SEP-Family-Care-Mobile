@@ -27,11 +27,19 @@ class AuthProvider extends ChangeNotifier {
   // login/register xong (sống sót qua cả cold-start nhờ secure storage).
   String? _pendingInviteToken;
 
+  // true ngay sau register() (tài khoản mới luôn chưa verify) hoặc khi
+  // POST /families trả 403 "Account not verified" (tài khoản cũ đăng nhập
+  // lại nhưng chưa từng verify) — router dùng để chặn vào /family-setup cho
+  // tới khi verifyEmail() thành công. Không dựa vào field nào từ /auth/me vì
+  // BE không document schema response — xử lý theo sự kiện chắc chắn hơn.
+  bool _pendingEmailVerification = false;
+
   AppUser? get user => _user;
   bool get isLoggedIn => _user != null;
   bool get hasFamily => _user?.familyId != null;
   bool get restoring => _restoring;
   String? get pendingInviteToken => _pendingInviteToken;
+  bool get pendingEmailVerification => _pendingEmailVerification;
 
   Future<void> savePendingInviteToken(String token) async {
     _pendingInviteToken = token;
@@ -83,13 +91,41 @@ class AuthProvider extends ChangeNotifier {
       'phone': phone.trim(),
     });
     await _applySession(data);
+    // Tài khoản vừa tạo luôn chưa verify — BE gửi OTP 6 số qua email ngay
+    // sau register (xem AuthController_register / verify-email trong Swagger).
+    _pendingEmailVerification = true;
+    notifyListeners();
+  }
+
+  // POST /auth/verify-email — xác thực tài khoản bằng OTP 6 số gửi qua email
+  Future<void> verifyEmail(String code) async {
+    await ApiClient.instance.post('/auth/verify-email', {'code': code});
+    _pendingEmailVerification = false;
+    notifyListeners();
+  }
+
+  // POST /auth/resend-verification — gửi lại OTP (BE rate-limit, có thể trả
+  // 400 "Already verified or resend on cooldown")
+  Future<void> resendVerificationCode() async {
+    await ApiClient.instance.post('/auth/resend-verification', {});
   }
 
   // POST /families — tạo gia đình mới, creator thành MANAGER
   Future<void> createFamily(String name) async {
-    final family = await ApiClient.instance.post('/families', {
-      'name': name.trim(),
-    });
+    Map<String, dynamic> family;
+    try {
+      family = await ApiClient.instance.post('/families', {
+        'name': name.trim(),
+      });
+    } on ApiException catch (e) {
+      // 403 "Account not verified" — tài khoản (có thể đăng ký từ trước,
+      // hoặc phiên bị gián đoạn giữa register và verify) chưa qua bước OTP.
+      if (e.statusCode == 403 && e.message.toLowerCase().contains('verif')) {
+        _pendingEmailVerification = true;
+        notifyListeners();
+      }
+      rethrow;
+    }
     final fid = family['id']?.toString() ?? family['family']?['id']?.toString();
     if (fid == null) throw Exception('Không lấy được ID gia đình');
     ApiClient.instance.setFamilyId(fid);
@@ -365,6 +401,7 @@ class AuthProvider extends ChangeNotifier {
     final refreshToken = _user?.refreshToken;
     // Xóa session ngay lập tức — không đợi server response
     _user = null;
+    _pendingEmailVerification = false;
     ApiClient.instance.clearSession();
     await _clearStoredTokens();
     notifyListeners();

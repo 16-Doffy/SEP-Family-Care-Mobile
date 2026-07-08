@@ -193,6 +193,36 @@ class SosProvider extends ChangeNotifier {
     }
   }
 
+  // POST /families/{familyId}/sos/alerts/{alertId}/locations — gửi 1 điểm vị
+  // trí trong lúc alert đang active (gọi lặp lại từ SOSScreen bằng Timer, xem
+  // _startLocationStreaming). Không dùng _ensureNoActionInProgress/_sending
+  // vì đây là tác vụ nền lặp lại, không nên chặn các thao tác SOS khác
+  // (resolve/cancel/confirm-safety) của cùng alert.
+  Future<void> pushLocation(String alertId, double latitude, double longitude, {double? accuracy}) async {
+    final fid = _fid;
+    if (fid == null) return;
+    try {
+      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/locations', {
+        'latitude': latitude,
+        'longitude': longitude,
+        'sourceType': 'MOBILE_GPS',
+        'accuracy': ?accuracy,
+      });
+    } catch (e) {
+      debugPrint('SosProvider: pushLocation failed: $e');
+    }
+  }
+
+  // GET /families/{familyId}/sos/alerts/{alertId} — chi tiết 1 alert (kèm
+  // phản hồi + vị trí, theo mô tả API_DOCS.md). List hiện tại đủ cho UI
+  // chính, gọi thêm khi cần xem đầy đủ responses/locations lịch sử.
+  Future<Map<String, dynamic>> fetchAlertDetail(String alertId) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    final data = await ApiClient.instance.get('/families/$fid/sos/alerts/$alertId');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
   void _ensureNoActionInProgress() {
     if (_sending) {
       throw Exception('Một thao tác SOS khác đang được xử lý, vui lòng chờ.');

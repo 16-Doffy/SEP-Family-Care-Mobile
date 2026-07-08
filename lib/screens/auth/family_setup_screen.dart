@@ -48,15 +48,20 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
     }
     setState(() => _creating = true);
     final messenger = ScaffoldMessenger.of(context);
+    final auth = context.read<AuthProvider>();
     try {
-      await context.read<AuthProvider>().createFamily(name);
+      await auth.createFamily(name);
       if (mounted) context.go('/manager/home');
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(e.toString().replaceFirst('Exception: ', '')),
-        backgroundColor: AppColors.danger,
-        behavior: SnackBarBehavior.floating,
-      ));
+      // Chưa verify email → AuthProvider đã set pendingEmailVerification và
+      // router sẽ tự đưa sang /verify-email, không cần báo lỗi ở đây.
+      if (!auth.pendingEmailVerification) {
+        messenger.showSnackBar(SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     } finally {
       if (mounted) setState(() => _creating = false);
     }

@@ -144,6 +144,50 @@ class BudgetPlan {
       };
 }
 
+// 1 dòng ngân sách thuộc BudgetPlan — chỉ có khi lấy chi tiết 1 plan
+// (GET .../budget-plans/{id}), list endpoint không trả kèm lines.
+class BudgetLine {
+  final String id;
+  final String? categoryId;
+  final String? categoryName;
+  final String? jarId;
+  final double plannedAmount;
+  final double? actualAmount;
+  final double? thresholdAmount;
+  final double? thresholdPercent;
+  final String? essentialType;
+  final String? note;
+
+  const BudgetLine({
+    required this.id,
+    this.categoryId,
+    this.categoryName,
+    this.jarId,
+    required this.plannedAmount,
+    this.actualAmount,
+    this.thresholdAmount,
+    this.thresholdPercent,
+    this.essentialType,
+    this.note,
+  });
+
+  factory BudgetLine.fromJson(Map<String, dynamic> j) {
+    final categoryMap = j['category'] is Map ? Map<String, dynamic>.from(j['category'] as Map) : null;
+    return BudgetLine(
+      id: j['id']?.toString() ?? '',
+      categoryId: j['categoryId']?.toString() ?? categoryMap?['id']?.toString(),
+      categoryName: categoryMap?['name']?.toString() ?? j['categoryName']?.toString(),
+      jarId: j['jarId']?.toString(),
+      plannedAmount: _money(j['plannedAmount']),
+      actualAmount: _moneyNull(j['actualAmount']),
+      thresholdAmount: _moneyNull(j['thresholdAmount']),
+      thresholdPercent: _moneyNull(j['thresholdPercent']),
+      essentialType: j['essentialType']?.toString(),
+      note: j['note']?.toString(),
+    );
+  }
+}
+
 class FinancialGoal {
   final String id;
   final String goalName;
@@ -181,6 +225,125 @@ class FinancialGoal {
         'CANCELED'  => 'Đã hủy',
         _           => 'Đang tiết kiệm',
       };
+}
+
+// GET .../financial-goals/{goalId}/allocations — 1 lần góp tiền (ad-hoc, khác
+// với Goal Contribution Plans theo tháng) đã ghi vào mục tiêu.
+class GoalAllocation {
+  final String id;
+  final double amount;
+  final String? note;
+  final String? createdAt;
+
+  const GoalAllocation({
+    required this.id,
+    required this.amount,
+    this.note,
+    this.createdAt,
+  });
+
+  factory GoalAllocation.fromJson(Map<String, dynamic> j) => GoalAllocation(
+        id: j['id']?.toString() ?? '',
+        amount: _money(j['amount']),
+        note: j['note']?.toString(),
+        createdAt: j['createdAt']?.toString(),
+      );
+}
+
+// GET .../financial-goals/{goalId}/contribution-suggestions — chỉ đọc, gợi ý
+// mức đóng góp/tháng theo từng thành viên. BE không document response schema
+// → parse phòng thủ nhiều tên field khả dĩ, giữ `raw` để debug/hiển thị
+// fallback nếu tên field đoán sai.
+class ContributionSuggestion {
+  final String memberId;
+  final String memberName;
+  final double suggestedAmount;
+  final Map<String, dynamic> raw;
+
+  const ContributionSuggestion({
+    required this.memberId,
+    required this.memberName,
+    required this.suggestedAmount,
+    required this.raw,
+  });
+
+  factory ContributionSuggestion.fromJson(Map<String, dynamic> j) {
+    final memberMap = j['member'] is Map
+        ? Map<String, dynamic>.from(j['member'] as Map)
+        : j['user'] is Map
+            ? Map<String, dynamic>.from(j['user'] as Map)
+            : null;
+    return ContributionSuggestion(
+      memberId: j['memberId']?.toString() ?? memberMap?['id']?.toString() ?? memberMap?['userId']?.toString() ?? '',
+      memberName: memberMap?['fullName']?.toString() ?? memberMap?['displayName']?.toString() ?? j['memberName']?.toString() ?? 'Thành viên',
+      suggestedAmount: _money(j['suggestedAmount'] ?? j['amount'] ?? j['plannedAmount']),
+      raw: j,
+    );
+  }
+}
+
+// GET .../financial-goals/{goalId}/contribution-plans — kế hoạch đóng góp
+// tháng theo từng thành viên (planned vs actual). `status` là TÊN ĐOÁN theo
+// quy ước enum ALL_CAPS của project — CHƯA verify trực tiếp với BE thật, cần
+// chạy live để xác nhận (PENDING/SUBMITTED/APPROVED/REJECTED là suy luận từ
+// luồng submit→approve/reject mô tả trong Swagger, không phải giá trị đã thấy).
+class GoalContributionPlan {
+  final String id;
+  final String memberId;
+  final String memberName;
+  final double plannedAmount;
+  final double? actualAmount;
+  final String status;
+  final String? note;
+  final Map<String, dynamic> raw;
+
+  const GoalContributionPlan({
+    required this.id,
+    required this.memberId,
+    required this.memberName,
+    required this.plannedAmount,
+    this.actualAmount,
+    required this.status,
+    this.note,
+    required this.raw,
+  });
+
+  bool get isPending  => status.toUpperCase() == 'PENDING';
+  bool get isSubmitted => status.toUpperCase() == 'SUBMITTED';
+  bool get isApproved => status.toUpperCase() == 'APPROVED';
+  bool get isRejected => status.toUpperCase() == 'REJECTED';
+
+  String get statusLabel => switch (status.toUpperCase()) {
+        'SUBMITTED' => '⏳ Chờ duyệt',
+        'APPROVED'  => '✅ Đã duyệt',
+        'REJECTED'  => '❌ Bị từ chối',
+        _           => '📋 Chưa nộp',
+      };
+
+  Color get statusColor => switch (status.toUpperCase()) {
+        'SUBMITTED' => const Color(0xFFD97706),
+        'APPROVED'  => const Color(0xFF16A34A),
+        'REJECTED'  => const Color(0xFFDC2626),
+        _           => const Color(0xFF6B7280),
+      };
+
+  factory GoalContributionPlan.fromJson(Map<String, dynamic> j) {
+    final memberMap = j['member'] is Map
+        ? Map<String, dynamic>.from(j['member'] as Map)
+        : j['user'] is Map
+            ? Map<String, dynamic>.from(j['user'] as Map)
+            : null;
+    return GoalContributionPlan(
+      id: j['id']?.toString() ?? j['planId']?.toString() ?? j['contributionPlanId']?.toString() ?? '',
+      memberId: j['memberId']?.toString() ?? memberMap?['id']?.toString() ?? memberMap?['userId']?.toString() ?? '',
+      memberName: memberMap?['fullName']?.toString() ?? memberMap?['displayName']?.toString() ?? j['memberName']?.toString() ?? 'Thành viên',
+      plannedAmount: _money(j['plannedAmount']),
+      actualAmount: _moneyNull(j['actualAmount'] ?? j['submittedAmount'] ?? j['amount']),
+      status: j['status']?.toString() ?? 'PENDING',
+      note: j['note']?.toString(),
+      raw: j,
+    );
+  }
 }
 
 class MonthlyFinance {
@@ -421,6 +584,67 @@ class FinanceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // GET /families/{familyId}/finance/budget-plans/{budgetPlanId} — chi tiết 1
+  // plan kèm `lines` (list endpoint không trả lines).
+  Future<(BudgetPlan, List<BudgetLine>)> fetchBudgetPlanDetail(String planId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/finance/budget-plans/$planId');
+    final plan = BudgetPlan.fromJson(data);
+    final lines = _list(data['lines']).map(BudgetLine.fromJson).toList();
+    return (plan, lines);
+  }
+
+  // PATCH /families/{familyId}/finance/budget-plans/{budgetPlanId} — chỉ sửa
+  // được khi plan còn DRAFT.
+  Future<void> updateBudgetPlan(
+    String planId, {
+    String? planName,
+    String? periodType,
+    DateTime? periodStart,
+    DateTime? periodEnd,
+    double? expectedSharedIncome,
+    double? expectedSharedExpense,
+  }) async {
+    await ApiClient.instance.patch('/families/$_fid/finance/budget-plans/$planId', {
+      'planName': ?planName,
+      'periodType': ?periodType,
+      'periodStart': ?periodStart?.toIso8601String(),
+      'periodEnd': ?periodEnd?.toIso8601String(),
+      'expectedSharedIncome': ?expectedSharedIncome,
+      'expectedSharedExpense': ?expectedSharedExpense,
+    });
+    await _fetchBudgetPlans();
+    notifyListeners();
+  }
+
+  // PATCH /families/{familyId}/finance/budget-lines/{budgetLineId}
+  Future<void> updateBudgetLine(
+    String lineId, {
+    String? categoryId,
+    String? jarId,
+    double? plannedAmount,
+    double? thresholdAmount,
+    double? thresholdPercent,
+    String? essentialType,
+    String? note,
+  }) async {
+    await ApiClient.instance.patch('/families/$_fid/finance/budget-lines/$lineId', {
+      'categoryId': ?categoryId,
+      'jarId': ?jarId,
+      'plannedAmount': ?plannedAmount,
+      'thresholdAmount': ?thresholdAmount,
+      'thresholdPercent': ?thresholdPercent,
+      'essentialType': ?essentialType,
+      'note': ?note,
+    });
+    notifyListeners();
+  }
+
+  // DELETE /families/{familyId}/finance/budget-lines/{budgetLineId}
+  Future<void> deleteBudgetLine(String lineId) async {
+    await ApiClient.instance.delete('/families/$_fid/finance/budget-lines/$lineId');
+    notifyListeners();
+  }
+
   // ── Mutations: Financial Goal ────────────────────────────────────────────
 
   Future<FinancialGoal?> createGoal({
@@ -455,6 +679,74 @@ class FinanceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // GET /families/{familyId}/finance/financial-goals/{goalId} — chi tiết 1
+  // goal riêng (list `_fetchGoals` dùng `includeProgress=true` nên đã đủ cho
+  // hầu hết UI; gọi thêm để có field không xuất hiện ở list, nếu có).
+  Future<FinancialGoal> fetchGoalDetail(String goalId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/finance/financial-goals/$goalId');
+    return FinancialGoal.fromJson(data);
+  }
+
+  // PATCH /families/{familyId}/finance/financial-goals/{goalId}
+  Future<void> updateGoal(
+    String goalId, {
+    String? goalName,
+    double? targetAmount,
+    DateTime? deadline,
+    double? monthlyContributionTarget,
+    String? relatedJarId,
+  }) async {
+    await ApiClient.instance.patch('/families/$_fid/finance/financial-goals/$goalId', {
+      'goalName': ?goalName,
+      'targetAmount': ?targetAmount,
+      'deadline': ?deadline?.toIso8601String(),
+      'monthlyContributionTarget': ?monthlyContributionTarget,
+      'relatedJarId': ?relatedJarId,
+    });
+    await _fetchGoals();
+    notifyListeners();
+  }
+
+  // GET /families/{familyId}/finance/financial-goals/{goalId}/progress — báo
+  // cáo tiến độ chi tiết hơn field `progressPercent` ở list. BE không
+  // document schema → raw Map, hiển thị qua JsonReportView.
+  Future<Map<String, dynamic>> fetchGoalProgress(String goalId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/finance/financial-goals/$goalId/progress');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  // GET /families/{familyId}/finance/financial-goals/{goalId}/allocations —
+  // lịch sử từng lần góp tiền ad-hoc vào mục tiêu (khác Contribution Plans).
+  Future<List<GoalAllocation>> fetchGoalAllocations(String goalId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/finance/financial-goals/$goalId/allocations');
+    return _list(data).map(GoalAllocation.fromJson).toList();
+  }
+
+  // PATCH /families/{familyId}/finance/goal-allocations/{allocationId} — sửa
+  // số tiền 1 lần góp đã ghi.
+  Future<void> updateGoalAllocation(String allocationId, double amount) async {
+    await ApiClient.instance.patch('/families/$_fid/finance/goal-allocations/$allocationId', {
+      'amount': amount,
+    });
+    await _fetchGoals();
+    notifyListeners();
+  }
+
+  // DELETE /families/{familyId}/finance/goal-allocations/{allocationId} —
+  // hủy 1 lần góp đã ghi nhầm.
+  Future<void> deleteGoalAllocation(String allocationId) async {
+    await ApiClient.instance.delete('/families/$_fid/finance/goal-allocations/$allocationId');
+    await _fetchGoals();
+    notifyListeners();
+  }
+
+  // GET /families/{familyId}/finance/model-templates — mẫu mô hình tài chính
+  // có sẵn (FIVE_JARS/EIGHTY_TWENTY/CUSTOM), khai báo constant phía BE.
+  Future<List<Map<String, dynamic>>> fetchModelTemplates() async {
+    final data = await ApiClient.instance.get('/families/$_fid/finance/model-templates');
+    return _list(data);
+  }
+
   // ── Mutations: Monthly finance ───────────────────────────────────────────
 
   Future<void> upsertMonthlyFinance({
@@ -483,6 +775,101 @@ class FinanceProvider extends ChangeNotifier {
     }
     await _fetchMonthlyFinance();
     notifyListeners();
+  }
+
+  // ── Goal Contribution Plans (workflow Manager confirm → Member submit →
+  // Manager approve/reject) ────────────────────────────────────────────────
+
+  // GET .../financial-goals/{goalId}/contribution-suggestions?month&year
+  Future<List<ContributionSuggestion>> fetchContributionSuggestions(String goalId, int month, int year) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/financial-goals/$goalId/contribution-suggestions${_qs({'month': month, 'year': year})}',
+    );
+    return _list(data).map(ContributionSuggestion.fromJson).toList();
+  }
+
+  // POST .../financial-goals/{goalId}/contribution-plans/confirm
+  Future<void> confirmContributionPlan(
+    String goalId, {
+    required int periodMonth,
+    required int periodYear,
+    required DateTime dueDate,
+    required List<({String memberId, double plannedAmount})> members,
+  }) async {
+    await ApiClient.instance.post('/families/$_fid/finance/financial-goals/$goalId/contribution-plans/confirm', {
+      'periodMonth': periodMonth,
+      'periodYear': periodYear,
+      'dueDate': dueDate.toIso8601String().split('T').first,
+      'members': members.map((m) => {'memberId': m.memberId, 'plannedAmount': m.plannedAmount}).toList(),
+    });
+    notifyListeners();
+  }
+
+  // GET .../financial-goals/{goalId}/contribution-plans?month&year
+  Future<List<GoalContributionPlan>> fetchContributionPlans(String goalId, int month, int year) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/financial-goals/$goalId/contribution-plans${_qs({'month': month, 'year': year})}',
+    );
+    return _list(data).map(GoalContributionPlan.fromJson).toList();
+  }
+
+  // POST .../financial-goals/{goalId}/contribution-plans/{planId}/submit — thành viên xác nhận đã đóng góp
+  Future<void> submitContributionPlan(String goalId, String planId, double amount, {String? note}) async {
+    await ApiClient.instance.post(
+      '/families/$_fid/finance/financial-goals/$goalId/contribution-plans/$planId/submit',
+      {'amount': amount, 'note': ?note},
+    );
+    notifyListeners();
+  }
+
+  /// action: approve | reject
+  Future<void> reviewContributionPlan(String goalId, String planId, String action, {String? note}) async {
+    await ApiClient.instance.post(
+      '/families/$_fid/finance/financial-goals/$goalId/contribution-plans/$planId/$action',
+      {'note': ?note},
+    );
+    notifyListeners();
+  }
+
+  // GET .../financial-goals/{goalId}/contribution-shortage?month&year
+  Future<Map<String, dynamic>> fetchContributionShortage(String goalId, int month, int year) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/financial-goals/$goalId/contribution-shortage${_qs({'month': month, 'year': year})}',
+    );
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  // ── Reports (planned-vs-actual) ──────────────────────────────────────────
+  // BE không document response schema cho 3 endpoint report này (chỉ có mô
+  // tả "planned-vs-actual" trong Swagger) — trả raw Map, màn hình dùng
+  // JsonReportView để hiển thị mọi field BE trả về mà không đoán sai tên.
+
+  // GET /families/{familyId}/finance/budget-plans/{budgetPlanId}/report
+  Future<Map<String, dynamic>> fetchBudgetPlanReport(String planId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/finance/budget-plans/$planId/report');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  // GET /families/{familyId}/finance/reports/non-essential-spending
+  Future<Map<String, dynamic>> fetchNonEssentialSpendingReport({DateTime? periodStart, DateTime? periodEnd}) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/reports/non-essential-spending${_qs({
+        'periodStart': periodStart?.toIso8601String().split('T').first,
+        'periodEnd': periodEnd?.toIso8601String().split('T').first,
+      })}',
+    );
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  // GET /families/{familyId}/finance/reports/budget-goal
+  Future<Map<String, dynamic>> fetchBudgetGoalReport({DateTime? periodStart, DateTime? periodEnd}) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/reports/budget-goal${_qs({
+        'periodStart': periodStart?.toIso8601String().split('T').first,
+        'periodEnd': periodEnd?.toIso8601String().split('T').first,
+      })}',
+    );
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

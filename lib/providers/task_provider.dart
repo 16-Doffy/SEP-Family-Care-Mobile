@@ -280,16 +280,21 @@ class RewardSettlement {
   final String? submissionId;
   final String? memberName;
   final double amount;
-  final String status; // PENDING|AWAITING_PAYMENT|PAID|CONFIRMED|DISPUTED|CANCELED
+  // Enum thật (verify Swagger 2026-07-08): PENDING_SETTLEMENT |
+  // WAITING_CONFIRMATION | SETTLED | DISPUTED | CANCELED — trước đó model
+  // dùng PENDING/AWAITING_PAYMENT/PAID/CONFIRMED sai hoàn toàn.
+  final String status;
   final String? note;
   const RewardSettlement({
     required this.id,
     this.submissionId,
     this.memberName,
     this.amount = 0,
-    this.status = 'PENDING',
+    this.status = 'PENDING_SETTLEMENT',
     this.note,
   });
+
+  bool get needsMarkPaid => status == 'PENDING_SETTLEMENT';
 
   factory RewardSettlement.fromJson(Map<String, dynamic> j) {
     final member = j['member'] is Map ? j['member'] as Map : <String, dynamic>{};
@@ -299,25 +304,25 @@ class RewardSettlement {
       submissionId: _str(j['submissionId']) ?? _str(j['taskSubmissionId']),
       memberName: _str(userMap['fullName']) ?? _str(j['memberName']),
       amount: _num(j['amount'] ?? j['rewardAmount']),
-      status: _str(j['status']) ?? 'PENDING',
+      status: _str(j['status']) ?? 'PENDING_SETTLEMENT',
       note: _str(j['note']) ?? _str(j['resolutionNote']),
     );
   }
 
   Color get statusColor => switch (status) {
-        'PAID'      => const Color(0xFF16A34A),
-        'CONFIRMED' => const Color(0xFF16A34A),
-        'DISPUTED'  => const Color(0xFFDC2626),
-        'CANCELED'  => const Color(0xFF6B7280),
-        _           => const Color(0xFFD97706),
+        'SETTLED'             => const Color(0xFF16A34A),
+        'WAITING_CONFIRMATION' => const Color(0xFF2563EB),
+        'DISPUTED'             => const Color(0xFFDC2626),
+        'CANCELED'             => const Color(0xFF6B7280),
+        _                      => const Color(0xFFD97706),
       };
 
   String get statusLabel => switch (status) {
-        'PAID'      => '💸 Đã trả',
-        'CONFIRMED' => '✅ Đã nhận',
-        'DISPUTED'  => '⚠️ Tranh chấp',
-        'CANCELED'  => '🚫 Đã hủy',
-        _           => '⏳ Chờ thanh toán',
+        'SETTLED'              => '✅ Đã nhận',
+        'WAITING_CONFIRMATION' => '💸 Đã trả, chờ xác nhận',
+        'DISPUTED'             => '⚠️ Tranh chấp',
+        'CANCELED'             => '🚫 Đã hủy',
+        _                      => '⏳ Chờ thanh toán',
       };
 }
 
@@ -325,7 +330,7 @@ class RewardDispute {
   final String id;
   final String settlementId;
   final String reason;
-  final String status; // OPEN | RESOLVED
+  final String status; // OPEN | RESOLVED | REJECTED (verify Swagger 2026-07-08)
   final String? resolutionNote;
   const RewardDispute({
     required this.id,
@@ -348,19 +353,23 @@ class TaskUnavailability {
   final String id;
   final String assignmentId;
   final String reason;
-  final String status; // OPEN | HANDLED | CANCELED (giả định)
+  // Enum thật (verify Swagger 2026-07-08): REPORTED | HANDLED | CANCELED —
+  // trước đó model giả định "OPEN" sai, khiến UI chờ xử lý không bao giờ khớp.
+  final String status;
   const TaskUnavailability({
     required this.id,
     required this.assignmentId,
     required this.reason,
-    this.status = 'OPEN',
+    this.status = 'REPORTED',
   });
+
+  bool get isOpen => status == 'REPORTED';
 
   factory TaskUnavailability.fromJson(Map<String, dynamic> j) => TaskUnavailability(
         id: _str(j['id']) ?? '',
         assignmentId: _str(j['assignmentId']) ?? _str(j['taskAssignmentId']) ?? '',
         reason: _str(j['reason']) ?? '',
-        status: _str(j['status']) ?? 'OPEN',
+        status: _str(j['status']) ?? 'REPORTED',
       );
 }
 
@@ -666,9 +675,13 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> markRewardPaid(String settlementId, {String? note}) async {
+  // MarkRewardPaidDto thật: { externalMethod (bắt buộc, enum), externalNote? }
+  // — verify Swagger 2026-07-08, KHÔNG phải { note } như trước.
+  /// externalMethod: CASH | BANK_TRANSFER | THIRD_PARTY_WALLET | OTHER
+  Future<void> markRewardPaid(String settlementId, {required String externalMethod, String? externalNote}) async {
     await ApiClient.instance.patch('/families/$_fid/tasks/reward-settlements/$settlementId/mark-paid', {
-      if (note != null && note.isNotEmpty) 'note': note,
+      'externalMethod': externalMethod,
+      'externalNote': ?externalNote,
     });
     await fetchRewardSettlements();
   }
@@ -683,10 +696,25 @@ class TaskProvider extends ChangeNotifier {
     await fetchRewardSettlements();
   }
 
+  // Body key thật là `allocations` (đã verify Swagger CreateRewardAllocationDto
+  // 2026-07-08) — trước đó gửi `items` sẽ bị BE trả 400.
   Future<void> createAllocation(String settlementId, List<Map<String, dynamic>> items) async {
     await ApiClient.instance.post('/families/$_fid/tasks/reward-settlements/$settlementId/allocations', {
-      'items': items,
+      'allocations': items,
     });
+  }
+
+  // GET .../reward-settlements/{id} — chi tiết 1 settlement.
+  Future<Map<String, dynamic>> fetchSettlementDetail(String settlementId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/tasks/reward-settlements/$settlementId');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  // GET .../reward-settlements/{id}/allocations — breakdown phân bổ (nếu
+  // reward được chia làm nhiều phần).
+  Future<List<Map<String, dynamic>>> fetchSettlementAllocations(String settlementId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/tasks/reward-settlements/$settlementId/allocations');
+    return _list(data);
   }
 
   // ── Reward disputes ──────────────────────────────────────────────────────
@@ -708,11 +736,20 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> resolveDispute(String disputeId, String resolutionNote) async {
+  // ResolveRewardDisputeDto thật: { action } — verify Swagger 2026-07-08,
+  // KHÔNG phải { resolutionNote } như trước.
+  /// action: ACCEPT_DISPUTE | REJECT_DISPUTE
+  Future<void> resolveDispute(String disputeId, String action) async {
     await ApiClient.instance.patch('/families/$_fid/tasks/reward-disputes/$disputeId/resolve', {
-      'resolutionNote': resolutionNote,
+      'action': action,
     });
     await fetchRewardDisputes();
+  }
+
+  // GET .../reward-disputes/{id} — chi tiết 1 tranh chấp.
+  Future<Map<String, dynamic>> fetchDisputeDetail(String disputeId) async {
+    final data = await ApiClient.instance.get('/families/$_fid/tasks/reward-disputes/$disputeId');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   // ── Unavailability ───────────────────────────────────────────────────────
@@ -751,6 +788,86 @@ class TaskProvider extends ChangeNotifier {
       if (note != null && note.isNotEmpty) 'note': note,
     });
     await fetchUnavailabilities();
+  }
+
+  // GET .../unavailabilities/{id} — chi tiết 1 báo bận.
+  Future<Map<String, dynamic>> fetchUnavailabilityDetail(String id) async {
+    final data = await ApiClient.instance.get('/families/$_fid/tasks/unavailabilities/$id');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  // ── Task edit / category edit / reward-setting edit ─────────────────────
+
+  // GET .../tasks/{taskId}/reward-setting — đọc riêng (FamilyTask.rewardSetting
+  // đã embed sẵn từ fetchTasks, gọi thêm khi cần refresh mới nhất trước khi sửa).
+  Future<RewardSetting?> fetchRewardSetting(String taskId) async {
+    try {
+      final data = await ApiClient.instance.get('/families/$_fid/tasks/$taskId/reward-setting');
+      return data is Map<String, dynamic> && data.isNotEmpty ? RewardSetting.fromJson(data) : null;
+    } catch (e) {
+      debugPrint('TaskProvider: fetchRewardSetting failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> updateRewardSetting(String taskId, {
+    String? rewardType, double? rewardAmount, String? rewardDescription, bool? autoCreateSettlement,
+  }) async {
+    await ApiClient.instance.patch('/families/$_fid/tasks/$taskId/reward-setting', {
+      'rewardType': ?rewardType,
+      'rewardAmount': ?rewardAmount,
+      'rewardDescription': ?rewardDescription,
+      'autoCreateSettlement': ?autoCreateSettlement,
+    });
+    await fetchTasks();
+  }
+
+  Future<void> deleteRewardSetting(String taskId) async {
+    await ApiClient.instance.delete('/families/$_fid/tasks/$taskId/reward-setting');
+    await fetchTasks();
+  }
+
+  Future<void> updateCategory(String categoryId, {String? name, String? description}) async {
+    await ApiClient.instance.patch('/families/$_fid/tasks/categories/$categoryId', {
+      'name': ?name,
+      'description': ?description,
+    });
+    await fetchCategories();
+  }
+
+  // GET .../tasks/submissions/{submissionId} — chi tiết 1 submission theo ID
+  // trực tiếp (khác fetchLatestSubmission vốn GET theo assignment rồi lấy
+  // phần tử cuối — dùng khi đã có sẵn submissionId, ví dụ từ settlement).
+  Future<TaskSubmission?> fetchSubmissionDetail(String submissionId) async {
+    try {
+      final data = await ApiClient.instance.get('/families/$_fid/tasks/submissions/$submissionId');
+      return data is Map<String, dynamic> ? TaskSubmission.fromJson(data) : null;
+    } catch (e) {
+      debugPrint('TaskProvider: fetchSubmissionDetail failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> updateProof(String proofId, {String? note}) async {
+    await ApiClient.instance.patch('/families/$_fid/tasks/proofs/$proofId', {
+      'note': ?note,
+    });
+  }
+
+  Future<void> deleteProof(String proofId) async {
+    await ApiClient.instance.delete('/families/$_fid/tasks/proofs/$proofId');
+  }
+
+  // GET .../tasks/{taskId}/schedule — đọc riêng lịch lặp (FamilyTask.schedule
+  // đã embed sẵn, gọi thêm khi cần refresh mới nhất trước khi sửa).
+  Future<TaskSchedule?> fetchSchedule(String taskId) async {
+    try {
+      final data = await ApiClient.instance.get('/families/$_fid/tasks/$taskId/schedule');
+      return data is Map<String, dynamic> && data.isNotEmpty ? TaskSchedule.fromJson(data) : null;
+    } catch (e) {
+      debugPrint('TaskProvider: fetchSchedule failed: $e');
+      return null;
+    }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

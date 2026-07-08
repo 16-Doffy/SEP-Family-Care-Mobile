@@ -123,6 +123,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => context.push('/manager/financial-goals')),
                 _tile('🔔', 'Cảnh báo tài chính',
                     onTap: () => context.push('/manager/finance-alerts')),
+                _tile('📊', 'Báo cáo tài chính',
+                    onTap: () => context.push('/manager/finance-reports')),
                 _tile('📬', 'Yêu cầu hỗ trợ chi tiêu',
                     onTap: () => context.push('/finance/support-requests')),
                 _tile('🗺️', 'Bản đồ gia đình',

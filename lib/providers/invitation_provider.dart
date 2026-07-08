@@ -125,6 +125,14 @@ class InvitationProvider extends ChangeNotifier {
     await ApiClient.instance.post('/invitations/$token/claim', {});
   }
 
+  // POST /invitations/{token}/reject — người ĐƯỢC MỜI tự chối lời mời gửi
+  // đến mình (khác reject(invitationId) bên dưới — đó là Manager từ chối
+  // yêu cầu đã CLAIMED). Dùng khi user xem preview lời mời và không muốn
+  // tham gia.
+  Future<void> declineInvitation(String token) async {
+    await ApiClient.instance.post('/invitations/$token/reject', {});
+  }
+
   // POST /families/{id}/invitations/{id}/approve — Manager duyệt
   Future<void> approve(String invitationId, {String? familyRole, String? relationship}) async {
     final fid = _fid;

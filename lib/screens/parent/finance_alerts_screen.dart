@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_alert_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/json_report_view.dart';
 
 class FinanceAlertsScreen extends StatefulWidget {
   const FinanceAlertsScreen({super.key});
@@ -53,21 +54,31 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
                           color: AppColors.textPrimary)),
                 ),
               ),
-              if (provider.newCount > 0)
+              if (provider.newCount > 0) ...[
                 Container(
-                  width: 40,
-                  alignment: Alignment.center,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                        color: AppColors.danger, borderRadius: BorderRadius.circular(999)),
-                    child: Text('${provider.newCount}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                            color: Colors.white)),
-                  ),
-                )
-              else
-                const SizedBox(width: 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: AppColors.danger, borderRadius: BorderRadius.circular(999)),
+                  child: Text('${provider.newCount}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                ),
+                const SizedBox(width: 8),
+              ],
+              GestureDetector(
+                onTap: () => _recompute(context, provider),
+                child: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)
+                      ]),
+                  child: const Icon(Icons.autorenew_rounded,
+                      size: 18, color: AppColors.textPrimary),
+                ),
+              ),
             ]),
           ),
 
@@ -91,6 +102,24 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
         ]),
       ),
     );
+  }
+
+  Future<void> _recompute(BuildContext context, FinanceAlertProvider provider) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await provider.recompute();
+      if (context.mounted) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Đã tính lại cảnh báo ✅'),
+          backgroundColor: AppColors.success,
+        ));
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: AppColors.danger,
+      ));
+    }
   }
 
   Widget _emptyView() => Center(
@@ -134,7 +163,9 @@ class _AlertCard extends StatelessWidget {
     final emoji = _typeEmoji(alert.alertType);
     final isNew  = alert.isNew;
 
-    return Container(
+    return GestureDetector(
+      onTap: () => _showDetail(context),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -200,6 +231,17 @@ class _AlertCard extends StatelessWidget {
           ]),
         ],
       ]),
+      ),
+    );
+  }
+
+  void _showDetail(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => _AlertDetailSheet(alertId: alert.id),
     );
   }
 
@@ -235,5 +277,51 @@ class _AlertCard extends StatelessWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
     if (diff.inHours < 24)   return '${diff.inHours} giờ trước';
     return '${d.day}/${d.month}/${d.year}';
+  }
+}
+
+// GET /families/{familyId}/finance/alerts/{alertId} — chi tiết cảnh báo.
+class _AlertDetailSheet extends StatefulWidget {
+  final String alertId;
+  const _AlertDetailSheet({required this.alertId});
+  @override
+  State<_AlertDetailSheet> createState() => _AlertDetailSheetState();
+}
+
+class _AlertDetailSheetState extends State<_AlertDetailSheet> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _detail;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final d = await context.read<FinanceAlertProvider>().fetchAlertDetail(widget.alertId);
+      if (mounted) setState(() { _detail = d; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('🔍 Chi tiết cảnh báo', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+        else if (_error != null)
+          Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))
+        else
+          JsonReportView(data: _detail ?? {}),
+      ]),
+    );
   }
 }

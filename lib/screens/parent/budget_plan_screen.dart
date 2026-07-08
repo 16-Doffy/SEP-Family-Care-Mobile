@@ -104,7 +104,9 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
   }
 
   Widget _planCard(BuildContext context, BudgetPlan plan) {
-    return Container(
+    return GestureDetector(
+      onTap: () => context.push('/manager/budget-plans/detail?planId=${plan.id}'),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [
@@ -136,6 +138,17 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
             ]),
           ),
         ]),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          height: 34,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(padding: EdgeInsets.zero, side: const BorderSide(color: Color(0xFFE5E7EB))),
+            onPressed: () => context.push('/manager/finance-reports'),
+            icon: const Icon(Icons.bar_chart_rounded, size: 15, color: AppColors.link),
+            label: Text('Xem báo cáo kế hoạch vs thực tế', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.link)),
+          ),
+        ),
         if (plan.status == 'DRAFT' || plan.status == 'ACTIVE') ...[
           const SizedBox(height: 12),
           Row(children: [
@@ -174,6 +187,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
           ]),
         ],
       ]),
+      ),
     );
   }
 

@@ -528,7 +528,9 @@ class _RewardConfirmBarState extends State<_RewardConfirmBar> {
             const SizedBox(width: 8),
             Expanded(child: Text('Phần thưởng: ${reward.label} — ${s.statusLabel}', style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E)))),
           ]),
-          if (s.status == 'PAID') ...[
+          // Enum thật: WAITING_CONFIRMATION (verify Swagger 2026-07-08) —
+          // trước đó check 'PAID' sai, nút xác nhận không bao giờ hiện ra.
+          if (s.status == 'WAITING_CONFIRMATION') ...[
             const SizedBox(height: 8),
             Row(children: [
               Expanded(

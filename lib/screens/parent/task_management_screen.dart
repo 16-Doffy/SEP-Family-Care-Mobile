@@ -61,6 +61,15 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               ),
               const Expanded(child: Center(child: Text('Quản lý Tasks', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)))),
               GestureDetector(
+                onTap: () => context.push('/manager/reward-management'),
+                child: Container(
+                  width: 40, height: 40,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)]),
+                  child: const Icon(Icons.payments_outlined, size: 18, color: AppColors.textPrimary),
+                ),
+              ),
+              GestureDetector(
                 onTap: () => _showCreateTaskSheet(context),
                 child: Container(width: 40, height: 40, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.link), child: const Icon(Icons.add, color: Colors.white)),
               ),
@@ -173,11 +182,22 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               children: [
                 Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(2)))),
                 const SizedBox(height: 16),
-                Text(task.title, style: GoogleFonts.inter(fontSize: 19, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                if (task.description != null && task.description!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(task.description!, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
-                ],
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(task.title, style: GoogleFonts.inter(fontSize: 19, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      if (task.description != null && task.description!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(task.description!, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
+                      ],
+                    ]),
+                  ),
+                  if (task.status != 'CANCELED' && task.status != 'COMPLETED')
+                    GestureDetector(
+                      onTap: () => _showEditTaskSheet(context, task),
+                      child: const Padding(padding: EdgeInsets.all(6), child: Icon(Icons.edit_rounded, size: 18, color: AppColors.link)),
+                    ),
+                ]),
                 const SizedBox(height: 16),
                 Row(children: [
                   Expanded(
@@ -198,6 +218,15 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     ),
                   ),
                 ]),
+                if (task.isRecurring) ...[
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _showScheduleSheet(context, task),
+                    icon: const Icon(Icons.event_repeat_rounded, size: 16),
+                    label: Text('Lịch lặp & tạo phân công', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 if (task.status != 'CANCELED' && task.status != 'COMPLETED')
                   TextButton(
@@ -220,6 +249,79 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  // PATCH /tasks/{taskId} — sửa tên/mô tả/mức ưu tiên task đã tạo.
+  void _showEditTaskSheet(BuildContext context, FamilyTask task) {
+    final titleCtrl = TextEditingController(text: task.title);
+    final descCtrl = TextEditingController(text: task.description ?? '');
+    String priority = task.priority;
+    bool submitting = false;
+    String? sheetError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('✏️ Sửa task', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 16),
+              Text('Tên task', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              _inputBox(titleCtrl, 'Tên task'),
+              const SizedBox(height: 12),
+              Text('Mô tả', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              _inputBox(descCtrl, 'Chi tiết công việc (tùy chọn)'),
+              const SizedBox(height: 12),
+              Text('Mức ưu tiên', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              Wrap(spacing: 8, children: [
+                for (final p in ['LOW', 'MEDIUM', 'HIGH'])
+                  ChoiceChip(
+                    label: Text(switch (p) { 'LOW' => 'Thấp', 'HIGH' => 'Cao', _ => 'Trung bình' }),
+                    selected: priority == p,
+                    onSelected: (_) => setSheet(() => priority = p),
+                  ),
+              ]),
+              if (sheetError != null) ...[
+                const SizedBox(height: 10),
+                Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(10)), child: Text(sheetError!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))),
+              ],
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+                onPressed: submitting ? null : () async {
+                  if (titleCtrl.text.trim().isEmpty) {
+                    setSheet(() => sheetError = 'Nhập tên task');
+                    return;
+                  }
+                  setSheet(() { submitting = true; sheetError = null; });
+                  try {
+                    await context.read<TaskProvider>().updateTask(task.id, {
+                      'title': titleCtrl.text.trim(),
+                      'description': descCtrl.text.trim(),
+                      'priority': priority,
+                    });
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } catch (e) {
+                    setSheet(() { submitting = false; sheetError = e.toString().replaceFirst('Exception: ', ''); });
+                  }
+                },
+                child: submitting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text('Lưu thay đổi', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ]),
+          ),
         ),
       ),
     );
@@ -258,6 +360,21 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEA580C), minimumSize: const Size(0, 32), padding: const EdgeInsets.symmetric(horizontal: 12)),
               onPressed: () => _showReassignSheet(context, a),
               child: Text('Phân công lại', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          if (a.status == 'PENDING' || a.status == 'IN_PROGRESS')
+            GestureDetector(
+              onTap: () async {
+                final tp = context.read<TaskProvider>();
+                await tp.cancelAssignment(a.id);
+                // cancelAssignment() chỉ refresh myAssignments (view member) —
+                // sheet Manager đang xem theo _assignmentsByTask[taskId], phải
+                // refetch riêng để badge trạng thái cập nhật ngay.
+                await tp.fetchTaskAssignments(a.taskId);
+              },
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: Icon(Icons.close_rounded, size: 18, color: AppColors.danger),
+              ),
             ),
         ]),
       ]),
@@ -538,6 +655,19 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     );
   }
 
+  // ── Schedule (recurring task) ────────────────────────────────────────────
+  // GET .../schedule (refresh), PATCH .../schedule (sửa), POST
+  // .../schedule/generate-assignments (tạo phân công hàng loạt).
+  void _showScheduleSheet(BuildContext context, FamilyTask task) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => _ScheduleSheet(task: task),
+    );
+  }
+
   // ── Reward setting ────────────────────────────────────────────────────────
 
   void _showRewardSettingSheet(BuildContext context, FamilyTask task) {
@@ -592,13 +722,25 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   setSheet(() => submitting = true);
                   final messenger = ScaffoldMessenger.of(context);
                   try {
-                    await context.read<TaskProvider>().setRewardSetting(
-                      task.id,
-                      rewardType: rewardType,
-                      rewardAmount: double.tryParse(amountCtrl.text.trim()),
-                      rewardDescription: descCtrl.text.trim(),
-                      autoCreateSettlement: autoSettle,
-                    );
+                    final tp = context.read<TaskProvider>();
+                    // PATCH nếu task đã có reward-setting (sửa), POST nếu chưa (tạo mới).
+                    if (task.rewardSetting != null) {
+                      await tp.updateRewardSetting(
+                        task.id,
+                        rewardType: rewardType,
+                        rewardAmount: double.tryParse(amountCtrl.text.trim()),
+                        rewardDescription: descCtrl.text.trim(),
+                        autoCreateSettlement: autoSettle,
+                      );
+                    } else {
+                      await tp.setRewardSetting(
+                        task.id,
+                        rewardType: rewardType,
+                        rewardAmount: double.tryParse(amountCtrl.text.trim()),
+                        rewardDescription: descCtrl.text.trim(),
+                        autoCreateSettlement: autoSettle,
+                      );
+                    }
                     if (ctx.mounted) Navigator.pop(ctx);
                   } catch (e) {
                     setSheet(() => submitting = false);
@@ -607,9 +749,29 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 },
                 child: submitting
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text('Lưu', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
+                    : Text(task.rewardSetting != null ? 'Lưu thay đổi' : 'Lưu', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
+            if (task.rewardSetting != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: submitting ? null : () async {
+                    setSheet(() => submitting = true);
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await context.read<TaskProvider>().deleteRewardSetting(task.id);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      setSheet(() => submitting = false);
+                      messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                    }
+                  },
+                  child: Text('Xóa phần thưởng', style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
           ]),
         ),
       ),
@@ -660,10 +822,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 Text('Danh mục', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                 const SizedBox(height: 6),
                 Wrap(spacing: 8, runSpacing: 8, children: [
-                  ...categories.map((c) => ChoiceChip(
-                        label: Text(c.name),
-                        selected: categoryId == c.id,
-                        onSelected: (_) => setSheet(() => categoryId = c.id),
+                  ...categories.map((c) => GestureDetector(
+                        onLongPress: () => _showRenameCategoryDialog(context, c),
+                        child: ChoiceChip(
+                          label: Text(c.name),
+                          selected: categoryId == c.id,
+                          onSelected: (_) => setSheet(() => categoryId = c.id),
+                        ),
                       )),
                   ActionChip(
                     avatar: const Icon(Icons.add, size: 14),
@@ -671,6 +836,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     onPressed: () => _showCreateCategoryDialog(context, (newId) => setSheet(() => categoryId = newId)),
                   ),
                 ]),
+                Text('Giữ để đổi tên danh mục', style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted)),
                 const SizedBox(height: 12),
 
                 Text('Mức ưu tiên', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
@@ -772,6 +938,29 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     );
   }
 
+  // PATCH /tasks/categories/{categoryId} — đổi tên danh mục.
+  void _showRenameCategoryDialog(BuildContext context, TaskCategory category) {
+    final nameCtrl = TextEditingController(text: category.name);
+    showDialog(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('Đổi tên danh mục'),
+        content: TextField(controller: nameCtrl, decoration: const InputDecoration(hintText: 'Tên danh mục')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Hủy')),
+          TextButton(
+            onPressed: () async {
+              if (nameCtrl.text.trim().isEmpty) return;
+              await context.read<TaskProvider>().updateCategory(category.id, name: nameCtrl.text.trim());
+              if (dCtx.mounted) Navigator.pop(dCtx);
+            },
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Small widgets ──────────────────────────────────────────────────────────
 
   Widget _typeToggle({required String label, required bool selected, required VoidCallback onTap}) => Expanded(
@@ -842,4 +1031,206 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
     child: Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
   );
+}
+
+// GET .../schedule (refresh mới nhất), PATCH .../schedule (sửa lịch lặp),
+// POST .../schedule/generate-assignments (tạo hàng loạt phân công theo
+// khoảng ngày cho 1 thành viên).
+class _ScheduleSheet extends StatefulWidget {
+  final FamilyTask task;
+  const _ScheduleSheet({required this.task});
+  @override
+  State<_ScheduleSheet> createState() => _ScheduleSheetState();
+}
+
+class _ScheduleSheetState extends State<_ScheduleSheet> {
+  TaskSchedule? _schedule;
+  bool _loadingSchedule = true;
+  late String _repeatType;
+  late final TextEditingController _intervalCtrl;
+  bool _savingSchedule = false;
+  String? _scheduleError;
+
+  String? _genMemberId;
+  DateTime _genFrom = DateTime.now();
+  DateTime _genTo = DateTime.now().add(const Duration(days: 30));
+  bool _generating = false;
+  String? _genError;
+
+  @override
+  void initState() {
+    super.initState();
+    _repeatType = widget.task.schedule?.repeatType ?? 'DAILY';
+    _intervalCtrl = TextEditingController(text: '${widget.task.schedule?.repeatInterval ?? 1}');
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSchedule());
+  }
+
+  @override
+  void dispose() {
+    _intervalCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSchedule() async {
+    final s = await context.read<TaskProvider>().fetchSchedule(widget.task.id);
+    if (mounted) {
+      setState(() {
+        _schedule = s ?? widget.task.schedule;
+        _repeatType = _schedule?.repeatType ?? _repeatType;
+        _intervalCtrl.text = '${_schedule?.repeatInterval ?? 1}';
+        _loadingSchedule = false;
+      });
+    }
+  }
+
+  Future<void> _saveSchedule() async {
+    setState(() { _savingSchedule = true; _scheduleError = null; });
+    try {
+      await context.read<TaskProvider>().updateSchedule(widget.task.id, {
+        'repeatType': _repeatType,
+        'repeatInterval': int.tryParse(_intervalCtrl.text.trim()) ?? 1,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu lịch lặp ✅'), backgroundColor: AppColors.success));
+      }
+    } catch (e) {
+      if (mounted) setState(() => _scheduleError = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _savingSchedule = false);
+    }
+  }
+
+  Future<void> _generate() async {
+    if (_genMemberId == null) {
+      setState(() => _genError = 'Chọn thành viên');
+      return;
+    }
+    setState(() { _generating = true; _genError = null; });
+    try {
+      await context.read<TaskProvider>().generateAssignments(
+        widget.task.id,
+        assignedToMemberId: _genMemberId!,
+        fromDate: _genFrom, toDate: _genTo,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã tạo phân công hàng loạt ✅'), backgroundColor: AppColors.success));
+      }
+    } catch (e) {
+      if (mounted) setState(() => _genError = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final members = context.watch<FamilyProvider>().members.where((m) => m.isActive).toList();
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('🔁 Lịch lặp', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          const SizedBox(height: 16),
+          if (_loadingSchedule)
+            const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+          else ...[
+            Wrap(spacing: 8, children: [
+              for (final r in ['DAILY', 'WEEKLY', 'MONTHLY'])
+                ChoiceChip(
+                  label: Text(switch (r) { 'DAILY' => 'Hàng ngày', 'WEEKLY' => 'Hàng tuần', _ => 'Hàng tháng' }),
+                  selected: _repeatType == r,
+                  onSelected: (_) => setState(() => _repeatType = r),
+                ),
+            ]),
+            const SizedBox(height: 12),
+            Text('Khoảng lặp', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5), borderRadius: BorderRadius.circular(14)),
+              child: TextField(
+                controller: _intervalCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(border: InputBorder.none),
+              ),
+            ),
+            if (_scheduleError != null) ...[
+              const SizedBox(height: 8),
+              Text(_scheduleError!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: _savingSchedule ? null : _saveSchedule,
+                child: _savingSchedule
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text('Lưu lịch', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 12),
+            Text('Tạo phân công hàng loạt', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            const SizedBox(height: 10),
+            Text('Thành viên', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _genMemberId,
+              decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+              items: members.map((m) => DropdownMenuItem(value: m.userId, child: Text(m.name))).toList(),
+              onChanged: (v) => setState(() => _genMemberId = v),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () async {
+                    final picked = await showDatePicker(context: context, initialDate: _genFrom, firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 730)));
+                    if (picked != null) setState(() => _genFrom = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(12)),
+                    child: Text('Từ ${_genFrom.day}/${_genFrom.month}/${_genFrom.year}', style: GoogleFonts.inter(fontSize: 12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () async {
+                    final picked = await showDatePicker(context: context, initialDate: _genTo, firstDate: DateTime.now().subtract(const Duration(days: 365)), lastDate: DateTime.now().add(const Duration(days: 730)));
+                    if (picked != null) setState(() => _genTo = picked);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(12)),
+                    child: Text('Đến ${_genTo.day}/${_genTo.month}/${_genTo.year}', style: GoogleFonts.inter(fontSize: 12)),
+                  ),
+                ),
+              ),
+            ]),
+            if (_genError != null) ...[
+              const SizedBox(height: 8),
+              Text(_genError!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: _generating ? null : _generate,
+                child: _generating
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text('Tạo phân công', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
 }

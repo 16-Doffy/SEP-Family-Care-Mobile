@@ -106,4 +106,35 @@ class FinanceAlertProvider extends ChangeNotifier {
       debugPrint('FinanceAlertProvider: resolve failed: $e');
     }
   }
+
+  // GET /families/{familyId}/finance/alerts/{alertId} — chi tiết 1 cảnh báo.
+  // BE không document response schema thêm gì ngoài field đã có ở list, nên
+  // trả raw Map để UI hiển thị qua JsonReportView (phòng trường hợp có thêm
+  // field breakdown chưa thấy ở list).
+  Future<Map<String, dynamic>> fetchAlertDetail(String alertId) async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    final data = await ApiClient.instance.get('/families/$fid/finance/alerts/$alertId');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
+  /// scope: ALL | BUDGET | GOAL | NON_ESSENTIAL
+  Future<void> recompute({
+    String? budgetPlanId,
+    String? goalId,
+    DateTime? periodStart,
+    DateTime? periodEnd,
+    String scope = 'ALL',
+  }) async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.post('/families/$fid/finance/alerts/recompute', {
+      'budgetPlanId': ?budgetPlanId,
+      'goalId': ?goalId,
+      'periodStart': ?periodStart?.toIso8601String().split('T').first,
+      'periodEnd': ?periodEnd?.toIso8601String().split('T').first,
+      'scope': scope,
+    });
+    await fetchAlerts();
+  }
 }

@@ -106,6 +106,16 @@ class SupportRequestProvider extends ChangeNotifier {
     await fetchRequests();
   }
 
+  // GET /families/{familyId}/finance/support-requests/{requestId} — chi
+  // tiết 1 yêu cầu (list đã đủ hầu hết field hiển thị, gọi thêm để lấy field
+  // audit như reviewedBy/reviewedAt nếu BE có mà list không trả về).
+  Future<Map<String, dynamic>> fetchRequestDetail(String requestId) async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    final data = await ApiClient.instance.get('/families/$fid/finance/support-requests/$requestId');
+    return data is Map<String, dynamic> ? data : <String, dynamic>{};
+  }
+
   Future<void> cancel(String requestId) async {
     final fid = ApiClient.instance.familyId;
     if (fid == null) return;

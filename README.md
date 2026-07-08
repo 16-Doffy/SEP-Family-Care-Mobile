@@ -135,9 +135,12 @@ flutter build apk --release
 ## Flows đã implement
 
 ### ✅ Auth
-- Đăng ký → tự động tạo gia đình → role MANAGER. Số điện thoại **bắt buộc** (BE yêu cầu đủ
-  `{ email, password, fullName, phone }`) — bỏ trống bị validate ngay ở FE, số đã tồn tại được map
-  thành thông báo rõ "Số điện thoại đã tồn tại" thay vì exception thô từ BE
+- Đăng ký → role MANAGER. Số điện thoại **bắt buộc** (`{ email, password, fullName, phone }`) — validate
+  ở FE, số đã tồn tại map thành thông báo rõ ràng
+- ✅ **Verify email (BE 07/07, wire FE 2026-07-07)**: `POST /auth/verify-email { code }` (OTP 6 số) + `/auth/resend-verification`
+  (cooldown 60s ở FE, BE tự rate-limit). `VerifyEmailScreen` chèn giữa register và create-family — router chặn qua
+  `AuthProvider.pendingEmailVerification` (set `true` ngay sau `register()`, và reactive nếu `POST /families` trả 403
+  "chưa verify" cho tài khoản cũ). Không chặn luồng join-by-invitation (`/invitations/{token}/claim` không cần verify).
 - Đăng nhập → lấy familyId từ `/families/my`
 - Đăng xuất (revoke refresh token)
 
@@ -147,7 +150,28 @@ flutter build apk --release
   (`INCOME`/`TRANSFER_IN` = thu, `EXPENSE`/`TRANSFER_OUT` = chi) qua `signedAmount`, không suy đoán từ `amount > 0`
 - Yêu cầu hỗ trợ chi tiêu (`/finance/support-requests`)
 - Mô hình tài chính — 5 Jars, 80-20, Custom (`/finance/models`)
-- Kế hoạch ngân sách, mục tiêu tài chính
+- Kế hoạch ngân sách, mục tiêu tài chính (`budget_plan_screen.dart`, `financial_goal_screen.dart`)
+- ✅ **Báo cáo planned-vs-actual (2026-07-07)**: `FinanceReportsScreen` (`/manager/finance-reports`) — 3 tab
+  gọi `budget-plans/{id}/report`, `reports/non-essential-spending`, `reports/budget-goal`. Response schema
+  BE không document → render bằng `JsonReportView` (key-value đệ quy, generic), chưa structured theo field
+  cụ thể — cần chạy thật để xác nhận tên field rồi nâng cấp UI.
+- ✅ **Goal Contribution Plans (2026-07-07)**: `GoalContributionScreen` (`/manager/goal-contribution?goalId=`), vào
+  từ nút trên thẻ mục tiêu trong `financial_goal_screen.dart`. Workflow: Manager/Deputy "Xác nhận kế hoạch" (confirm,
+  per-member) → Member "Tôi đã đóng góp" (submit) → Manager/Deputy "Duyệt/Từ chối" (approve/reject). Có gợi ý đóng
+  góp (contribution-suggestions) và báo cáo thiếu hụt (contribution-shortage, qua `JsonReportView`).
+  ⚠️ **`status` (PENDING/SUBMITTED/APPROVED/REJECTED) và `memberId` = `user.id` là SUY LUẬN**, BE không document
+  response schema của 3 endpoint GET — chưa verify trực tiếp trên BE thật (xem `API_DOCS.md` mục "Goal Contribution
+  Plans", có `[VERIFY]`).
+- ✅ **Toàn bộ endpoint Finance BE-có-nhưng-FE-chưa-gọi đã nối xong (2026-07-08)** — 10 endpoint còn lại trong 42
+  endpoint Finance:
+  - `BudgetPlanDetailScreen` (`/manager/budget-plans/detail?planId=`, tap vào thẻ plan): GET chi tiết kèm `lines`,
+    PATCH sửa plan DRAFT, PATCH/DELETE từng dòng ngân sách.
+  - `GoalDetailScreen` (`/manager/goal-detail?goalId=`, tap vào thẻ mục tiêu): GET chi tiết, PATCH sửa, GET tiến độ
+    chi tiết, GET/PATCH/DELETE lịch sử từng lần góp (`goal-allocations`).
+  - `FinanceAlertsScreen`: tap vào cảnh báo → chi tiết (`_AlertDetailSheet`); nút 🔄 → tính lại cảnh báo (`recompute`).
+  - `SupportRequestScreen`: tap vào yêu cầu → chi tiết (`_RequestDetailSheet`).
+  - `FinanceModelScreen`: nút ℹ️ → xem mẫu mô hình BE (`model-templates`, chỉ tham khảo).
+  - Tất cả field GET không có schema document đều render qua `JsonReportView` — không đoán tên field sai.
 
 ### ✅ Task & Reward (kết nối API thực, `/families/{id}/tasks/...`)
 - Tạo task ad-hoc (UC38) và định kỳ (UC39)
@@ -157,40 +181,50 @@ flutter build apk --release
   `GET .../assignments/{id}/submissions` trước khi mở sheet duyệt, vì endpoint danh sách assignment
   (`GET .../tasks/{taskId}/assignments`) không trả kèm submission nên field `latestSubmissionId`
   luôn null dù status đã `SUBMITTED` — sửa banner "Không tìm thấy bài nộp" xảy ra 100% các lần
-- Reward settlement flow: PENDING → SETTLED → CONFIRMED / DISPUTED (UC46–48)
+- Reward settlement flow thật (sửa 2026-07-08, dòng cũ ghi sai enum): `PENDING_SETTLEMENT` (Manager chưa trả)
+  → `WAITING_CONFIRMATION` (Manager mark-paid, chờ Member xác nhận) → `SETTLED` (Member confirm-received), hoặc
+  → `DISPUTED` nếu Member báo chưa nhận (UC46–48)
+- ✅ **Audit toàn diện + `RewardManagementScreen` mới (2026-07-08)**: verify lại 35 endpoint Task/Reward, phát
+  hiện 18/36 operation có method trong `task_provider.dart` nhưng **chưa từng gọi từ UI** — trái với ghi chú cũ
+  "Task system đầy đủ". Đã build:
+  - `RewardManagementScreen` (`/manager/reward-management`, nút 💰 trong `task_management_screen.dart`) — 3 tab
+    hoàn toàn mới phía Manager: **Thanh toán** (mark-paid/hủy settlement), **Tranh chấp** (chấp nhận/từ chối
+    dispute), **Báo bận** (xử lý/hủy unavailability report). Trước đó Member đã tạo dispute/báo bận từ lâu
+    nhưng Manager **không có màn hình nào** để xử lý.
+  - Task detail: sửa task (`updateTask`), hủy 1 assignment, sửa/xóa reward-setting, đổi tên category (giữ lâu
+    chip), sửa lịch lặp + tạo phân công hàng loạt cho task RECURRING (`_ScheduleSheet`).
+  - **4 bug sai enum/DTO phát hiện khi build** (đã sửa — xem `API_DOCS.md` mục Tasks để biết chi tiết từng bug):
+    `RewardSettlement.status` sai hoàn toàn (khiến nút "Tôi đã nhận thưởng" phía Member không bao giờ hiện —
+    bug có từ trước, không phải do hôm nay), `markRewardPaid`/`resolveDispute`/`createAllocation` gửi sai body key.
+  - Còn thiếu: `PATCH/DELETE .../tasks/proofs/{proofId}` — cần redesign luồng upload proof (hiện upload+submit
+    dồn 1 lần bấm trong `child_tasks_screen.dart`, chưa có điểm để sửa/xóa proof đã upload trước khi nộp).
 
 ### ✅ Family Management
-- Mời thành viên: QR / link / token (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403
-- Tham gia qua token — **BE đổi flow 2026-06-24, không còn join tức thì**:
-  1. Member dán token vào `JoinFamilyScreen` → `POST /invitations/{token}/claim` (**cần đăng nhập**,
-     khác với `/accept` cũ là public) → status `CLAIMED`, chờ Manager duyệt
-  2. Manager duyệt/từ chối qua `InvitationRequestsScreen` (`/manager/invite-requests`, manager-only,
-     badge đỏ số người chờ ở `member_list_screen`) → `POST .../invitations/{id}/approve|reject` → tạo
-     `family_member` thật
-  - `claim` cần đăng nhập nên nếu user chưa login, token được lưu lại (`AuthProvider.pendingInviteToken`,
-    qua `flutter_secure_storage` — sống sót qua cold-start) và tự điều hướng lại `/join?token=...` sau
-    khi login/register xong, không bị mất
-  - Đã fix (2026-06-24): `InvitationProvider.fetchInvitations()` gọi thừa `?limit=100` — BE chỉ nhận
-    query `status` (enum), gửi `limit` bị validation chặn toàn bộ request → màn duyệt luôn báo
-    "Lỗi tải dữ liệu", badge luôn 0. Đã bỏ param thừa.
-  - ⚠️ Đã đề xuất BE (chưa áp dụng): đổi `claim` tự tạo member ngay (bỏ bước `approve` riêng) vì
-    invitation đã được Manager target sẵn 1 email/role/relationship cụ thể lúc tạo — coi như đã duyệt
-    trước. Khi BE đổi, cần sửa lại `join_family_screen.dart` (bỏ dialog "chờ duyệt"),
-    `invitation_provider.dart`, có thể bỏ badge "Yêu cầu" ở `member_list_screen.dart`
-  - ⚠️ Link mời hiện là `https://api.familycare-digital.com/join?token=<64-hex>` (chưa phải App
-    Link/Universal Link thật) — chỉ hoạt động qua copy/dán/clipboard trong `JoinFamilyScreen`,
-    **chưa wire Android Intent Filter / iOS Universal Link** nên OS chưa tự mở app khi bấm link
-  - ⚠️ Mã mời 6 ký tự trong design (COMPONENT_PATTERNS) chưa có endpoint BE tương ứng — chỉ token
-    64-hex, xem `BE_API_REQUESTS.md` mục Invite Management
-- Danh sách thành viên (UC20) — Manager/Deputy xem đầy đủ + có hành động quản lý; Member xem read-only
-  qua route dùng chung `/manager/members`
-- Cấp/thu quyền Phó nhóm (UC18) — **Manager only**, đang chờ BE endpoint user-facing (xem
-  `BE_API_REQUESTS.md` mục 4), FE chỉ hiện action khi `canManageMemberRoles`
-- Xoá thành viên (UC19) — **Manager only** (`canRemoveMembers`). BE **soft-delete**
-  (`DELETE /families/{id}/members/{userId}` chỉ set `status: REMOVED`, không xoá khỏi `members` array
-  của `GET /families/{id}`) — đã fix (2026-06-24): `FamilyProvider.fetchMembers()` lọc
-  `status == ACTIVE`, `removeMember()` nuốt lỗi 404 "not found" (nghĩa là đã xoá trước đó) thay vì ném
-  lỗi gây bối rối
+- Mời thành viên (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403. Body `CreateInvitationDto
+  { email, familyRole, relationship }`
+- ⚠️ **Invite flow đổi (BE 07/07): `accept` → `claim` + `approve` (2 bước)** — cần sửa FE:
+  - `POST /invitations/{token}/claim` — member gửi yêu cầu join (đòi đăng nhập, **check email khớp**, 403
+    nếu khác email được mời) → lời mời chuyển sang trạng thái `CLAIMED`
+  - `POST /families/{familyId}/invitations/{id}/approve` — **Manager duyệt mới tạo FamilyMember**
+  - `POST /families/{familyId}/invitations/{id}/reject` — Manager từ chối
+  - `GET /families/{familyId}/invitations?status=CLAIMED` — Manager xem yêu cầu chờ duyệt
+  - 🔧 **Việc FE cần làm**: `JoinFamilyScreen` đang gọi `/accept` (đã bị bỏ → 404), phải đổi sang `/claim`
+    + thêm màn "chờ Manager duyệt"; thêm UI Manager duyệt join request. Xem `BE_API_REQUESTS.md`.
+  - Token vẫn lưu `AuthProvider.pendingInviteToken` qua `flutter_secure_storage` (sống sót cold-start),
+    tự điều hướng lại `/join?token=...` sau khi login/register
+  - ⚠️ Link mời vẫn là `https://.../join?token=<UUID>` — chưa wire Android Intent Filter / iOS Universal
+    Link nên OS chưa tự mở app; mã mời 6 ký tự trong design vẫn chưa có endpoint BE (chỉ UUID token)
+- Danh sách thành viên (UC20) — Manager/Deputy xem đầy đủ + hành động quản lý; Member read-only qua
+  route dùng chung `/manager/members`
+- Cấp/thu quyền Phó nhóm (UC18) — **Manager only**, **vẫn chờ BE endpoint user-facing**
+  `PATCH /families/{familyId}/members/{userId}/role` (verify Swagger 07/07: chưa có, chỉ admin endpoint).
+  FE chỉ hiện action khi `canManageMemberRoles`
+- Xoá thành viên (UC19) — **Manager only** (`canRemoveMembers`)
+- ✅ **Đổi tên gia đình (2026-07-08)**: `PATCH /families/{id}`, nút ✏️ cạnh tên gia đình trong
+  `member_list_screen.dart` (Manager only)
+- ✅ **Từ chối lời mời (2026-07-08)**: `POST /invitations/{token}/reject` (người ĐƯỢC MỜI tự chối, khác Manager
+  reject yêu cầu CLAIMED) — nút "Từ chối lời mời này" trong `join_family_screen.dart` sau khi xem preview,
+  cần đăng nhập
 
 ### ✅ SOS & Safety (kết nối API thực, `/families/{id}/sos/alerts...`)
 - Nút SOS giữ 3 giây (UC50)
@@ -207,20 +241,41 @@ flutter build apk --release
   - `sendSos()` bắt buộc trả `alertId`, mọi action mutating throw rõ khi thiếu family context hoặc lỗi
     mạng — UI hiển thị lỗi qua SnackBar, khoá nút khi đang gửi
   - Test riêng cho `SosProvider`: `test/sos_provider_test.dart`
-  - ⚠️ Chưa làm: gửi vị trí liên tục khi SOS active (`POST .../locations`), xem chi tiết 1 alert
-    (`GET .../alerts/{id}`), nhận cảnh báo realtime (hiện chỉ fetch 1 lần lúc vào màn hình)
+  - ✅ Chi tiết 1 alert (2026-07-08): icon ℹ️ trên alert card → `_SosAlertDetailSheet` (`GET .../alerts/{id}`)
+  - ✅ Gửi vị trí liên tục khi SOS active (2026-07-07): `SOSScreen._startLocationStreaming()` gọi
+    `POST .../locations` mỗi 20s từ lúc gửi SOS thành công tới khi confirm-safety/rời màn hình
+  - ⚠️ Vẫn chưa làm: xem chi tiết 1 alert kèm lịch sử vị trí (`GET .../alerts/{id}`), nhận cảnh báo
+    realtime phía Manager/Deputy (hiện chỉ fetch 1 lần lúc vào màn hình, chưa poll)
+
+### ✅ Notifications (in-app — API thật, BE 07/07)
+- `GET .../notifications?unreadOnly=`, `PATCH .../notifications/read-all`,
+  `PATCH .../notifications/{id}/read`
+- 🔧 Việc FE cần làm: đổi `notification_provider.dart` từ mock sang 3 endpoint này
+- ⚠️ **FCM push chưa làm được** — chưa có `POST /auth/fcm-token` và chưa có Firebase trong pubspec
 
 ### ✅ Calendar
 - 5 loại sự kiện màu sắc riêng: Task / Sự kiện / Du lịch / Sinh nhật / Sức khỏe (UC70, UC71)
+  ⚠️ **data vẫn mock** — BE chưa có endpoint `/events` (xem "Chờ Backend")
 
 ### ✅ Subscription
-- Xem / chọn gói: Free / Family (99k₫) / Premium (299k₫) (UC76, UC77)
-- Nút "Nâng cấp" hiện chỉ show dialog — checkout/thanh toán thật chưa làm, xem mục "Subscription / Thanh toán" trong `BE_API_REQUESTS.md`
+- Xem / chọn gói (UC76, UC77). `planCode` chuẩn từ BE: **`FREE / PLUS / PREMIUM`** (annual-only, có
+  `stripePriceId`). ⚠️ FE đang hardcode `FREE/FAMILY/PREMIUM` → gửi checkout sẽ 400, **cần sửa**.
+- ⚠️ **Checkout thật đã có (BE 07/07)**: `GET /families/{familyId}/subscription` +
+  `POST /families/{familyId}/subscription/checkout { planCode }` (Stripe).
+  🔧 Việc FE cần làm: nối nút "Nâng cấp" vào checkout.
+  `[VERIFY]` response schema (`checkoutUrl`/`url`/`sessionId`?) và luồng chọn FREE (downgrade?) — hỏi Nghĩa.
 
-### ⚠️ Chờ Backend
-- GPS / Location sharing (`/location/...`) — **BE chưa có endpoint nào** cho location (đã verify qua Swagger `/api/docs-json`), `GpsProvider`/`FamilyMapScreen` hiện không hoạt động
-- Profile PATCH (`/auth/me`) — BE chỉ có `GET`, chưa có `PATCH` để cập nhật họ tên/SĐT/avatar
-- Subscription checkout (Stripe) — BE chỉ có `GET /subscription-plans`, chưa có endpoint tạo checkout session
+### ⚠️ Chờ Backend (verify Swagger 07/07)
+- GPS / Location sharing — **BE vẫn chưa có endpoint location độc lập** (chỉ có location trong ngữ cảnh 1
+  SOS alert). `GpsProvider`/`FamilyMapScreen` chưa hoạt động
+- Profile PATCH (`/auth/me`) — vẫn chỉ có `GET`, chưa có `PATCH`
+- Role Management user-facing (`PATCH .../members/{userId}/role`) — **UC18 vẫn blocked**
+- FCM token (`POST /auth/fcm-token`) — chưa có → push chưa làm được
+- Chat messages / WebSocket — chưa có endpoint
+- Calendar events (`/events`), Album (`/albums`), AI chat (`/ai/chat`) — chưa có
+- Ledger filter theo `memberId` — chưa có (ledger trả toàn gia đình)
+
+> ✅ Đã resolved so với bản 06: Subscription checkout, Notifications (in-app), Invite claim/approve.
 
 ---
 

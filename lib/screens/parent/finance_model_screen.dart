@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart' as fp;
 import '../../theme/app_colors.dart';
+import '../../widgets/json_report_view.dart';
 
 // UC-FIN-01 — Chọn mô hình tài chính gia đình (5 Jars / 80-20 / Custom)
 // UC-FIN-02 — Cấu hình các khoản (Jars / Funds)
@@ -172,7 +173,12 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                     style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
               ),
               if (_loadingCurrent)
-                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                GestureDetector(
+                  onTap: () => _showTemplatesInfo(context),
+                  child: const Icon(Icons.info_outline_rounded, size: 20, color: AppColors.textMuted),
+                ),
             ]),
           ),
 
@@ -407,6 +413,19 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     );
   }
 
+  // GET /finance/model-templates — mẫu mô hình khai báo constant phía BE,
+  // chỉ mang tính tham khảo (UI đã hardcode đúng theo mẫu này, verify
+  // 2026-06-26). Hiện dạng info sheet, không đổi luồng chọn mô hình.
+  Future<void> _showTemplatesInfo(BuildContext context) async {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => _TemplatesInfoSheet(),
+    );
+  }
+
   // ── Lưu — flow thật khớp BE (verify 2026-06-26) ───────────────────────────
   //   1. Tạo model mới (BE tự sinh jar mặc định cho FIVE_JARS/EIGHTY_TWENTY)
   //   2. Đồng bộ % người dùng chỉnh khác mặc định → PATCH từng jar
@@ -472,5 +491,48 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+class _TemplatesInfoSheet extends StatefulWidget {
+  @override
+  State<_TemplatesInfoSheet> createState() => _TemplatesInfoSheetState();
+}
+
+class _TemplatesInfoSheetState extends State<_TemplatesInfoSheet> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _templates = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final t = await context.read<fp.FinanceProvider>().fetchModelTemplates();
+      if (mounted) setState(() { _templates = t; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('ℹ️ Mẫu mô hình tài chính (BE)', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+        else if (_error != null)
+          Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))
+        else
+          JsonReportView(data: _templates),
+      ]),
+    );
   }
 }

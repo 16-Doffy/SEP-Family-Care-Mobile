@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/json_report_view.dart';
 
 class SupportRequestScreen extends StatefulWidget {
   const SupportRequestScreen({super.key});
@@ -272,7 +273,9 @@ class _RequestCard extends StatelessWidget {
     final statusColor  = _statusColor(request.status);
     final statusLabel  = _statusLabel(request.status);
 
-    return Container(
+    return GestureDetector(
+      onTap: () => _showDetail(context),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -364,6 +367,17 @@ class _RequestCard extends StatelessWidget {
           ]),
         ],
       ]),
+      ),
+    );
+  }
+
+  void _showDetail(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) => _RequestDetailSheet(requestId: request.id),
     );
   }
 
@@ -464,5 +478,51 @@ class _RequestCard extends StatelessWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes} phút trước';
     if (diff.inHours < 24)   return '${diff.inHours} giờ trước';
     return '${d.day}/${d.month}/${d.year}';
+  }
+}
+
+// GET /families/{familyId}/finance/support-requests/{requestId} — chi tiết.
+class _RequestDetailSheet extends StatefulWidget {
+  final String requestId;
+  const _RequestDetailSheet({required this.requestId});
+  @override
+  State<_RequestDetailSheet> createState() => _RequestDetailSheetState();
+}
+
+class _RequestDetailSheetState extends State<_RequestDetailSheet> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _detail;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final d = await context.read<SupportRequestProvider>().fetchRequestDetail(widget.requestId);
+      if (mounted) setState(() { _detail = d; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('🔍 Chi tiết yêu cầu', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        const SizedBox(height: 16),
+        if (_loading)
+          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+        else if (_error != null)
+          Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))
+        else
+          JsonReportView(data: _detail ?? {}),
+      ]),
+    );
   }
 }

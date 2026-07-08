@@ -141,6 +141,60 @@ void main() {
       );
     });
 
+    test('just registered, pending email verification → /verify-email, not /family-setup', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: false,
+          role: UserRole.manager, loc: '/register',
+          pendingEmailVerification: true,
+        ),
+        '/verify-email',
+      );
+    });
+
+    test('already on /verify-email while pending → không redirect lặp', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: false,
+          role: UserRole.manager, loc: '/verify-email',
+          pendingEmailVerification: true,
+        ),
+        isNull,
+      );
+    });
+
+    test('deep-link to /family-setup while pending verification → bắt về /verify-email', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: false,
+          role: UserRole.manager, loc: '/family-setup',
+          pendingEmailVerification: true,
+        ),
+        '/verify-email',
+      );
+    });
+
+    test('pending verification but ALREADY has family (joined via claim) → không bị giam ở /verify-email', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: true,
+          role: UserRole.member, loc: '/member/home',
+          pendingEmailVerification: true,
+        ),
+        isNull,
+      );
+    });
+
+    test('verification done (pending=false) → về /family-setup như luồng cũ', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: false,
+          role: UserRole.manager, loc: '/verify-email',
+        ),
+        '/family-setup',
+      );
+    });
+
     test('logged in without family is redirected to /family-setup', () {
       expect(
         computeRedirect(

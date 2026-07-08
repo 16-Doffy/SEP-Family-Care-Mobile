@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/invitation_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
@@ -85,6 +86,27 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
             ? 'Bạn cần đăng nhập trước khi gửi yêu cầu tham gia.'
             : msg);
       }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _declineInvitation() async {
+    final token = _codeCtrl.text.trim();
+    if (token.isEmpty) return;
+    setState(() { _loading = true; _error = null; });
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<InvitationProvider>().declineInvitation(token);
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Đã từ chối lời mời'),
+          backgroundColor: AppColors.textMuted,
+        ));
+        setState(() { _preview = null; _codeCtrl.clear(); });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -271,6 +293,19 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                         style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
+
+            // Từ chối lời mời — POST /invitations/{token}/reject, cần đăng
+            // nhập (BE xác định "lời mời gửi cho tôi" qua email đã login).
+            if (_preview != null && context.watch<AuthProvider>().isLoggedIn) ...[
+              const SizedBox(height: 10),
+              Center(
+                child: TextButton(
+                  onPressed: _loading ? null : _declineInvitation,
+                  child: Text('Từ chối lời mời này',
+                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
 
             // Divider
