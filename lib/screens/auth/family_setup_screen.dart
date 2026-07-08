@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
@@ -53,9 +54,12 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
       await auth.createFamily(name);
       if (mounted) context.go('/manager/home');
     } catch (e) {
-      // Chưa verify email → AuthProvider đã set pendingEmailVerification và
-      // router sẽ tự đưa sang /verify-email, không cần báo lỗi ở đây.
-      if (!auth.pendingEmailVerification) {
+      // Chưa verify email → AuthProvider đã set pendingEmailVerification.
+      // Router KHÔNG tự ép đi nữa (verify không bắt buộc) — hiện dialog rõ
+      // ràng, để người dùng tự chọn xác thực ngay hay để sau.
+      if (auth.pendingEmailVerification) {
+        if (mounted) _showVerifyRequiredDialog();
+      } else {
         messenger.showSnackBar(SnackBar(
           content: Text(e.toString().replaceFirst('Exception: ', '')),
           backgroundColor: AppColors.danger,
@@ -65,6 +69,46 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
     } finally {
       if (mounted) setState(() => _creating = false);
     }
+  }
+
+  // BE chặn tạo family nếu tài khoản chưa verify email (403). Verify KHÔNG
+  // bắt buộc để join gia đình có sẵn — chỉ bắt buộc ở đúng bước này, nên hỏi
+  // rõ thay vì tự động điều hướng ngầm.
+  void _showVerifyRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          const Text('📧', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Cần xác thực email',
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        content: Text(
+          'Tài khoản của bạn chưa xác thực email. Đây là bước bắt buộc riêng cho việc '
+          'tạo gia đình mới (không cần nếu bạn chỉ tham gia gia đình có sẵn qua mã mời).',
+          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx),
+            child: Text('Để sau', style: GoogleFonts.inter(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.link),
+            onPressed: () {
+              Navigator.pop(dCtx);
+              context.push('/verify-email');
+            },
+            child: Text('Xác thực ngay',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Tham gia gia đình qua mã ─────────────────────────────────────────────
@@ -113,14 +157,32 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
+            // Manager có thể đã duyệt NGAY TRONG LÚC người này còn đứng ở
+            // dialog này (claim → approve có thể xảy ra rất nhanh) — trước
+            // đây bấm "Đã hiểu" chỉ setState về màn chọn, không hề gọi lại
+            // BE để biết đã được duyệt chưa, nên dù đã là member thật sự
+            // vẫn bị đá về "Thiết lập gia đình" thay vì vào dashboard. Giờ
+            // refetch family context trước khi quyết định đi đâu.
+            onPressed: () async {
               Navigator.pop(context);
-              setState(() {
-                _mode = _Mode.choose;
-                _codeCtrl.clear();
-                _preview = null;
-                _joinError = null;
-              });
+              final auth = context.read<AuthProvider>();
+              await auth.refreshFamilyContext();
+              if (!mounted) return;
+              if (auth.hasFamily) {
+                final homePath = switch (auth.user?.role) {
+                  UserRole.manager => '/manager/home',
+                  UserRole.deputy => '/deputy/home',
+                  _ => '/member/home',
+                };
+                context.go(homePath);
+              } else {
+                setState(() {
+                  _mode = _Mode.choose;
+                  _codeCtrl.clear();
+                  _preview = null;
+                  _joinError = null;
+                });
+              }
             },
             child: Text('Đã hiểu', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           ),

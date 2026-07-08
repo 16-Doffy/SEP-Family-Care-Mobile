@@ -122,6 +122,9 @@ String? computeRedirect({
 
   final onAuth   = loc == '/login' || loc == '/register' || loc == '/splash';
   final onSetup  = loc == '/family-setup';
+  // Không dùng để ép điều hướng (xem comment ở nhánh onAuth bên dưới) — chỉ
+  // để KHÔNG bounce người dùng ra khỏi /verify-email khi họ chủ động vào
+  // (từ dialog "Xác thực ngay" ở FamilySetupScreen hoặc từ ProfileScreen).
   final onVerify = loc == '/verify-email';
   // JoinFamilyScreen tự xử lý lookup public, còn claim sẽ yêu cầu đăng nhập.
   // endpoint) — không chặn về /login như các route khác.
@@ -145,24 +148,26 @@ String? computeRedirect({
     _                 => '/member/home',
   };
 
-  // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
+  // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family).
+  // pendingEmailVerification chỉ nudge 1 lần NGAY sau register() (còn trong
+  // RAM cùng phiên) — KHÔNG dùng để khoá người dùng ở lại /verify-email lâu
+  // dài: verify không bắt buộc (chỉ chặn ở bước tạo family, không chặn join
+  // qua /invitations/{token}/claim), và flag này mất sau khi đăng
+  // xuất/đăng nhập lại nên không thể dùng làm nguồn "đã verify hay chưa"
+  // đáng tin cậy — xem nút "Xác thực email" trong ProfileScreen và dialog ở
+  // FamilySetupScreen._createFamily() cho 2 lối vào lại màn Verify đáng tin
+  // cậy hơn.
   if (onAuth) {
     if (pendingEmailVerification) return '/verify-email';
     if (!hasFamily) return '/family-setup';
     return homePath;
   }
 
-  // Chưa verify email và chưa có gia đình → bắt về /verify-email trước khi
-  // được vào /family-setup (POST /families sẽ 403 nếu chưa verify). Một khi
-  // đã có gia đình (vd. join qua /invitations/{token}/claim — không yêu cầu
-  // verify) thì không chặn nữa, để không giam người dùng hợp lệ.
-  if (pendingEmailVerification && !hasFamily) {
-    return onVerify ? null : '/verify-email';
-  }
-
   // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
-  // (covers deep-link hoặc manual URL vào các route cần family)
-  if (!hasFamily) return onSetup ? null : '/family-setup';
+  // (covers deep-link hoặc manual URL vào các route cần family). Ngoại lệ
+  // onVerify: cho phép ở lại /verify-email khi chủ động vào (không có family
+  // vẫn xem/nhập OTP được — verify không phụ thuộc đã có family hay chưa).
+  if (!hasFamily) return (onSetup || onVerify) ? null : '/family-setup';
 
   // Member: chỉ vào được /member/* — chặn /manager/* và /deputy/*, trừ vài
   // route dùng chung đã liệt ở _memberSharedPaths (xem màn hình quản lý ở

@@ -163,14 +163,14 @@ void main() {
       );
     });
 
-    test('deep-link to /family-setup while pending verification → bắt về /verify-email', () {
+    test('deep-link to /family-setup while pending verification → KHÔNG bị ép về /verify-email nữa (verify không bắt buộc)', () {
       expect(
         computeRedirect(
           restoring: false, loggedIn: true, hasFamily: false,
           role: UserRole.manager, loc: '/family-setup',
           pendingEmailVerification: true,
         ),
-        '/verify-email',
+        isNull,
       );
     });
 
@@ -185,13 +185,13 @@ void main() {
       );
     });
 
-    test('verification done (pending=false) → về /family-setup như luồng cũ', () {
+    test('chủ động ở /verify-email dù chưa có family và pending=false → không bị đẩy đi (màn tự context.go sau khi verify xong, router không ép)', () {
       expect(
         computeRedirect(
           restoring: false, loggedIn: true, hasFamily: false,
           role: UserRole.manager, loc: '/verify-email',
         ),
-        '/family-setup',
+        isNull,
       );
     });
 

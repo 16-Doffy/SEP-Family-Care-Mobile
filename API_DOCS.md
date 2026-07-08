@@ -25,7 +25,12 @@
 - `POST /api/v1/auth/resend-verification` — **[MỚI, đã wire FE 2026-07-07]** Gửi lại OTP (rate-limited). 400 nếu đã verify hoặc đang cooldown. Xem `AuthProvider.resendVerificationCode()`.
 
 ### Families
-- `POST /api/v1/families` — Tạo family (creator thành MANAGER). **403 nếu account chưa verify.**
+- `POST /api/v1/families` — Tạo family (creator thành MANAGER). **403 nếu account chưa verify.** Verify bằng
+  kịch bản thật 2026-07-08: message thật trả về là **tiếng Việt** `"Vui lòng xác thực tài khoản để dùng chức
+  năng này"` — KHÔNG chứa từ "verify"/"verif" như Swagger mô tả ("Account not verified"). FE từng check
+  `e.message.contains('verif')` để phát hiện case này → không bao giờ khớp, dialog xác thực không hiện, user
+  chỉ thấy snackbar lỗi thường (bug, đã sửa 2026-07-08: `AuthProvider.createFamily()` giờ tin thẳng
+  `statusCode == 403` vì đây là lý do 403 duy nhất được document cho endpoint này).
 - `GET /api/v1/families/my` — Danh sách family user thuộc về.
 - `GET /api/v1/families/{familyId}` — Lấy family (members only). 403 nếu không phải member.
 - `PATCH /api/v1/families/{familyId}` — Update family (MANAGER only). **[wire FE 2026-07-08]** nút ✏️ cạnh tên gia đình trong `member_list_screen.dart` (chỉ Manager thấy).

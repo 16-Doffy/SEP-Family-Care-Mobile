@@ -118,9 +118,13 @@ class AuthProvider extends ChangeNotifier {
         'name': name.trim(),
       });
     } on ApiException catch (e) {
-      // 403 "Account not verified" — tài khoản (có thể đăng ký từ trước,
-      // hoặc phiên bị gián đoạn giữa register và verify) chưa qua bước OTP.
-      if (e.statusCode == 403 && e.message.toLowerCase().contains('verif')) {
+      // 403 = "Account not verified" theo Swagger — đây là lý do 403 DUY NHẤT
+      // được document cho POST /families, nên tin thẳng statusCode. Message
+      // thật từ BE là tiếng Việt ("Vui lòng xác thực tài khoản để dùng chức
+      // năng này"), KHÔNG chứa "verif" — check theo message tiếng Anh trước
+      // đó không bao giờ khớp, khiến dialog xác thực không hiện ra và người
+      // dùng chỉ thấy snackbar lỗi thường (bug đã verify bằng kịch bản thật).
+      if (e.statusCode == 403) {
         _pendingEmailVerification = true;
         notifyListeners();
       }

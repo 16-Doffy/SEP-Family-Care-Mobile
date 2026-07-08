@@ -202,18 +202,25 @@ flutter build apk --release
 ### ✅ Family Management
 - Mời thành viên (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403. Body `CreateInvitationDto
   { email, familyRole, relationship }`
-- ⚠️ **Invite flow đổi (BE 07/07): `accept` → `claim` + `approve` (2 bước)** — cần sửa FE:
+- ✅ **Invite flow (BE 07/07): `accept` → `claim` + `approve` (2 bước), đã xong từ lâu**:
   - `POST /invitations/{token}/claim` — member gửi yêu cầu join (đòi đăng nhập, **check email khớp**, 403
     nếu khác email được mời) → lời mời chuyển sang trạng thái `CLAIMED`
   - `POST /families/{familyId}/invitations/{id}/approve` — **Manager duyệt mới tạo FamilyMember**
   - `POST /families/{familyId}/invitations/{id}/reject` — Manager từ chối
   - `GET /families/{familyId}/invitations?status=CLAIMED` — Manager xem yêu cầu chờ duyệt
-  - 🔧 **Việc FE cần làm**: `JoinFamilyScreen` đang gọi `/accept` (đã bị bỏ → 404), phải đổi sang `/claim`
-    + thêm màn "chờ Manager duyệt"; thêm UI Manager duyệt join request. Xem `BE_API_REQUESTS.md`.
+  - `JoinFamilyScreen` + `FamilySetupScreen` (join tab) đều đã gọi `/claim` + có màn "Đã gửi yêu cầu — chờ
+    Manager duyệt"; `InvitationRequestsScreen` cho Manager duyệt/từ chối.
   - Token vẫn lưu `AuthProvider.pendingInviteToken` qua `flutter_secure_storage` (sống sót cold-start),
     tự điều hướng lại `/join?token=...` sau khi login/register
   - ⚠️ Link mời vẫn là `https://.../join?token=<UUID>` — chưa wire Android Intent Filter / iOS Universal
     Link nên OS chưa tự mở app; mã mời 6 ký tự trong design vẫn chưa có endpoint BE (chỉ UUID token)
+  - 🐛 **Bug race-condition đã sửa (2026-07-08)**: nếu Manager duyệt yêu cầu NGAY TRONG LÚC member còn đứng
+    ở dialog "Đã gửi yêu cầu" (rất dễ xảy ra vì approve nhanh), bấm "Đã hiểu" trước đây chỉ
+    `setState`/`go('/login')` mù quáng dựa vào `AuthProvider.hasFamily` cache cũ (chưa refetch) → member dù
+    đã được duyệt thật vẫn bị đá về `/family-setup` thay vì dashboard. Phát hiện bằng kịch bản thật (2 tài
+    khoản song song: Manager duyệt trong lúc Member đang ở dialog). Fix: gọi
+    `AuthProvider.refreshFamilyContext()` trước khi quyết định điều hướng, ở cả `FamilySetupScreen` và
+    `JoinFamilyScreen`.
 - Danh sách thành viên (UC20) — Manager/Deputy xem đầy đủ + hành động quản lý; Member read-only qua
   route dùng chung `/manager/members`
 - Cấp/thu quyền Phó nhóm (UC18) — **Manager only**, **vẫn chờ BE endpoint user-facing**
@@ -250,7 +257,7 @@ flutter build apk --release
 ### ✅ Notifications (in-app — API thật, BE 07/07)
 - `GET .../notifications?unreadOnly=`, `PATCH .../notifications/read-all`,
   `PATCH .../notifications/{id}/read`
-- 🔧 Việc FE cần làm: đổi `notification_provider.dart` từ mock sang 3 endpoint này
+- ✅ `notification_provider.dart` đã dùng 3 endpoint thật (đổi từ mock từ 2026-06-26)
 - ⚠️ **FCM push chưa làm được** — chưa có `POST /auth/fcm-token` và chưa có Firebase trong pubspec
 
 ### ✅ Calendar
@@ -259,10 +266,9 @@ flutter build apk --release
 
 ### ✅ Subscription
 - Xem / chọn gói (UC76, UC77). `planCode` chuẩn từ BE: **`FREE / PLUS / PREMIUM`** (annual-only, có
-  `stripePriceId`). ⚠️ FE đang hardcode `FREE/FAMILY/PREMIUM` → gửi checkout sẽ 400, **cần sửa**.
-- ⚠️ **Checkout thật đã có (BE 07/07)**: `GET /families/{familyId}/subscription` +
-  `POST /families/{familyId}/subscription/checkout { planCode }` (Stripe).
-  🔧 Việc FE cần làm: nối nút "Nâng cấp" vào checkout.
+  `stripePriceId`) — FE đã dùng đúng enum này (không còn hardcode `FAMILY`).
+- ✅ **Checkout thật đã nối (BE 07/07)**: `GET /families/{familyId}/subscription` +
+  `POST /families/{familyId}/subscription/checkout { planCode }` (Stripe), nút "Nâng cấp" đã gọi checkout.
   `[VERIFY]` response schema (`checkoutUrl`/`url`/`sessionId`?) và luồng chọn FREE (downgrade?) — hỏi Nghĩa.
 
 ### ⚠️ Chờ Backend (verify Swagger 07/07)
