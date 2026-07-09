@@ -125,25 +125,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         final mapped = list.map((p) {
           final code    = p['planCode']?.toString() ?? '';
           final name    = p['name']?.toString() ?? code;
-          final annual  = (p['annualPrice'] as num?)?.toDouble() ?? 0;
-          final monthly = annual / 12;
+          // BE trả annualPrice/storageLimit dạng string ("180000") — ép as num
+          // sẽ throw và rơi về gói cứng, phải tryParse qua toString
+          final annual  = double.tryParse(p['annualPrice']?.toString() ?? '') ?? 0;
           final maxM    = p['maxMembers']?.toString() ?? '∞';
-          final stoMB   = (p['storageLimit'] as num?)?.toDouble() ?? 0;
+          final stoMB   = double.tryParse(p['storageLimit']?.toString() ?? '') ?? 0;
           final stoStr  = stoMB >= 1024
               ? '${(stoMB / 1024).toStringAsFixed(0)} GB'
               : '${stoMB.toStringAsFixed(0)} MB';
-          final feat    = p['featureAccess'] as Map? ?? {};
+          final feat    = p['featureAccess'] is Map ? p['featureAccess'] as Map : const {};
+          // Map đúng các key featureAccess BE đang dùng
           final features = <String>[
             '✅ Task & Wallet cơ bản',
-            if (feat['chat'] == true || code != 'FREE') '✅ Chat nhóm',
-            if (feat['notifications'] != false) '✅ Thông báo',
-            if (feat['calendar'] == true) '✅ Lịch gia đình',
-            if (feat['album'] == true) '✅ Album ảnh',
-            if (feat['gps'] == true || feat['locationTracking'] == true) '✅ Theo dõi vị trí GPS',
+            '✅ Chat nhóm & Thông báo',
+            if (feat['aiEnabled'] == true) '✅ Tính năng AI',
+            if (feat['advancedFinance'] == true) '✅ Tài chính nâng cao',
+            if (feat['advancedReports'] == true) '✅ Báo cáo nâng cao',
             if (feat['aiChatbot'] == true) '✅ AI Chatbot',
-            if (feat['sos'] == true) '✅ Tính năng SOS',
+            if (feat['sos'] == true) '✅ SOS khẩn cấp',
+            if (feat['unlimitedStorage'] == true) '✅ Lưu trữ không giới hạn',
+            if (feat['maxFamilies'] != null && feat['maxFamilies'] != false)
+              '✅ Nhiều gia đình',
           ];
-          if (features.isEmpty) features.add('✅ Các tính năng cơ bản');
 
           Color color;
           List<Color> gradient;
@@ -152,9 +155,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             color = const Color(0xFF6B7280);
             gradient = const [Color(0xFFF3F4F6), Color(0xFFE5E7EB)];
             emoji = '🏠';
-          } else if (code == 'PREMIUM') {
-            color = const Color(0xFF7C3AED);
-            gradient = const [Color(0xFF7C3AED), Color(0xFFA78BFA)];
+          } else if (code == 'GOLD' || code == 'PREMIUM') {
+            color = const Color(0xFFD97706);
+            gradient = const [Color(0xFFF59E0B), Color(0xFFFBBF24)];
             emoji = '⭐';
           } else {
             color = const Color(0xFF2563EB);
@@ -165,16 +168,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           return _PlanData(
             id: code,
             name: name,
-            price: monthly > 0
-                ? '${_fmtPrice(monthly.round())} ₫'
-                : '0 ₫',
-            period: '/tháng',
+            // BE định giá theo năm (annualPrice) — hiển thị đúng như web admin
+            price: annual > 0 ? '${_fmtPrice(annual.round())} ₫' : '0 ₫',
+            period: '/năm',
             emoji: emoji,
             color: color,
             gradientColors: gradient,
-            members: maxM == '0' ? 'Không giới hạn' : '$maxM thành viên',
+            members: maxM == '0' ? 'Không giới hạn' : 'tối đa $maxM thành viên',
             storage: stoStr,
-            db: code == 'PREMIUM' ? 'Docker riêng / gia đình' : 'Shared DB + RLS',
+            db: code == 'GOLD' || code == 'PREMIUM' ? 'Docker riêng / gia đình' : 'Shared DB + RLS',
             features: features,
           );
         }).toList();
