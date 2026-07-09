@@ -222,6 +222,12 @@ GoRouter createRouter(AuthProvider auth) {
       if (result != null && result.startsWith('/join') && auth.pendingInviteToken != null) {
         auth.clearPendingInviteToken();
       }
+      // Ở lại /join (result == null): token đã nằm trong query param của màn
+      // hình rồi — xoá bản pending trong storage, nếu không nó dính vĩnh viễn
+      // và MỌI lần đăng nhập sau đều bị đẩy về trang mời này.
+      if (loc == '/join' && result == null && auth.pendingInviteToken != null) {
+        auth.clearPendingInviteToken();
+      }
       return result;
     },
     routes: [

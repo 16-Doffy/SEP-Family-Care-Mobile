@@ -402,6 +402,9 @@ class AuthProvider extends ChangeNotifier {
     // Xóa session ngay lập tức — không đợi server response
     _user = null;
     _pendingEmailVerification = false;
+    // Token mời đang treo là của phiên cũ — bỏ luôn, nếu giữ thì tài khoản
+    // đăng nhập sau bị đẩy nhầm về màn Tham gia gia đình.
+    await clearPendingInviteToken();
     ApiClient.instance.clearSession();
     await _clearStoredTokens();
     notifyListeners();
