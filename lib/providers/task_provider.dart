@@ -638,7 +638,19 @@ class TaskProvider extends ChangeNotifier {
     try {
       final data = await ApiClient.instance.get('/families/$_fid/tasks/assignments/$assignmentId/submissions');
       final list = _list(data).map((e) => TaskSubmission.fromJson(Map<String, dynamic>.from(e))).toList();
-      return list.isEmpty ? null : list.last;
+      if (list.isEmpty) return null;
+      final latest = list.last;
+      // List submissions chỉ trả proofCount, KHÔNG kèm mảng proofs (verified
+      // live) — phải gọi thêm detail để manager thấy ảnh/ghi chú minh chứng.
+      try {
+        final detail = await ApiClient.instance.get('/families/$_fid/tasks/submissions/${latest.id}');
+        if (detail is Map<String, dynamic>) {
+          return TaskSubmission.fromJson(detail);
+        }
+      } catch (e) {
+        debugPrint('TaskProvider: fetch submission detail failed: $e');
+      }
+      return latest;
     } catch (e) {
       debugPrint('TaskProvider: fetchLatestSubmission failed: $e');
       return null;
