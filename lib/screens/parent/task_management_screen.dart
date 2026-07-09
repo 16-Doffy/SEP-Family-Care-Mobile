@@ -355,6 +355,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               onPressed: () => _showReviewSheet(context, a),
               child: Text('Duyệt', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
             ),
+          // Duyệt/từ chối xong vẫn xem lại được bài nộp (chế độ chỉ xem)
+          if (a.status == 'APPROVED' || a.status == 'REJECTED')
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 32),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                side: const BorderSide(color: Color(0xFFE5E7EB)),
+              ),
+              onPressed: () => _showReviewSheet(context, a, readOnly: true),
+              child: Text('Xem bài nộp', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+            ),
           if (a.status == 'UNAVAILABLE')
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEA580C), minimumSize: const Size(0, 32), padding: const EdgeInsets.symmetric(horizontal: 12)),
@@ -383,7 +394,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   // ── Review submission ─────────────────────────────────────────────────────
 
-  Future<void> _showReviewSheet(BuildContext context, TaskAssignment a) async {
+  Future<void> _showReviewSheet(BuildContext context, TaskAssignment a, {bool readOnly = false}) async {
     // BE không embed submission trong response danh sách assignment (chỉ có
     // status), nên KHÔNG có proofs sẵn trên TaskAssignment dù
     // latestSubmissionId có giá trị — luôn phải gọi riêng endpoint
@@ -398,8 +409,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     if (context.mounted) Navigator.of(context, rootNavigator: true).pop(); // đóng loading
 
     if (submission == null) {
-      messenger.showSnackBar(const SnackBar(
-        content: Text('Không tìm thấy bài nộp để duyệt — thử tải lại'),
+      messenger.showSnackBar(SnackBar(
+        content: Text(readOnly ? 'Không tìm thấy bài nộp nào' : 'Không tìm thấy bài nộp để duyệt — thử tải lại'),
         backgroundColor: AppColors.danger,
       ));
       return;
@@ -418,8 +429,20 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
           padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Duyệt công việc', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text(readOnly ? 'Bài nộp của ${a.assignedToName ?? 'thành viên'}' : 'Duyệt công việc',
+                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
               Text(a.taskTitle ?? '', style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary)),
+              if (readOnly) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: a.statusColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(a.statusLabel, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: a.statusColor)),
+                ),
+              ],
               if (submission.submissionNote != null && submission.submissionNote!.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Container(
@@ -434,10 +457,24 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 const SizedBox(height: 8),
                 ...submission.proofs.map(_proofPreview),
               ],
+              // Ghi chú đánh giá cũ (nếu có) — hiện ở chế độ xem lại
+              if (readOnly && (submission.reviewNote ?? '').isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('Ghi chú đánh giá', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(12)),
+                  child: Text(submission.reviewNote!, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary)),
+                ),
+              ],
+              if (!readOnly) ...[
               const SizedBox(height: 16),
               _inputBox(noteCtrl, 'Ghi chú (tùy chọn)'),
+              ],
               const SizedBox(height: 16),
-              Row(children: [
+              if (!readOnly) Row(children: [
                 Expanded(
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
