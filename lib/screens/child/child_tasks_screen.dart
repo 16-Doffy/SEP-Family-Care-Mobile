@@ -26,7 +26,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   List<TaskAssignment> _filtered(List<TaskAssignment> list) {
     switch (_filter) {
       case 'Chờ làm':
-        return list.where((a) => a.status == 'PENDING' || a.status == 'IN_PROGRESS').toList();
+        // BE dùng ASSIGNED cho assignment mới giao (enum: ASSIGNED|IN_PROGRESS|...)
+        return list.where((a) => a.status == 'ASSIGNED' || a.status == 'PENDING' || a.status == 'IN_PROGRESS').toList();
       case 'Đã nộp':
         return list.where((a) => a.status == 'SUBMITTED').toList();
       case 'Hoàn thành':
@@ -193,7 +194,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
           ]),
         ),
 
-        if (a.status == 'PENDING')
+        if (a.status == 'ASSIGNED' || a.status == 'PENDING')
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: SizedBox(

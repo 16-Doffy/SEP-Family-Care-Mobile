@@ -212,6 +212,7 @@ class TaskAssignment {
       };
 
   String get statusLabel => switch (status) {
+        'ASSIGNED'    => '⚪ Chờ làm',
         'IN_PROGRESS' => '🔵 Đang làm',
         'SUBMITTED'   => '⏳ Chờ duyệt',
         'APPROVED'    => '✅ Hoàn thành',
