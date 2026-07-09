@@ -111,16 +111,35 @@ class ApiClient {
       final uri = _uri(path).replace(queryParameters: queryParams);
       final request = http.MultipartRequest('POST', uri);
       if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+      // Không truyền contentType thì http gửi application/octet-stream và BE
+      // trả "Định dạng file minh chứng không được hỗ trợ" — phải đoán từ đuôi
+      // file (verified live: octet-stream bị 400, image/png pass).
       request.files.add(await http.MultipartFile.fromPath(
         fieldName,
         filePath,
-        contentType: mimeType != null ? MediaType.parse(mimeType) : null,
+        contentType: MediaType.parse(mimeType ?? _guessMimeType(filePath)),
       ));
       final streamed = await request.send();
       return http.Response.fromStream(streamed);
     }
     final r = await _send(doUpload);
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
+  }
+
+  static String _guessMimeType(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png'           => 'image/png',
+      'gif'           => 'image/gif',
+      'webp'          => 'image/webp',
+      'heic'          => 'image/heic',
+      'bmp'           => 'image/bmp',
+      'mp4'           => 'video/mp4',
+      'mov'           => 'video/quicktime',
+      'pdf'           => 'application/pdf',
+      _               => 'application/octet-stream',
+    };
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────
