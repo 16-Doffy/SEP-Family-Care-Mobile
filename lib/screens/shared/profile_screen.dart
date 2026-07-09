@@ -109,9 +109,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (isManager) ...[
                 _tile('👥', 'Thành viên gia đình',
                     onTap: () => context.push('/manager/members')),
-                if (user?.canInviteMembers ?? false)
+                if (user?.canInviteMembers ?? false) ...[
                   _tile('✉️', 'Mời thành viên',
                       onTap: () => context.push('/manager/invite')),
+                  _tile('🙋', 'Duyệt yêu cầu tham gia',
+                      onTap: () => context.push('/manager/invite-requests')),
+                ],
                 if (user?.canManageSubscription ?? false)
                   _tile('💳', 'Gói đăng ký',
                       onTap: () => context.push('/manager/subscription')),
