@@ -59,6 +59,14 @@ class _SOSScreenState extends State<SOSScreen>
 
   // Gửi vị trí mỗi 20s cho tới khi alert được đóng (confirm-safety) hoặc màn
   // hình bị huỷ — POST .../sos/alerts/{alertId}/locations (xem SosProvider).
+  // "2026-07-10T15:18:52.190Z" → "10/07 22:18" (giờ máy) cho dễ đọc
+  static String _fmtAlertTime(String iso) {
+    final d = DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return iso;
+    two(int v) => v.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
   void _startLocationStreaming(String alertId) {
     _locationStreamTimer?.cancel();
     _locationStreamTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
@@ -483,7 +491,7 @@ class _SOSScreenState extends State<SOSScreen>
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: Colors.white)),
-                  Text(alert.createdAt,
+                  Text(_fmtAlertTime(alert.createdAt),
                       style: GoogleFonts.inter(
                           fontSize: 12, color: Colors.white38)),
                 ]),
@@ -512,6 +520,15 @@ class _SOSScreenState extends State<SOSScreen>
         Text(alert.message,
             style:
                 GoogleFonts.inter(fontSize: 14, color: Colors.white70)),
+
+        // Alert đã đóng: hiện ai xử lý + ghi chú
+        if (!alert.isActive && (alert.resolvedByName != null || alert.resolutionNote != null)) ...[
+          const SizedBox(height: 8),
+          Text(
+            '✔ ${alert.resolvedByName ?? 'Đã xử lý'}${(alert.resolutionNote ?? '').isNotEmpty ? ': ${alert.resolutionNote}' : ''}',
+            style: GoogleFonts.inter(fontSize: 12, color: Colors.white38, fontStyle: FontStyle.italic),
+          ),
+        ],
 
         // Location row
         if (alert.address.isNotEmpty) ...[

@@ -3,21 +3,27 @@ import '../services/api_client.dart';
 
 class SosAlert {
   final String id;
-  final String status;
+  final String status;   // ACTIVE | RESOLVED | CANCELED
+  final String severity; // LOW | MEDIUM | HIGH | CRITICAL
   final String message;
   final String address;
   final String senderName;
   final String createdAt;
+  final String? resolutionNote;
+  final String? resolvedByName;
   final double? latitude;
   final double? longitude;
 
   const SosAlert({
     required this.id,
     required this.status,
+    this.severity = 'HIGH',
     required this.message,
     required this.address,
     required this.senderName,
     required this.createdAt,
+    this.resolutionNote,
+    this.resolvedByName,
     this.latitude,
     this.longitude,
   });
@@ -25,22 +31,39 @@ class SosAlert {
   bool get isActive => status == 'ACTIVE';
   bool get hasLocation => latitude != null && longitude != null;
 
+  // Tên hiển thị của 1 member object BE trả: {displayName, user: {fullName}}
+  static String? _memberName(dynamic m) {
+    if (m is! Map) return null;
+    final display = m['displayName']?.toString();
+    if (display != null && display.isNotEmpty) return display;
+    final user = m['user'];
+    if (user is Map) {
+      final full = user['fullName']?.toString();
+      if (full != null && full.isNotEmpty) return full;
+    }
+    // format phẳng cũ: {fullName: ...} ngay trên member object
+    final flat = m['fullName']?.toString();
+    if (flat != null && flat.isNotEmpty) return flat;
+    return null;
+  }
+
+  // Response thật của BE (verified live 2026-07-10): id nằm ở "sosAlertId",
+  // người gửi ở "triggeredByMember.user.fullName", tọa độ là STRING.
   factory SosAlert.fromJson(Map<String, dynamic> json) {
-    final sender = json['sender'] is Map
-        ? json['sender'] as Map<String, dynamic>
-        : (json['triggeredBy'] is Map ? json['triggeredBy'] as Map<String, dynamic> : <String, dynamic>{});
     return SosAlert(
-      id: json['id']?.toString() ?? '',
+      id: json['sosAlertId']?.toString() ?? json['id']?.toString() ?? '',
       status: json['status']?.toString() ?? 'ACTIVE',
+      severity: json['severity']?.toString() ?? 'HIGH',
       message: json['message']?.toString() ?? 'SOS',
       address: json['address']?.toString() ?? '',
-      senderName:
-          sender['displayName']?.toString() ??
-          sender['fullName']?.toString() ??
+      senderName: _memberName(json['triggeredByMember']) ??
+          _memberName(json['sender']) ??
+          _memberName(json['triggeredBy']) ??
           json['senderName']?.toString() ??
           'Thành viên',
-      createdAt: json['createdAt']?.toString() ?? '',
-      // BE trả initialLatitude/initialLongitude khi tạo alert.
+      createdAt: json['triggeredAt']?.toString() ?? json['createdAt']?.toString() ?? '',
+      resolutionNote: json['resolutionNote']?.toString(),
+      resolvedByName: _memberName(json['resolvedByMember']),
       latitude: _d(json['latitude'] ?? json['initialLatitude']),
       longitude: _d(json['longitude'] ?? json['initialLongitude']),
     );
@@ -78,9 +101,11 @@ class SosProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get('/families/$fid/sos/alerts');
       final raw = data is List
           ? data
-          : (data is Map && data['alerts'] is List
-                ? data['alerts']
-                : <dynamic>[]);
+          : (data is Map && data['items'] is List
+                ? data['items']
+                : (data is Map && data['alerts'] is List
+                    ? data['alerts']
+                    : <dynamic>[]));
       _alerts = (raw as List)
           .whereType<Map>()
           .map((e) => SosAlert.fromJson(Map<String, dynamic>.from(e)))
@@ -118,7 +143,8 @@ class SosProvider extends ChangeNotifier {
         'initialLongitude': ?longitude,
       });
       await fetchAlerts();
-      final id = created['id']?.toString();
+      // BE trả "sosAlertId" (verified live), không phải "id"
+      final id = created['sosAlertId']?.toString() ?? created['id']?.toString();
       if (id == null || id.isEmpty) {
         throw Exception('Server không trả về ID cảnh báo');
       }
