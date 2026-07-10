@@ -132,27 +132,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
             children: [
-              // Verify không bắt buộc — chỉ chặn ở bước tạo family mới, KHÔNG
-              // chặn join gia đình có sẵn. Cho phép thoát bất cứ lúc nào:
-              // pop lại nơi vào (Profile, dialog "Xác thực ngay") nếu có, hoặc
-              // về /family-setup nếu vào thẳng từ redirect ngay sau register
-              // (không có gì để pop).
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => context.canPop() ? context.pop() : context.go('/family-setup'),
-                    child: const Icon(Icons.arrow_back_ios_new_rounded,
-                        size: 20, color: AppColors.textPrimary),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => context.canPop() ? context.pop() : context.go('/family-setup'),
-                    child: Text('Để sau',
-                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 24),
               const Text('📧', style: TextStyle(fontSize: 64)),
               const SizedBox(height: 20),
               Text('Xác thực email',

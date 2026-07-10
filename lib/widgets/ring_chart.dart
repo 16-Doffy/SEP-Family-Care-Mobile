@@ -32,7 +32,7 @@ class RingChart extends StatelessWidget {
           CustomPaint(
             size: Size(size, size),
             painter: _RingPainter(
-              progress: progress.clamp(0.0, 1.0),
+              progress: progress.clamp(0.0, 1.0).toDouble(),
               color: color,
               trackColor: trackColor,
               strokeWidth: strokeWidth,

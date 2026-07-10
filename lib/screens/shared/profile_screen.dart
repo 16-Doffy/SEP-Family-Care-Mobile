@@ -99,12 +99,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _section('Tài khoản', [
               _tile('👤', 'Chỉnh sửa hồ sơ',
                   onTap: () => context.push('/profile/edit')),
-              // Verify không bắt buộc lúc đăng ký (chỉ chặn ở bước tạo family
-              // mới) — luôn hiện ở đây để ai bỏ qua lúc đăng ký, hoặc đăng
-              // xuất/đăng nhập lại làm mất trạng thái "đang chờ verify" trong
-              // RAM, vẫn có lối quay lại xác thực bất cứ lúc nào.
-              _tile('📧', 'Xác thực email',
-                  onTap: () => context.push('/verify-email')),
               _tile('🔒', 'Bảo mật', onTap: () {}),
               _tile('🔔', 'Thông báo', onTap: () {}),
             ]),
@@ -115,9 +109,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (isManager) ...[
                 _tile('👥', 'Thành viên gia đình',
                     onTap: () => context.push('/manager/members')),
-                if (user?.canInviteMembers ?? false)
+                if (user?.canInviteMembers ?? false) ...[
                   _tile('✉️', 'Mời thành viên',
                       onTap: () => context.push('/manager/invite')),
+                  _tile('🙋', 'Duyệt yêu cầu tham gia',
+                      onTap: () => context.push('/manager/invite-requests')),
+                ],
                 if (user?.canManageSubscription ?? false)
                   _tile('💳', 'Gói đăng ký',
                       onTap: () => context.push('/manager/subscription')),

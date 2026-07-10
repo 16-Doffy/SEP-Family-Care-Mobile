@@ -99,7 +99,10 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     if (data is! Map) return null;
     final v = data[key];
     if (v == null) return null;
-    return (v as num).toDouble();
+    // BE trả số dạng string ("3000000") — ép as num sẽ throw và màn hình
+    // hiện "Chưa khai báo" oan dù đã khai báo (verified live)
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
   }
 
   String _fmtNum(double v) {
@@ -377,9 +380,14 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               if (!wallet.isLoading && wallet.transactions.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Text('Chưa có giao dịch nào',
+                  // BE chặn member đọc sổ quỹ chung (403 — chỉ MANAGER/DEPUTY,
+                  // verified live) nên đừng hiện "chưa có giao dịch" gây hiểu lầm
+                  child: Text(
+                      context.watch<AuthProvider>().user?.isAdministrative == false
+                          ? 'Sổ quỹ chung chỉ Trưởng/Phó nhóm xem được.\nLịch sử xin tiền của bạn nằm ở mục "Yêu cầu hỗ trợ" phía trên.'
+                          : 'Chưa có giao dịch nào',
                       style: GoogleFonts.inter(
-                          fontSize: 12, color: AppColors.textMuted)),
+                          fontSize: 12, color: AppColors.textMuted, height: 1.4)),
                 )
               else
                 ...wallet.transactions.map((e) => _LedgerCard(entry: e)),

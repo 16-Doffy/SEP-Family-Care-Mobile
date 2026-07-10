@@ -41,6 +41,28 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     super.dispose();
   }
 
+  // Màn này có thể là route DUY NHẤT trong stack (mở qua deep link
+  // familycare://app/join) — pop() khi đó không có gì để pop, nút back chết.
+  // Không pop được thì go về màn phù hợp theo trạng thái đăng nhập.
+  void _goBack() {
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      context.go('/login');
+    } else if (!auth.hasFamily) {
+      context.go('/family-setup');
+    } else {
+      context.go(switch (auth.user!.role) {
+        UserRole.manager => '/manager/home',
+        UserRole.deputy  => '/deputy/home',
+        _                => '/member/home',
+      });
+    }
+  }
+
   // GET /invitations/{token} — xem thông tin gia đình trước khi accept
   // token = secure token của lời mời (64 ký tự hex, KHÁC với invitation.id)
   Future<void> _lookupCode() async {
@@ -135,11 +157,11 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
         actions: [
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.link),
-            // Manager có thể đã duyệt ngay trong lúc user còn đứng ở dialog
-            // này — trước đây bấm "Đã hiểu" chỉ go('/login') mù quáng, router
-            // dựa vào AuthProvider.hasFamily (cache cũ, chưa có gì refetch)
-            // nên vẫn đá về /family-setup dù BE đã có family thật. Refetch
-            // trước khi quyết định đi đâu, giống fix ở family_setup_screen.dart.
+            // Manager có thể đã duyệt ngay trong lúc user còn đứng ở dialog —
+            // trước đây bấm "Đã hiểu" chỉ go('/login') mù quáng, router dựa
+            // vào AuthProvider.hasFamily cache cũ (chưa refetch) nên vẫn đá về
+            // /family-setup dù BE đã có family thật. Refetch trước khi điều
+            // hướng, giống fix ở family_setup_screen.dart.
             onPressed: () async {
               final auth = context.read<AuthProvider>();
               if (auth.isLoggedIn) {
@@ -147,12 +169,11 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
               }
               if (!mounted) return;
               if (auth.hasFamily) {
-                final homePath = switch (auth.user?.role) {
+                context.go(switch (auth.user?.role) {
                   UserRole.manager => '/manager/home',
                   UserRole.deputy => '/deputy/home',
                   _ => '/member/home',
-                };
-                context.go(homePath);
+                });
               } else {
                 context.go('/login');
               }
@@ -176,7 +197,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
             // Header
             Row(children: [
               GestureDetector(
-                onTap: () => context.pop(),
+                onTap: _goBack,
                 child: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.textPrimary),
               ),
               const SizedBox(width: 12),

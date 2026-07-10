@@ -213,6 +213,52 @@ class SosProvider extends ChangeNotifier {
     }
   }
 
+  // GET .../sos/alerts/{alertId}/location/current — vị trí MỚI NHẤT của alert
+  // (BE bổ sung 2026-07-10, dành cho người theo dõi vừa vào xem). Trả null nếu
+  // alert chưa có điểm vị trí nào hoặc gọi lỗi — caller tự fallback.
+  Future<({double lat, double lng})?> fetchCurrentLocation(String alertId) async {
+    final fid = _fid;
+    if (fid == null) return null;
+    try {
+      final data = await ApiClient.instance
+          .get('/families/$fid/sos/alerts/$alertId/location/current');
+      if (data is Map) {
+        final lat = double.tryParse(data['latitude']?.toString() ?? '');
+        final lng = double.tryParse(data['longitude']?.toString() ?? '');
+        if (lat != null && lng != null) return (lat: lat, lng: lng);
+      }
+    } catch (e) {
+      debugPrint('SosProvider: fetchCurrentLocation failed: $e');
+    }
+    return null;
+  }
+
+  // POST .../sos/alerts/{alertId}/locations/batch — gửi nhiều điểm vị trí một
+  // lần (BE bổ sung 2026-07-10; thiết bị buffer khi offline rồi flush — dành
+  // cho Wear OS / mất mạng tạm thời).
+  Future<void> pushLocationBatch(
+      String alertId, List<({double lat, double lng, double? accuracy, DateTime? recordedAt})> points,
+      {String sourceType = 'MOBILE_GPS'}) async {
+    final fid = _fid;
+    if (fid == null || points.isEmpty) return;
+    try {
+      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/locations/batch', {
+        'points': [
+          for (final p in points)
+            {
+              'latitude': p.lat,
+              'longitude': p.lng,
+              'sourceType': sourceType,
+              if (p.accuracy != null) 'accuracy': p.accuracy,
+              if (p.recordedAt != null) 'recordedAt': p.recordedAt!.toUtc().toIso8601String(),
+            }
+        ],
+      });
+    } catch (e) {
+      debugPrint('SosProvider: pushLocationBatch failed: $e');
+    }
+  }
+
   // GET /families/{familyId}/sos/alerts/{alertId} — chi tiết 1 alert (kèm
   // phản hồi + vị trí, theo mô tả API_DOCS.md). List hiện tại đủ cho UI
   // chính, gọi thêm khi cần xem đầy đủ responses/locations lịch sử.

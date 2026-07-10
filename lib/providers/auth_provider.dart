@@ -122,8 +122,9 @@ class AuthProvider extends ChangeNotifier {
       // được document cho POST /families, nên tin thẳng statusCode. Message
       // thật từ BE là tiếng Việt ("Vui lòng xác thực tài khoản để dùng chức
       // năng này"), KHÔNG chứa "verif" — check theo message tiếng Anh trước
-      // đó không bao giờ khớp, khiến dialog xác thực không hiện ra và người
-      // dùng chỉ thấy snackbar lỗi thường (bug đã verify bằng kịch bản thật).
+      // đó không bao giờ khớp → pendingEmailVerification không được set →
+      // router (mandatory) không redirect sang /verify-email → luồng bắt buộc
+      // xác thực hỏng. Fix bằng kịch bản thật 2026-07-08.
       if (e.statusCode == 403) {
         _pendingEmailVerification = true;
         notifyListeners();
@@ -406,6 +407,9 @@ class AuthProvider extends ChangeNotifier {
     // Xóa session ngay lập tức — không đợi server response
     _user = null;
     _pendingEmailVerification = false;
+    // Token mời đang treo là của phiên cũ — bỏ luôn, nếu giữ thì tài khoản
+    // đăng nhập sau bị đẩy nhầm về màn Tham gia gia đình.
+    await clearPendingInviteToken();
     ApiClient.instance.clearSession();
     await _clearStoredTokens();
     notifyListeners();

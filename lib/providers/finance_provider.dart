@@ -205,14 +205,20 @@ class FinancialGoal {
     this.progressPercent,
   });
 
-  factory FinancialGoal.fromJson(Map<String, dynamic> j) => FinancialGoal(
-        id: j['id']?.toString() ?? '',
-        goalName: j['goalName']?.toString() ?? '',
-        targetAmount: _money(j['targetAmount']),
-        deadline: j['deadline']?.toString(),
-        status: j['status']?.toString() ?? 'ACTIVE',
-        progressPercent: _moneyNull(j['progressPercent']),
-      );
+  // Với includeProgress=true BE bọc item thành {goal: {...}, progress: {...}}
+  // — phải bóc lớp, đọc phẳng sẽ ra tên rỗng/0đ (bug đã xác minh trên API live)
+  factory FinancialGoal.fromJson(Map<String, dynamic> j) {
+    final goal = j['goal'] is Map ? Map<String, dynamic>.from(j['goal'] as Map) : j;
+    final progress = j['progress'] is Map ? Map<String, dynamic>.from(j['progress'] as Map) : null;
+    return FinancialGoal(
+      id: goal['id']?.toString() ?? '',
+      goalName: goal['goalName']?.toString() ?? '',
+      targetAmount: _money(goal['targetAmount']),
+      deadline: goal['deadline']?.toString(),
+      status: goal['status']?.toString() ?? 'ACTIVE',
+      progressPercent: _moneyNull(progress?['progressPercent'] ?? goal['progressPercent'] ?? j['progressPercent']),
+    );
+  }
 
   Color get statusColor => switch (status) {
         'COMPLETED' => const Color(0xFF16A34A),

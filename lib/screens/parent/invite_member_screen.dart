@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../../providers/family_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
@@ -194,8 +196,20 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
 
   // ── STEP 2: KẾT QUẢ ────────────────────────────────────────────────────────
   Widget _buildResultStep() {
-    final token = _inviteToken!; // full UUID — dùng nguyên cho cả link & copy
-    final link  = 'https://api.familycare-digital.com/join?token=$token';
+    final token = _inviteToken!;
+    // Deep link mở thẳng app (đã đăng ký intent-filter trong AndroidManifest).
+    // KHÔNG dùng https://api.familycare-digital.com/join — API domain không có
+    // trang web đó (trả 404), người nhận bấm chỉ thấy JSON lỗi.
+    final deepLink = 'familycare://app/join?token=$token';
+    final familyName = context.read<FamilyProvider>().familyName;
+    final shareMessage = 'Bạn được mời tham gia gia đình'
+        '${familyName.isNotEmpty ? ' "$familyName"' : ''} trên FamilyCare! 🏠\n\n'
+        'Cách tham gia:\n'
+        '1. Cài & mở app FamilyCare, đăng ký tài khoản\n'
+        '2. Chọn "Nhập mã mời" rồi dán mã sau:\n'
+        '$token\n\n'
+        'Nếu đã cài app, bấm link này để mở nhanh: $deepLink\n'
+        '(Lời mời hết hạn trong 24h)';
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -260,7 +274,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
 
         _copyBox(label: 'Token mời (dán vào App)', value: token, isCode: true),
         const SizedBox(height: 16),
-        _copyBox(label: 'Link tham gia', value: link, isCode: false),
+        _copyBox(label: 'Lời nhắn mời (gửi qua Zalo/Messenger...)', value: shareMessage, isCode: false),
 
         const SizedBox(height: 40),
         TextButton(

@@ -123,7 +123,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         Align(
                           alignment: Alignment.centerRight,
-                          child: Text('Quên mật khẩu?', style: GoogleFonts.inter(fontSize: 13, color: AppColors.link, fontWeight: FontWeight.w600)),
+                          child: GestureDetector(
+                            onTap: () => context.push('/forgot-password'),
+                            child: Text('Quên mật khẩu?', style: GoogleFonts.inter(fontSize: 13, color: AppColors.link, fontWeight: FontWeight.w600)),
+                          ),
                         ),
                         const SizedBox(height: 20),
 

@@ -36,6 +36,8 @@ import '../screens/auth/join_family_screen.dart';
 import '../screens/auth/family_setup_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
+import '../screens/auth/forgot_password_screen.dart';
+import '../screens/shared/payment_result_screen.dart';
 import '../screens/shared/splash_screen.dart';
 import '../screens/parent/finance_alerts_screen.dart';
 import '../screens/parent/support_request_screen.dart';
@@ -120,11 +122,9 @@ String? computeRedirect({
     return loc == '/splash' ? null : '/splash';
   }
 
-  final onAuth   = loc == '/login' || loc == '/register' || loc == '/splash';
+  final onAuth   = loc == '/login' || loc == '/register' || loc == '/splash' ||
+      loc == '/forgot-password';
   final onSetup  = loc == '/family-setup';
-  // Không dùng để ép điều hướng (xem comment ở nhánh onAuth bên dưới) — chỉ
-  // để KHÔNG bounce người dùng ra khỏi /verify-email khi họ chủ động vào
-  // (từ dialog "Xác thực ngay" ở FamilySetupScreen hoặc từ ProfileScreen).
   final onVerify = loc == '/verify-email';
   // JoinFamilyScreen tự xử lý lookup public, còn claim sẽ yêu cầu đăng nhập.
   // endpoint) — không chặn về /login như các route khác.
@@ -148,26 +148,24 @@ String? computeRedirect({
     _                 => '/member/home',
   };
 
-  // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family).
-  // pendingEmailVerification chỉ nudge 1 lần NGAY sau register() (còn trong
-  // RAM cùng phiên) — KHÔNG dùng để khoá người dùng ở lại /verify-email lâu
-  // dài: verify không bắt buộc (chỉ chặn ở bước tạo family, không chặn join
-  // qua /invitations/{token}/claim), và flag này mất sau khi đăng
-  // xuất/đăng nhập lại nên không thể dùng làm nguồn "đã verify hay chưa"
-  // đáng tin cậy — xem nút "Xác thực email" trong ProfileScreen và dialog ở
-  // FamilySetupScreen._createFamily() cho 2 lối vào lại màn Verify đáng tin
-  // cậy hơn.
+  // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
   if (onAuth) {
     if (pendingEmailVerification) return '/verify-email';
     if (!hasFamily) return '/family-setup';
     return homePath;
   }
 
+  // Chưa verify email và chưa có gia đình → bắt về /verify-email trước khi
+  // được vào /family-setup (POST /families sẽ 403 nếu chưa verify). Một khi
+  // đã có gia đình (vd. join qua /invitations/{token}/claim — không yêu cầu
+  // verify) thì không chặn nữa, để không giam người dùng hợp lệ.
+  if (pendingEmailVerification && !hasFamily) {
+    return onVerify ? null : '/verify-email';
+  }
+
   // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
-  // (covers deep-link hoặc manual URL vào các route cần family). Ngoại lệ
-  // onVerify: cho phép ở lại /verify-email khi chủ động vào (không có family
-  // vẫn xem/nhập OTP được — verify không phụ thuộc đã có family hay chưa).
-  if (!hasFamily) return (onSetup || onVerify) ? null : '/family-setup';
+  // (covers deep-link hoặc manual URL vào các route cần family)
+  if (!hasFamily) return onSetup ? null : '/family-setup';
 
   // Member: chỉ vào được /member/* — chặn /manager/* và /deputy/*, trừ vài
   // route dùng chung đã liệt ở _memberSharedPaths (xem màn hình quản lý ở
@@ -199,12 +197,24 @@ String? computeRedirect({
 }
 
 GoRouter createRouter(AuthProvider auth) {
+  // Deep link mở lúc app cold-start bị nuốt mất: redirect đá về /splash chờ
+  // khôi phục session rồi đi thẳng home. Lưu lại URI gốc để khôi phục xong
+  // quay về đúng đích (payment-success/failed, join...).
+  String? pendingDeepLink;
   return GoRouter(
     navigatorKey: _rootKey,
     initialLocation: '/splash',
     refreshListenable: auth,
     redirect: (context, state) {
       final loc = state.matchedLocation;
+      if (auth.restoring && loc != '/splash') {
+        pendingDeepLink = state.uri.toString();
+      }
+      if (!auth.restoring && loc == '/splash' && pendingDeepLink != null) {
+        final target = pendingDeepLink!;
+        pendingDeepLink = null;
+        return target;
+      }
       // Lưu lại token mời ngay khi vào /join — phòng trường hợp router cần
       // bắt đăng nhập trước (xem computeRedirect: pendingInviteToken).
       if (loc == '/join') {
@@ -225,6 +235,12 @@ GoRouter createRouter(AuthProvider auth) {
       );
       // Token đã được dùng để quay lại /join — xoá để không lặp lại lần sau.
       if (result != null && result.startsWith('/join') && auth.pendingInviteToken != null) {
+        auth.clearPendingInviteToken();
+      }
+      // Ở lại /join (result == null): token đã nằm trong query param của màn
+      // hình rồi — xoá bản pending trong storage, nếu không nó dính vĩnh viễn
+      // và MỌI lần đăng nhập sau đều bị đẩy về trang mời này.
+      if (loc == '/join' && result == null && auth.pendingInviteToken != null) {
         auth.clearPendingInviteToken();
       }
       return result;
@@ -356,6 +372,11 @@ GoRouter createRouter(AuthProvider auth) {
           initialCode: state.uri.queryParameters['token'] ?? state.uri.queryParameters['code'],
         ),
       ),
+      // Deep link Stripe trả về sau checkout — BE đặt 2 URL này vào env:
+      //   familycare://app/payment-success | familycare://app/payment-failed
+      GoRoute(path: '/payment-success', builder: (_, _) => const PaymentResultScreen(success: true)),
+      GoRoute(path: '/payment-failed',  builder: (_, _) => const PaymentResultScreen(success: false)),
+      GoRoute(path: '/forgot-password', builder: (_, _) => const ForgotPasswordScreen()),
     ],
   );
 }
