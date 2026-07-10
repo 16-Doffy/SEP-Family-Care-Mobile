@@ -36,6 +36,7 @@ import '../screens/auth/join_family_screen.dart';
 import '../screens/auth/family_setup_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
+import '../screens/shared/payment_result_screen.dart';
 import '../screens/shared/splash_screen.dart';
 import '../screens/parent/finance_alerts_screen.dart';
 import '../screens/parent/support_request_screen.dart';
@@ -194,12 +195,24 @@ String? computeRedirect({
 }
 
 GoRouter createRouter(AuthProvider auth) {
+  // Deep link mở lúc app cold-start bị nuốt mất: redirect đá về /splash chờ
+  // khôi phục session rồi đi thẳng home. Lưu lại URI gốc để khôi phục xong
+  // quay về đúng đích (payment-success/failed, join...).
+  String? pendingDeepLink;
   return GoRouter(
     navigatorKey: _rootKey,
     initialLocation: '/splash',
     refreshListenable: auth,
     redirect: (context, state) {
       final loc = state.matchedLocation;
+      if (auth.restoring && loc != '/splash') {
+        pendingDeepLink = state.uri.toString();
+      }
+      if (!auth.restoring && loc == '/splash' && pendingDeepLink != null) {
+        final target = pendingDeepLink!;
+        pendingDeepLink = null;
+        return target;
+      }
       // Lưu lại token mời ngay khi vào /join — phòng trường hợp router cần
       // bắt đăng nhập trước (xem computeRedirect: pendingInviteToken).
       if (loc == '/join') {
@@ -357,6 +370,10 @@ GoRouter createRouter(AuthProvider auth) {
           initialCode: state.uri.queryParameters['token'] ?? state.uri.queryParameters['code'],
         ),
       ),
+      // Deep link Stripe trả về sau checkout — BE đặt 2 URL này vào env:
+      //   familycare://app/payment-success | familycare://app/payment-failed
+      GoRoute(path: '/payment-success', builder: (_, _) => const PaymentResultScreen(success: true)),
+      GoRoute(path: '/payment-failed',  builder: (_, _) => const PaymentResultScreen(success: false)),
     ],
   );
 }
