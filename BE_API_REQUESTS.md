@@ -56,6 +56,15 @@ POST /families/{familyId}/sos/alerts/{alertId}/locations   Body: PushSosLocation
 ```
 - **FE đã làm xong**: `SOSScreen` tự gửi vị trí mỗi 20s từ lúc SOS active tới confirm-safety.
 
+### 4 endpoint BE bổ sung 07/11 — **[RESOLVED, FE đã wire]** (verify swagger 147 paths)
+```
+POST /auth/forgot-password   Body: { email }                         → BE gửi OTP 6 số
+POST /auth/reset-password    Body: { email, code, newPassword }
+GET  /families/{id}/sos/alerts/{alertId}/location/current            → vị trí mới nhất
+POST /families/{id}/sos/alerts/{alertId}/locations/batch  Body: { points: [] }
+```
+- **FE đã làm xong**: `forgot_password_screen.dart` (2 bước OTP), `SosProvider.fetchCurrentLocation()` (đã gọi từ `sos_screen.dart`), `SosProvider.pushLocationBatch()` (method sẵn — **chưa nối UI trigger** cho luồng buffer offline).
+
 ### Finance Reports + Goal Contribution Plans — **[RESOLVED, FE đã wire 07/07 — nhưng response schema cần verify]**
 ```
 GET  .../budget-plans/{id}/report
