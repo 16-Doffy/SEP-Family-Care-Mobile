@@ -100,6 +100,10 @@ class _SOSScreenState extends State<SOSScreen>
 
   // ── Get GPS → send SOS ───────────────────────────────────────────────────
 
+  // Nguyên tắc: GPS KHÔNG ĐƯỢC chặn việc gửi SOS — CreateSosAlertDto không
+  // bắt buộc tọa độ. getCurrentPosition trên emulator/fused provider có thể
+  // treo vô hạn chờ fix mới (timeLimit của geolocator không phải lúc nào cũng
+  // nhả) → bọc timeout cứng + fallback getLastKnownPosition.
   Future<Position?> _getLocation() async {
     try {
       var permission = await Geolocator.checkPermission();
@@ -108,12 +112,19 @@ class _SOSScreenState extends State<SOSScreen>
       }
       if (permission == LocationPermission.deniedForever ||
           permission == LocationPermission.denied) { return null; }
-      return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
+      try {
+        return await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 8),
+          ),
+        ).timeout(const Duration(seconds: 10));
+      } catch (_) {
+        // Không lấy được fix mới trong 10s → dùng vị trí gần nhất đã biết
+        // (trả về ngay, không chờ) — vẫn hơn là không có gì.
+        return await Geolocator.getLastKnownPosition()
+            .timeout(const Duration(seconds: 3), onTimeout: () => null);
+      }
     } catch (e) {
       debugPrint('SOSScreen: get GPS location failed: $e');
       return null;
@@ -124,7 +135,10 @@ class _SOSScreenState extends State<SOSScreen>
     _countTimer?.cancel();
     setState(() { _sending = true; _countdown = null; });
     final sosProvider = context.read<SosProvider>();
-    final pos = await _getLocation();
+    // Chốt chặn cuối: dù _getLocation có kẹt ở tầng platform channel thì SOS
+    // vẫn phải được gửi đi sau tối đa 15s (không có tọa độ cũng gửi).
+    final pos = await _getLocation()
+        .timeout(const Duration(seconds: 15), onTimeout: () => null);
     // Lưu GPS local trước để hiển thị dù API có lỗi
     if (mounted) {
       setState(() {
