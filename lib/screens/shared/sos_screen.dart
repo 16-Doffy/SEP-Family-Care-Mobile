@@ -527,8 +527,15 @@ class _SOSScreenState extends State<SOSScreen>
                     borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
               ),
-              onPressed: () => _openMaps(
-                  alert.latitude!, alert.longitude!, alert.senderName),
+              onPressed: () async {
+                // Lấy vị trí MỚI NHẤT từ BE (người gửi có thể đã di chuyển
+                // từ lúc tạo alert) — lỗi/chưa có thì dùng vị trí ban đầu.
+                final current = await context
+                    .read<SosProvider>()
+                    .fetchCurrentLocation(alert.id);
+                _openMaps(current?.lat ?? alert.latitude!,
+                    current?.lng ?? alert.longitude!, alert.senderName);
+              },
               icon: const Text('🗺️', style: TextStyle(fontSize: 16)),
               label: Text('Mở vị trí trên Google Maps',
                   style: GoogleFonts.inter(

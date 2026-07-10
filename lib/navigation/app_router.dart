@@ -36,6 +36,7 @@ import '../screens/auth/join_family_screen.dart';
 import '../screens/auth/family_setup_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
+import '../screens/auth/forgot_password_screen.dart';
 import '../screens/shared/payment_result_screen.dart';
 import '../screens/shared/splash_screen.dart';
 import '../screens/parent/finance_alerts_screen.dart';
@@ -121,7 +122,8 @@ String? computeRedirect({
     return loc == '/splash' ? null : '/splash';
   }
 
-  final onAuth   = loc == '/login' || loc == '/register' || loc == '/splash';
+  final onAuth   = loc == '/login' || loc == '/register' || loc == '/splash' ||
+      loc == '/forgot-password';
   final onSetup  = loc == '/family-setup';
   final onVerify = loc == '/verify-email';
   // JoinFamilyScreen tự xử lý lookup public, còn claim sẽ yêu cầu đăng nhập.
@@ -374,6 +376,7 @@ GoRouter createRouter(AuthProvider auth) {
       //   familycare://app/payment-success | familycare://app/payment-failed
       GoRoute(path: '/payment-success', builder: (_, _) => const PaymentResultScreen(success: true)),
       GoRoute(path: '/payment-failed',  builder: (_, _) => const PaymentResultScreen(success: false)),
+      GoRoute(path: '/forgot-password', builder: (_, _) => const ForgotPasswordScreen()),
     ],
   );
 }
