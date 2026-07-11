@@ -14,7 +14,10 @@
 > 4. Email verification (`verify-email`/`resend-verification`) — luồng **MANDATORY**.
 > 5. Finance mở rộng: Goal Contribution Plan + reports planned-vs-actual.
 >
-> Vẫn CHƯA có (0 endpoint): Location tracking độc lập, `PATCH /auth/me`, role endpoint user-facing (UC18), **Chat/WS**, Calendar `/events`, Album, AI, FCM token.
+> **Cập nhật 2026-07-11 (sau fast-forward lên `origin/main` 6621248):** BE đã ship **module Chat (18 endpoint REST)** —
+> FE đã wire (`chat_provider.dart`, xem mục Chat bên dưới). SOS thêm 2 fix (`sosAlertId`, GPS treo).
+>
+> Vẫn CHƯA có (0 endpoint): Location tracking độc lập, `PATCH /auth/me`, role endpoint user-facing (UC18), Calendar `/events`, Album, AI, FCM token.
 
 ---
 
@@ -62,6 +65,20 @@
 - `PATCH /api/v1/families/{familyId}/sos/alerts/{alertId}/cancel` — Cancel (FAMILY_MANAGER / DEPUTY_MEMBER). Body `ResolveSosAlertDto { resolutionNote? }`.
 
 > ⚠️ SOS location chỉ gửi được **trong ngữ cảnh 1 alert đang active** (`.../alerts/{alertId}/locations`). Vẫn KHÔNG có location tracking độc lập ngoài SOS.
+> ⚠️ **Response parse (fix main 2026-07-10, verify live)**: BE trả id ở field **`sosAlertId`** (KHÔNG phải `id`) → `sendSos()` đọc `created['sosAlertId'] ?? created['id']` (thiếu → bug 404 "Tôi đang đến"). Người gửi ở `triggeredByMember.user.fullName` (nested); toạ độ trả **STRING**; list alert đọc thêm key `items`. `SosAlert` có thêm `severity`/`resolutionNote`/`resolvedByName`.
+
+### Chat gia đình — **[MỚI 2026-07-11, BE ship + FE wire, 18 endpoint REST]**
+Base: `/api/v1/families/{familyId}/chat/...` · provider `chat_provider.dart` · **transport REST polling** (không phải WebSocket).
+- `GET /chat/conversations` · `POST /chat/conversations` (type `GROUP | PRIVATE`)
+- `GET/PATCH /chat/conversations/{cid}` (đổi tên / archive) · `POST .../leave`
+- `POST /chat/conversations/{cid}/participants` · `DELETE .../participants/{memberId}`
+- `GET /chat/conversations/{cid}/messages?limit=50` · `GET .../pinned-messages`
+- `POST /chat/conversations/{cid}/messages` (gửi tin) · `POST .../messages/upload` (ảnh/file)
+- `PATCH /chat/conversations/{cid}/messages/{id}` (sửa) · `DELETE .../messages/{id}` (thu hồi)
+- `POST .../messages/{id}/reactions` · `DELETE .../messages/{id}/reactions/{emoji}`
+- `POST .../messages/{id}/pin` · `DELETE .../messages/{id}/pin`
+- `POST /chat/conversations/{cid}/read` (đánh dấu đã đọc)
+- `messageType`: `TEXT | IMAGE | FILE | LOCATION | SOS_QUICK_MESSAGE`. `[VERIFY]` giới hạn `limit`, encode emoji URL, có nên chuyển WS realtime.
 
 ### Notifications — **[MỚI, bỏ mock]**
 - `GET /api/v1/families/{familyId}/notifications` — Danh sách thông báo của thành viên hiện tại. Query `unreadOnly` (bool).

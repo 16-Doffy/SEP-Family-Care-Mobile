@@ -165,13 +165,9 @@ Body: { token, platform: "android" | "ios" }
 ```
 > ⚠️ pubspec chưa có Firebase dependency — cần thêm khi làm push.
 
-### 7. Chat gia đình
-```
-GET  /api/v1/families/{familyId}/messages?limit=50&before={messageId}
-POST /api/v1/families/{familyId}/messages   Body: { content, type: "TEXT" | "IMAGE" }
-WebSocket: wss://.../families/{familyId}/chat
-```
-> `[VERIFY]` transport thật (REST polling vs WS) với Nghĩa trước khi wire `chat_screen.dart`.
+### 7. Chat gia đình — **[RESOLVED 2026-07-11, BE ship + FE wire]** ✅
+BE đã ship **18 endpoint REST** dưới `/families/{familyId}/chat/conversations/...` (KHÔNG phải path `/messages` đoán cũ, KHÔNG phải WebSocket). FE đã wire xong: `chat_provider.dart` (517 dòng) + `chat_screen.dart` viết lại — hội thoại GROUP/PRIVATE, gửi ảnh, reaction, ghim, sửa/thu hồi. Chi tiết 18 endpoint xem `API_DOCS.md` mục "Chat gia đình".
+- `[VERIFY]` còn: transport là **REST polling** (đã xác nhận qua code, không phải WS) — hỏi Nghĩa có kế hoạch chuyển WS realtime không; giới hạn `limit`; encode emoji trong URL reaction.
 
 ### 8. Lịch gia đình (Calendar)
 ```

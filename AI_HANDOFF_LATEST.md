@@ -1,9 +1,9 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-07-11**
-Branch: `giap`
-Latest commit: `02cb99a Merge origin/main vào giap: kéo 48 commit + verify MANDATORY`
-Backend Swagger (live): `https://api.familycare-digital.com/api/docs` · docs-json 147 paths / 188 operations (verify 2026-07-11)
+Last updated: **2026-07-11** (sau fast-forward lên origin/main + kéo Chat module)
+Branch: `giap` — đã **fast-forward = `origin/main` (`6621248`)**; team đã tích hợp fix của giap vào main.
+Latest commit: `6621248 feat: gán ĐỦ 18 endpoints chat — nhóm/1-1, ảnh, reaction, ghim, sửa/thu hồi`
+Backend Swagger (live): `https://api.familycare-digital.com/api/docs` · 147 paths / 188 ops (verify 07/11) **+ module Chat 18 endpoint BE ship sau đó**
 API base in app: `https://api.familycare-digital.com/api/v1` (default trong `api_client.dart`, override qua `--dart-define`)
 
 > ⚠️ IP cũ `103.110.84.66` đã BỎ hẳn — mọi tài liệu nhắc IP này đều lỗi thời.
@@ -75,8 +75,12 @@ Full CRUD task/recurring/schedule (+generate-assignments) · assignments (assign
 - Còn thiếu UI: `PATCH/DELETE tasks/proofs/{proofId}` (luồng upload+submit gộp 1 lần, chưa có bước sửa proof).
 
 ### SOS (10 operations)
-Create alert · GET list/detail · respond (`responseType`) · confirm-safety · resolve/cancel (Manager/Deputy) · **push location** + 🆕 **`locations/batch`** (buffer offline, có method `pushLocationBatch` — chưa nối UI) + 🆕 **`location/current`** (`fetchCurrentLocation`, đã gọi từ `sos_screen.dart`). Location streaming mỗi 20s khi alert active.
+Create alert · GET list/detail · respond (`responseType`) · confirm-safety · resolve/cancel (Manager/Deputy) · **push location** + `locations/batch` (buffer offline, `pushLocationBatch` — chưa nối UI) + `location/current` (`fetchCurrentLocation`, đã gọi từ `sos_screen.dart`). Location streaming mỗi 20s khi alert active.
 - ⚠️ 2 nhóm enum `sourceType` KHÁC nhau: alert = `MOBILE_APP/WEARABLE/SIMULATED_DEVICE`; location = `MOBILE_GPS/WEARABLE_GPS/SIMULATED_GPS`. Không lẫn.
+- ✅ **2 fix từ main (2026-07-10, verify live BE)**: id đọc từ **`sosAlertId`** (không phải `id`) → sửa bug 404 "Tôi đang đến"; GPS treo → `timeout(10s)` + `getLastKnownPosition` + chốt cứng **15s** ở `_triggerSOS` (quá 15s vẫn gửi SOS không kèm toạ độ). `SosAlert` thêm `severity`/`resolutionNote`/`resolvedByName`.
+
+### Chat gia đình — **[MỚI, wire thật 2026-07-11]**
+BE ship 18 endpoint REST `/families/{fid}/chat/conversations/...` → FE wire xong (`chat_provider.dart` 517 dòng, `chat_screen.dart` viết lại). GROUP/PRIVATE · gửi ảnh (image_picker) · reaction · ghim · sửa/thu hồi · participants · read. `ChatProvider` đăng ký trong `main.dart`. **Transport REST polling** (`startPolling`/`stopPolling`), KHÔNG phải WebSocket.
 
 ### Notifications
 GET list · PATCH read · read-all. Tap routing theo `referenceType`. Field id thật là `notificationId`.
@@ -89,8 +93,7 @@ GET current · GET `/subscription-plans` · POST `/checkout {planCode}`. `planCo
 
 ## Backend Gaps — KHÔNG fake call
 
-Swagger live (147 paths) vẫn **0 endpoint** cho:
-- **Chat** (0 path message/chat/ws — Nghĩa báo "xong" nhưng có thể ở WS gateway ngoài Swagger, cần `[VERIFY]` URL wss + event format + REST load lịch sử)
+Swagger live vẫn **0 endpoint** cho (Chat đã CÓ — xem mục Chat ở trên):
 - **Album / photo**, **AI assistant**, **Calendar events** (`/events`), **FCM token** push
 - **Location sharing độc lập** ngoài SOS (chỉ có toạ độ trong ngữ cảnh 1 alert)
 - **PATCH /auth/me** (sửa profile), **role management user-facing** (UC18)
@@ -103,7 +106,7 @@ Swagger live (147 paths) vẫn **0 endpoint** cho:
 ## `[VERIFY]` đang chờ Nghĩa
 
 1. **[Payment]** `POST /subscription/checkout` trả field nào để redirect Stripe (`checkoutUrl`/`url`/`sessionId`)? Chọn FREE là downgrade riêng hay cũng qua `/checkout`?
-2. **[Chat]** URL `wss://...`, event format, REST path load lịch sử tin nhắn (Swagger REST hiện 0 path chat).
+2. **[Chat]** Transport hiện là REST polling — BE có kế hoạch chuyển WebSocket realtime không? Giới hạn `limit` khi load lịch sử, encode emoji trong URL reaction.
 
 ---
 
@@ -116,7 +119,7 @@ Test phủ: router redirect (verify mandatory), auth/role capabilities, register
 
 ## Nhánh & Git
 
-`giap` = `origin/main` (48 commit) + 2 commit riêng (`2d747da` verify-optional gốc, `02cb99a` merge chọn mandatory + giữ 2 fix). **Chưa push.** Backup: `giap-backup-20260710`. Khi PR `giap → main`: nêu 2 fix (403-message + race-condition) vì main đang thiếu.
+`giap` đã **fast-forward = `origin/main` (`6621248`)** — team đã tích hợp fix của giap (verify-email + 2 bug auth) vào main rồi. Giờ giap chứa: toàn bộ main + Chat module + 2 SOS fix. **Chưa push** (origin/giap còn ở `785efc5`). Backup: `giap-backup-before-ff-20260711` (@785efc5), `giap-backup-20260710`. Thêm `.gitattributes` (LF) chống nhiễu CRLF — ⚠️ config ảnh hưởng cả team, nên PR bàn team.
 
 ## Next Suggested Work
 

@@ -19,10 +19,11 @@
 | **Branch chính** | `main` |
 | **Version** | 1.0.0+1 |
 
-> **📌 Trạng thái 2026-07-11:** Nhánh `giap` đã merge toàn bộ `origin/main` (48 commit: API fixes, UI kit dùng chung,
-> deep-link Stripe, Windows runner). Swagger live: **147 paths / 188 operations** (+4 endpoint mobile mới: forgot/reset-password,
-> SOS `location/current` + `locations/batch`; +25 admin ngoài scope). Verify email theo hướng **MANDATORY** (của main) + giữ
-> 2 fix trung tính (403-message tiếng Việt, race-condition dialog "Đã gửi yêu cầu"). `flutter test` 51/51 · `flutter analyze` 0 error.
+> **📌 Trạng thái 2026-07-11 (cập nhật sau fast-forward):** Nhánh `giap` đã **fast-forward lên ngang `origin/main`**
+> (`6621248`) — team đã tích hợp fix của giap vào main, + kéo về **module Chat thật (18 endpoint, `chat_provider.dart`)**
+> thay mock, và **2 SOS fix** (`sosAlertId` sửa bug 404 "Tôi đang đến"; GPS treo → chốt gửi SOS trong 15s). Verify email
+> theo hướng **MANDATORY** + giữ 2 fix trung tính (403-message tiếng Việt, race-condition). `flutter test` 51/51 ·
+> `flutter analyze` 0 error (8 info-lint). Thêm `.gitattributes` (LF) chống nhiễu CRLF.
 
 ---
 
@@ -266,7 +267,20 @@ flutter build apk --release
     (`pushLocationBatch`, method sẵn cho buffer offline — **chưa nối UI trigger**).
   - ⚠️ 2 nhóm enum `sourceType` KHÁC nhau: alert = `MOBILE_APP/WEARABLE/SIMULATED_DEVICE`; location point =
     `MOBILE_GPS/WEARABLE_GPS/SIMULATED_GPS` — không lẫn.
+  - ✅ **2 fix từ main (2026-07-10, verify live BE)**: (1) `id` đọc từ `sosAlertId` (BE trả field này, không phải
+    `id`) → sửa bug **404 "Tôi đang đến"**; (2) GPS treo vô hạn ở "Đang lấy vị trí" → bọc `timeout(10s)` +
+    `getLastKnownPosition` fallback + **chốt cứng 15s** ở `_triggerSOS` (quá 15s vẫn gửi SOS không kèm toạ độ).
+    `SosAlert` thêm `severity`/`resolutionNote`/`resolvedByName`; alert đã đóng hiện `✔ {người xử lý}: {ghi chú}`.
   - ⚠️ Vẫn chưa làm: nhận cảnh báo realtime phía Manager/Deputy (hiện chỉ fetch 1 lần lúc vào màn hình, chưa poll)
+
+### ✅ Chat gia đình (API thật — module mới từ main 2026-07-11)
+- Trước đây mock in-memory → giờ **wire REST thật 18 endpoint** qua `chat_provider.dart` (517 dòng), `chat_screen.dart`
+  viết lại (930 dòng). `ChatProvider` đăng ký trong `main.dart`.
+- Tính năng: hội thoại **GROUP / PRIVATE**, gửi tin (TEXT/IMAGE/FILE/LOCATION/SOS_QUICK_MESSAGE), **gửi ảnh** (upload
+  qua `image_picker`), **reaction** emoji, **ghim** tin, **sửa/thu hồi** (edit/delete), thêm/xoá participant, leave,
+  đánh dấu đã đọc, danh sách tin ghim. Base path `/families/{fid}/chat/conversations...`.
+- ⚠️ **Transport là REST polling** (`startPolling`/`stopPolling`), **không phải WebSocket** — `[VERIFY]` với BE:
+  giới hạn `limit=50`, encode emoji trong URL, và có nên chuyển sang WS realtime không.
 
 ### ✅ Notifications (in-app — API thật, BE 07/07)
 - `GET .../notifications?unreadOnly=`, `PATCH .../notifications/read-all`,
@@ -294,8 +308,7 @@ flutter build apk --release
 - Profile PATCH (`/auth/me`) — vẫn chỉ có `GET`, chưa có `PATCH`
 - Role Management user-facing (`PATCH .../members/{userId}/role`) — **UC18 vẫn blocked**
 - FCM token (`POST /auth/fcm-token`) — chưa có → push chưa làm được
-- Chat messages / WebSocket — **0 path chat/message/ws trong Swagger** (Nghĩa báo "xong" nhưng có thể ở WS gateway
-  ngoài Swagger — `[VERIFY]` URL `wss://...` + event format + REST load lịch sử). Giữ `chat_screen.dart` mock.
+- ~~Chat~~ → ✅ **đã có, đã wire** (18 endpoint REST — xem mục "Chat gia đình" ở trên). Không còn blocked.
 - Calendar events (`/events`), Album (`/albums`), AI chat (`/ai/chat`) — chưa có
 - Ledger filter theo `memberId` — chưa có (ledger trả toàn gia đình)
 - Manager hủy lời mời PENDING (`DELETE /families/{id}/invitations/{id}`) — chỉ có bản admin-only
