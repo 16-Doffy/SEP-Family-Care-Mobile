@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
+import 'providers/chat_provider.dart';
 import 'providers/money_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/task_provider.dart';
@@ -32,6 +33,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => InvitationProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => SupportRequestProvider()),
+        ChangeNotifierProvider(create: (_) => ChatProvider()),
       ],
       child: const FamilyCareApp(),
     ),
