@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
@@ -113,14 +114,30 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
+            // Manager có thể đã duyệt NGAY TRONG LÚC người này còn đứng ở
+            // dialog (claim → approve rất nhanh) — trước đây bấm "Đã hiểu"
+            // chỉ setState về màn chọn, không refetch, nên dù đã là member
+            // thật vẫn bị đá về "Thiết lập gia đình" thay vì vào dashboard.
+            // Refetch family context trước khi quyết định đi đâu.
+            onPressed: () async {
               Navigator.pop(context);
-              setState(() {
-                _mode = _Mode.choose;
-                _codeCtrl.clear();
-                _preview = null;
-                _joinError = null;
-              });
+              final auth = context.read<AuthProvider>();
+              await auth.refreshFamilyContext();
+              if (!mounted) return;
+              if (auth.hasFamily) {
+                context.go(switch (auth.user?.role) {
+                  UserRole.manager => '/manager/home',
+                  UserRole.deputy => '/deputy/home',
+                  _ => '/member/home',
+                });
+              } else {
+                setState(() {
+                  _mode = _Mode.choose;
+                  _codeCtrl.clear();
+                  _preview = null;
+                  _joinError = null;
+                });
+              }
             },
             child: Text('Đã hiểu', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           ),

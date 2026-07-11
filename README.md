@@ -19,6 +19,11 @@
 | **Branch chính** | `main` |
 | **Version** | 1.0.0+1 |
 
+> **📌 Trạng thái 2026-07-11:** Nhánh `giap` đã merge toàn bộ `origin/main` (48 commit: API fixes, UI kit dùng chung,
+> deep-link Stripe, Windows runner). Swagger live: **147 paths / 188 operations** (+4 endpoint mobile mới: forgot/reset-password,
+> SOS `location/current` + `locations/batch`; +25 admin ngoài scope). Verify email theo hướng **MANDATORY** (của main) + giữ
+> 2 fix trung tính (403-message tiếng Việt, race-condition dialog "Đã gửi yêu cầu"). `flutter test` 51/51 · `flutter analyze` 0 error.
+
 ---
 
 ## Tech Stack
@@ -137,10 +142,15 @@ flutter build apk --release
 ### ✅ Auth
 - Đăng ký → role MANAGER. Số điện thoại **bắt buộc** (`{ email, password, fullName, phone }`) — validate
   ở FE, số đã tồn tại map thành thông báo rõ ràng
-- ✅ **Verify email (BE 07/07, wire FE 2026-07-07)**: `POST /auth/verify-email { code }` (OTP 6 số) + `/auth/resend-verification`
-  (cooldown 60s ở FE, BE tự rate-limit). `VerifyEmailScreen` chèn giữa register và create-family — router chặn qua
-  `AuthProvider.pendingEmailVerification` (set `true` ngay sau `register()`, và reactive nếu `POST /families` trả 403
-  "chưa verify" cho tài khoản cũ). Không chặn luồng join-by-invitation (`/invitations/{token}/claim` không cần verify).
+- ✅ **Verify email — luồng BẮT BUỘC (mandatory, theo hướng main sau merge 2026-07-11)**: `POST /auth/verify-email
+  { code }` (OTP 6 số) + `/auth/resend-verification` (cooldown 60s ở FE). `VerifyEmailScreen` chèn giữa register
+  và create-family; router **ép** sang `/verify-email` khi `pendingEmailVerification && !hasFamily` (màn khóa cứng,
+  chỉ có "Đăng xuất"). Không chặn luồng join-by-invitation (`/claim` không cần verify).
+  - 🐛 **Fix bug 403-message (giữ qua merge)**: message BE là **tiếng Việt** ("Vui lòng xác thực tài khoản...") không
+    chứa "verif" → `createFamily` tin thẳng `statusCode==403` thay vì `contains('verif')`; nếu không, chính luồng
+    mandatory không set `pendingEmailVerification` → không redirect → kẹt ở family-setup.
+- ✅ **Quên mật khẩu (endpoint mới 2026-07-11, đã wire)**: `POST /auth/forgot-password { email }` → BE gửi OTP →
+  `POST /auth/reset-password { email, code, newPassword }`. Màn `forgot_password_screen.dart`, link "Quên mật khẩu?" ở login.
 - Đăng nhập → lấy familyId từ `/families/my`
 - Đăng xuất (revoke refresh token)
 
@@ -202,18 +212,25 @@ flutter build apk --release
 ### ✅ Family Management
 - Mời thành viên (UC15, UC16) — **Manager only**, Deputy đã verify BE trả 403. Body `CreateInvitationDto
   { email, familyRole, relationship }`
-- ⚠️ **Invite flow đổi (BE 07/07): `accept` → `claim` + `approve` (2 bước)** — cần sửa FE:
+- ✅ **Invite flow (BE 07/07): `accept` → `claim` + `approve` (2 bước), đã xong từ lâu**:
   - `POST /invitations/{token}/claim` — member gửi yêu cầu join (đòi đăng nhập, **check email khớp**, 403
     nếu khác email được mời) → lời mời chuyển sang trạng thái `CLAIMED`
   - `POST /families/{familyId}/invitations/{id}/approve` — **Manager duyệt mới tạo FamilyMember**
   - `POST /families/{familyId}/invitations/{id}/reject` — Manager từ chối
   - `GET /families/{familyId}/invitations?status=CLAIMED` — Manager xem yêu cầu chờ duyệt
-  - 🔧 **Việc FE cần làm**: `JoinFamilyScreen` đang gọi `/accept` (đã bị bỏ → 404), phải đổi sang `/claim`
-    + thêm màn "chờ Manager duyệt"; thêm UI Manager duyệt join request. Xem `BE_API_REQUESTS.md`.
+  - `JoinFamilyScreen` + `FamilySetupScreen` (join tab) đều đã gọi `/claim` + có màn "Đã gửi yêu cầu — chờ
+    Manager duyệt"; `InvitationRequestsScreen` cho Manager duyệt/từ chối.
   - Token vẫn lưu `AuthProvider.pendingInviteToken` qua `flutter_secure_storage` (sống sót cold-start),
     tự điều hướng lại `/join?token=...` sau khi login/register
   - ⚠️ Link mời vẫn là `https://.../join?token=<UUID>` — chưa wire Android Intent Filter / iOS Universal
     Link nên OS chưa tự mở app; mã mời 6 ký tự trong design vẫn chưa có endpoint BE (chỉ UUID token)
+  - 🐛 **Bug race-condition đã sửa (2026-07-08)**: nếu Manager duyệt yêu cầu NGAY TRONG LÚC member còn đứng
+    ở dialog "Đã gửi yêu cầu" (rất dễ xảy ra vì approve nhanh), bấm "Đã hiểu" trước đây chỉ
+    `setState`/`go('/login')` mù quáng dựa vào `AuthProvider.hasFamily` cache cũ (chưa refetch) → member dù
+    đã được duyệt thật vẫn bị đá về `/family-setup` thay vì dashboard. Phát hiện bằng kịch bản thật (2 tài
+    khoản song song: Manager duyệt trong lúc Member đang ở dialog). Fix: gọi
+    `AuthProvider.refreshFamilyContext()` trước khi quyết định điều hướng, ở cả `FamilySetupScreen` và
+    `JoinFamilyScreen`.
 - Danh sách thành viên (UC20) — Manager/Deputy xem đầy đủ + hành động quản lý; Member read-only qua
   route dùng chung `/manager/members`
 - Cấp/thu quyền Phó nhóm (UC18) — **Manager only**, **vẫn chờ BE endpoint user-facing**
@@ -244,13 +261,17 @@ flutter build apk --release
   - ✅ Chi tiết 1 alert (2026-07-08): icon ℹ️ trên alert card → `_SosAlertDetailSheet` (`GET .../alerts/{id}`)
   - ✅ Gửi vị trí liên tục khi SOS active (2026-07-07): `SOSScreen._startLocationStreaming()` gọi
     `POST .../locations` mỗi 20s từ lúc gửi SOS thành công tới khi confirm-safety/rời màn hình
-  - ⚠️ Vẫn chưa làm: xem chi tiết 1 alert kèm lịch sử vị trí (`GET .../alerts/{id}`), nhận cảnh báo
-    realtime phía Manager/Deputy (hiện chỉ fetch 1 lần lúc vào màn hình, chưa poll)
+  - ✅ **2 endpoint SOS mới (2026-07-11) — tổng 10 operations**: `GET .../location/current`
+    (`fetchCurrentLocation`, đã gọi từ `sos_screen.dart` để đặt pin ban đầu) + `POST .../locations/batch`
+    (`pushLocationBatch`, method sẵn cho buffer offline — **chưa nối UI trigger**).
+  - ⚠️ 2 nhóm enum `sourceType` KHÁC nhau: alert = `MOBILE_APP/WEARABLE/SIMULATED_DEVICE`; location point =
+    `MOBILE_GPS/WEARABLE_GPS/SIMULATED_GPS` — không lẫn.
+  - ⚠️ Vẫn chưa làm: nhận cảnh báo realtime phía Manager/Deputy (hiện chỉ fetch 1 lần lúc vào màn hình, chưa poll)
 
 ### ✅ Notifications (in-app — API thật, BE 07/07)
 - `GET .../notifications?unreadOnly=`, `PATCH .../notifications/read-all`,
   `PATCH .../notifications/{id}/read`
-- 🔧 Việc FE cần làm: đổi `notification_provider.dart` từ mock sang 3 endpoint này
+- ✅ `notification_provider.dart` đã dùng 3 endpoint thật (đổi từ mock từ 2026-06-26)
 - ⚠️ **FCM push chưa làm được** — chưa có `POST /auth/fcm-token` và chưa có Firebase trong pubspec
 
 ### ✅ Calendar
@@ -259,21 +280,28 @@ flutter build apk --release
 
 ### ✅ Subscription
 - Xem / chọn gói (UC76, UC77). `planCode` chuẩn từ BE: **`FREE / PLUS / PREMIUM`** (annual-only, có
-  `stripePriceId`). ⚠️ FE đang hardcode `FREE/FAMILY/PREMIUM` → gửi checkout sẽ 400, **cần sửa**.
-- ⚠️ **Checkout thật đã có (BE 07/07)**: `GET /families/{familyId}/subscription` +
-  `POST /families/{familyId}/subscription/checkout { planCode }` (Stripe).
-  🔧 Việc FE cần làm: nối nút "Nâng cấp" vào checkout.
-  `[VERIFY]` response schema (`checkoutUrl`/`url`/`sessionId`?) và luồng chọn FREE (downgrade?) — hỏi Nghĩa.
+  `stripePriceId`) — FE đã dùng đúng enum này (không còn hardcode `FAMILY`).
+- ✅ **Checkout thật đã nối (BE 07/07)**: `GET /families/{familyId}/subscription` +
+  `POST /families/{familyId}/subscription/checkout { planCode }` (Stripe), nút "Nâng cấp" → `url_launcher` mở Stripe.
+  ⚠️ **`[VERIFY]` với Nghĩa (vẫn hiệu lực 07/11)**: response `/checkout` **vẫn trống schema** trong Swagger — FE hiện
+  chỉ đọc `data['checkoutUrl']` (chưa fallback `url`/`sessionId`), nếu BE trả field khác thì nút gãy với lỗi khó hiểu.
+  Hỏi thêm luồng chọn FREE (downgrade riêng?).
+- ✅ **Kết quả thanh toán (deep-link, từ main)**: `payment_result_screen.dart` xử lý `familycare://app/payment-success|failed`.
 
-### ⚠️ Chờ Backend (verify Swagger 07/07)
+### ⚠️ Chờ Backend (verify Swagger 07/11 — 147 paths, vẫn 0 endpoint cho các mục dưới)
 - GPS / Location sharing — **BE vẫn chưa có endpoint location độc lập** (chỉ có location trong ngữ cảnh 1
   SOS alert). `GpsProvider`/`FamilyMapScreen` chưa hoạt động
 - Profile PATCH (`/auth/me`) — vẫn chỉ có `GET`, chưa có `PATCH`
 - Role Management user-facing (`PATCH .../members/{userId}/role`) — **UC18 vẫn blocked**
 - FCM token (`POST /auth/fcm-token`) — chưa có → push chưa làm được
-- Chat messages / WebSocket — chưa có endpoint
+- Chat messages / WebSocket — **0 path chat/message/ws trong Swagger** (Nghĩa báo "xong" nhưng có thể ở WS gateway
+  ngoài Swagger — `[VERIFY]` URL `wss://...` + event format + REST load lịch sử). Giữ `chat_screen.dart` mock.
 - Calendar events (`/events`), Album (`/albums`), AI chat (`/ai/chat`) — chưa có
 - Ledger filter theo `memberId` — chưa có (ledger trả toàn gia đình)
+- Manager hủy lời mời PENDING (`DELETE /families/{id}/invitations/{id}`) — chỉ có bản admin-only
+
+> ℹ️ **25 endpoint `/admin/*` mới (07/11)** — audit-logs, backups, docker infra, revenue, provisioning, restores,
+> system health... thuộc **Admin Web**, KHÔNG phải phạm vi FE Mobile.
 
 > ✅ Đã resolved so với bản 06: Subscription checkout, Notifications (in-app), Invite claim/approve.
 

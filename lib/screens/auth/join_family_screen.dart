@@ -157,7 +157,27 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
         actions: [
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.link),
-            onPressed: () => context.go('/login'),
+            // Manager có thể đã duyệt ngay trong lúc user còn đứng ở dialog —
+            // trước đây bấm "Đã hiểu" chỉ go('/login') mù quáng, router dựa
+            // vào AuthProvider.hasFamily cache cũ (chưa refetch) nên vẫn đá về
+            // /family-setup dù BE đã có family thật. Refetch trước khi điều
+            // hướng, giống fix ở family_setup_screen.dart.
+            onPressed: () async {
+              final auth = context.read<AuthProvider>();
+              if (auth.isLoggedIn) {
+                await auth.refreshFamilyContext();
+              }
+              if (!mounted) return;
+              if (auth.hasFamily) {
+                context.go(switch (auth.user?.role) {
+                  UserRole.manager => '/manager/home',
+                  UserRole.deputy => '/deputy/home',
+                  _ => '/member/home',
+                });
+              } else {
+                context.go('/login');
+              }
+            },
             child: Text('Đã hiểu',
                 style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: Colors.white)),
           ),

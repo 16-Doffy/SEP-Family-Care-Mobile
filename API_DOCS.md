@@ -1,15 +1,20 @@
 # API Backend Analysis — Family Care
 **Server:** https://api.familycare-digital.com/api/v1
 **Swagger UI:** https://api.familycare-digital.com/api/docs
-**Date:** 2026-07-07 (re-verified trực tiếp qua `GET /api/docs-json`), FE wiring audit toàn diện 2026-07-08
+**Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-11 với swagger mới: 147 paths / 188 operations**. FE wiring audit toàn diện 2026-07-08, đối chiếu swagger 07/11 sau merge main.
 
-> ⚠️ **Thay đổi lớn so với bản 2026-06-21** (đọc kỹ trước khi wire FE):
-> 1. **Invitation flow đổi hẳn**: bỏ `POST /invitations/{token}/accept`, thay bằng luồng **claim → approve** (2 bước, Manager duyệt).
-> 2. **Subscription checkout đã có thật**: `GET/POST /families/{familyId}/subscription[/checkout]` (Stripe).
-> 3. **Notifications đã có thật**: 3 endpoint, bỏ mock (nhưng chưa có FCM token registration).
-> 4. **Email verification mới**: `POST /auth/verify-email`, `/auth/resend-verification`. Tạo family yêu cầu account đã verify.
-> 5. **Finance mở rộng**: cụm Goal Contribution Plan (suggestions/confirm/submit/approve/reject/shortage) hoàn toàn mới.
-> Vẫn CHƯA có: Location tracking, `PATCH /auth/me`, role endpoint user-facing (UC18), Chat, Calendar, Album, AI, FCM token.
+> ⚠️ **Swagger 07/11 vs 07/07 — +29 path**:
+> - **+25 path `/admin/*`** (audit-logs, backups, docker infra, revenue, provisioning, restores, system health...) → **Admin Web, NGOÀI phạm vi FE Mobile**.
+> - **+4 path mobile**: `POST /auth/forgot-password`, `POST /auth/reset-password`, `GET .../sos/.../location/current`, `POST .../sos/.../locations/batch` — **cả 4 đã wire FE** (qua commit main `d80eacf` + phần SOS trước đó).
+>
+> ⚠️ **Các thay đổi lớn trước đó** (đã wire hết):
+> 1. Invitation flow **claim → approve** (bỏ `/accept`).
+> 2. Subscription checkout Stripe (`[VERIFY]` field response — xem mục Subscription).
+> 3. Notifications 3 endpoint (bỏ mock; chưa có FCM token).
+> 4. Email verification (`verify-email`/`resend-verification`) — luồng **MANDATORY**.
+> 5. Finance mở rộng: Goal Contribution Plan + reports planned-vs-actual.
+>
+> Vẫn CHƯA có (0 endpoint): Location tracking độc lập, `PATCH /auth/me`, role endpoint user-facing (UC18), **Chat/WS**, Calendar `/events`, Album, AI, FCM token.
 
 ---
 
@@ -23,22 +28,33 @@
 - `GET /api/v1/auth/me` — Lấy user đang đăng nhập. **(Vẫn chỉ có GET, chưa có PATCH.)**
 - `POST /api/v1/auth/verify-email` — **[MỚI, đã wire FE 2026-07-07]** Verify email bằng OTP 6 số. Body `VerifyEmailDto { code }`. 400 nếu OTP sai/hết hạn. Xem `VerifyEmailScreen` + `AuthProvider.verifyEmail()`.
 - `POST /api/v1/auth/resend-verification` — **[MỚI, đã wire FE 2026-07-07]** Gửi lại OTP (rate-limited). 400 nếu đã verify hoặc đang cooldown. Xem `AuthProvider.resendVerificationCode()`.
+- `POST /api/v1/auth/forgot-password` — **[MỚI 07/11, đã wire FE]** Body `ForgotPasswordDto { email }`. BE gửi OTP 6 số qua email. Xem `forgot_password_screen.dart` bước 1.
+- `POST /api/v1/auth/reset-password` — **[MỚI 07/11, đã wire FE]** Body `ResetPasswordDto { email, code, newPassword }` (`code` = OTP 6 số; `newPassword` ≥8 ký tự, đủ hoa/thường/số/ký tự đặc biệt). Xem `forgot_password_screen.dart` bước 2 + link "Quên mật khẩu?" ở login.
 
 ### Families
-- `POST /api/v1/families` — Tạo family (creator thành MANAGER). **403 nếu account chưa verify.**
+- `POST /api/v1/families` — Tạo family (creator thành MANAGER). **403 nếu account chưa verify** (verify email
+  **BẮT BUỘC** trước khi tạo family — luồng mandatory, router tự đẩy sang `/verify-email`). Verify bằng
+  kịch bản thật 2026-07-08: message thật trả về là **tiếng Việt** `"Vui lòng xác thực tài khoản để dùng chức
+  năng này"` — KHÔNG chứa từ "verify"/"verif" như Swagger mô tả ("Account not verified"). FE từng check
+  `e.message.contains('verif')` để phát hiện case này → không bao giờ khớp → `pendingEmailVerification` không
+  được set → router không redirect sang `/verify-email` → **luồng bắt buộc xác thực hỏng** (user kẹt ở
+  family-setup với snackbar lỗi). Đã sửa: `AuthProvider.createFamily()` tin thẳng `statusCode == 403` vì đây
+  là lý do 403 duy nhất được document cho endpoint này.
 - `GET /api/v1/families/my` — Danh sách family user thuộc về.
 - `GET /api/v1/families/{familyId}` — Lấy family (members only). 403 nếu không phải member.
 - `PATCH /api/v1/families/{familyId}` — Update family (MANAGER only). **[wire FE 2026-07-08]** nút ✏️ cạnh tên gia đình trong `member_list_screen.dart` (chỉ Manager thấy).
 - `DELETE /api/v1/families/{familyId}/members/{userId}` — Xóa member (MANAGER only). 400 không xóa được manager.
 
-### SOS (8 operations — khớp `sos_provider.dart`)
+### SOS (10 operations — khớp `sos_provider.dart`; +2 endpoint mới 07/11)
 - `POST /api/v1/families/{familyId}/sos/alerts` — Kích hoạt SOS (mọi thành viên). Body `CreateSosAlertDto { sourceType, severity?, initialLatitude?, initialLongitude?, message? }`.
   - `sourceType`: `MOBILE_APP | WEARABLE | SIMULATED_DEVICE` (default `MOBILE_APP`)
   - `severity`: `LOW | MEDIUM | HIGH | CRITICAL`
 - `GET /api/v1/families/{familyId}/sos/alerts` — Lịch sử SOS. Query `status`: `ACTIVE | RESOLVED | CANCELED | FALSE_ALARM`.
 - `GET /api/v1/families/{familyId}/sos/alerts/{alertId}` — Chi tiết 1 alert (kèm phản hồi + vị trí). **[wire FE 2026-07-08]** icon ℹ️ trên alert card → `_SosAlertDetailSheet` (`JsonReportView`).
-- `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/locations` — Gửi điểm vị trí cho alert active. Body `PushSosLocationDto { latitude, longitude, sourceType, accuracy?, recordedAt?, deviceId? }`. **[wire FE 2026-07-07]** `SOSScreen._startLocationStreaming()` — gọi mỗi 20s từ lúc gửi SOS thành công tới khi confirm-safety.
+- `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/locations` — Gửi 1 điểm vị trí cho alert active. Body `PushSosLocationDto { latitude, longitude, sourceType, accuracy?, recordedAt?, deviceId? }`. **[wire FE 2026-07-07]** `SOSScreen._startLocationStreaming()` — gọi mỗi 20s từ lúc gửi SOS thành công tới khi confirm-safety.
   - `sourceType`: `MOBILE_GPS | WEARABLE_GPS | SIMULATED_GPS`
+- `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/locations/batch` — **[MỚI 07/11]** Gửi NHIỀU điểm 1 lần. Body `PushSosLocationBatchDto { points: PushSosLocationDto[] }`. **[wire FE]** `SosProvider.pushLocationBatch()` — dùng cho buffer offline (đã có method, **chưa nối UI trigger**).
+- `GET /api/v1/families/{familyId}/sos/alerts/{alertId}/location/current` — **[MỚI 07/11]** Vị trí MỚI NHẤT của alert. **[wire FE]** `SosProvider.fetchCurrentLocation()` → gọi từ `sos_screen.dart` để đặt pin ban đầu khi mở màn theo dõi.
 - `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/responses` — Phản hồi. Body `CreateSosResponseDto { responseType, message? }`.
   - `responseType`: chỉ chấp nhận `VIEWED | CONFIRM_SAFE | NEED_HELP` từ thành viên (enum còn có `RESOLVED | CANCELED` nhưng không dùng qua route này).
 - `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/confirm-safety` — Người kích hoạt tự xác nhận an toàn.
