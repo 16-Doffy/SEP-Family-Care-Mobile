@@ -1,0 +1,31 @@
+# Chuẩn hóa line-ending cho cả team — độc lập với core.autocrlf từng máy.
+# Trong repo LUÔN lưu LF; tránh nhiễu CRLF↔LF (Windows) làm file "modified" giả.
+* text=auto eol=lf
+
+# Source & config: ép LF
+*.dart   text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.gradle text eol=lf
+*.xml    text eol=lf
+*.cmake  text eol=lf
+*.sh     text eol=lf
+
+# Script Windows: giữ CRLF (đúng chuẩn của .bat/.ps1)
+*.bat    text eol=crlf
+*.ps1    text eol=crlf
+
+# Binary: git không đụng vào
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.ttf    binary
+*.otf    binary
+*.woff   binary
+*.woff2  binary
+*.jar    binary
+*.keystore binary
