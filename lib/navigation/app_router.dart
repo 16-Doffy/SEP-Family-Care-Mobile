@@ -50,6 +50,7 @@ import '../screens/parent/finance_reports_screen.dart';
 import '../screens/parent/goal_contribution_screen.dart';
 import '../screens/parent/goal_detail_screen.dart';
 import '../screens/parent/reward_management_screen.dart';
+import '../screens/parent/member_finance_screen.dart';
 
 // Shell
 import 'family_shell.dart';
@@ -363,6 +364,14 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(
         path: '/manager/goal-detail',
         builder: (_, state) => GoalDetailScreen(goalId: state.uri.queryParameters['goalId'] ?? ''),
+      ),
+      GoRoute(
+        // Manager/Deputy xem tài chính tháng của member (memberId rỗng = của mình)
+        path: '/manager/member-finance',
+        builder: (_, state) => MemberFinanceScreen(
+          memberId: state.uri.queryParameters['memberId'] ?? '',
+          memberName: state.uri.queryParameters['name'] ?? '',
+        ),
       ),
       GoRoute(
         path: '/join',

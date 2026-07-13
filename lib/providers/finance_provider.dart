@@ -432,6 +432,75 @@ class MonthlyFinance {
   );
 }
 
+// Tổng quan tài chính tháng của 1 thành viên — response của
+// GET .../finance/monthly-summary/me | .../monthly-summary/members/{memberId}
+// (BE 2026-07-13). Field private của member khác được BE trả null sẵn.
+class MonthlySummary {
+  final int month;
+  final int year;
+  final String memberName;
+  final MonthlyFinance? monthlyFinance; // null = chưa khai báo tháng này
+  // Đóng góp quỹ gia đình
+  final double? fundPlanned;
+  final double? fundDeclared;
+  final double fundLedgerActual;
+  final double fundActual;
+  // Đóng góp mục tiêu tài chính
+  final double goalPlanned;
+  final double goalActual;
+  final double goalShortage;
+  final List<Map<String, dynamic>> goalItems;
+
+  const MonthlySummary({
+    required this.month,
+    required this.year,
+    required this.memberName,
+    this.monthlyFinance,
+    this.fundPlanned,
+    this.fundDeclared,
+    required this.fundLedgerActual,
+    required this.fundActual,
+    required this.goalPlanned,
+    required this.goalActual,
+    required this.goalShortage,
+    required this.goalItems,
+  });
+
+  factory MonthlySummary.fromJson(Map<String, dynamic> j) {
+    final period = j['period'] is Map ? j['period'] as Map : const {};
+    final member = j['member'] is Map ? j['member'] as Map : const {};
+    final fund = j['familyFundContribution'] is Map
+        ? j['familyFundContribution'] as Map
+        : const {};
+    final goal = j['goalContributions'] is Map
+        ? j['goalContributions'] as Map
+        : const {};
+    return MonthlySummary(
+      month: (period['month'] as num?)?.toInt() ?? 0,
+      year: (period['year'] as num?)?.toInt() ?? 0,
+      memberName: member['displayName']?.toString() ?? '',
+      monthlyFinance: j['monthlyFinance'] is Map
+          ? MonthlyFinance.fromJson(
+              Map<String, dynamic>.from(j['monthlyFinance'] as Map),
+            )
+          : null,
+      fundPlanned: _moneyNull(fund['plannedAmount']),
+      fundDeclared: _moneyNull(fund['declaredActualAmount']),
+      fundLedgerActual: _moneyNull(fund['ledgerActualAmount']) ?? 0,
+      fundActual: _moneyNull(fund['actualAmount']) ?? 0,
+      goalPlanned: _moneyNull(goal['totalPlannedAmount']) ?? 0,
+      goalActual: _moneyNull(goal['totalActualAmount']) ?? 0,
+      goalShortage: _moneyNull(goal['totalShortageAmount']) ?? 0,
+      goalItems: goal['items'] is List
+          ? (goal['items'] as List)
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList()
+          : const [],
+    );
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // Provider
 // ════════════════════════════════════════════════════════════════════════
@@ -887,6 +956,53 @@ class FinanceProvider extends ChangeNotifier {
     }
     await _fetchMonthlyFinance();
     notifyListeners();
+  }
+
+  // ── Monthly summary & xem tài chính member (BE ship 2026-07-13) ─────────
+
+  // GET .../finance/monthly-summary/me?month&year — tổng quan tháng của chính
+  // mình: khai báo thu chi + đóng góp quỹ gia đình + đóng góp mục tiêu
+  Future<MonthlySummary?> fetchMonthlySummaryMe({
+    required int month,
+    required int year,
+  }) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/monthly-summary/me${_qs({'month': month, 'year': year})}',
+    );
+    return data is Map && data.isNotEmpty
+        ? MonthlySummary.fromJson(Map<String, dynamic>.from(data))
+        : null;
+  }
+
+  // GET .../finance/monthly-summary/members/{memberId}?month&year — Manager/
+  // Deputy xem tổng quan tháng của member; field private BE trả null sẵn
+  Future<MonthlySummary?> fetchMemberMonthlySummary(
+    String memberId, {
+    required int month,
+    required int year,
+  }) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/monthly-summary/members/$memberId${_qs({'month': month, 'year': year})}',
+    );
+    return data is Map && data.isNotEmpty
+        ? MonthlySummary.fromJson(Map<String, dynamic>.from(data))
+        : null;
+  }
+
+  // GET .../finance/monthly-finances/members/{memberId}?month&year — bản khai
+  // báo thô của member (monthly-summary đã bao trùm; giữ cho màn chi tiết riêng).
+  // data null = member chưa khai báo tháng đó.
+  Future<MonthlyFinance?> fetchMemberMonthlyFinance(
+    String memberId, {
+    required int month,
+    required int year,
+  }) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/monthly-finances/members/$memberId${_qs({'month': month, 'year': year})}',
+    );
+    return data is Map && data.isNotEmpty
+        ? MonthlyFinance.fromJson(Map<String, dynamic>.from(data))
+        : null;
   }
 
   // ── Goal Contribution Plans (workflow Manager confirm → Member submit →

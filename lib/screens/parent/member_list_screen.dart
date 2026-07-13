@@ -183,7 +183,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
             ],
           ]),
         ),
-        if (canManage && !isMe)
+        if ((canManage && !isMe) || (me?.canManageFinance ?? false))
           GestureDetector(
             onTap: () => _showManageSheet(ctx, m, me),
             child: Container(
@@ -261,8 +261,10 @@ class _MemberListScreenState extends State<MemberListScreen> {
   void _showManageSheet(BuildContext ctx, FamilyMember m, AppUser? me) {
     final provider = ctx.read<FamilyProvider>();
     final isDeputy = m.isDeputy;
-    final canManageRoles = me?.canManageMemberRoles ?? false;
-    final canRemove = me?.canRemoveMembers ?? false;
+    final isMe = m.userId == me?.id;
+    final canManageRoles = (me?.canManageMemberRoles ?? false) && !isMe;
+    final canRemove = (me?.canRemoveMembers ?? false) && !isMe;
+    final canViewFinance = me?.canManageFinance ?? false;
 
     showModalBottomSheet(
       context: ctx,
@@ -283,6 +285,22 @@ class _MemberListScreenState extends State<MemberListScreen> {
           const SizedBox(height: 20),
           const Divider(),
           const SizedBox(height: 12),
+
+          // UC gap #5 — Manager/Deputy xem tài chính tháng của thành viên
+          // (BE ship monthly-summary 2026-07-13; field private BE trả null)
+          if (canViewFinance) ...[
+            _actionTile(
+              icon: Icons.account_balance_wallet_rounded,
+              label: isMe ? 'Tài chính tháng của tôi' : 'Xem tài chính tháng',
+              color: AppColors.success,
+              onTap: () {
+                Navigator.pop(ctx);
+                ctx.push(
+                    '/manager/member-finance?memberId=${isMe ? '' : m.id}&name=${Uri.encodeQueryComponent(m.name)}');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
 
           // UC18 — Deputy toggle (Manager-only)
           if (canManageRoles) ...[

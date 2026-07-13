@@ -194,6 +194,20 @@ class AlbumProvider extends ChangeNotifier {
     await fetchDetail(mediaId);
   }
 
+  // GET .../albums/moderation — hàng đợi kiểm duyệt toàn gia đình
+  // (Manager/Deputy). Mỗi item: mediaId, mediaType, moderationStatus,
+  // latestModeration {resultStatus, riskScore, summary}, fileAccess {url}.
+  Future<List<Map<String, dynamic>>> fetchModerationQueue({
+    String? moderationStatus,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/albums/moderation${_qs({'page': page, 'limit': limit, 'moderationStatus': moderationStatus, 'sortOrder': 'DESC'})}',
+    );
+    return _list(data);
+  }
+
   Future<Map<String, dynamic>> fetchModeration(String mediaId) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/albums/media/$mediaId/moderation',

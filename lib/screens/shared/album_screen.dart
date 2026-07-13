@@ -226,6 +226,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
         ),
         actions: [
+          // Hàng đợi kiểm duyệt toàn gia đình — GET /albums/moderation
+          // (Manager/Deputy; kèm riskScore + tóm tắt AI cho từng media)
+          if (isAdmin)
+            IconButton(
+              tooltip: 'Hàng đợi kiểm duyệt',
+              icon: const Icon(
+                Icons.shield_outlined,
+                color: AppColors.textSecondary,
+              ),
+              onPressed: _showModerationQueueSheet,
+            ),
           IconButton(
             tooltip: 'Làm mới',
             icon: const Icon(
@@ -260,6 +271,217 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 ),
               )
             : const Icon(Icons.add_a_photo_outlined, color: Colors.white),
+      ),
+    );
+  }
+
+  // Sheet hàng đợi kiểm duyệt: list media chờ/cần duyệt kèm điểm rủi ro AI,
+  // duyệt nhanh MARK_SAFE / KEEP_FLAGGED ngay trên từng dòng
+  void _showModerationQueueSheet() {
+    final album = context.read<AlbumProvider>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: album.fetchModerationQueue(),
+              builder: (_, snap) {
+                final items = snap.data ?? const [];
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🛡️ Hàng đợi kiểm duyệt${snap.hasData ? ' (${items.length})' : ''}',
+                      style: GoogleFonts.inter(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      'AI chấm điểm rủi ro — chỉ là gợi ý, quyết định là của bạn',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (snap.connectionState != ConnectionState.done)
+                      const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (snap.hasError)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Không tải được: ${snap.error}',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.danger,
+                          ),
+                        ),
+                      )
+                    else if (items.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Không có media nào chờ kiểm duyệt 🎉',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 420),
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: items.map((it) {
+                            final mediaId = it['mediaId']?.toString() ?? '';
+                            final status =
+                                it['moderationStatus']?.toString() ?? '';
+                            final latest = it['latestModeration'] is Map
+                                ? it['latestModeration'] as Map
+                                : const {};
+                            final risk = double.tryParse(
+                              latest['riskScore']?.toString() ?? '',
+                            );
+                            final summary =
+                                latest['summary']?.toString() ?? '';
+                            final needAction = status == 'NEED_REVIEW' ||
+                                status == 'FLAGGED';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(children: [
+                                    Text(
+                                      it['mediaType']?.toString() == 'VIDEO'
+                                          ? '🎬'
+                                          : '🖼️',
+                                      style: const TextStyle(fontSize: 18),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        status +
+                                            (risk == null
+                                                ? ''
+                                                : ' · rủi ro ${(risk * 100).round()}%'),
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: risk != null && risk >= 0.5
+                                              ? AppColors.danger
+                                              : AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                  ]),
+                                  if (summary.isNotEmpty)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(top: 2, left: 26),
+                                      child: Text(
+                                        summary,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          color: AppColors.textMuted,
+                                        ),
+                                      ),
+                                    ),
+                                  if (needAction && mediaId.isNotEmpty)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(top: 6, left: 26),
+                                      child: Row(children: [
+                                        _queueAction(
+                                          label: '✓ An toàn',
+                                          color: AppColors.safe,
+                                          onTap: () async {
+                                            try {
+                                              await album.reviewModeration(
+                                                mediaId,
+                                                decision: 'MARK_SAFE',
+                                                reviewNote:
+                                                    'Đã kiểm tra thủ công từ hàng đợi',
+                                              );
+                                              setSheet(() {});
+                                            } catch (e) {
+                                              _snack(e);
+                                            }
+                                          },
+                                        ),
+                                        const SizedBox(width: 8),
+                                        _queueAction(
+                                          label: 'Giữ cờ',
+                                          color: AppColors.danger,
+                                          onTap: () async {
+                                            try {
+                                              await album.reviewModeration(
+                                                mediaId,
+                                                decision: 'KEEP_FLAGGED',
+                                                reviewNote:
+                                                    'Giữ cờ sau khi kiểm tra thủ công',
+                                              );
+                                              setSheet(() {});
+                                            } catch (e) {
+                                              _snack(e);
+                                            }
+                                          },
+                                        ),
+                                      ]),
+                                    ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _queueAction({
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
       ),
     );
   }

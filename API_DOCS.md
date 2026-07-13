@@ -17,7 +17,7 @@
 > **Cập nhật 2026-07-11 (sau fast-forward lên `origin/main` 6621248):** BE đã ship **module Chat (18 endpoint REST)** —
 > FE đã wire (`chat_provider.dart`, xem mục Chat bên dưới). SOS thêm 2 fix (`sosAlertId`, GPS treo).
 >
-> Vẫn CHƯA có (0 endpoint): Location tracking độc lập, `PATCH /auth/me`, role endpoint user-facing (UC18), Calendar `/events`, Album, AI, FCM token.
+> Vẫn CHƯA có (0 endpoint): Location tracking độc lập, `PATCH /auth/me`, role endpoint user-facing (UC18), Calendar `/events`, AI, FCM token. (Album ĐÃ CÓ từ 2026-07-13 — xem mục Album.)
 
 ---
 
@@ -101,6 +101,17 @@ Base: `/api/v1/families/{familyId}/chat/...` · provider `chat_provider.dart` ·
 - `POST /api/v1/families/{familyId}/finance/monthly-finances/me` — Tạo. Body `CreateMemberMonthlyFinanceDto`. 409 nếu tháng đã tồn tại.
 - `PUT /api/v1/families/{familyId}/finance/monthly-finances/me` — Cập nhật. Body `UpdateMemberMonthlyFinanceDto`. 404 nếu chưa khai báo.
   - DTO có thêm `expectedSharedContribution` / `actualSharedContribution` (nullable), `incomeVisibility` / `expenseVisibility` (`PRIVATE | FAMILY`).
+- **[MỚI 2026-07-13, verify live]** `GET .../finance/monthly-finances/members/{memberId}?month&year` — Manager/Deputy xem khai báo của member (UC gap #5 đã xin BE 11/07). Field private BE trả `null` sẵn; member chưa khai báo → `data: null`. Wire: `FinanceProvider.fetchMemberMonthlyFinance`.
+- **[MỚI 2026-07-13, verify live]** `GET .../finance/monthly-summary/me?month&year` và `GET .../finance/monthly-summary/members/{memberId}?month&year` — tổng quan tháng: `{period, member, monthlyFinance, familyFundContribution {plannedAmount, declaredActualAmount, ledgerActualAmount, actualAmount}, goalContributions {totalPlannedAmount, totalActualAmount, totalShortageAmount, items[]}}`. Số trả dạng **number thật** (khác các EP finance cũ trả string) — FE vẫn parse phòng thủ. Wire: `fetchMonthlySummaryMe` / `fetchMemberMonthlySummary` + màn `MemberFinanceScreen` (route `/manager/member-finance`, entry từ Member List, gate `canManageFinance`).
+
+### Album gia đình — **[MỚI 2026-07-13, BE ship 14 EP + FE wire (13 EP bởi giap, queue bởi NDuy)]**
+Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart` · màn `album_screen.dart`.
+- `GET/POST /albums/media` (list phân trang `{items, meta}` + upload multipart) · `GET/PATCH/DELETE /albums/media/{mediaId}` (detail / sửa caption+visibilityScope / xóa mềm kèm `reason`)
+- `DELETE .../permanent` (body `{confirmation: 'PERMANENT_DELETE'}`) · `POST .../restore`
+- `GET/POST .../tags` · `DELETE .../tags/{tagId}` (tag thành viên vào media)
+- `GET/PATCH .../moderation` (xem/duyệt tay: `ManualModerationReviewDto {decision: MARK_SAFE | KEEP_FLAGGED, reviewNote}` — cả 2 field bắt buộc) · `POST .../moderation/retry`
+- `GET /albums/moderation` — **hàng đợi kiểm duyệt toàn gia đình** (Manager/Deputy), item kèm `latestModeration {resultStatus, riskScore, summary}` (AI heuristic) + `fileAccess {url}` (signed URL hết hạn). Wire: `fetchModerationQueue` + sheet 🛡️ trên AppBar Album.
+- File URL là **signed URL có hạn** (`expiresInSeconds`) — không cache lâu.
 
 ### Finance — Model & Jars
 - `GET /api/v1/families/{familyId}/finance/model-templates` — Mẫu có sẵn: `FIVE_JARS`, `EIGHTY_TWENTY`, `CUSTOM` (constant, không lưu DB). **[wire FE 2026-07-08]** nút ℹ️ trong `FinanceModelScreen` (info sheet, không đổi luồng chọn mô hình — UI đã hardcode đúng theo mẫu này từ trước).
