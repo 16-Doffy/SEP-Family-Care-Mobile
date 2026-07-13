@@ -132,9 +132,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => context.push('/finance/support-requests')),
                 _tile('🗺️', 'Bản đồ gia đình',
                     onTap: () => context.push('/map')),
+                // Manager đã có tab Album ở bottom nav — chỉ Deputy cần lối này
+                if (user?.role == UserRole.deputy)
+                  _tile('🖼️', 'Album gia đình',
+                      onTap: () => context.push('/album')),
               ] else if (isMember) ...[
                 _tile('👨‍👩‍👧‍👦', 'Xem thành viên gia đình',
                     onTap: () => context.push('/manager/members')),
+                _tile('🖼️', 'Album gia đình',
+                    onTap: () => context.push('/album')),
                 _tile('📋', 'Tài chính tháng của tôi',
                     onTap: () => context.push('/profile/edit')),
                 _tile('🙋', 'Yêu cầu hỗ trợ chi tiêu',

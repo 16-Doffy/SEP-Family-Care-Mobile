@@ -328,6 +328,28 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => context.push('/album'),
+                          child: Container(
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                                color: const Color(0xFFF3E8FF),
+                                borderRadius: BorderRadius.circular(12)),
+                            child: Column(children: [
+                              const Text('🖼️',
+                                  style: TextStyle(fontSize: 18)),
+                              Text('Album',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF7C3AED))),
+                            ]),
+                          ),
+                        ),
+                      ),
                     ]),
                   ]),
                 ),

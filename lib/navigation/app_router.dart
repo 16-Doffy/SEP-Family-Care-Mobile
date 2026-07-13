@@ -358,6 +358,11 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/manager/finance-alerts', builder: (_, _) => const FinanceAlertsScreen()),
       GoRoute(path: '/finance/support-requests', builder: (_, _) => const SupportRequestScreen()),
       GoRoute(path: '/map', builder: (_, _) => const FamilyMapScreen()),
+      // Album dùng chung mọi role — BE cho mọi thành viên xem/upload (verify
+      // live 2026-07-13: member GET media 200), chỉ moderation là Manager/
+      // Deputy (album_screen tự gate nút 🛡️ theo isAdministrative). Manager
+      // vào qua tab shell /manager/album; Deputy/Member vào route phẳng này.
+      GoRoute(path: '/album', builder: (_, _) => const AlbumScreen()),
       GoRoute(path: '/manager/budget-plans', builder: (_, _) => const BudgetPlanScreen()),
       GoRoute(
         path: '/manager/budget-plans/detail',
