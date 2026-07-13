@@ -91,7 +91,8 @@ Base: `/api/v1/families/{familyId}/chat/...` · provider `chat_provider.dart` ·
 ### Subscriptions — **[MỚI, checkout thật]**
 - `GET /api/v1/families/{familyId}/subscription` — Xem gói hiện tại của gia đình.
 - `POST /api/v1/families/{familyId}/subscription/checkout` — Tạo liên kết thanh toán Stripe để nâng gói. Body `CreateCheckoutDto { planCode }`.
-  - `planCode` là gói **trả phí** (không phải FREE). Giá trị chuẩn: `PLUS`, `PREMIUM` (+ có thể có mã custom như `GOLD`).
+  - ⚠️ **planCode ĐỔI LẦN 2 (phát hiện 2026-07-13 tối, verify live)**: `/subscription-plans` giờ trả `FREE | MONTHLY | YEARLY` (Gói miễn phí 0đ/3 người, Gói tháng annualPrice 180k/10 người, Gói năm 2tr/10 người) — KHÔNG còn `PLUS`/`PREMIUM`. FE render + checkout theo planCode BE trả nên không vỡ; fallback cứng trong `subscription_screen.dart` đã lỗi thời (chỉ dùng khi API chết). Ngữ nghĩa `annualPrice` của Gói THÁNG cần hỏi BE (180k là giá năm hay 15k×12?).
+  - ⚠️ Đổi plan codes có vẻ kèm reset data: gia đình test đã thanh toán Stripe **Gói năm** (E2E PASS 09/07) giờ `GET /subscription` trả `FREE` — cần hỏi BE subscription cũ đi đâu.
   - `[VERIFY]` Response schema (field `checkoutUrl` / `url` / `sessionId`?) — spec không mô tả body response. Xác nhận với Nghĩa.
   - `[VERIFY]` Luồng chọn FREE (downgrade/cancel) có gọi endpoint này không.
   - ✅ **UX hạ gói (2026-07-13)**: FE so sánh `priceValue` (annualPrice) với gói đang dùng — gói rẻ hơn hiển thị CTA "Hạ xuống {tên gói}" + dialog xác nhận trước khi checkout (thay vì "Nâng cấp Free" gây hiểu lầm). Hành vi backend khi checkout FREE vẫn chờ `[VERIFY]` ở trên.
