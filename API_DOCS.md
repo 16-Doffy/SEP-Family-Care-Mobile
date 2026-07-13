@@ -79,6 +79,7 @@ Base: `/api/v1/families/{familyId}/chat/...` · provider `chat_provider.dart` ·
 - `POST .../messages/{id}/pin` · `DELETE .../messages/{id}/pin`
 - `POST /chat/conversations/{cid}/read` (đánh dấu đã đọc)
 - `messageType`: `TEXT | IMAGE | FILE | LOCATION | SOS_QUICK_MESSAGE`. `[VERIFY]` giới hạn `limit`, encode emoji URL, có nên chuyển WS realtime.
+- ✅ **Tin an toàn nhanh (2026-07-13, verify live)**: FE gửi `messageType: SOS_QUICK_MESSAGE` tường minh trong `SendMessageDto` — nút khiên cạnh ô nhập chat mở sheet 4 tin mẫu, bubble hiển thị nổi bật màu cam kèm nhãn "TIN AN TOÀN". BE echo đúng `messageType` trong response (đã test server thật).
 
 ### Notifications — **[MỚI, bỏ mock]**
 - `GET /api/v1/families/{familyId}/notifications` — Danh sách thông báo của thành viên hiện tại. Query `unreadOnly` (bool).
@@ -93,6 +94,7 @@ Base: `/api/v1/families/{familyId}/chat/...` · provider `chat_provider.dart` ·
   - `planCode` là gói **trả phí** (không phải FREE). Giá trị chuẩn: `PLUS`, `PREMIUM` (+ có thể có mã custom như `GOLD`).
   - `[VERIFY]` Response schema (field `checkoutUrl` / `url` / `sessionId`?) — spec không mô tả body response. Xác nhận với Nghĩa.
   - `[VERIFY]` Luồng chọn FREE (downgrade/cancel) có gọi endpoint này không.
+  - ✅ **UX hạ gói (2026-07-13)**: FE so sánh `priceValue` (annualPrice) với gói đang dùng — gói rẻ hơn hiển thị CTA "Hạ xuống {tên gói}" + dialog xác nhận trước khi checkout (thay vì "Nâng cấp Free" gây hiểu lầm). Hành vi backend khi checkout FREE vẫn chờ `[VERIFY]` ở trên.
 
 ### Finance — Monthly Finance (cá nhân)
 - `GET /api/v1/families/{familyId}/finance/monthly-finances/me` — Tài chính tháng của bản thân. **Query `month` & `year` BẮT BUỘC.**

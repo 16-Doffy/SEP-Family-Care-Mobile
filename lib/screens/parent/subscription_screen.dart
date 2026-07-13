@@ -49,6 +49,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       id: 'PLUS',
       name: 'Family',
       price: '99,000 ₫',
+      priceValue: 99000,
       period: '/tháng',
       emoji: '👨‍👩‍👧‍👦',
       color: Color(0xFF2563EB),
@@ -71,6 +72,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       id: 'PREMIUM',
       name: 'Premium',
       price: '299,000 ₫',
+      priceValue: 299000,
       period: '/tháng',
       emoji: '⭐',
       color: Color(0xFF7C3AED),
@@ -170,6 +172,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             name: name,
             // BE định giá theo năm (annualPrice) — hiển thị đúng như web admin
             price: annual > 0 ? '${_fmtPrice(annual.round())} ₫' : '0 ₫',
+            priceValue: annual,
             period: '/năm',
             emoji: emoji,
             color: color,
@@ -187,6 +190,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     } finally {
       if (mounted) setState(() => _plansLoading = false);
     }
+  }
+
+  // Giá gói đang dùng — 0 nếu không thấy trong danh sách (coi mọi gói là nâng cấp)
+  double get _currentPriceValue {
+    for (final p in _plans) {
+      if (p.id == _currentPlan) return p.priceValue;
+    }
+    return 0;
   }
 
   static String _fmtPrice(int v) {
@@ -211,6 +222,27 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     if (plan.id == _currentPlan || _checkingOutPlan != null) return;
     final fid = ApiClient.instance.familyId;
     if (fid == null) return;
+
+    // Hạ gói → xác nhận trước vì gia đình sẽ mất quyền lợi của gói cao hơn
+    if (plan.priceValue < _currentPriceValue) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (dCtx) => AlertDialog(
+          title: Text('Hạ xuống ${plan.name}?',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+          content: Text(
+              'Gia đình sẽ mất các quyền lợi của gói hiện tại (thành viên, dung lượng, tính năng nâng cao). Bạn chắc chứ?',
+              style: GoogleFonts.inter(fontSize: 13.5, height: 1.5)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Giữ gói hiện tại')),
+            TextButton(
+                onPressed: () => Navigator.pop(dCtx, true),
+                child: const Text('Hạ gói', style: TextStyle(color: AppColors.danger))),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
 
     setState(() => _checkingOutPlan = plan.id);
     final messenger = ScaffoldMessenger.of(context);
@@ -354,6 +386,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 ..._plans.map((plan) => _PlanCard(
                       plan: plan,
                       isCurrent: plan.id == _currentPlan,
+                      isDowngrade: plan.priceValue < _currentPriceValue,
                       isCheckingOut: _checkingOutPlan == plan.id,
                       onSubscribe: () => _subscribe(plan),
                     )),
@@ -398,12 +431,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 class _PlanCard extends StatelessWidget {
   final _PlanData plan;
   final bool isCurrent;
+  // Gói rẻ hơn gói đang dùng → CTA là "Hạ xuống" thay vì "Nâng cấp"
+  final bool isDowngrade;
   final bool isCheckingOut;
   final VoidCallback onSubscribe;
 
   const _PlanCard({
     required this.plan,
     required this.isCurrent,
+    this.isDowngrade = false,
     this.isCheckingOut = false,
     required this.onSubscribe,
   });
@@ -512,7 +548,9 @@ class _PlanCard extends StatelessWidget {
                               color: plan.id == 'FREE' ? AppColors.textPrimary : Colors.white),
                         )
                       : Text(
-                          isCurrent ? '✓ Đang sử dụng' : 'Nâng cấp ${plan.name}',
+                          isCurrent
+                              ? '✓ Đang sử dụng'
+                              : '${isDowngrade ? 'Hạ xuống' : 'Nâng cấp'} ${plan.name}',
                           style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -536,6 +574,8 @@ class _PlanData {
   final String id;
   final String name;
   final String price;
+  // Giá dạng số để so sánh nâng/hạ gói (price chỉ là chuỗi hiển thị)
+  final double priceValue;
   final String period;
   final String emoji;
   final Color color;
@@ -549,6 +589,7 @@ class _PlanData {
     required this.id,
     required this.name,
     required this.price,
+    this.priceValue = 0,
     required this.period,
     required this.emoji,
     required this.color,

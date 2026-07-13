@@ -32,6 +32,15 @@ class _ChatScreenState extends State<ChatScreen> {
   ];
   static const _quickEmojis = ['❤️', '👍', '😆', '😮', '😢'];
 
+  // Tin an toàn nhanh — gửi với messageType SOS_QUICK_MESSAGE (BE hỗ trợ sẵn
+  // trong enum SendMessageDto), bubble hiển thị nổi bật màu cam
+  static const _safetyPresets = [
+    '🛡️ Mình đã đến nơi an toàn',
+    '🏠 Mình đang trên đường về nhà',
+    '📞 Rảnh thì gọi lại cho mình nhé',
+    '⚠️ Mình đang gặp chuyện, để ý điện thoại giúp mình',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +121,50 @@ class _ChatScreenState extends State<ChatScreen> {
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
+  }
+
+  // Sheet chọn tin an toàn mẫu → gửi ngay với messageType SOS_QUICK_MESSAGE
+  void _showSafetySheet() {
+    final chat = context.read<ChatProvider>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.health_and_safety_rounded, color: Color(0xFFD97706), size: 22),
+              const SizedBox(width: 8),
+              Text('Tin an toàn nhanh',
+                  style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+            ]),
+            Text('Gửi 1 chạm để báo tình trạng cho cả nhà',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            const SizedBox(height: 8),
+            ..._safetyPresets.map((s) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(s, style: GoogleFonts.inter(fontSize: 14)),
+                  trailing: const Icon(Icons.send_rounded, size: 18, color: Color(0xFFD97706)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    try {
+                      await chat.sendMessage(s, messageType: 'SOS_QUICK_MESSAGE');
+                      if (_scrollCtrl.hasClients) {
+                        _scrollCtrl.animateTo(0,
+                            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+                      }
+                    } catch (e) {
+                      _snackErr(e);
+                    }
+                  },
+                )),
+          ]),
+        ),
+      ),
+    );
   }
 
   // ── Menu tin nhắn (long-press) ────────────────────────────────────────────
@@ -675,6 +728,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _showSafetySheet,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                        shape: BoxShape.circle, color: Color(0xFFFFF7ED)),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.health_and_safety_outlined,
+                        size: 20, color: Color(0xFFD97706)),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -762,6 +828,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _bubble(ChatMessage m, bool isMe, bool showSender) {
+    // Tin an toàn nhanh: bubble cam nổi bật, chữ tối dù là tin của mình
+    final isSos = m.messageType == 'SOS_QUICK_MESSAGE' && !m.isDeleted;
     // Gộp reaction theo emoji: {❤️: 2, 👍: 1}
     final reactionCounts = <String, int>{};
     for (final r in m.reactions) {
@@ -804,7 +872,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isMe ? AppColors.link : AppColors.white,
+                      color: isSos
+                          ? const Color(0xFFFFF7ED)
+                          : (isMe ? AppColors.link : AppColors.white),
+                      border: isSos ? Border.all(color: const Color(0xFFF59E0B)) : null,
                       borderRadius: BorderRadius.only(
                           topLeft: const Radius.circular(18),
                           topRight: const Radius.circular(18),
@@ -822,6 +893,21 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (isSos)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.health_and_safety_rounded,
+                                  size: 13, color: Color(0xFFD97706)),
+                              const SizedBox(width: 4),
+                              Text('TIN AN TOÀN',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: .5,
+                                      color: const Color(0xFFD97706))),
+                            ]),
+                          ),
                         // Ảnh đính kèm
                         if (!m.isDeleted)
                           ...m.attachments.where((a) => a.isImage).map((a) => Padding(
@@ -857,7 +943,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               Padding(
                                 padding: const EdgeInsets.only(right: 4),
                                 child: Icon(Icons.push_pin,
-                                    size: 12, color: isMe ? Colors.white70 : AppColors.textMuted),
+                                    size: 12,
+                                    color: isMe && !isSos ? Colors.white70 : AppColors.textMuted),
                               ),
                             Flexible(
                               child: Text(
@@ -867,7 +954,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   fontStyle: m.isDeleted ? FontStyle.italic : FontStyle.normal,
                                   color: m.isDeleted
                                       ? (isMe ? Colors.white70 : AppColors.textMuted)
-                                      : (isMe ? Colors.white : AppColors.textPrimary),
+                                      : (isMe && !isSos ? Colors.white : AppColors.textPrimary),
                                 ),
                               ),
                             ),

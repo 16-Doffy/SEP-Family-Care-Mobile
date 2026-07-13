@@ -397,8 +397,10 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
-  // POST .../messages — TEXT hoặc kèm attachments (BE tự suy messageType)
-  Future<void> sendMessage(String content, {List<ChatAttachment> attachments = const []}) async {
+  // POST .../messages — TEXT hoặc kèm attachments (BE tự suy messageType).
+  // Truyền messageType tường minh khi cần loại đặc biệt (SOS_QUICK_MESSAGE).
+  Future<void> sendMessage(String content,
+      {List<ChatAttachment> attachments = const [], String? messageType}) async {
     final fid = _fid;
     final cid = conversationId;
     final text = content.trim();
@@ -407,6 +409,7 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await ApiClient.instance.post('/families/$fid/chat/conversations/$cid/messages', {
+        if (messageType != null) 'messageType': messageType,
         if (text.isNotEmpty) 'content': text,
         if (attachments.isNotEmpty)
           'attachments': attachments.map((a) => a.toSendJson()).toList(),
