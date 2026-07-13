@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
+import 'providers/album_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/money_provider.dart';
 import 'providers/wallet_provider.dart';
@@ -22,6 +23,7 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => AlbumProvider()),
         ChangeNotifierProvider(create: (_) => MoneyProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => TaskProvider()),

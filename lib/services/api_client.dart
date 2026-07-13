@@ -30,25 +30,25 @@ class ApiClient {
   String? _familyId;
 
   // Refresh lock — tránh race condition khi nhiều request 401 cùng lúc
-  bool              _refreshing       = false;
-  Completer<bool>?  _refreshCompleter;
+  bool _refreshing = false;
+  Completer<bool>? _refreshCompleter;
 
   void Function(String newAccess, String newRefresh)? onTokenRotated;
   void Function()? onSessionExpired;
 
-  void setToken(String? token)        => _token        = token;
+  void setToken(String? token) => _token = token;
   void setRefreshToken(String? token) => _refreshToken = token;
-  void setFamilyId(String? id)        => _familyId     = id;
+  void setFamilyId(String? id) => _familyId = id;
 
-  String? get token    => _token;
+  String? get token => _token;
   String? get familyId => _familyId;
 
   /// Xóa toàn bộ session data — gọi khi logout hoặc session expired
   void clearSession() {
-    _token        = null;
+    _token = null;
     _refreshToken = null;
-    _familyId     = null;
-    onTokenRotated   = null;
+    _familyId = null;
+    onTokenRotated = null;
     onSessionExpired = null;
   }
 
@@ -72,31 +72,48 @@ class ApiClient {
   // ── HTTP methods ─────────────────────────────────────────────────────────
 
   /// POST — trả Map (body thực), hoặc {} nếu 204 No Content
-  Future<Map<String, dynamic>> post(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> post(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final r = await _send(
-        () => http.post(_uri(path), headers: _headers(), body: jsonEncode(body)));
+      () => http.post(_uri(path), headers: _headers(), body: jsonEncode(body)),
+    );
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
   }
 
   /// PATCH — trả Map hoặc {}
-  Future<Map<String, dynamic>> patch(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> patch(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final r = await _send(
-        () => http.patch(_uri(path), headers: _headers(), body: jsonEncode(body)));
+      () => http.patch(_uri(path), headers: _headers(), body: jsonEncode(body)),
+    );
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
   }
 
   /// PUT — trả Map hoặc {}
-  Future<Map<String, dynamic>> put(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> put(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
     final r = await _send(
-        () => http.put(_uri(path), headers: _headers(), body: jsonEncode(body)));
+      () => http.put(_uri(path), headers: _headers(), body: jsonEncode(body)),
+    );
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
   }
 
   Future<dynamic> get(String path) =>
       _send(() => http.get(_uri(path), headers: _headers()));
 
-  Future<dynamic> delete(String path) =>
-      _send(() => http.delete(_uri(path), headers: _headers()));
+  Future<dynamic> delete(String path, {Map<String, dynamic>? body}) => _send(
+    () => http.delete(
+      _uri(path),
+      headers: _headers(),
+      body: body == null ? null : jsonEncode(body),
+    ),
+  );
 
   /// Upload file dạng multipart/form-data — dùng cho task proofs, avatar, v.v.
   /// [queryParams] gắn vào URL (ví dụ ?proofType=IMAGE)
@@ -105,23 +122,28 @@ class ApiClient {
     required String filePath,
     String fieldName = 'file',
     Map<String, String>? queryParams,
+    Map<String, String>? fields,
     String? mimeType, // ví dụ 'image/jpeg'
   }) async {
     Future<http.Response> doUpload() async {
       final uri = _uri(path).replace(queryParameters: queryParams);
       final request = http.MultipartRequest('POST', uri);
       if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+      if (fields != null && fields.isNotEmpty) request.fields.addAll(fields);
       // Không truyền contentType thì http gửi application/octet-stream và BE
       // trả "Định dạng file minh chứng không được hỗ trợ" — phải đoán từ đuôi
       // file (verified live: octet-stream bị 400, image/png pass).
-      request.files.add(await http.MultipartFile.fromPath(
-        fieldName,
-        filePath,
-        contentType: MediaType.parse(mimeType ?? _guessMimeType(filePath)),
-      ));
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          fieldName,
+          filePath,
+          contentType: MediaType.parse(mimeType ?? _guessMimeType(filePath)),
+        ),
+      );
       final streamed = await request.send();
       return http.Response.fromStream(streamed);
     }
+
     final r = await _send(doUpload);
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
   }
@@ -130,25 +152,29 @@ class ApiClient {
     final ext = path.split('.').last.toLowerCase();
     return switch (ext) {
       'jpg' || 'jpeg' => 'image/jpeg',
-      'png'           => 'image/png',
-      'gif'           => 'image/gif',
-      'webp'          => 'image/webp',
-      'heic'          => 'image/heic',
-      'bmp'           => 'image/bmp',
-      'mp4'           => 'video/mp4',
-      'mov'           => 'video/quicktime',
-      'pdf'           => 'application/pdf',
-      _               => 'application/octet-stream',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'heic' => 'image/heic',
+      'bmp' => 'image/bmp',
+      'mp4' => 'video/mp4',
+      'mov' => 'video/quicktime',
+      'pdf' => 'application/pdf',
+      _ => 'application/octet-stream',
     };
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────
 
-  Future<http.Response> _withTimeout(Future<http.Response> Function() fn) async {
+  Future<http.Response> _withTimeout(
+    Future<http.Response> Function() fn,
+  ) async {
     try {
       return await fn().timeout(_kRequestTimeout);
     } on TimeoutException {
-      throw Exception('Kết nối đến server quá lâu, vui lòng kiểm tra mạng và thử lại.');
+      throw Exception(
+        'Kết nối đến server quá lâu, vui lòng kiểm tra mạng và thử lại.',
+      );
     } on http.ClientException {
       throw Exception('Không thể kết nối đến server, vui lòng kiểm tra mạng.');
     }
@@ -157,9 +183,9 @@ class ApiClient {
   Uri _uri(String path) => Uri.parse('$_kBase$path');
 
   Map<String, String> _headers() => {
-        'Content-Type': 'application/json',
-        if (_token != null) 'Authorization': 'Bearer $_token',
-      };
+    'Content-Type': 'application/json',
+    if (_token != null) 'Authorization': 'Bearer $_token',
+  };
 
   Future<dynamic> _send(Future<http.Response> Function() fn) async {
     var response = await _withTimeout(fn);
@@ -178,7 +204,10 @@ class ApiClient {
     // ── 204 No Content ────────────────────────────────────────────────────
     if (response.statusCode == 204 || response.body.isEmpty) {
       if (response.statusCode >= 400) {
-        throw ApiException(response.statusCode, 'Request failed (${response.statusCode})');
+        throw ApiException(
+          response.statusCode,
+          'Request failed (${response.statusCode})',
+        );
       }
       return <String, dynamic>{};
     }
@@ -187,14 +216,19 @@ class ApiClient {
     if (response.statusCode >= 400) {
       final msg = body is Map
           ? (body['message'] is List
-              ? (body['message'] as List).join(', ')
-              : body['message']?.toString() ?? body['error']?.toString())
+                ? (body['message'] as List).join(', ')
+                : body['message']?.toString() ?? body['error']?.toString())
           : null;
-      throw ApiException(response.statusCode, msg ?? 'Request failed (${response.statusCode})');
+      throw ApiException(
+        response.statusCode,
+        msg ?? 'Request failed (${response.statusCode})',
+      );
     }
 
     // Unwrap { success, data }
-    if (body is Map && body.containsKey('success') && body.containsKey('data')) {
+    if (body is Map &&
+        body.containsKey('success') &&
+        body.containsKey('data')) {
       return body['data'];
     }
     return body;
@@ -225,29 +259,33 @@ class ApiClient {
       // Đợi refresh đang chạy hoàn tất
       return _refreshCompleter!.future;
     }
-    _refreshing       = true;
+    _refreshing = true;
     _refreshCompleter = Completer<bool>();
     final result = await _tryRefresh();
     _refreshCompleter!.complete(result);
-    _refreshing       = false;
+    _refreshing = false;
     _refreshCompleter = null;
     return result;
   }
 
   Future<bool> _tryRefresh() async {
     try {
-      final res = await http.post(
-        _uri('/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'refreshToken': _refreshToken}),
-      ).timeout(_kRequestTimeout);
+      final res = await http
+          .post(
+            _uri('/auth/refresh'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refreshToken': _refreshToken}),
+          )
+          .timeout(_kRequestTimeout);
       if (res.statusCode != 200) return false;
       final body = jsonDecode(res.body);
-      final data = (body is Map && body.containsKey('data')) ? body['data'] : body;
-      final newAccess  = data['accessToken']?.toString();
+      final data = (body is Map && body.containsKey('data'))
+          ? body['data']
+          : body;
+      final newAccess = data['accessToken']?.toString();
       final newRefresh = data['refreshToken']?.toString();
       if (newAccess == null) return false;
-      _token        = newAccess;
+      _token = newAccess;
       _refreshToken = newRefresh ?? _refreshToken;
       onTokenRotated?.call(newAccess, newRefresh ?? _refreshToken!);
       return true;
