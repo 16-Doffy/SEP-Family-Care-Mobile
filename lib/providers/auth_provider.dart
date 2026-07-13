@@ -267,7 +267,9 @@ class AuthProvider extends ChangeNotifier {
         }
         // Lỗi khác (mạng/500) → giữ family từ /families/my để tránh đá nhầm
         // người dùng hợp lệ ra khỏi gia đình khi server tạm lỗi.
-        debugPrint('AuthProvider: family detail check failed (${e.statusCode}): $e');
+        debugPrint(
+          'AuthProvider: family detail check failed (${e.statusCode}): $e',
+        );
       }
 
       // Lấy role: ưu tiên từ detail (chính xác), fallback /families/my.
@@ -288,7 +290,8 @@ class AuthProvider extends ChangeNotifier {
         familyRole = me['familyRole']?.toString() ?? me['role']?.toString();
       }
 
-      familyRole ??= f['currentMemberRole']?.toString() ??
+      familyRole ??=
+          f['currentMemberRole']?.toString() ??
           f['myRole']?.toString() ??
           f['userRole']?.toString() ??
           f['role']?.toString();
@@ -368,6 +371,8 @@ class AuthProvider extends ChangeNotifier {
   Future<void> saveMonthlyFinance({
     required double expectedIncome,
     required double expectedExpense,
+    double? expectedSharedContribution,
+    double? actualSharedContribution,
     String incomeVisibility = 'PRIVATE',
     String expenseVisibility = 'PRIVATE',
     String? note,
@@ -380,6 +385,8 @@ class AuthProvider extends ChangeNotifier {
       'periodYear': now.year,
       'expectedIncome': expectedIncome,
       'expectedPersonalExpense': expectedExpense,
+      'expectedSharedContribution': ?expectedSharedContribution,
+      'actualSharedContribution': ?actualSharedContribution,
       'incomeVisibility': incomeVisibility,
       'expenseVisibility': expenseVisibility,
       if (note != null && note.isNotEmpty) 'note': note,

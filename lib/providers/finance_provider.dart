@@ -38,13 +38,13 @@ class FinanceJar {
   });
 
   factory FinanceJar.fromJson(Map<String, dynamic> j) => FinanceJar(
-        id: j['id']?.toString() ?? '',
-        name: j['name']?.toString() ?? '',
-        jarCode: j['jarCode']?.toString() ?? '',
-        allocationPercentage: _money(j['allocationPercentage']),
-        isActive: j['isActive'] as bool? ?? true,
-        financeModelId: j['financeModelId']?.toString(),
-      );
+    id: j['id']?.toString() ?? '',
+    name: j['name']?.toString() ?? '',
+    jarCode: j['jarCode']?.toString() ?? '',
+    allocationPercentage: _money(j['allocationPercentage']),
+    isActive: j['isActive'] as bool? ?? true,
+    financeModelId: j['financeModelId']?.toString(),
+  );
 }
 
 class FinanceModel {
@@ -65,15 +65,15 @@ class FinanceModel {
   bool get isActive => status == 'ACTIVE';
 
   factory FinanceModel.fromJson(Map<String, dynamic> j) => FinanceModel(
-        id: j['id']?.toString() ?? '',
-        name: j['name']?.toString() ?? '',
-        modelType: j['modelType']?.toString() ?? '',
-        status: j['status']?.toString() ?? '',
-        jars: (j['jars'] as List? ?? [])
-            .whereType<Map>()
-            .map((e) => FinanceJar.fromJson(Map<String, dynamic>.from(e)))
-            .toList(),
-      );
+    id: j['id']?.toString() ?? '',
+    name: j['name']?.toString() ?? '',
+    modelType: j['modelType']?.toString() ?? '',
+    status: j['status']?.toString() ?? '',
+    jars: (j['jars'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => FinanceJar.fromJson(Map<String, dynamic>.from(e)))
+        .toList(),
+  );
 }
 
 class FinanceCategory {
@@ -90,11 +90,11 @@ class FinanceCategory {
   });
 
   factory FinanceCategory.fromJson(Map<String, dynamic> j) => FinanceCategory(
-        id: j['id']?.toString() ?? '',
-        name: j['name']?.toString() ?? '',
-        categoryType: j['categoryType']?.toString() ?? 'EXPENSE',
-        essentialType: j['essentialType']?.toString(),
-      );
+    id: j['id']?.toString() ?? '',
+    name: j['name']?.toString() ?? '',
+    categoryType: j['categoryType']?.toString() ?? 'EXPENSE',
+    essentialType: j['essentialType']?.toString(),
+  );
 }
 
 class BudgetPlan {
@@ -119,29 +119,29 @@ class BudgetPlan {
   });
 
   factory BudgetPlan.fromJson(Map<String, dynamic> j) => BudgetPlan(
-        id: j['id']?.toString() ?? '',
-        planName: j['planName']?.toString() ?? '',
-        periodType: j['periodType']?.toString() ?? 'MONTHLY',
-        periodStart: j['periodStart']?.toString() ?? '',
-        periodEnd: j['periodEnd']?.toString() ?? '',
-        expectedSharedIncome: _moneyNull(j['expectedSharedIncome']),
-        expectedSharedExpense: _moneyNull(j['expectedSharedExpense']),
-        status: j['status']?.toString() ?? 'DRAFT',
-      );
+    id: j['id']?.toString() ?? '',
+    planName: j['planName']?.toString() ?? '',
+    periodType: j['periodType']?.toString() ?? 'MONTHLY',
+    periodStart: j['periodStart']?.toString() ?? '',
+    periodEnd: j['periodEnd']?.toString() ?? '',
+    expectedSharedIncome: _moneyNull(j['expectedSharedIncome']),
+    expectedSharedExpense: _moneyNull(j['expectedSharedExpense']),
+    status: j['status']?.toString() ?? 'DRAFT',
+  );
 
   Color get statusColor => switch (status) {
-        'ACTIVE'   => const Color(0xFF16A34A),
-        'CLOSED'   => const Color(0xFF6B7280),
-        'CANCELED' => const Color(0xFFDC2626),
-        _          => const Color(0xFFD97706),
-      };
+    'ACTIVE' => const Color(0xFF16A34A),
+    'CLOSED' => const Color(0xFF6B7280),
+    'CANCELED' => const Color(0xFFDC2626),
+    _ => const Color(0xFFD97706),
+  };
 
   String get statusLabel => switch (status) {
-        'ACTIVE'   => 'Đang áp dụng',
-        'CLOSED'   => 'Đã đóng',
-        'CANCELED' => 'Đã hủy',
-        _          => 'Bản nháp',
-      };
+    'ACTIVE' => 'Đang áp dụng',
+    'CLOSED' => 'Đã đóng',
+    'CANCELED' => 'Đã hủy',
+    _ => 'Bản nháp',
+  };
 }
 
 // 1 dòng ngân sách thuộc BudgetPlan — chỉ có khi lấy chi tiết 1 plan
@@ -172,11 +172,14 @@ class BudgetLine {
   });
 
   factory BudgetLine.fromJson(Map<String, dynamic> j) {
-    final categoryMap = j['category'] is Map ? Map<String, dynamic>.from(j['category'] as Map) : null;
+    final categoryMap = j['category'] is Map
+        ? Map<String, dynamic>.from(j['category'] as Map)
+        : null;
     return BudgetLine(
       id: j['id']?.toString() ?? '',
       categoryId: j['categoryId']?.toString() ?? categoryMap?['id']?.toString(),
-      categoryName: categoryMap?['name']?.toString() ?? j['categoryName']?.toString(),
+      categoryName:
+          categoryMap?['name']?.toString() ?? j['categoryName']?.toString(),
       jarId: j['jarId']?.toString(),
       plannedAmount: _money(j['plannedAmount']),
       actualAmount: _moneyNull(j['actualAmount']),
@@ -208,29 +211,37 @@ class FinancialGoal {
   // Với includeProgress=true BE bọc item thành {goal: {...}, progress: {...}}
   // — phải bóc lớp, đọc phẳng sẽ ra tên rỗng/0đ (bug đã xác minh trên API live)
   factory FinancialGoal.fromJson(Map<String, dynamic> j) {
-    final goal = j['goal'] is Map ? Map<String, dynamic>.from(j['goal'] as Map) : j;
-    final progress = j['progress'] is Map ? Map<String, dynamic>.from(j['progress'] as Map) : null;
+    final goal = j['goal'] is Map
+        ? Map<String, dynamic>.from(j['goal'] as Map)
+        : j;
+    final progress = j['progress'] is Map
+        ? Map<String, dynamic>.from(j['progress'] as Map)
+        : null;
     return FinancialGoal(
       id: goal['id']?.toString() ?? '',
       goalName: goal['goalName']?.toString() ?? '',
       targetAmount: _money(goal['targetAmount']),
       deadline: goal['deadline']?.toString(),
       status: goal['status']?.toString() ?? 'ACTIVE',
-      progressPercent: _moneyNull(progress?['progressPercent'] ?? goal['progressPercent'] ?? j['progressPercent']),
+      progressPercent: _moneyNull(
+        progress?['progressPercent'] ??
+            goal['progressPercent'] ??
+            j['progressPercent'],
+      ),
     );
   }
 
   Color get statusColor => switch (status) {
-        'COMPLETED' => const Color(0xFF16A34A),
-        'CANCELED'  => const Color(0xFFDC2626),
-        _           => const Color(0xFF2563EB),
-      };
+    'COMPLETED' => const Color(0xFF16A34A),
+    'CANCELED' => const Color(0xFFDC2626),
+    _ => const Color(0xFF2563EB),
+  };
 
   String get statusLabel => switch (status) {
-        'COMPLETED' => 'Đã đạt mục tiêu',
-        'CANCELED'  => 'Đã hủy',
-        _           => 'Đang tiết kiệm',
-      };
+    'COMPLETED' => 'Đã đạt mục tiêu',
+    'CANCELED' => 'Đã hủy',
+    _ => 'Đang tiết kiệm',
+  };
 }
 
 // GET .../financial-goals/{goalId}/allocations — 1 lần góp tiền (ad-hoc, khác
@@ -249,11 +260,11 @@ class GoalAllocation {
   });
 
   factory GoalAllocation.fromJson(Map<String, dynamic> j) => GoalAllocation(
-        id: j['id']?.toString() ?? '',
-        amount: _money(j['amount']),
-        note: j['note']?.toString(),
-        createdAt: j['createdAt']?.toString(),
-      );
+    id: j['id']?.toString() ?? '',
+    amount: _money(j['amount']),
+    note: j['note']?.toString(),
+    createdAt: j['createdAt']?.toString(),
+  );
 }
 
 // GET .../financial-goals/{goalId}/contribution-suggestions — chỉ đọc, gợi ý
@@ -277,12 +288,22 @@ class ContributionSuggestion {
     final memberMap = j['member'] is Map
         ? Map<String, dynamic>.from(j['member'] as Map)
         : j['user'] is Map
-            ? Map<String, dynamic>.from(j['user'] as Map)
-            : null;
+        ? Map<String, dynamic>.from(j['user'] as Map)
+        : null;
     return ContributionSuggestion(
-      memberId: j['memberId']?.toString() ?? memberMap?['id']?.toString() ?? memberMap?['userId']?.toString() ?? '',
-      memberName: memberMap?['fullName']?.toString() ?? memberMap?['displayName']?.toString() ?? j['memberName']?.toString() ?? 'Thành viên',
-      suggestedAmount: _money(j['suggestedAmount'] ?? j['amount'] ?? j['plannedAmount']),
+      memberId:
+          j['memberId']?.toString() ??
+          memberMap?['id']?.toString() ??
+          memberMap?['userId']?.toString() ??
+          '',
+      memberName:
+          memberMap?['fullName']?.toString() ??
+          memberMap?['displayName']?.toString() ??
+          j['memberName']?.toString() ??
+          'Thành viên',
+      suggestedAmount: _money(
+        j['suggestedAmount'] ?? j['amount'] ?? j['plannedAmount'],
+      ),
       raw: j,
     );
   }
@@ -314,37 +335,51 @@ class GoalContributionPlan {
     required this.raw,
   });
 
-  bool get isPending  => status.toUpperCase() == 'PENDING';
+  bool get isPending => status.toUpperCase() == 'PENDING';
   bool get isSubmitted => status.toUpperCase() == 'SUBMITTED';
   bool get isApproved => status.toUpperCase() == 'APPROVED';
   bool get isRejected => status.toUpperCase() == 'REJECTED';
 
   String get statusLabel => switch (status.toUpperCase()) {
-        'SUBMITTED' => '⏳ Chờ duyệt',
-        'APPROVED'  => '✅ Đã duyệt',
-        'REJECTED'  => '❌ Bị từ chối',
-        _           => '📋 Chưa nộp',
-      };
+    'SUBMITTED' => '⏳ Chờ duyệt',
+    'APPROVED' => '✅ Đã duyệt',
+    'REJECTED' => '❌ Bị từ chối',
+    _ => '📋 Chưa nộp',
+  };
 
   Color get statusColor => switch (status.toUpperCase()) {
-        'SUBMITTED' => const Color(0xFFD97706),
-        'APPROVED'  => const Color(0xFF16A34A),
-        'REJECTED'  => const Color(0xFFDC2626),
-        _           => const Color(0xFF6B7280),
-      };
+    'SUBMITTED' => const Color(0xFFD97706),
+    'APPROVED' => const Color(0xFF16A34A),
+    'REJECTED' => const Color(0xFFDC2626),
+    _ => const Color(0xFF6B7280),
+  };
 
   factory GoalContributionPlan.fromJson(Map<String, dynamic> j) {
     final memberMap = j['member'] is Map
         ? Map<String, dynamic>.from(j['member'] as Map)
         : j['user'] is Map
-            ? Map<String, dynamic>.from(j['user'] as Map)
-            : null;
+        ? Map<String, dynamic>.from(j['user'] as Map)
+        : null;
     return GoalContributionPlan(
-      id: j['id']?.toString() ?? j['planId']?.toString() ?? j['contributionPlanId']?.toString() ?? '',
-      memberId: j['memberId']?.toString() ?? memberMap?['id']?.toString() ?? memberMap?['userId']?.toString() ?? '',
-      memberName: memberMap?['fullName']?.toString() ?? memberMap?['displayName']?.toString() ?? j['memberName']?.toString() ?? 'Thành viên',
+      id:
+          j['id']?.toString() ??
+          j['planId']?.toString() ??
+          j['contributionPlanId']?.toString() ??
+          '',
+      memberId:
+          j['memberId']?.toString() ??
+          memberMap?['id']?.toString() ??
+          memberMap?['userId']?.toString() ??
+          '',
+      memberName:
+          memberMap?['fullName']?.toString() ??
+          memberMap?['displayName']?.toString() ??
+          j['memberName']?.toString() ??
+          'Thành viên',
       plannedAmount: _money(j['plannedAmount']),
-      actualAmount: _moneyNull(j['actualAmount'] ?? j['submittedAmount'] ?? j['amount']),
+      actualAmount: _moneyNull(
+        j['actualAmount'] ?? j['submittedAmount'] ?? j['amount'],
+      ),
       status: j['status']?.toString() ?? 'PENDING',
       note: j['note']?.toString(),
       raw: j,
@@ -360,8 +395,11 @@ class MonthlyFinance {
   final double? actualIncome;
   final double? expectedPersonalExpense;
   final double? actualPersonalExpense;
+  final double? expectedSharedContribution;
+  final double? actualSharedContribution;
   final String incomeVisibility;
   final String expenseVisibility;
+  final String? note;
 
   const MonthlyFinance({
     required this.id,
@@ -371,21 +409,27 @@ class MonthlyFinance {
     this.actualIncome,
     this.expectedPersonalExpense,
     this.actualPersonalExpense,
+    this.expectedSharedContribution,
+    this.actualSharedContribution,
     required this.incomeVisibility,
     required this.expenseVisibility,
+    this.note,
   });
 
   factory MonthlyFinance.fromJson(Map<String, dynamic> j) => MonthlyFinance(
-        id: j['id']?.toString() ?? '',
-        periodMonth: (j['periodMonth'] as num?)?.toInt() ?? 0,
-        periodYear: (j['periodYear'] as num?)?.toInt() ?? 0,
-        expectedIncome: _moneyNull(j['expectedIncome']),
-        actualIncome: _moneyNull(j['actualIncome']),
-        expectedPersonalExpense: _moneyNull(j['expectedPersonalExpense']),
-        actualPersonalExpense: _moneyNull(j['actualPersonalExpense']),
-        incomeVisibility: j['incomeVisibility']?.toString() ?? 'PRIVATE',
-        expenseVisibility: j['expenseVisibility']?.toString() ?? 'PRIVATE',
-      );
+    id: j['id']?.toString() ?? '',
+    periodMonth: (j['periodMonth'] as num?)?.toInt() ?? 0,
+    periodYear: (j['periodYear'] as num?)?.toInt() ?? 0,
+    expectedIncome: _moneyNull(j['expectedIncome']),
+    actualIncome: _moneyNull(j['actualIncome']),
+    expectedPersonalExpense: _moneyNull(j['expectedPersonalExpense']),
+    actualPersonalExpense: _moneyNull(j['actualPersonalExpense']),
+    expectedSharedContribution: _moneyNull(j['expectedSharedContribution']),
+    actualSharedContribution: _moneyNull(j['actualSharedContribution']),
+    incomeVisibility: j['incomeVisibility']?.toString() ?? 'PRIVATE',
+    expenseVisibility: j['expenseVisibility']?.toString() ?? 'PRIVATE',
+    note: j['note']?.toString(),
+  );
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -419,7 +463,9 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   String _qs(Map<String, dynamic> params) {
-    final entries = params.entries.where((e) => e.value != null && e.value.toString().isNotEmpty);
+    final entries = params.entries.where(
+      (e) => e.value != null && e.value.toString().isNotEmpty,
+    );
     if (entries.isEmpty) return '';
     return '?${entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value.toString())}').join('&')}';
   }
@@ -456,18 +502,23 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   Future<void> _fetchCategories() async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/categories');
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/categories',
+    );
     categories = _list(data).map(FinanceCategory.fromJson).toList();
   }
 
   Future<void> _fetchBudgetPlans() async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/budget-plans${_qs({'limit': 20})}');
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/budget-plans${_qs({'limit': 20})}',
+    );
     budgetPlans = _list(data).map(BudgetPlan.fromJson).toList();
   }
 
   Future<void> _fetchGoals() async {
     final data = await ApiClient.instance.get(
-        '/families/$_fid/finance/financial-goals${_qs({'includeProgress': 'true'})}');
+      '/families/$_fid/finance/financial-goals${_qs({'includeProgress': 'true'})}',
+    );
     goals = _list(data).map(FinancialGoal.fromJson).toList();
   }
 
@@ -491,23 +542,33 @@ class FinanceProvider extends ChangeNotifier {
   // Trả về FinanceModel vừa tạo (kèm jars BE tự sinh cho FIVE_JARS/EIGHTY_TWENTY,
   // rỗng cho CUSTOM) — caller cần model.id để activate/tạo thêm jar ngay,
   // không đợi round-trip fetchModels().
-  Future<FinanceModel> createModel({required String modelType, required String name}) async {
-    final res = await ApiClient.instance.post('/families/$_fid/finance/models', {
-      'modelType': modelType,
-      'name': name,
-    });
+  Future<FinanceModel> createModel({
+    required String modelType,
+    required String name,
+  }) async {
+    final res = await ApiClient.instance.post(
+      '/families/$_fid/finance/models',
+      {'modelType': modelType, 'name': name},
+    );
     await _fetchModels();
     notifyListeners();
     return FinanceModel.fromJson(res);
   }
 
   Future<void> activateModel(String modelId) async {
-    await ApiClient.instance.patch('/families/$_fid/finance/models/$modelId/activate', {});
+    await ApiClient.instance.patch(
+      '/families/$_fid/finance/models/$modelId/activate',
+      {},
+    );
     await _fetchModels();
     notifyListeners();
   }
 
-  Future<void> updateJar(String jarId, {double? allocationPercentage, bool? isActive}) async {
+  Future<void> updateJar(
+    String jarId, {
+    double? allocationPercentage,
+    bool? isActive,
+  }) async {
     await ApiClient.instance.patch('/families/$_fid/finance/jars/$jarId', {
       'allocationPercentage': ?allocationPercentage,
       'isActive': ?isActive,
@@ -559,14 +620,15 @@ class FinanceProvider extends ChangeNotifier {
     double? expectedSharedIncome,
     double? expectedSharedExpense,
   }) async {
-    final res = await ApiClient.instance.post('/families/$_fid/finance/budget-plans', {
-      'planName': planName,
-      'periodType': periodType,
-      'periodStart': periodStart.toIso8601String(),
-      'periodEnd': periodEnd.toIso8601String(),
-      'expectedSharedIncome': ?expectedSharedIncome,
-      'expectedSharedExpense': ?expectedSharedExpense,
-    });
+    final res = await ApiClient.instance
+        .post('/families/$_fid/finance/budget-plans', {
+          'planName': planName,
+          'periodType': periodType,
+          'periodStart': periodStart.toIso8601String(),
+          'periodEnd': periodEnd.toIso8601String(),
+          'expectedSharedIncome': ?expectedSharedIncome,
+          'expectedSharedExpense': ?expectedSharedExpense,
+        });
     await _fetchBudgetPlans();
     notifyListeners();
     return res.isNotEmpty ? BudgetPlan.fromJson(res) : null;
@@ -574,26 +636,34 @@ class FinanceProvider extends ChangeNotifier {
 
   /// action: activate | close | cancel
   Future<void> budgetPlanAction(String planId, String action) async {
-    await ApiClient.instance.patch('/families/$_fid/finance/budget-plans/$planId/$action', {});
+    await ApiClient.instance.patch(
+      '/families/$_fid/finance/budget-plans/$planId/$action',
+      {},
+    );
     await _fetchBudgetPlans();
     notifyListeners();
   }
 
-  Future<void> addBudgetLine(String planId, {
+  Future<void> addBudgetLine(
+    String planId, {
     required String categoryId,
     required double plannedAmount,
   }) async {
-    await ApiClient.instance.post('/families/$_fid/finance/budget-plans/$planId/lines', {
-      'categoryId': categoryId,
-      'plannedAmount': plannedAmount,
-    });
+    await ApiClient.instance.post(
+      '/families/$_fid/finance/budget-plans/$planId/lines',
+      {'categoryId': categoryId, 'plannedAmount': plannedAmount},
+    );
     notifyListeners();
   }
 
   // GET /families/{familyId}/finance/budget-plans/{budgetPlanId} — chi tiết 1
   // plan kèm `lines` (list endpoint không trả lines).
-  Future<(BudgetPlan, List<BudgetLine>)> fetchBudgetPlanDetail(String planId) async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/budget-plans/$planId');
+  Future<(BudgetPlan, List<BudgetLine>)> fetchBudgetPlanDetail(
+    String planId,
+  ) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/budget-plans/$planId',
+    );
     final plan = BudgetPlan.fromJson(data);
     final lines = _list(data['lines']).map(BudgetLine.fromJson).toList();
     return (plan, lines);
@@ -610,14 +680,15 @@ class FinanceProvider extends ChangeNotifier {
     double? expectedSharedIncome,
     double? expectedSharedExpense,
   }) async {
-    await ApiClient.instance.patch('/families/$_fid/finance/budget-plans/$planId', {
-      'planName': ?planName,
-      'periodType': ?periodType,
-      'periodStart': ?periodStart?.toIso8601String(),
-      'periodEnd': ?periodEnd?.toIso8601String(),
-      'expectedSharedIncome': ?expectedSharedIncome,
-      'expectedSharedExpense': ?expectedSharedExpense,
-    });
+    await ApiClient.instance
+        .patch('/families/$_fid/finance/budget-plans/$planId', {
+          'planName': ?planName,
+          'periodType': ?periodType,
+          'periodStart': ?periodStart?.toIso8601String(),
+          'periodEnd': ?periodEnd?.toIso8601String(),
+          'expectedSharedIncome': ?expectedSharedIncome,
+          'expectedSharedExpense': ?expectedSharedExpense,
+        });
     await _fetchBudgetPlans();
     notifyListeners();
   }
@@ -633,21 +704,24 @@ class FinanceProvider extends ChangeNotifier {
     String? essentialType,
     String? note,
   }) async {
-    await ApiClient.instance.patch('/families/$_fid/finance/budget-lines/$lineId', {
-      'categoryId': ?categoryId,
-      'jarId': ?jarId,
-      'plannedAmount': ?plannedAmount,
-      'thresholdAmount': ?thresholdAmount,
-      'thresholdPercent': ?thresholdPercent,
-      'essentialType': ?essentialType,
-      'note': ?note,
-    });
+    await ApiClient.instance
+        .patch('/families/$_fid/finance/budget-lines/$lineId', {
+          'categoryId': ?categoryId,
+          'jarId': ?jarId,
+          'plannedAmount': ?plannedAmount,
+          'thresholdAmount': ?thresholdAmount,
+          'thresholdPercent': ?thresholdPercent,
+          'essentialType': ?essentialType,
+          'note': ?note,
+        });
     notifyListeners();
   }
 
   // DELETE /families/{familyId}/finance/budget-lines/{budgetLineId}
   Future<void> deleteBudgetLine(String lineId) async {
-    await ApiClient.instance.delete('/families/$_fid/finance/budget-lines/$lineId');
+    await ApiClient.instance.delete(
+      '/families/$_fid/finance/budget-lines/$lineId',
+    );
     notifyListeners();
   }
 
@@ -659,28 +733,36 @@ class FinanceProvider extends ChangeNotifier {
     DateTime? deadline,
     double? monthlyContributionTarget,
   }) async {
-    final res = await ApiClient.instance.post('/families/$_fid/finance/financial-goals', {
-      'goalName': goalName,
-      'targetAmount': targetAmount,
-      'deadline': ?deadline?.toIso8601String(),
-      'monthlyContributionTarget': ?monthlyContributionTarget,
-    });
+    final res = await ApiClient.instance
+        .post('/families/$_fid/finance/financial-goals', {
+          'goalName': goalName,
+          'targetAmount': targetAmount,
+          'deadline': ?deadline?.toIso8601String(),
+          'monthlyContributionTarget': ?monthlyContributionTarget,
+        });
     await _fetchGoals();
     notifyListeners();
     return res.isNotEmpty ? FinancialGoal.fromJson(res) : null;
   }
 
   Future<void> cancelGoal(String goalId) async {
-    await ApiClient.instance.patch('/families/$_fid/finance/financial-goals/$goalId/cancel', {});
+    await ApiClient.instance.patch(
+      '/families/$_fid/finance/financial-goals/$goalId/cancel',
+      {},
+    );
     await _fetchGoals();
     notifyListeners();
   }
 
-  Future<void> contributeToGoal(String goalId, double amount, {String? note}) async {
-    await ApiClient.instance.post('/families/$_fid/finance/financial-goals/$goalId/allocations', {
-      'amount': amount,
-      'note': ?note,
-    });
+  Future<void> contributeToGoal(
+    String goalId,
+    double amount, {
+    String? note,
+  }) async {
+    await ApiClient.instance.post(
+      '/families/$_fid/finance/financial-goals/$goalId/allocations',
+      {'amount': amount, 'note': ?note},
+    );
     await _fetchGoals();
     notifyListeners();
   }
@@ -689,7 +771,9 @@ class FinanceProvider extends ChangeNotifier {
   // goal riêng (list `_fetchGoals` dùng `includeProgress=true` nên đã đủ cho
   // hầu hết UI; gọi thêm để có field không xuất hiện ở list, nếu có).
   Future<FinancialGoal> fetchGoalDetail(String goalId) async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/financial-goals/$goalId');
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/financial-goals/$goalId',
+    );
     return FinancialGoal.fromJson(data);
   }
 
@@ -702,13 +786,14 @@ class FinanceProvider extends ChangeNotifier {
     double? monthlyContributionTarget,
     String? relatedJarId,
   }) async {
-    await ApiClient.instance.patch('/families/$_fid/finance/financial-goals/$goalId', {
-      'goalName': ?goalName,
-      'targetAmount': ?targetAmount,
-      'deadline': ?deadline?.toIso8601String(),
-      'monthlyContributionTarget': ?monthlyContributionTarget,
-      'relatedJarId': ?relatedJarId,
-    });
+    await ApiClient.instance
+        .patch('/families/$_fid/finance/financial-goals/$goalId', {
+          'goalName': ?goalName,
+          'targetAmount': ?targetAmount,
+          'deadline': ?deadline?.toIso8601String(),
+          'monthlyContributionTarget': ?monthlyContributionTarget,
+          'relatedJarId': ?relatedJarId,
+        });
     await _fetchGoals();
     notifyListeners();
   }
@@ -717,23 +802,28 @@ class FinanceProvider extends ChangeNotifier {
   // cáo tiến độ chi tiết hơn field `progressPercent` ở list. BE không
   // document schema → raw Map, hiển thị qua JsonReportView.
   Future<Map<String, dynamic>> fetchGoalProgress(String goalId) async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/financial-goals/$goalId/progress');
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/financial-goals/$goalId/progress',
+    );
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   // GET /families/{familyId}/finance/financial-goals/{goalId}/allocations —
   // lịch sử từng lần góp tiền ad-hoc vào mục tiêu (khác Contribution Plans).
   Future<List<GoalAllocation>> fetchGoalAllocations(String goalId) async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/financial-goals/$goalId/allocations');
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/financial-goals/$goalId/allocations',
+    );
     return _list(data).map(GoalAllocation.fromJson).toList();
   }
 
   // PATCH /families/{familyId}/finance/goal-allocations/{allocationId} — sửa
   // số tiền 1 lần góp đã ghi.
   Future<void> updateGoalAllocation(String allocationId, double amount) async {
-    await ApiClient.instance.patch('/families/$_fid/finance/goal-allocations/$allocationId', {
-      'amount': amount,
-    });
+    await ApiClient.instance.patch(
+      '/families/$_fid/finance/goal-allocations/$allocationId',
+      {'amount': amount},
+    );
     await _fetchGoals();
     notifyListeners();
   }
@@ -741,7 +831,9 @@ class FinanceProvider extends ChangeNotifier {
   // DELETE /families/{familyId}/finance/goal-allocations/{allocationId} —
   // hủy 1 lần góp đã ghi nhầm.
   Future<void> deleteGoalAllocation(String allocationId) async {
-    await ApiClient.instance.delete('/families/$_fid/finance/goal-allocations/$allocationId');
+    await ApiClient.instance.delete(
+      '/families/$_fid/finance/goal-allocations/$allocationId',
+    );
     await _fetchGoals();
     notifyListeners();
   }
@@ -749,7 +841,9 @@ class FinanceProvider extends ChangeNotifier {
   // GET /families/{familyId}/finance/model-templates — mẫu mô hình tài chính
   // có sẵn (FIVE_JARS/EIGHTY_TWENTY/CUSTOM), khai báo constant phía BE.
   Future<List<Map<String, dynamic>>> fetchModelTemplates() async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/model-templates');
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/model-templates',
+    );
     return _list(data);
   }
 
@@ -760,8 +854,11 @@ class FinanceProvider extends ChangeNotifier {
     double? actualIncome,
     double? expectedPersonalExpense,
     double? actualPersonalExpense,
+    double? expectedSharedContribution,
+    double? actualSharedContribution,
     String incomeVisibility = 'FAMILY',
     String expenseVisibility = 'PRIVATE',
+    String? note,
   }) async {
     final now = DateTime.now();
     final body = {
@@ -771,13 +868,22 @@ class FinanceProvider extends ChangeNotifier {
       'actualIncome': ?actualIncome,
       'expectedPersonalExpense': ?expectedPersonalExpense,
       'actualPersonalExpense': ?actualPersonalExpense,
+      'expectedSharedContribution': ?expectedSharedContribution,
+      'actualSharedContribution': ?actualSharedContribution,
       'incomeVisibility': incomeVisibility,
       'expenseVisibility': expenseVisibility,
+      'note': ?note,
     };
     if (monthlyFinance != null) {
-      await ApiClient.instance.put('/families/$_fid/finance/monthly-finances/me', body);
+      await ApiClient.instance.put(
+        '/families/$_fid/finance/monthly-finances/me',
+        body,
+      );
     } else {
-      await ApiClient.instance.post('/families/$_fid/finance/monthly-finances/me', body);
+      await ApiClient.instance.post(
+        '/families/$_fid/finance/monthly-finances/me',
+        body,
+      );
     }
     await _fetchMonthlyFinance();
     notifyListeners();
@@ -787,7 +893,11 @@ class FinanceProvider extends ChangeNotifier {
   // Manager approve/reject) ────────────────────────────────────────────────
 
   // GET .../financial-goals/{goalId}/contribution-suggestions?month&year
-  Future<List<ContributionSuggestion>> fetchContributionSuggestions(String goalId, int month, int year) async {
+  Future<List<ContributionSuggestion>> fetchContributionSuggestions(
+    String goalId,
+    int month,
+    int year,
+  ) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-suggestions${_qs({'month': month, 'year': year})}',
     );
@@ -802,17 +912,28 @@ class FinanceProvider extends ChangeNotifier {
     required DateTime dueDate,
     required List<({String memberId, double plannedAmount})> members,
   }) async {
-    await ApiClient.instance.post('/families/$_fid/finance/financial-goals/$goalId/contribution-plans/confirm', {
-      'periodMonth': periodMonth,
-      'periodYear': periodYear,
-      'dueDate': dueDate.toIso8601String().split('T').first,
-      'members': members.map((m) => {'memberId': m.memberId, 'plannedAmount': m.plannedAmount}).toList(),
-    });
+    await ApiClient.instance.post(
+      '/families/$_fid/finance/financial-goals/$goalId/contribution-plans/confirm',
+      {
+        'periodMonth': periodMonth,
+        'periodYear': periodYear,
+        'dueDate': dueDate.toIso8601String().split('T').first,
+        'members': members
+            .map(
+              (m) => {'memberId': m.memberId, 'plannedAmount': m.plannedAmount},
+            )
+            .toList(),
+      },
+    );
     notifyListeners();
   }
 
   // GET .../financial-goals/{goalId}/contribution-plans?month&year
-  Future<List<GoalContributionPlan>> fetchContributionPlans(String goalId, int month, int year) async {
+  Future<List<GoalContributionPlan>> fetchContributionPlans(
+    String goalId,
+    int month,
+    int year,
+  ) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-plans${_qs({'month': month, 'year': year})}',
     );
@@ -820,7 +941,12 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   // POST .../financial-goals/{goalId}/contribution-plans/{planId}/submit — thành viên xác nhận đã đóng góp
-  Future<void> submitContributionPlan(String goalId, String planId, double amount, {String? note}) async {
+  Future<void> submitContributionPlan(
+    String goalId,
+    String planId,
+    double amount, {
+    String? note,
+  }) async {
     await ApiClient.instance.post(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-plans/$planId/submit',
       {'amount': amount, 'note': ?note},
@@ -829,7 +955,12 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   /// action: approve | reject
-  Future<void> reviewContributionPlan(String goalId, String planId, String action, {String? note}) async {
+  Future<void> reviewContributionPlan(
+    String goalId,
+    String planId,
+    String action, {
+    String? note,
+  }) async {
     await ApiClient.instance.post(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-plans/$planId/$action',
       {'note': ?note},
@@ -838,7 +969,11 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   // GET .../financial-goals/{goalId}/contribution-shortage?month&year
-  Future<Map<String, dynamic>> fetchContributionShortage(String goalId, int month, int year) async {
+  Future<Map<String, dynamic>> fetchContributionShortage(
+    String goalId,
+    int month,
+    int year,
+  ) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-shortage${_qs({'month': month, 'year': year})}',
     );
@@ -852,28 +987,30 @@ class FinanceProvider extends ChangeNotifier {
 
   // GET /families/{familyId}/finance/budget-plans/{budgetPlanId}/report
   Future<Map<String, dynamic>> fetchBudgetPlanReport(String planId) async {
-    final data = await ApiClient.instance.get('/families/$_fid/finance/budget-plans/$planId/report');
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/budget-plans/$planId/report',
+    );
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   // GET /families/{familyId}/finance/reports/non-essential-spending
-  Future<Map<String, dynamic>> fetchNonEssentialSpendingReport({DateTime? periodStart, DateTime? periodEnd}) async {
+  Future<Map<String, dynamic>> fetchNonEssentialSpendingReport({
+    DateTime? periodStart,
+    DateTime? periodEnd,
+  }) async {
     final data = await ApiClient.instance.get(
-      '/families/$_fid/finance/reports/non-essential-spending${_qs({
-        'periodStart': periodStart?.toIso8601String().split('T').first,
-        'periodEnd': periodEnd?.toIso8601String().split('T').first,
-      })}',
+      '/families/$_fid/finance/reports/non-essential-spending${_qs({'periodStart': periodStart?.toIso8601String().split('T').first, 'periodEnd': periodEnd?.toIso8601String().split('T').first})}',
     );
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   // GET /families/{familyId}/finance/reports/budget-goal
-  Future<Map<String, dynamic>> fetchBudgetGoalReport({DateTime? periodStart, DateTime? periodEnd}) async {
+  Future<Map<String, dynamic>> fetchBudgetGoalReport({
+    DateTime? periodStart,
+    DateTime? periodEnd,
+  }) async {
     final data = await ApiClient.instance.get(
-      '/families/$_fid/finance/reports/budget-goal${_qs({
-        'periodStart': periodStart?.toIso8601String().split('T').first,
-        'periodEnd': periodEnd?.toIso8601String().split('T').first,
-      })}',
+      '/families/$_fid/finance/reports/budget-goal${_qs({'periodStart': periodStart?.toIso8601String().split('T').first, 'periodEnd': periodEnd?.toIso8601String().split('T').first})}',
     );
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
@@ -884,10 +1021,13 @@ class FinanceProvider extends ChangeNotifier {
     final raw = data is List
         ? data
         : data is Map && data['items'] is List
-            ? data['items'] as List
-            : data is Map && data['data'] is List
-                ? data['data'] as List
-                : <dynamic>[];
-    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        ? data['items'] as List
+        : data is Map && data['data'] is List
+        ? data['data'] as List
+        : <dynamic>[];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 }

@@ -18,12 +18,12 @@ class JarData {
   });
 
   factory JarData.fromJson(Map<String, dynamic> json) => JarData(
-        id:                json['id']?.toString() ?? '',
-        name:              json['name']?.toString() ?? '',
-        jarCode:           json['jarCode']?.toString() ?? '',
-        allocationPercent: _d(json['allocationPercentage']),
-        balance:           _d(json['balance'] ?? json['currentBalance']),
-      );
+    id: json['id']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    jarCode: json['jarCode']?.toString() ?? '',
+    allocationPercent: _d(json['allocationPercentage']),
+    balance: _d(json['balance'] ?? json['currentBalance']),
+  );
 
   static double _d(dynamic v) {
     if (v is num) return v.toDouble();
@@ -66,20 +66,22 @@ class LedgerEntry {
   double get signedAmount {
     const expenseTypes = {'EXPENSE', 'ALLOWANCE', 'REWARD', 'SUPPORT'};
     if (expenseTypes.contains(entryType)) return -amount.abs();
-    return amount.abs(); // INCOME, CONTRIBUTION, ADJUSTMENT (mặc định coi là thu)
+    return amount
+        .abs(); // INCOME, CONTRIBUTION, ADJUSTMENT (mặc định coi là thu)
   }
 
   factory LedgerEntry.fromJson(Map<String, dynamic> json) {
     final cat = json['category'] is Map ? json['category'] as Map : null;
     return LedgerEntry(
-      id:           json['id']?.toString() ?? '',
-      entryType:    json['entryType']?.toString() ?? 'EXPENSE',
-      amount:       JarData._d(json['amount']),
-      description:  json['description']?.toString() ?? '',
-      note:         json['note']?.toString(),
-      entryDate:    json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
+      id: json['id']?.toString() ?? '',
+      entryType: json['entryType']?.toString() ?? 'EXPENSE',
+      amount: JarData._d(json['amount']),
+      description: json['description']?.toString() ?? '',
+      note: json['note']?.toString(),
+      entryDate:
+          json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
       categoryName: cat?['name']?.toString(),
-      sourceType:   json['sourceType']?.toString(),
+      sourceType: json['sourceType']?.toString(),
     );
   }
 
@@ -90,8 +92,8 @@ class LedgerEntry {
 }
 
 // Alias để không cần sửa các screen cũ ngay
-typedef WalletData        = OverviewData;
-typedef TransactionData   = LedgerEntry;
+typedef WalletData = OverviewData;
+typedef TransactionData = LedgerEntry;
 
 class OverviewData {
   final String id;
@@ -117,11 +119,15 @@ class WalletProvider extends ChangeNotifier {
   String? _error;
 
   // Monthly aggregates from /finance/overview (more accurate than summing entries)
-  double _monthlyIncome  = 0;
+  double _monthlyIncome = 0;
   double _monthlyExpense = 0;
 
   // Report data from /finance/reports/overview
   Map<String, dynamic>? _report;
+  int _entriesPage = 1;
+  final int _entriesLimit = 20;
+  int? _entriesTotalPages;
+  bool _loadingMoreEntries = false;
 
   List<OverviewData> get wallets =>
       _familyOverview != null ? [_familyOverview!] : [];
@@ -130,14 +136,23 @@ class WalletProvider extends ChangeNotifier {
   bool get isLoading => _loading;
   String? get error => _error;
 
-  double get totalBalance   => _familyOverview?.balance ?? 0;
-  double get monthlyIncome  => _monthlyIncome  > 0 ? _monthlyIncome  : _calcIncome;
-  double get monthlyExpense => _monthlyExpense > 0 ? _monthlyExpense : _calcExpense;
+  double get totalBalance => _familyOverview?.balance ?? 0;
+  double get monthlyIncome => _monthlyIncome > 0 ? _monthlyIncome : _calcIncome;
+  double get monthlyExpense =>
+      _monthlyExpense > 0 ? _monthlyExpense : _calcExpense;
   Map<String, dynamic>? get report => _report;
+  bool get isLoadingMoreEntries => _loadingMoreEntries;
+  bool get hasMoreEntries => _entriesTotalPages == null
+      ? _entries.length >= _entriesLimit
+      : _entriesPage < _entriesTotalPages!;
 
   // Fallback: calc from ledger entries using signedAmount (correct sign)
-  double get _calcIncome  => _entries.where((t) => t.signedAmount > 0).fold(0.0, (s, t) => s + t.signedAmount);
-  double get _calcExpense => _entries.where((t) => t.signedAmount < 0).fold(0.0, (s, t) => s + t.signedAmount.abs());
+  double get _calcIncome => _entries
+      .where((t) => t.signedAmount > 0)
+      .fold(0.0, (s, t) => s + t.signedAmount);
+  double get _calcExpense => _entries
+      .where((t) => t.signedAmount < 0)
+      .fold(0.0, (s, t) => s + t.signedAmount.abs());
 
   OverviewData? get familyWallet => _familyOverview;
   List<OverviewData> get memberWallets => [];
@@ -152,7 +167,7 @@ class WalletProvider extends ChangeNotifier {
     try {
       await Future.wait([
         _fetchOverview(),
-        _fetchEntries(),
+        _fetchEntries(refresh: true),
         _fetchJars(),
         _fetchReport(),
       ]);
@@ -171,32 +186,37 @@ class WalletProvider extends ChangeNotifier {
     );
     if (data is Map) {
       _familyOverview = OverviewData(
-        id:        data['familyId']?.toString() ?? '',
-        name:      'Quỹ gia đình',
-        type:      'JOINT',
-        balance:   JarData._d(data['totalBalance'] ?? data['balance'] ?? 0),
+        id: data['familyId']?.toString() ?? '',
+        name: 'Quỹ gia đình',
+        type: 'JOINT',
+        balance: JarData._d(data['totalBalance'] ?? data['balance'] ?? 0),
         ownerName: data['familyName']?.toString() ?? '',
       );
       // Extract monthly aggregates if API provides them
-      _monthlyIncome  = JarData._d(data['totalIncome']  ?? data['monthlyIncome']  ?? data['income']  ?? 0);
-      _monthlyExpense = JarData._d(data['totalExpense'] ?? data['monthlyExpense'] ?? data['expense'] ?? 0);
+      _monthlyIncome = JarData._d(
+        data['totalIncome'] ?? data['monthlyIncome'] ?? data['income'] ?? 0,
+      );
+      _monthlyExpense = JarData._d(
+        data['totalExpense'] ?? data['monthlyExpense'] ?? data['expense'] ?? 0,
+      );
     }
   }
 
   Future<void> _fetchReport() async {
     try {
-      final now   = DateTime.now();
-      final start = '${now.year}-${now.month.toString().padLeft(2,'0')}-01';
-      final end   = '${now.year}-${now.month.toString().padLeft(2,'0')}-${_lastDay(now)}';
-      final data  = await ApiClient.instance.get(
+      final now = DateTime.now();
+      final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
+      final end =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+      final data = await ApiClient.instance.get(
         '${ApiClient.instance.familyPath('/finance/reports/overview')}?periodStart=$start&periodEnd=$end&includeBreakdown=true&includeAlerts=true&includeGoals=false',
       );
       if (data is Map) {
         _report = Map<String, dynamic>.from(data);
         // Override monthly totals with report data if more accurate
-        final ri = JarData._d(data['totalIncome']  ?? data['income']  ?? 0);
+        final ri = JarData._d(data['totalIncome'] ?? data['income'] ?? 0);
         final re = JarData._d(data['totalExpense'] ?? data['expense'] ?? 0);
-        if (ri > 0) _monthlyIncome  = ri;
+        if (ri > 0) _monthlyIncome = ri;
         if (re > 0) _monthlyExpense = re;
       }
     } catch (e) {
@@ -210,23 +230,60 @@ class WalletProvider extends ChangeNotifier {
     return last.day.toString().padLeft(2, '0');
   }
 
-  Future<void> _fetchEntries() async {
+  int? _readTotalPages(dynamic data, int fetchedCount) {
+    if (data is! Map) return fetchedCount < _entriesLimit ? _entriesPage : null;
+    final meta = data['meta'] is Map
+        ? data['meta'] as Map
+        : data['pagination'] is Map
+        ? data['pagination'] as Map
+        : data;
+    final totalPages = (meta['totalPages'] as num?)?.toInt();
+    if (totalPages != null) return totalPages;
+    final total = (meta['total'] as num?)?.toInt();
+    if (total != null) return (total / _entriesLimit).ceil().clamp(1, 1 << 30);
+    final hasNext = meta['hasNext'] == true || meta['hasNextPage'] == true;
+    return hasNext ? null : _entriesPage;
+  }
+
+  Future<void> _fetchEntries({bool refresh = true}) async {
     try {
+      final now = DateTime.now();
+      final nextPage = refresh ? 1 : _entriesPage + 1;
       final data = await ApiClient.instance.get(
-        ApiClient.instance.familyPath('/finance/ledger/entries'),
+        '${ApiClient.instance.familyPath('/finance/ledger/entries')}'
+        '?page=$nextPage&limit=$_entriesLimit&month=${now.month}&year=${now.year}',
       );
       final list = data is List
           ? data
           : data is Map && data['items'] is List
-              ? data['items'] as List
-              : <dynamic>[];
-      _entries = list
+          ? data['items'] as List
+          : <dynamic>[];
+      final parsed = list
           .whereType<Map>()
           .map((e) => LedgerEntry.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+      if (refresh) {
+        _entries = parsed;
+      } else {
+        _entries.addAll(parsed);
+      }
+      _entriesPage = nextPage;
+      _entriesTotalPages = _readTotalPages(data, parsed.length);
     } catch (e) {
       debugPrint('WalletProvider: fetchEntries failed: $e');
-      _entries = [];
+      if (refresh) _entries = [];
+    }
+  }
+
+  Future<void> fetchMoreEntries() async {
+    if (_loadingMoreEntries || !hasMoreEntries) return;
+    _loadingMoreEntries = true;
+    notifyListeners();
+    try {
+      await _fetchEntries(refresh: false);
+    } finally {
+      _loadingMoreEntries = false;
+      notifyListeners();
     }
   }
 
@@ -238,8 +295,8 @@ class WalletProvider extends ChangeNotifier {
       final list = data is List
           ? data
           : data is Map && data['items'] is List
-              ? data['items'] as List
-              : <dynamic>[];
+          ? data['items'] as List
+          : <dynamic>[];
       _jars = list
           .whereType<Map>()
           .map((e) => JarData.fromJson(Map<String, dynamic>.from(e)))
@@ -261,19 +318,17 @@ class WalletProvider extends ChangeNotifier {
     String? sourceType,
     String? sourceId,
   }) async {
-    await ApiClient.instance.post(
-      ApiClient.instance.familyPath('/finance/ledger/entries'),
-      {
-        'entryType':   isIncome ? 'INCOME' : 'EXPENSE',
-        'amount':      amount.abs(),
-        'description': description,
-        'entryDate':   DateTime.now().toIso8601String(),
-        if (note != null && note.isNotEmpty) 'note': note,
-        'categoryId': ?categoryId,
-        'sourceType': ?sourceType,
-        'sourceId':   ?sourceId,
-      },
-    );
+    await ApiClient.instance
+        .post(ApiClient.instance.familyPath('/finance/ledger/entries'), {
+          'entryType': isIncome ? 'INCOME' : 'EXPENSE',
+          'amount': amount.abs(),
+          'description': description,
+          'entryDate': DateTime.now().toIso8601String(),
+          if (note != null && note.isNotEmpty) 'note': note,
+          'categoryId': ?categoryId,
+          'sourceType': ?sourceType,
+          'sourceId': ?sourceId,
+        });
     await fetchWallets();
   }
 
