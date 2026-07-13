@@ -15,7 +15,10 @@ class SubscriptionScreen extends StatefulWidget {
 }
 
 class _SubscriptionScreenState extends State<SubscriptionScreen> {
-  String _currentPlan = 'FREE';
+  // null = đang tải gói hiện tại — KHÔNG mặc định 'FREE' vì màn hình sẽ nháy
+  // "Đang dùng" trên gói Free 2-3s rồi mới nhảy sang gói thật (user tưởng
+  // subscription bị mất — báo cáo 2026-07-13)
+  String? _currentPlan;
   bool _plansLoading = false;
   List<_PlanData> _plans = [];
   // planCode đang gọi checkout — khoá nút để tránh tạo nhiều Stripe session
@@ -107,14 +110,18 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   // hardcode 'FREE'. Response: { plan: { planCode, ... }, status, ... }
   Future<void> _fetchCurrentSubscription() async {
     final fid = ApiClient.instance.familyId;
-    if (fid == null) return;
+    if (fid == null) {
+      setState(() => _currentPlan = 'FREE');
+      return;
+    }
     try {
       final data = await ApiClient.instance.get('/families/$fid/subscription');
       final plan = data is Map ? data['plan'] : null;
       final planCode = plan is Map ? plan['planCode']?.toString() : null;
-      if (mounted && planCode != null) setState(() => _currentPlan = planCode);
+      if (mounted) setState(() => _currentPlan = planCode ?? 'FREE');
     } catch (_) {
-      // Gia đình chưa có subscription record nào → giữ mặc định FREE
+      // Gia đình chưa có subscription record nào → coi như FREE
+      if (mounted) setState(() => _currentPlan = 'FREE');
     }
   }
 
@@ -219,7 +226,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   // URL được đoán theo convention phổ biến (`checkoutUrl`/`url`), thử nhiều
   // tên trước khi báo lỗi. Cần xác nhận lại field thật khi test tay 1 lần.
   Future<void> _subscribe(_PlanData plan) async {
-    if (plan.id == _currentPlan || _checkingOutPlan != null) return;
+    // _currentPlan == null: chưa biết gói hiện tại — đừng cho checkout kẻo
+    // nâng/hạ nhầm chính gói đang dùng
+    if (_currentPlan == null || plan.id == _currentPlan || _checkingOutPlan != null) {
+      return;
+    }
     final fid = ApiClient.instance.familyId;
     if (fid == null) return;
 
@@ -334,30 +345,37 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                                     fontSize: 12,
                                     color: AppColors.textMuted)),
                             Text(
-                              _plans.isNotEmpty
-                                  ? (_plans.any((p) => p.id == _currentPlan)
+                              _currentPlan == null
+                                  ? 'Đang tải...'
+                                  : _plans.any((p) => p.id == _currentPlan)
                                       ? _plans.firstWhere((p) => p.id == _currentPlan).name
-                                      : _currentPlan)
-                                  : _currentPlan,
+                                      : _currentPlan!,
                               style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary),
+                                  color: _currentPlan == null
+                                      ? AppColors.textMuted
+                                      : AppColors.textPrimary),
                             ),
                           ]),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(999)),
-                      child: Text('Đang dùng',
-                          style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF2563EB))),
-                    ),
+                    if (_currentPlan == null)
+                      const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                            color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(999)),
+                        child: Text('Đang dùng',
+                            style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF2563EB))),
+                      ),
                   ]),
                 ),
                 const SizedBox(height: 20),
