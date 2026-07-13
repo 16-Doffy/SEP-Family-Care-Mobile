@@ -67,10 +67,18 @@ const _managerTabs = [
 ];
 const _deputyTabs = [
   FamilyTab(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ'),
+  // Deputy mở WalletScreen = ví & sổ quỹ CHUNG của gia đình → "Ví" đúng nghĩa
   FamilyTab(icon: Icons.account_balance_wallet_rounded, label: 'Ví'),
   FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Chat'),
 ];
-const _memberTabs = _deputyTabs;
+// Member mở ChildWalletScreen = khai báo tài chính cá nhân theo tháng
+// (monthly-finances/me) — KHÔNG phải ví tiền (member không được xem ví chung,
+// by design đã chốt 2026-07-11) → gọi "Tài chính" cho đúng bản chất
+const _memberTabs = [
+  FamilyTab(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ'),
+  FamilyTab(icon: Icons.savings_rounded, label: 'Tài chính'),
+  FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Chat'),
+];
 
 // Route Manager-only — Deputy KHÔNG được vào dù dùng chung namespace
 // /manager/* với các màn hình quản lý khác. Đã verify bằng tài khoản Deputy

@@ -153,7 +153,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               Row(
                 children: [
                   Text(
-                    '💰 Ví của tôi',
+                    '💰 Tài chính của tôi',
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
