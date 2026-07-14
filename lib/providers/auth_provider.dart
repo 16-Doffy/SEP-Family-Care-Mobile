@@ -140,7 +140,7 @@ class AuthProvider extends ChangeNotifier {
       refreshToken: _user!.refreshToken,
       familyId: fid,
       familyName: name.trim(),
-      familyRole: 'MANAGER',
+      familyRole: 'FAMILY_MANAGER',
     );
     notifyListeners();
   }
@@ -156,7 +156,7 @@ class AuthProvider extends ChangeNotifier {
         refreshToken: newRefresh,
         familyId: _user!.familyId,
         familyName: _user!.familyName,
-        familyRole: _user!.role.name.toUpperCase(),
+        familyRole: _user!.familyRoleString,
         phone: _user!.phone,
       );
       notifyListeners();
@@ -356,7 +356,7 @@ class AuthProvider extends ChangeNotifier {
         refreshToken: _user!.refreshToken,
         familyId: _user!.familyId,
         familyName: _user!.familyName,
-        familyRole: _user!.role.name.toUpperCase(),
+        familyRole: _user!.familyRoleString,
         phone:
             userJson['phone']?.toString() ??
             userJson['phoneNumber']?.toString(),

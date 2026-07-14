@@ -12,6 +12,8 @@ class AppUser {
   final int avatarColor;
   final String? accessToken;
   final String? refreshToken;
+  // account-level type từ BE: NORMAL_USER | SYSTEM_ADMIN (không liên quan familyRole)
+  final String userType;
 
   const AppUser({
     required this.id,
@@ -25,6 +27,7 @@ class AppUser {
     required this.avatarColor,
     this.accessToken,
     this.refreshToken,
+    this.userType = 'NORMAL_USER',
   });
 
   factory AppUser.fromJson(
@@ -36,13 +39,14 @@ class AppUser {
     String? familyRole,
     String? phone,
   }) {
-    // Role ưu tiên: từ familyMember.familyRole (context gia đình) > json.role (account level)
+    // familyRole = vai trò trong gia đình (FAMILY_MANAGER / DEPUTY_MEMBER / FAMILY_MEMBER)
+    // userType   = loại tài khoản hệ thống (NORMAL_USER / SYSTEM_ADMIN) — KHÔNG dùng để xác định role gia đình
     final roleStr = (familyRole ?? json['familyRole'] as String? ??
             json['role'] as String? ?? '')
         .toUpperCase();
-    final role = roleStr.contains('MANAGER') || roleStr.contains('ADMIN')
+    final role = roleStr == 'FAMILY_MANAGER'
         ? UserRole.manager
-        : roleStr.contains('DEPUTY')
+        : roleStr == 'DEPUTY_MEMBER'
             ? UserRole.deputy
             : UserRole.member;
 
@@ -64,6 +68,8 @@ class AppUser {
         ?? json['phone']?.toString()
         ?? json['phoneNumber']?.toString();
 
+    final resolvedUserType = json['userType']?.toString() ?? 'NORMAL_USER';
+
     return AppUser(
       id:             json['id']?.toString() ?? '',
       name:           name,
@@ -76,6 +82,7 @@ class AppUser {
       avatarColor:    colorForRole(role),
       accessToken:    accessToken,
       refreshToken:   refreshToken,
+      userType:       resolvedUserType,
     );
   }
 
@@ -92,6 +99,14 @@ class AppUser {
         UserRole.member  => 0xFFEA580C,
       };
 
+  bool get isSystemAdmin => userType == 'SYSTEM_ADMIN';
+
+  /// Trả về giá trị familyRole đúng theo BE enum để truyền lại vào fromJson
+  String get familyRoleString => switch (role) {
+        UserRole.manager => 'FAMILY_MANAGER',
+        UserRole.deputy  => 'DEPUTY_MEMBER',
+        UserRole.member  => 'FAMILY_MEMBER',
+      };
   bool get isAdministrative => role == UserRole.manager || role == UserRole.deputy;
 
   // Quyền chung Manager + Deputy ("limited management authority")
