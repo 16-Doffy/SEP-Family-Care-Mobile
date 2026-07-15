@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../theme/app_colors.dart';
 
@@ -28,13 +31,50 @@ class FamilyShell extends StatefulWidget {
   State<FamilyShell> createState() => _FamilyShellState();
 }
 
-class _FamilyShellState extends State<FamilyShell> {
+class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
+  // BE chưa có push/websocket — poll nhẹ ở tầng shell (sống suốt phiên đăng
+  // nhập, mọi tab) để banner SOS + chuông thông báo cập nhật trên các thiết bị
+  // khác khi app đang mở. Dừng khi app xuống nền cho đỡ pin/băng thông, và
+  // fetch lại NGAY khi quay lại foreground để không phải chờ hết 1 chu kỳ.
+  static const _kPollInterval = Duration(seconds: 15);
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SosProvider>().fetchAlerts();
+      _refreshLive();
+      _startPolling();
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshLive();
+      _startPolling();
+    } else {
+      _pollTimer?.cancel();
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(_kPollInterval, (_) => _refreshLive());
+  }
+
+  void _refreshLive() {
+    if (!mounted) return;
+    context.read<SosProvider>().fetchAlerts();
+    context.read<NotificationProvider>().fetchNotifications();
   }
 
   void _go(int index) {

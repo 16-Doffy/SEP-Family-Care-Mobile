@@ -10,6 +10,9 @@ import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
+// Nhãn badge chuông: quá 99 thì rút gọn để không phá layout.
+String _unreadLabel(int n) => n > 99 ? '99+' : '$n';
+
 class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({super.key});
   @override
@@ -154,12 +157,30 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                             ),
                             if (context.watch<NotificationProvider>().unreadCount > 0)
                               Positioned(
-                                top: 8, right: 8,
+                                top: 4, right: 4,
                                 child: Container(
-                                  width: 8, height: 8,
-                                  decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: AppColors.notification),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  constraints: const BoxConstraints(
+                                      minWidth: 16, minHeight: 16),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.notification,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                        color: AppColors.white, width: 1.5),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    _unreadLabel(context
+                                        .watch<NotificationProvider>()
+                                        .unreadCount),
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9,
+                                      height: 1,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.white,
+                                    ),
+                                  ),
                                 ),
                               ),
                           ],
