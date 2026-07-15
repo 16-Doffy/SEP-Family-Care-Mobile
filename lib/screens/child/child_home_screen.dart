@@ -8,6 +8,7 @@ import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/family_status_card.dart';
 import '../../widgets/ring_chart.dart';
 
 const _barData    = [40, 80, 60, 100, 75, 50, 90]; // placeholder weekly XP
@@ -254,6 +255,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ]),
                 ),
               ]),
+            ),
+
+            // ── Trạng thái gia đình (ai đang SOS) ────────────────────
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: FamilyStatusCard(),
             ),
 
             // ── XP Ring + balance ────────────────────────────────────

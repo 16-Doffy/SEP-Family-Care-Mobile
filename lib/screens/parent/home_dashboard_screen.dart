@@ -9,6 +9,7 @@ import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/family_status_card.dart';
 
 // Nhãn badge chuông: quá 99 thì rút gọn để không phá layout.
 String _unreadLabel(int n) => n > 99 ? '99+' : '$n';
@@ -188,6 +189,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 20),
+
+                  // ── Trạng thái gia đình (ai đang SOS) ───────────
+                  const FamilyStatusCard(),
                   const SizedBox(height: 20),
 
                   // ── Hero Wallet Card ────────────────────────────
