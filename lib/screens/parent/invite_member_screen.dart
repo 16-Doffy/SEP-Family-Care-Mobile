@@ -128,8 +128,12 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
                         const SizedBox(height: 8),
                         OutlinedButton.icon(
                           onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
                             await Clipboard.setData(ClipboardData(text: _code!));
-                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã sao chép mã mời')));
+                            if (!mounted) return;
+                            messenger.showSnackBar(
+                              const SnackBar(content: Text('Đã sao chép mã mời')),
+                            );
                           },
                           icon: const Icon(Icons.copy_rounded, size: 18),
                           label: const Text('Sao chép mã'),

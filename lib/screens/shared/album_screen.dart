@@ -1081,20 +1081,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  Widget _pill(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
-      ),
-    );
-  }
-
   Widget _tagChip(BuildContext sheetContext, AlbumMedia media, AlbumTag tag) {
     return InputChip(
       label: Text('@${tag.taggedMemberName}'),
@@ -1104,8 +1090,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
       onDeleted: tag.canRemove
           ? () async {
               try {
-                await context.read<AlbumProvider>().untagMember(media.id, tag.id);
-                if (mounted) Navigator.pop(sheetContext);
+                final album = context.read<AlbumProvider>();
+                await album.untagMember(media.id, tag.id);
+                if (!mounted || !sheetContext.mounted) return;
+                Navigator.pop(sheetContext);
               } catch (e) {
                 _snack(e);
               }

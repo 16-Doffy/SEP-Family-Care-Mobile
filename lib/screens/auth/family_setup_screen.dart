@@ -27,11 +27,15 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
 
   Future<void> _create() async {
     final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty) {
+      return;
+    }
+    final auth = context.read<AuthProvider>();
     setState(() => _creating = true);
     try {
-      await context.read<AuthProvider>().createFamily(name);
-      if (mounted) context.go('/manager/home');
+      await auth.createFamily(name);
+      if (!mounted) return;
+      context.go('/manager/home');
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
@@ -86,8 +90,10 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
             ),
             TextButton(
               onPressed: () async {
-                await context.read<AuthProvider>().logout();
-                if (mounted) context.go('/login');
+                final auth = context.read<AuthProvider>();
+                await auth.logout();
+                if (!mounted) return;
+                context.go('/login');
               },
               child: const Text('Đăng xuất'),
             ),

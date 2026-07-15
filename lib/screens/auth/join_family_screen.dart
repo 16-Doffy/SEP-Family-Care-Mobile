@@ -97,17 +97,19 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   }
 
   Future<void> _loadMyRequests() async {
+    final invitationProvider = context.read<InvitationProvider>();
+    final auth = context.read<AuthProvider>();
     try {
-      await context.read<InvitationProvider>().fetchMyJoinRequests();
-      final approved = context
-          .read<InvitationProvider>()
-          .myJoinRequests
+      await invitationProvider.fetchMyJoinRequests();
+      if (!mounted) return;
+      final approved = invitationProvider.myJoinRequests
           .any((request) => request.status.toUpperCase() == 'APPROVED');
       if (approved) {
-        await context.read<AuthProvider>().refreshFamilyContext();
-        if (mounted && context.read<AuthProvider>().hasFamily) {
+        await auth.refreshFamilyContext();
+        if (!mounted) return;
+        if (auth.hasFamily) {
           _poller?.cancel();
-          context.go(switch (context.read<AuthProvider>().user?.role) {
+          context.go(switch (auth.user?.role) {
             UserRole.manager => '/manager/home',
             UserRole.deputy => '/deputy/home',
             _ => '/member/home',
