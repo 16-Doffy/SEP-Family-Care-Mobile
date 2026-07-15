@@ -23,6 +23,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   final _mapCtrl = MapController();
 
   LatLng? _myPos;
+  double? _myAccuracy;
   bool    _locating = false;
   String? _locError;
 
@@ -79,8 +80,9 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       final latlng = LatLng(pos.latitude, pos.longitude);
       setState(() {
         _myPos = latlng;
-        // _buildPins() tự tạo lại pin "Tôi" từ _myPos mỗi lần rebuild —
-        // không còn giữ danh sách pin trong state (kiến trúc cũ dùng _pins).
+        _myAccuracy = pos.accuracy;
+        // _buildPins() tự tạo lại pin "Tôi" từ _myPos/_myAccuracy mỗi lần
+        // rebuild — không còn giữ danh sách pin trong state (kiến trúc cũ _pins).
       });
       if (center) {
         _mapCtrl.move(latlng, 15);
@@ -237,6 +239,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
             pins: pins,
             loading: gps.loading,
             error: gps.error,
+            sharingUnavailable: gps.sharingUnavailable,
             onTap: (pin) {
               _mapCtrl.move(pin.latlng, 16);
               _showPinDetail(pin);
@@ -302,6 +305,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         name: context.read<AuthProvider>().user?.name ?? 'Tôi',
         isMe: true,
         isSos: false,
+        accuracy: _myAccuracy,
       ));
     }
 
@@ -569,11 +573,13 @@ class _MemberLegend extends StatelessWidget {
   final List<_MemberPin> pins;
   final bool loading;
   final String? error;
+  final bool sharingUnavailable;
   final void Function(_MemberPin) onTap;
   const _MemberLegend({
     required this.pins,
     required this.loading,
     required this.error,
+    required this.sharingUnavailable,
     required this.onTap,
   });
 
@@ -720,7 +726,19 @@ class _MemberLegend extends StatelessWidget {
                   ),
                 )),
             const SizedBox(height: 4),
-            if (error != null)
+            if (sharingUnavailable)
+              Row(children: [
+                const Text('🚧', style: TextStyle(fontSize: 11)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Chia sẻ vị trí gia đình đang được phát triển',
+                    style: GoogleFonts.inter(
+                        fontSize: 10, color: AppColors.textMuted),
+                  ),
+                ),
+              ])
+            else if (error != null)
               Text(
                 error!.replaceFirst('Exception: ', ''),
                 style: GoogleFonts.inter(
