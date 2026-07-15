@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/user.dart';
@@ -12,6 +13,10 @@ import '../../providers/invitation_provider.dart';
 import '../../theme/app_colors.dart';
 
 /// Public preview + authenticated join-request flow using an 8-character code.
+///
+/// Hỗ trợ QUÉT QR (mobile_scanner) và DÁN từ clipboard. Cả hai đi qua
+/// [_extractCode] để tách đúng mã 8 ký tự từ: deep link `familycare://join?code=`,
+/// URL `?code=`/`?token=`, hoặc mã dán trực tiếp. Không còn dùng token cũ.
 class JoinFamilyScreen extends StatefulWidget {
   final String? initialCode;
   const JoinFamilyScreen({super.key, this.initialCode});
@@ -47,6 +52,48 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   }
 
   bool get _hasFullCode => _codeCtrl.text.trim().length == 8;
+
+  // Tách mã 8 ký tự từ chuỗi thô: deep link/URL có ?code= hoặc ?token=, hoặc
+  // cụm 8 ký tự [A-Z0-9] đầu tiên (alphabet mã mời, đã bỏ I/O/0/1), hoặc raw.
+  String _extractCode(String raw) {
+    raw = raw.trim();
+    final uri = Uri.tryParse(raw);
+    final q = uri?.queryParameters;
+    final fromQuery = q?['code'] ?? q?['token'];
+    if (fromQuery != null && fromQuery.trim().isNotEmpty) {
+      return fromQuery.trim().toUpperCase();
+    }
+    final match = RegExp(r'[A-Za-z0-9]{8}').firstMatch(raw)?.group(0);
+    if (match != null) return match.toUpperCase();
+    return raw.toUpperCase();
+  }
+
+  // Nạp mã đã tách vào ô nhập rồi preview — dùng chung cho quét QR & dán.
+  void _applyCode(String rawValue) {
+    if (!mounted) return;
+    final code = _extractCode(rawValue);
+    _codeCtrl.text = code.length > 8 ? code.substring(0, 8) : code;
+    setState(() {
+      _error = null;
+      _preview = null;
+    });
+    if (_hasFullCode) _previewCode();
+  }
+
+  // Mở scanner toàn màn — quét QR mã mời là tự điền, "quét là nhận".
+  Future<void> _scanQr() async {
+    final scanned = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _QrScanScreen(), fullscreenDialog: true),
+    );
+    if (scanned != null && scanned.isNotEmpty) _applyCode(scanned);
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final raw = data?.text;
+    if (raw == null || raw.trim().isEmpty) return;
+    _applyCode(raw);
+  }
 
   Future<void> _previewCode() async {
     if (!_hasFullCode) return;
@@ -185,6 +232,25 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                   child: Text(_error!, textAlign: TextAlign.center,
                       style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
                 ),
+                // Quét QR / Dán mã — "quét là nhận, không phải gõ tay".
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _loading ? null : _scanQr,
+                      icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
+                      label: const Text('Quét mã QR'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _loading ? null : _pasteFromClipboard,
+                      icon: const Icon(Icons.content_paste_rounded, size: 20),
+                      label: const Text('Dán mã'),
+                    ),
+                  ),
+                ]),
                 if (family.isNotEmpty) ...[
                   const SizedBox(height: 18),
                   Container(
@@ -241,6 +307,74 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
                 trailing: request.isPending ? TextButton(onPressed: _loading ? null : () => _cancel(request), child: const Text('Hủy')) : null,
               ),
             )),
+        ],
+      ),
+    );
+  }
+}
+
+/// Màn quét QR toàn màn hình. Trả về chuỗi thô của mã QR đầu tiên quét được
+/// (deep link `familycare://join?code=...` hoặc mã 8 ký tự) qua Navigator.pop.
+class _QrScanScreen extends StatefulWidget {
+  const _QrScanScreen();
+
+  @override
+  State<_QrScanScreen> createState() => _QrScanScreenState();
+}
+
+class _QrScanScreenState extends State<_QrScanScreen> {
+  final _controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+  );
+  bool _handled = false; // chống pop nhiều lần khi camera bắn liên tục.
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_handled) return;
+    final raw = capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
+    if (raw == null || raw.trim().isEmpty) return;
+    _handled = true;
+    Navigator.of(context).pop(raw);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text('Quét mã QR mời', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        actions: [
+          IconButton(
+            onPressed: () => _controller.toggleTorch(),
+            icon: const Icon(Icons.flash_on_rounded),
+          ),
+        ],
+      ),
+      body: Stack(
+        alignment: Alignment.center,
+        children: [
+          MobileScanner(controller: _controller, onDetect: _onDetect),
+          // Khung ngắm để người dùng canh mã.
+          Container(
+            width: 240,
+            height: 240,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white, width: 3),
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          Positioned(
+            bottom: 48,
+            child: Text('Đưa mã QR mời vào khung',
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 14)),
+          ),
         ],
       ),
     );
