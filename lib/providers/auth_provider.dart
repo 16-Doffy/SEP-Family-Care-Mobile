@@ -135,7 +135,12 @@ class AuthProvider extends ChangeNotifier {
     if (fid == null) throw Exception('Không lấy được ID gia đình');
     ApiClient.instance.setFamilyId(fid);
     _user = AppUser.fromJson(
-      {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
+      {
+        'id': _user!.id,
+        'fullName': _user!.name,
+        'email': _user!.email,
+        'userType': _user!.userType,
+      },
       accessToken: _user!.accessToken,
       refreshToken: _user!.refreshToken,
       familyId: fid,
@@ -151,7 +156,12 @@ class AuthProvider extends ChangeNotifier {
       _persistTokens(newAccess, newRefresh);
       if (_user == null) return;
       _user = AppUser.fromJson(
-        {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
+        {
+          'id': _user!.id,
+          'fullName': _user!.name,
+          'email': _user!.email,
+          'userType': _user!.userType,
+        },
         accessToken: newAccess,
         refreshToken: newRefresh,
         familyId: _user!.familyId,
@@ -439,7 +449,12 @@ class AuthProvider extends ChangeNotifier {
     if (ctx.id == null) return;
     ApiClient.instance.setFamilyId(ctx.id);
     _user = AppUser.fromJson(
-      {'id': _user!.id, 'fullName': _user!.name, 'email': _user!.email},
+      {
+        'id': _user!.id,
+        'fullName': _user!.name,
+        'email': _user!.email,
+        'userType': _user!.userType,
+      },
       accessToken: _user!.accessToken,
       refreshToken: _user!.refreshToken,
       familyId: ctx.id,

@@ -11,7 +11,9 @@ import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
 
 class FamilyMapScreen extends StatefulWidget {
-  const FamilyMapScreen({super.key});
+  final double? initialLat;
+  final double? initialLng;
+  const FamilyMapScreen({super.key, this.initialLat, this.initialLng});
   @override
   State<FamilyMapScreen> createState() => _FamilyMapScreenState();
 }
@@ -30,7 +32,12 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _locateMe(center: true);
+      if (widget.initialLat != null && widget.initialLng != null) {
+        _locateMe(center: false);
+        _mapCtrl.move(LatLng(widget.initialLat!, widget.initialLng!), 16);
+      } else {
+        _locateMe(center: true);
+      }
     });
   }
 

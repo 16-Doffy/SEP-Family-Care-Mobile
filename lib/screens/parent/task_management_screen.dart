@@ -713,6 +713,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     final descCtrl   = TextEditingController(text: task.rewardSetting?.rewardDescription ?? '');
     bool autoSettle  = task.rewardSetting?.autoCreateSettlement ?? true;
     bool submitting  = false;
+    String? sheetError;
 
     showModalBottomSheet(
       context: context,
@@ -750,14 +751,22 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               title: Text('Tự tạo thanh toán khi duyệt task', style: GoogleFonts.inter(fontSize: 13)),
               contentPadding: EdgeInsets.zero,
             ),
+            if (sheetError != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(10)),
+                child: Text(sheetError!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
+              ),
+            ],
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: submitting ? null : () async {
-                  setSheet(() => submitting = true);
-                  final messenger = ScaffoldMessenger.of(context);
+                  setSheet(() { submitting = true; sheetError = null; });
                   try {
                     final tp = context.read<TaskProvider>();
                     // PATCH nếu task đã có reward-setting (sửa), POST nếu chưa (tạo mới).
@@ -780,8 +789,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
                   } catch (e) {
-                    setSheet(() => submitting = false);
-                    messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                    setSheet(() { submitting = false; sheetError = e.toString().replaceFirst('Exception: ', ''); });
                   }
                 },
                 child: submitting
@@ -795,14 +803,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 width: double.infinity,
                 child: TextButton(
                   onPressed: submitting ? null : () async {
-                    setSheet(() => submitting = true);
-                    final messenger = ScaffoldMessenger.of(context);
+                    setSheet(() { submitting = true; sheetError = null; });
                     try {
                       await context.read<TaskProvider>().deleteRewardSetting(task.id);
                       if (ctx.mounted) Navigator.pop(ctx);
                     } catch (e) {
-                      setSheet(() => submitting = false);
-                      messenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
+                      setSheet(() { submitting = false; sheetError = e.toString().replaceFirst('Exception: ', ''); });
                     }
                   },
                   child: Text('Xóa phần thưởng', style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger, fontWeight: FontWeight.w600)),

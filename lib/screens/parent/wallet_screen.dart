@@ -71,7 +71,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   const Expanded(
                     child: Center(
                       child: Text(
-                        'Ví Gia Đình',
+                        'Sổ thu chi gia đình',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,

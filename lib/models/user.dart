@@ -40,15 +40,18 @@ class AppUser {
     String? phone,
   }) {
     // familyRole = vai trò trong gia đình (FAMILY_MANAGER / DEPUTY_MEMBER / FAMILY_MEMBER)
-    // userType   = loại tài khoản hệ thống (NORMAL_USER / SYSTEM_ADMIN) — KHÔNG dùng để xác định role gia đình
-    final roleStr = (familyRole ?? json['familyRole'] as String? ??
-            json['role'] as String? ?? '')
-        .toUpperCase();
-    final role = roleStr == 'FAMILY_MANAGER'
-        ? UserRole.manager
-        : roleStr == 'DEPUTY_MEMBER'
-            ? UserRole.deputy
-            : UserRole.member;
+    // userType   = loại tài khoản hệ thống (NORMAL_USER / SYSTEM_ADMIN). Không dùng
+    // role hệ thống để suy ra quyền trong gia đình, tránh SYSTEM_ADMIN bị hiểu
+    // nhầm là Manager/Member.
+    final roleStr = _familyRoleCandidate(familyRole) ??
+        _familyRoleCandidate(json['familyRole']) ??
+        _familyRoleCandidate(json['role']) ??
+        'FAMILY_MEMBER';
+    final role = switch (roleStr) {
+      'FAMILY_MANAGER' || 'MANAGER' => UserRole.manager,
+      'DEPUTY_MEMBER' || 'DEPUTY' => UserRole.deputy,
+      _ => UserRole.member,
+    };
 
     final name = json['fullName'] as String? ??
         json['displayName'] as String? ??
@@ -68,7 +71,13 @@ class AppUser {
         ?? json['phone']?.toString()
         ?? json['phoneNumber']?.toString();
 
-    final resolvedUserType = json['userType']?.toString() ?? 'NORMAL_USER';
+    final rawUserType = json['userType']?.toString().toUpperCase();
+    final rawAccountRole = json['role']?.toString().toUpperCase();
+    final resolvedUserType =
+        rawUserType == 'SYSTEM_ADMIN' || rawUserType == 'ADMIN' ||
+                rawAccountRole == 'SYSTEM_ADMIN' || rawAccountRole == 'ADMIN'
+            ? 'SYSTEM_ADMIN'
+            : 'NORMAL_USER';
 
     return AppUser(
       id:             json['id']?.toString() ?? '',
@@ -91,6 +100,15 @@ class AppUser {
         value.trim().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
     if (parts.isEmpty) return '?';
     return parts.take(2).map((e) => e[0].toUpperCase()).join();
+  }
+
+  static String? _familyRoleCandidate(dynamic value) {
+    final role = value?.toString().toUpperCase();
+    return switch (role) {
+      'FAMILY_MANAGER' || 'MANAGER' || 'DEPUTY_MEMBER' || 'DEPUTY' ||
+      'FAMILY_MEMBER' || 'MEMBER' => role,
+      _ => null,
+    };
   }
 
   static int colorForRole(UserRole role) => switch (role) {

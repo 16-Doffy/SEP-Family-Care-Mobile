@@ -67,8 +67,8 @@ const _managerTabs = [
 ];
 const _deputyTabs = [
   FamilyTab(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ'),
-  // Deputy mở WalletScreen = ví & sổ quỹ CHUNG của gia đình → "Ví" đúng nghĩa
-  FamilyTab(icon: Icons.account_balance_wallet_rounded, label: 'Ví'),
+  // Deputy mở WalletScreen = ví & sổ quỹ CHUNG của gia đình → "Sổ thu chi"
+  FamilyTab(icon: Icons.account_balance_wallet_rounded, label: 'Sổ thu chi'),
   FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Chat'),
 ];
 // Member mở ChildWalletScreen = khai báo tài chính cá nhân theo tháng
@@ -76,7 +76,7 @@ const _deputyTabs = [
 // by design đã chốt 2026-07-11) → gọi "Tài chính" cho đúng bản chất
 const _memberTabs = [
   FamilyTab(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ'),
-  FamilyTab(icon: Icons.savings_rounded, label: 'Tài chính'),
+  FamilyTab(icon: Icons.savings_rounded, label: 'Sổ thu chi'),
   FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Chat'),
 ];
 
@@ -170,9 +170,9 @@ String? computeRedirect({
     return onVerify ? null : '/verify-email';
   }
 
-  // Đã đăng nhập, chưa có gia đình, không ở setup → bắt về setup
-  // (covers deep-link hoặc manual URL vào các route cần family)
-  if (!hasFamily) return onSetup ? null : '/family-setup';
+  // Đã đăng nhập, chưa có gia đình: cho ở setup hoặc join. /join là flow hợp
+  // lệ để xin vào gia đình bằng mã mời; các route cần family vẫn bị kéo về setup.
+  if (!hasFamily) return (onSetup || onJoin) ? null : '/family-setup';
 
   // Member: chỉ vào được /member/* — chặn /manager/* và /deputy/*, trừ vài
   // route dùng chung đã liệt ở _memberSharedPaths (xem màn hình quản lý ở
@@ -355,7 +355,16 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(path: '/profile/edit',          builder: (_, _) => const EditProfileScreen()),
       GoRoute(path: '/manager/finance-alerts', builder: (_, _) => const FinanceAlertsScreen()),
       GoRoute(path: '/finance/support-requests', builder: (_, _) => const SupportRequestScreen()),
-      GoRoute(path: '/map', builder: (_, _) => const FamilyMapScreen()),
+      GoRoute(
+        path: '/map',
+        builder: (_, state) {
+          final latStr = state.uri.queryParameters['lat'];
+          final lngStr = state.uri.queryParameters['lng'];
+          final lat = latStr != null ? double.tryParse(latStr) : null;
+          final lng = lngStr != null ? double.tryParse(lngStr) : null;
+          return FamilyMapScreen(initialLat: lat, initialLng: lng);
+        },
+      ),
       // Album dùng chung mọi role — BE cho mọi thành viên xem/upload (verify
       // live 2026-07-13: member GET media 200), chỉ moderation là Manager/
       // Deputy (album_screen tự gate nút 🛡️ theo isAdministrative). Manager

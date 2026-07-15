@@ -628,6 +628,7 @@ class TaskProvider extends ChangeNotifier {
       'decision': approved ? 'APPROVED' : 'REJECTED',
       if (reviewNote != null && reviewNote.isNotEmpty) 'reviewNote': reviewNote,
     });
+    await fetchTasks();
   }
 
   // GET .../assignments/{id}/submissions — BE không embed submission trong

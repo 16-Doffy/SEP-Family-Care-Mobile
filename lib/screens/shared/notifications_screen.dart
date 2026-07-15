@@ -41,7 +41,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       'FINANCE' => '$prefix/wallet',
       _         => null,
     };
-    if (path != null) context.push(path);
+    if (path != null) context.go(path);
   }
 
   String _fmtTime(DateTime t) {

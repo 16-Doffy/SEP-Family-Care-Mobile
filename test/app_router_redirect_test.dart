@@ -174,6 +174,16 @@ void main() {
       );
     });
 
+    test('verified user without family may open /join from family setup', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: false,
+          role: UserRole.member, loc: '/join',
+        ),
+        isNull,
+      );
+    });
+
     test('deep-link to /family-setup while pending verification → bắt về /verify-email', () {
       expect(
         computeRedirect(

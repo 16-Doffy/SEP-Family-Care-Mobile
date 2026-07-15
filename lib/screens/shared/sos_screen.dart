@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
@@ -545,34 +547,85 @@ class _SOSScreenState extends State<SOSScreen>
           ]),
         ],
 
-        // ── Google Maps button ────────────────────────────────────────
+        // ── Mini-map inline (flutter_map + OSM) ─────────────────────
         if (alert.hasLocation) ...[
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            height: 42,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A73E8), // Google blue
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              height: 180,
+              child: Stack(
+                children: [
+                  FlutterMap(
+                    options: MapOptions(
+                      initialCenter: LatLng(alert.latitude!, alert.longitude!),
+                      initialZoom: 15,
+                      interactionOptions: const InteractionOptions(
+                        flags: InteractiveFlag.none, // Không cho scroll/zoom để không chiếm gesture
+                      ),
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.familycare.app',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: LatLng(alert.latitude!, alert.longitude!),
+                            width: 40,
+                            height: 40,
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.sos,
+                                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                              ),
+                              child: const Center(
+                                child: Text('🚨', style: TextStyle(fontSize: 18)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  // Overlay nút mở bản đồ lớn trong app (thay thế Google Maps ngoài)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () async {
+                        final current = await context
+                            .read<SosProvider>()
+                            .fetchCurrentLocation(alert.id);
+                        final lat = current?.lat ?? alert.latitude!;
+                        final lng = current?.lng ?? alert.longitude!;
+                        if (context.mounted) {
+                          context.push('/map?lat=$lat&lng=$lng');
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Text('🗺️', style: TextStyle(fontSize: 13)),
+                          const SizedBox(width: 4),
+                          Text('Bản đồ lớn',
+                              style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF1A73E8))),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              onPressed: () async {
-                // Lấy vị trí MỚI NHẤT từ BE (người gửi có thể đã di chuyển
-                // từ lúc tạo alert) — lỗi/chưa có thì dùng vị trí ban đầu.
-                final current = await context
-                    .read<SosProvider>()
-                    .fetchCurrentLocation(alert.id);
-                _openMaps(current?.lat ?? alert.latitude!,
-                    current?.lng ?? alert.longitude!, alert.senderName);
-              },
-              icon: const Text('🗺️', style: TextStyle(fontSize: 16)),
-              label: Text('Mở vị trí trên Google Maps',
-                  style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white)),
             ),
           ),
         ],
@@ -758,7 +811,54 @@ class _SOSScreenState extends State<SOSScreen>
                           ]),
                     ),
                     const SizedBox(height: 12),
-                    // Mở Maps từ máy gửi
+                    // Inline Mini Map
+                    Container(
+                      height: 180,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: FlutterMap(
+                          options: MapOptions(
+                            initialCenter: LatLng(_localLat!, _localLng!),
+                            initialZoom: 15.0,
+                            interactionOptions: const InteractionOptions(
+                              flags: InteractiveFlag.none,
+                            ),
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'com.familycare.app',
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                Marker(
+                                  point: LatLng(_localLat!, _localLng!),
+                                  width: 40,
+                                  height: 40,
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: AppColors.sos,
+                                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                                    ),
+                                    child: const Center(
+                                      child: Text('🚨', style: TextStyle(fontSize: 18)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // Mở Bản đồ lớn in-app
                     SizedBox(
                       width: double.infinity,
                       height: 44,
@@ -769,11 +869,11 @@ class _SOSScreenState extends State<SOSScreen>
                               borderRadius: BorderRadius.circular(12)),
                           elevation: 0,
                         ),
-                        onPressed: () => _openMaps(
-                            _localLat!, _localLng!, 'Vị trí của tôi'),
-                        icon: const Text('🗺️',
-                            style: TextStyle(fontSize: 16)),
-                        label: Text('Chia sẻ vị trí qua Google Maps',
+                        onPressed: () {
+                          context.push('/map?lat=$_localLat&lng=$_localLng');
+                        },
+                        icon: const Icon(Icons.map_rounded, color: Colors.white, size: 18),
+                        label: Text('Xem bản đồ lớn in-app',
                             style: GoogleFonts.inter(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,

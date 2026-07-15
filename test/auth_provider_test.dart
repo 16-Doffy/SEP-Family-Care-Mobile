@@ -43,6 +43,33 @@ void main() {
       expect(u.role, UserRole.manager);
     });
 
+    test('account SYSTEM_ADMIN role does not become family admin', () {
+      final u = AppUser.fromJson({
+        'id': '1',
+        'fullName': 'Admin',
+        'email': 'admin@example.com',
+        'role': 'SYSTEM_ADMIN',
+      });
+
+      expect(u.isSystemAdmin, isTrue);
+      expect(u.role, UserRole.member);
+      expect(u.canManageSubscription, isFalse);
+    });
+
+    test('separate userType SYSTEM_ADMIN keeps real familyRole', () {
+      final u = AppUser.fromJson({
+        'id': '1',
+        'fullName': 'Admin Manager',
+        'email': 'admin-manager@example.com',
+        'userType': 'SYSTEM_ADMIN',
+        'familyRole': 'FAMILY_MANAGER',
+      });
+
+      expect(u.isSystemAdmin, isTrue);
+      expect(u.role, UserRole.manager);
+      expect(u.canInviteMembers, isTrue);
+    });
+
     test('falls back to member when no role info present', () {
       final u = AppUser.fromJson({'id': '1', 'fullName': 'A', 'email': 'a@a.com'});
       expect(u.role, UserRole.member);
