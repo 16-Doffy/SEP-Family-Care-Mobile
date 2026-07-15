@@ -19,12 +19,17 @@ class LocationShare {
   factory LocationShare.fromJson(Map<String, dynamic> json) {
     final user =
         json['user'] is Map ? json['user'] as Map<String, dynamic> : <String, dynamic>{};
+    final displayName = json['displayName']?.toString() ??
+        json['fullName']?.toString() ??
+        user['displayName']?.toString() ??
+        user['fullName']?.toString() ??
+        'Thành viên';
     return LocationShare(
-      userId: user['id']?.toString() ?? '',
-      displayName: user['displayName']?.toString() ?? 'Thành viên',
-      latitude: _parseDouble(json['latitude']),
-      longitude: _parseDouble(json['longitude']),
-      updatedAt: json['updatedAt']?.toString(),
+      userId: json['userId']?.toString() ?? user['id']?.toString() ?? '',
+      displayName: displayName,
+      latitude: _parseDouble(json['latitude'] ?? json['lat']),
+      longitude: _parseDouble(json['longitude'] ?? json['lng']),
+      updatedAt: json['updatedAt']?.toString() ?? json['recordedAt']?.toString(),
     );
   }
 
@@ -51,9 +56,15 @@ class GpsProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final data = await ApiClient.instance.get('/location/family');
-      final list = data is Map && data['shares'] is List
-          ? data['shares'] as List
-          : <dynamic>[];
+      final list = data is List
+          ? data
+          : data is Map && data['shares'] is List
+              ? data['shares'] as List
+              : data is Map && data['items'] is List
+                  ? data['items'] as List
+                  : data is Map && data['locations'] is List
+                      ? data['locations'] as List
+                      : <dynamic>[];
       _shares = list
           .whereType<Map>()
           .map((e) => LocationShare.fromJson(Map<String, dynamic>.from(e)))

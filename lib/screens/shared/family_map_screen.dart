@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
 
@@ -25,13 +26,11 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   bool    _locating = false;
   String? _locError;
 
-  // Thành viên với vị trí đã biết (từ SOS alert hoặc location API)
-  final List<_MemberPin> _pins = [];
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshFamilyLocations();
       if (widget.initialLat != null && widget.initialLng != null) {
         _locateMe(center: false);
         _mapCtrl.move(LatLng(widget.initialLat!, widget.initialLng!), 16);
@@ -39,6 +38,21 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         _locateMe(center: true);
       }
     });
+  }
+
+  Future<void> _refreshFamilyLocations() async {
+    await Future.wait([
+      context.read<GpsProvider>().fetchFamilyLocations(),
+      context.read<SosProvider>().fetchAlerts(),
+    ]);
+  }
+
+  Future<void> _refreshMap() async {
+    setState(() => _locError = null);
+    await Future.wait([
+      _refreshFamilyLocations(),
+      _locateMe(center: false),
+    ]);
   }
 
   // ── Lấy GPS thiết bị ────────────────────────────────────────────────────
@@ -62,19 +76,11 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         ),
       );
       if (!mounted) return;
-      final me = context.read<AuthProvider>().user;
       final latlng = LatLng(pos.latitude, pos.longitude);
       setState(() {
         _myPos = latlng;
-        // Cập nhật hoặc thêm pin của bản thân
-        _pins.removeWhere((p) => p.isMe);
-        _pins.add(_MemberPin(
-          latlng:  latlng,
-          name:    me?.name ?? 'Tôi',
-          isMe:    true,
-          isSos:   false,
-          accuracy: pos.accuracy,
-        ));
+        // _buildPins() tự tạo lại pin "Tôi" từ _myPos mỗi lần rebuild —
+        // không còn giữ danh sách pin trong state (kiến trúc cũ dùng _pins).
       });
       if (center) {
         _mapCtrl.move(latlng, 15);
@@ -90,22 +96,13 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Reload SOS pins khi provider thay đổi (không setState — chỉ sync list)
+    final auth = context.watch<AuthProvider>();
+    final gps = context.watch<GpsProvider>();
     final alerts = context.watch<SosProvider>().activeAlerts;
-    for (final a in alerts) {
-      if (a.hasLocation && !_pins.any((p) => p.alertId == a.id)) {
-        _pins.add(_MemberPin(
-          latlng:  LatLng(a.latitude!, a.longitude!),
-          name:    '🚨 ${a.senderName}',
-          isMe:    false,
-          isSos:   true,
-          alertId: a.id,
-        ));
-      }
-    }
+    final pins = _buildPins(auth.user?.id, gps.shares, alerts);
 
     final defaultCenter = _myPos ?? const LatLng(10.7769, 106.7009); // HCM
-    final hasAnySos = _pins.any((p) => p.isSos);
+    final hasAnySos = pins.any((p) => p.isSos);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -127,7 +124,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
               maxZoom: 18,
             ),
             // Markers
-            MarkerLayer(markers: _pins.map(_buildMarker).toList()),
+            MarkerLayer(markers: pins.map(_buildMarker).toList()),
           ],
         ),
 
@@ -169,7 +166,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                             color: AppColors.textPrimary),
                       ),
                     ),
-                    if (_locating)
+                    if (_locating || gps.loading)
                       const SizedBox(
                           width: 16,
                           height: 16,
@@ -206,9 +203,9 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _pins.where((p) => p.isSos).length == 1
-                        ? '${_pins.firstWhere((p) => p.isSos).name} đang cần trợ giúp!'
-                        : '${_pins.where((p) => p.isSos).length} người đang cần trợ giúp!',
+                    pins.where((p) => p.isSos).length == 1
+                        ? '${pins.firstWhere((p) => p.isSos).name} đang cần trợ giúp!'
+                        : '${pins.where((p) => p.isSos).length} người đang cần trợ giúp!',
                     style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -218,7 +215,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                 GestureDetector(
                   onTap: () {
                     final sosPin =
-                        _pins.firstWhere((p) => p.isSos);
+                        pins.firstWhere((p) => p.isSos);
                     _mapCtrl.move(sosPin.latlng, 16);
                   },
                   child: Text('Xem →',
@@ -237,8 +234,13 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           left: 16,
           right: 16,
           child: _MemberLegend(
-            pins: _pins,
-            onTap: (pin) => _mapCtrl.move(pin.latlng, 16),
+            pins: pins,
+            loading: gps.loading,
+            error: gps.error,
+            onTap: (pin) {
+              _mapCtrl.move(pin.latlng, 16);
+              _showPinDetail(pin);
+            },
           ),
         ),
 
@@ -250,6 +252,12 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                _roundBtn(
+                  icon:  Icons.refresh_rounded,
+                  onTap: _refreshMap,
+                  size:  48,
+                ),
+                const SizedBox(height: 10),
                 _roundBtn(
                   icon:  Icons.my_location_rounded,
                   color: AppColors.primary500,
@@ -282,13 +290,179 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
 
   // ── Marker builder ───────────────────────────────────────────────────────
 
+  List<_MemberPin> _buildPins(
+    String? currentUserId,
+    List<LocationShare> shares,
+    List<SosAlert> alerts,
+  ) {
+    final pins = <_MemberPin>[];
+    if (_myPos != null) {
+      pins.add(_MemberPin(
+        latlng: _myPos!,
+        name: context.read<AuthProvider>().user?.name ?? 'Tôi',
+        isMe: true,
+        isSos: false,
+      ));
+    }
+
+    for (final share in shares) {
+      if (share.latitude == null || share.longitude == null) continue;
+      if (share.userId.isNotEmpty && share.userId == currentUserId) continue;
+      pins.add(_MemberPin(
+        latlng: LatLng(share.latitude!, share.longitude!),
+        name: share.displayName,
+        isMe: false,
+        isSos: false,
+        userId: share.userId,
+        updatedAt: share.updatedAt,
+      ));
+    }
+
+    for (final alert in alerts) {
+      if (!alert.hasLocation) continue;
+      pins.add(_MemberPin(
+        latlng: LatLng(alert.latitude!, alert.longitude!),
+        name: alert.senderName,
+        isMe: false,
+        isSos: true,
+        alertId: alert.id,
+      ));
+    }
+    return pins;
+  }
+
   Marker _buildMarker(_MemberPin pin) {
     return Marker(
       point:  pin.latlng,
       width:  pin.isSos ? 70 : 60,
       height: pin.isSos ? 80 : 70,
-      child:  _PinWidget(pin: pin),
+      child:  GestureDetector(
+        onTap: () => _showPinDetail(pin),
+        child: _PinWidget(pin: pin),
+      ),
     );
+  }
+
+  void _showPinDetail(_MemberPin pin) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: pin.color,
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  pin.isSos
+                      ? Icons.sos_rounded
+                      : pin.isMe
+                          ? Icons.my_location_rounded
+                          : Icons.person_pin_circle_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(pin.title,
+                        style: GoogleFonts.inter(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary)),
+                    Text(pin.subtitle,
+                        style: GoogleFonts.inter(
+                            fontSize: 12, color: AppColors.textMuted)),
+                  ],
+                ),
+              ),
+            ]),
+            const SizedBox(height: 18),
+            _detailRow(Icons.location_on_rounded, 'Tọa độ',
+                '${pin.latlng.latitude.toStringAsFixed(5)}, ${pin.latlng.longitude.toStringAsFixed(5)}'),
+            if (pin.accuracy != null)
+              _detailRow(Icons.gps_fixed_rounded, 'Độ chính xác',
+                  '±${pin.accuracy!.round()}m'),
+            if (pin.updatedAt != null && pin.updatedAt!.isNotEmpty)
+              _detailRow(Icons.schedule_rounded, 'Cập nhật',
+                  _fmtDateTime(pin.updatedAt!)),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: pin.color,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _mapCtrl.move(pin.latlng, pin.isSos ? 16 : 15);
+                },
+                icon: const Icon(Icons.center_focus_strong_rounded,
+                    color: Colors.white, size: 18),
+                label: Text('Đưa vào giữa bản đồ',
+                    style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 18, color: AppColors.textMuted),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textMuted)),
+              const SizedBox(height: 2),
+              Text(value,
+                  style: GoogleFonts.inter(
+                      fontSize: 13, color: AppColors.textPrimary)),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+
+  static String _fmtDateTime(String raw) {
+    final dt = DateTime.tryParse(raw)?.toLocal();
+    if (dt == null) return raw;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)} ${two(dt.hour)}:${two(dt.minute)}';
   }
 
   // ── Round button helper ──────────────────────────────────────────────────
@@ -333,11 +507,7 @@ class _PinWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color bg = pin.isSos
-        ? AppColors.sos
-        : pin.isMe
-            ? AppColors.primary500
-            : AppColors.avatarBlue;
+    final Color bg = pin.color;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -357,7 +527,7 @@ class _PinWidget extends StatelessWidget {
             ],
           ),
           child: Text(
-            pin.isMe ? '📍 Tôi' : pin.name,
+            pin.isMe ? '📍 Tôi' : pin.isSos ? '🚨 ${pin.name}' : pin.name,
             style: GoogleFonts.inter(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -397,8 +567,15 @@ class _TrianglePainter extends CustomPainter {
 
 class _MemberLegend extends StatelessWidget {
   final List<_MemberPin> pins;
+  final bool loading;
+  final String? error;
   final void Function(_MemberPin) onTap;
-  const _MemberLegend({required this.pins, required this.onTap});
+  const _MemberLegend({
+    required this.pins,
+    required this.loading,
+    required this.error,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -450,6 +627,14 @@ class _MemberLegend extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary)),
               const Spacer(),
+              if (loading) ...[
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+              ],
               Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 8, vertical: 2),
@@ -462,6 +647,14 @@ class _MemberLegend extends StatelessWidget {
                         color: AppColors.textMuted,
                         fontWeight: FontWeight.w600)),
               ),
+            ]),
+            const SizedBox(height: 8),
+            const Row(children: [
+              _LegendDot(color: AppColors.primary500, label: 'Tôi'),
+              SizedBox(width: 12),
+              _LegendDot(color: AppColors.avatarBlue, label: 'Gia đình'),
+              SizedBox(width: 12),
+              _LegendDot(color: AppColors.sos, label: 'SOS'),
             ]),
             const SizedBox(height: 8),
             ...pins.map((pin) => GestureDetector(
@@ -496,6 +689,14 @@ class _MemberLegend extends StatelessWidget {
                               fontSize: 11,
                               color: AppColors.textMuted),
                         ),
+                      if (pin.updatedAt != null && !pin.isSos) ...[
+                        Text(
+                          _FamilyMapScreenState._fmtDateTime(pin.updatedAt!),
+                          style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: AppColors.textMuted),
+                        ),
+                      ],
                       if (pin.isSos) ...[
                         const SizedBox(width: 6),
                         Container(
@@ -519,13 +720,34 @@ class _MemberLegend extends StatelessWidget {
                   ),
                 )),
             const SizedBox(height: 4),
-            Text(
-              '⚠️ Vị trí thành viên khác cần BE thêm API',
-              style: GoogleFonts.inter(
-                  fontSize: 10, color: AppColors.textMuted),
-            ),
+            if (error != null)
+              Text(
+                error!.replaceFirst('Exception: ', ''),
+                style: GoogleFonts.inter(
+                    fontSize: 10, color: AppColors.danger),
+              ),
           ]),
     );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      ),
+      const SizedBox(width: 4),
+      Text(label,
+          style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted)),
+    ]);
   }
 }
 
@@ -538,6 +760,8 @@ class _MemberPin {
   final bool    isSos;
   final double? accuracy;
   final String? alertId;
+  final String? userId;
+  final String? updatedAt;
 
   const _MemberPin({
     required this.latlng,
@@ -546,5 +770,21 @@ class _MemberPin {
     required this.isSos,
     this.accuracy,
     this.alertId,
+    this.userId,
+    this.updatedAt,
   });
+
+  Color get color => isSos
+      ? AppColors.sos
+      : isMe
+          ? AppColors.primary500
+          : AppColors.avatarBlue;
+
+  String get title => isMe ? 'Vị trí của tôi' : isSos ? 'SOS: $name' : name;
+
+  String get subtitle => isSos
+      ? 'Cảnh báo khẩn cấp'
+      : isMe
+          ? 'Thiết bị hiện tại'
+          : 'Thành viên gia đình';
 }
