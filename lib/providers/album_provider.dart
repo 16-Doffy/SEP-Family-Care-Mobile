@@ -12,7 +12,6 @@ class AlbumProvider extends ChangeNotifier {
   int _page = 1;
   int _limit = 20;
   int? _totalPages;
-  AlbumDeletedView _deletedView = AlbumDeletedView.active;
   AlbumMediaType? _mediaType;
   AlbumModerationStatus? _moderationStatus;
 
@@ -23,7 +22,6 @@ class AlbumProvider extends ChangeNotifier {
   String? get error => _error;
   int get page => _page;
   int get limit => _limit;
-  AlbumDeletedView get deletedView => _deletedView;
   AlbumMediaType? get mediaType => _mediaType;
   AlbumModerationStatus? get moderationStatus => _moderationStatus;
   bool get hasMore =>
@@ -38,7 +36,6 @@ class AlbumProvider extends ChangeNotifier {
 
   Future<void> fetchMedia({
     bool refresh = true,
-    AlbumDeletedView? deletedView,
     AlbumMediaType? mediaType,
     AlbumModerationStatus? moderationStatus,
     int? limit,
@@ -47,7 +44,6 @@ class AlbumProvider extends ChangeNotifier {
       _loading = true;
       _page = 1;
       _totalPages = null;
-      if (deletedView != null) _deletedView = deletedView;
       _mediaType = mediaType;
       _moderationStatus = moderationStatus;
       if (limit != null) _limit = limit;
@@ -61,7 +57,7 @@ class AlbumProvider extends ChangeNotifier {
     try {
       final nextPage = refresh ? 1 : _page + 1;
       final data = await ApiClient.instance.get(
-        '/families/$_fid/albums/media${_qs({'page': nextPage, 'limit': _limit, 'deletedView': albumDeletedViewToApi(_deletedView), 'mediaType': _mediaType == null ? null : albumMediaTypeToApi(_mediaType!), 'moderationStatus': _moderationStatus == null ? null : albumModerationToApi(_moderationStatus!), 'sortOrder': 'DESC'})}',
+        '/families/$_fid/albums/media${_qs({'page': nextPage, 'limit': _limit, 'mediaType': _mediaType == null ? null : albumMediaTypeToApi(_mediaType!), 'moderationStatus': _moderationStatus == null ? null : albumModerationToApi(_moderationStatus!)})}',
       );
       final parsed = _list(
         data,
@@ -90,7 +86,13 @@ class AlbumProvider extends ChangeNotifier {
       '/families/$_fid/albums/media/$mediaId',
     );
     if (data is! Map) return null;
-    final detail = AlbumMedia.fromJson(Map<String, dynamic>.from(data));
+    var detail = AlbumMedia.fromJson(Map<String, dynamic>.from(data));
+    // Tags are a separate manual-tagging resource in the current contract.
+    try {
+      detail = detail.withTags(await fetchTags(mediaId));
+    } catch (_) {
+      // Keep detail usable if a signed URL/detail succeeds but tags cannot load.
+    }
     final idx = _items.indexWhere((m) => m.id == mediaId);
     if (idx >= 0) _items[idx] = _items[idx].merge(detail);
     notifyListeners();
@@ -194,16 +196,10 @@ class AlbumProvider extends ChangeNotifier {
     await fetchDetail(mediaId);
   }
 
-  // GET .../albums/moderation — hàng đợi kiểm duyệt toàn gia đình
-  // (Manager/Deputy). Mỗi item: mediaId, mediaType, moderationStatus,
-  // latestModeration {resultStatus, riskScore, summary}, fileAccess {url}.
-  Future<List<Map<String, dynamic>>> fetchModerationQueue({
-    String? moderationStatus,
-    int page = 1,
-    int limit = 20,
-  }) async {
+  // GET .../albums/moderation — hàng đợi kiểm duyệt thủ công của Manager.
+  Future<List<Map<String, dynamic>>> fetchModerationQueue() async {
     final data = await ApiClient.instance.get(
-      '/families/$_fid/albums/moderation${_qs({'page': page, 'limit': limit, 'moderationStatus': moderationStatus, 'sortOrder': 'DESC'})}',
+      '/families/$_fid/albums/moderation',
     );
     return _list(data);
   }
@@ -223,14 +219,6 @@ class AlbumProvider extends ChangeNotifier {
     await ApiClient.instance.patch(
       '/families/$_fid/albums/media/$mediaId/moderation',
       {'decision': decision, 'reviewNote': reviewNote},
-    );
-    await fetchDetail(mediaId);
-  }
-
-  Future<void> retryModeration(String mediaId) async {
-    await ApiClient.instance.post(
-      '/families/$_fid/albums/media/$mediaId/moderation/retry',
-      {},
     );
     await fetchDetail(mediaId);
   }

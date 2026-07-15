@@ -124,7 +124,7 @@ class AppUser {
   bool get canManageSubscription => role == UserRole.manager;
 
   // Đã verify bằng tài khoản Deputy thật trên BE (2026-06-22): POST
-  // /invitations trả 403 "Yêu cầu vai trò gia đình: FAMILY_MANAGER" cho
+  // join-requests trả 403 "Yêu cầu vai trò gia đình: FAMILY_MANAGER" cho
   // Deputy — chỉ Manager được mời thành viên.
   bool get canInviteMembers => role == UserRole.manager;
 }

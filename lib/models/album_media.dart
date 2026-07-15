@@ -4,9 +4,8 @@ enum AlbumMediaType { photo, video, unknown }
 
 enum AlbumVisibilityScope { family, private, managerOnly }
 
-enum AlbumModerationStatus { pending, processing, safe, needReview, flagged }
+enum AlbumModerationStatus { pending, safe, needReview, flagged }
 
-enum AlbumDeletedView { active, trash }
 
 String _str(dynamic value) => value?.toString() ?? '';
 
@@ -39,7 +38,7 @@ AlbumVisibilityScope albumVisibilityFromApi(dynamic value) {
 
 AlbumModerationStatus albumModerationFromApi(dynamic value) {
   return switch (_str(value).toUpperCase()) {
-    'PROCESSING' => AlbumModerationStatus.processing,
+    'PROCESSING' => AlbumModerationStatus.pending,
     'SAFE' => AlbumModerationStatus.safe,
     'NEED_REVIEW' => AlbumModerationStatus.needReview,
     'FLAGGED' => AlbumModerationStatus.flagged,
@@ -66,17 +65,9 @@ String albumVisibilityToApi(AlbumVisibilityScope value) {
 String albumModerationToApi(AlbumModerationStatus value) {
   return switch (value) {
     AlbumModerationStatus.pending => 'PENDING',
-    AlbumModerationStatus.processing => 'PROCESSING',
     AlbumModerationStatus.safe => 'SAFE',
     AlbumModerationStatus.needReview => 'NEED_REVIEW',
     AlbumModerationStatus.flagged => 'FLAGGED',
-  };
-}
-
-String albumDeletedViewToApi(AlbumDeletedView value) {
-  return switch (value) {
-    AlbumDeletedView.active => 'ACTIVE',
-    AlbumDeletedView.trash => 'TRASH',
   };
 }
 
@@ -85,12 +76,14 @@ class AlbumTag {
   final String taggedMemberId;
   final String taggedMemberName;
   final String? tagNote;
+  final bool canRemove;
 
   const AlbumTag({
     required this.id,
     required this.taggedMemberId,
     required this.taggedMemberName,
     this.tagNote,
+    this.canRemove = false,
   });
 
   factory AlbumTag.fromJson(Map<String, dynamic> json) {
@@ -106,6 +99,10 @@ class AlbumTag {
             'Thanh vien',
       ),
       tagNote: json['tagNote']?.toString(),
+      canRemove: (json['permissions'] is Map
+              ? (json['permissions'] as Map)['canRemove']
+              : json['canRemove']) ==
+          true,
     );
   }
 }
@@ -148,12 +145,12 @@ class AlbumMedia {
   });
 
   bool get isVideo => mediaType == AlbumMediaType.video;
-  bool get isPending =>
-      moderationStatus == AlbumModerationStatus.pending ||
-      moderationStatus == AlbumModerationStatus.processing;
+  bool get isPending => moderationStatus == AlbumModerationStatus.pending;
   bool get needsReview =>
       moderationStatus == AlbumModerationStatus.needReview ||
       moderationStatus == AlbumModerationStatus.flagged;
+  bool get isSafe => moderationStatus == AlbumModerationStatus.safe;
+  bool get canManualReview => !isSafe;
 
   String get displayUrl => thumbnailUrl ?? fileUrl ?? '';
 
@@ -242,4 +239,23 @@ class AlbumMedia {
       raw: {...raw, ...detail.raw},
     );
   }
+
+  AlbumMedia withTags(List<AlbumTag> nextTags) => AlbumMedia(
+    id: id,
+    mediaType: mediaType,
+    visibilityScope: visibilityScope,
+    moderationStatus: moderationStatus,
+    caption: caption,
+    uploaderMemberId: uploaderMemberId,
+    uploaderName: uploaderName,
+    fileUrl: fileUrl,
+    thumbnailUrl: thumbnailUrl,
+    fileSize: fileSize,
+    createdAt: createdAt,
+    deletedAt: deletedAt,
+    latestRiskScore: latestRiskScore,
+    latestModerationSummary: latestModerationSummary,
+    tags: nextTags,
+    raw: raw,
+  );
 }

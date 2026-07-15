@@ -163,6 +163,17 @@ void main() {
       );
     });
 
+    test('unverified user may still open /join because BE allows join requests', () {
+      expect(
+        computeRedirect(
+          restoring: false, loggedIn: true, hasFamily: false,
+          role: UserRole.member, loc: '/join',
+          pendingEmailVerification: true,
+        ),
+        isNull,
+      );
+    });
+
     test('deep-link to /family-setup while pending verification → bắt về /verify-email', () {
       expect(
         computeRedirect(

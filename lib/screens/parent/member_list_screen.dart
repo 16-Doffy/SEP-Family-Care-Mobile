@@ -26,10 +26,10 @@ class _MemberListScreenState extends State<MemberListScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<FamilyProvider>().fetchMembers();
-      // Lấy lời mời để biết số yêu cầu chờ duyệt (chỉ Manager mới fetch được)
+      // Lấy yêu cầu đang chờ từ flow mã mời mới (Manager-only).
       final me = context.read<AuthProvider>().user;
       if (me?.canInviteMembers ?? false) {
-        context.read<InvitationProvider>().fetchInvitations();
+        context.read<InvitationProvider>().fetchJoinRequests();
       }
     });
   }
@@ -71,7 +71,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
                       child: const Icon(Icons.how_to_reg_rounded, size: 18, color: AppColors.textSecondary),
                     ),
                     Builder(builder: (_) {
-                      final cnt = context.watch<InvitationProvider>().awaitingCount;
+                      final cnt = context.watch<InvitationProvider>().pendingJoinRequestCount;
                       if (cnt == 0) return const SizedBox.shrink();
                       return Positioned(
                         top: -4, right: -4,

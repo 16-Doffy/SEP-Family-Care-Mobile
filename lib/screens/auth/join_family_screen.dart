@@ -1,19 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/invitation_provider.dart';
-import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
-// UC13 — Tham gia gia đình qua lời mời (link / mã 6 ký tự / QR)
-// Màn hình dành cho người được mời chưa có tài khoản hoặc đã có tài khoản nhưng chưa có gia đình
-
+/// Public preview + authenticated join-request flow using an 8-character code.
 class JoinFamilyScreen extends StatefulWidget {
-  final String? initialCode; // deep-link truyền code vào
+  final String? initialCode;
   const JoinFamilyScreen({super.key, this.initialCode});
 
   @override
@@ -22,371 +22,224 @@ class JoinFamilyScreen extends StatefulWidget {
 
 class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   final _codeCtrl = TextEditingController();
-  bool _loading   = false;
+  final _messageCtrl = TextEditingController();
+  Timer? _poller;
+  Map<String, dynamic>? _preview;
+  bool _loading = false;
   String? _error;
-  Map<String, dynamic>? _preview; // thông tin gia đình preview trước khi join
+  bool _showMyRequests = false;
 
   @override
   void initState() {
     super.initState();
     if (widget.initialCode != null) {
-      _codeCtrl.text = widget.initialCode!;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _lookupCode());
+      _codeCtrl.text = widget.initialCode!.trim().toUpperCase();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _previewCode());
     }
   }
 
   @override
   void dispose() {
+    _poller?.cancel();
     _codeCtrl.dispose();
+    _messageCtrl.dispose();
     super.dispose();
   }
 
-  // Màn này có thể là route DUY NHẤT trong stack (mở qua deep link
-  // familycare://app/join) — pop() khi đó không có gì để pop, nút back chết.
-  // Không pop được thì go về màn phù hợp theo trạng thái đăng nhập.
-  void _goBack() {
-    if (context.canPop()) {
-      context.pop();
-      return;
-    }
-    final auth = context.read<AuthProvider>();
-    if (!auth.isLoggedIn) {
-      context.go('/login');
-    } else if (!auth.hasFamily) {
-      context.go('/family-setup');
-    } else {
-      context.go(switch (auth.user!.role) {
-        UserRole.manager => '/manager/home',
-        UserRole.deputy  => '/deputy/home',
-        _                => '/member/home',
-      });
-    }
-  }
+  bool get _hasFullCode => _codeCtrl.text.trim().length == 8;
 
-  // GET /invitations/{token} — xem thông tin gia đình trước khi accept
-  // token = secure token của lời mời (64 ký tự hex, KHÁC với invitation.id)
-  Future<void> _lookupCode() async {
-    final token = _codeCtrl.text.trim();
-    if (token.length < 32) return; // token đủ dài mới lookup (tránh gọi sớm).
-    setState(() { _loading = true; _error = null; _preview = null; });
+  Future<void> _previewCode() async {
+    if (!_hasFullCode) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+      _preview = null;
+    });
     try {
-      final data = await ApiClient.instance.get('/invitations/$token');
-      if (!mounted) return;
-      setState(() => _preview = data is Map ? Map<String, dynamic>.from(data) : null);
+      final data = await context
+          .read<InvitationProvider>()
+          .previewInviteCode(_codeCtrl.text.trim().toUpperCase());
+      if (mounted) setState(() => _preview = data);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Mã không hợp lệ hoặc đã hết hạn');
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  // POST /invitations/{token}/claim — gửi YÊU CẦU tham gia (cần đăng nhập).
-  // BE đổi flow 2026-06: không còn join tức thì, phải chờ Trưởng nhóm duyệt.
-  Future<void> _joinFamily() async {
-    final token = _codeCtrl.text.trim();
-    if (token.isEmpty) return;
-
-    // claim cần đăng nhập — nếu chưa login, lưu token rồi đưa sang đăng nhập.
-    // Sau khi login/register xong, router tự đưa lại /join?token=... (xem
-    // computeRedirect: pendingInviteToken) để bấm gửi yêu cầu.
+  Future<void> _submit() async {
     final auth = context.read<AuthProvider>();
+    final code = _codeCtrl.text.trim().toUpperCase();
     if (!auth.isLoggedIn) {
-      await auth.savePendingInviteToken(token);
+      await auth.savePendingInviteToken(code);
       if (mounted) context.go('/login');
       return;
     }
-
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      await ApiClient.instance.post('/invitations/$token/claim', {});
-      await auth.clearPendingInviteToken();
-      if (mounted) _showRequestSentDialog();
-    } catch (e) {
+      await context.read<InvitationProvider>().requestJoinByCode(
+            code,
+            message: _messageCtrl.text,
+          );
       if (mounted) {
-        final msg = e.toString().replaceFirst('Exception: ', '');
-        // claim cần đăng nhập — nếu chưa login BE trả 401
-        setState(() => _error = msg.contains('hết hạn') || msg.contains('401')
-            ? 'Bạn cần đăng nhập trước khi gửi yêu cầu tham gia.'
-            : msg);
+        setState(() => _showMyRequests = true);
+        await _loadMyRequests();
+        _startPolling();
       }
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _declineInvitation() async {
-    final token = _codeCtrl.text.trim();
-    if (token.isEmpty) return;
-    setState(() { _loading = true; _error = null; });
-    final messenger = ScaffoldMessenger.of(context);
+  Future<void> _loadMyRequests() async {
     try {
-      await context.read<InvitationProvider>().declineInvitation(token);
-      if (mounted) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Đã từ chối lời mời'),
-          backgroundColor: AppColors.textMuted,
-        ));
-        setState(() { _preview = null; _codeCtrl.clear(); });
+      await context.read<InvitationProvider>().fetchMyJoinRequests();
+      final approved = context
+          .read<InvitationProvider>()
+          .myJoinRequests
+          .any((request) => request.status.toUpperCase() == 'APPROVED');
+      if (approved) {
+        await context.read<AuthProvider>().refreshFamilyContext();
+        if (mounted && context.read<AuthProvider>().hasFamily) {
+          _poller?.cancel();
+          context.go(switch (context.read<AuthProvider>().user?.role) {
+            UserRole.manager => '/manager/home',
+            UserRole.deputy => '/deputy/home',
+            _ => '/member/home',
+          });
+        }
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _error = e.toString());
     }
   }
 
-  void _showRequestSentDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          const Text('📨', style: TextStyle(fontSize: 24)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('Đã gửi yêu cầu!',
-                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
-          ),
-        ]),
-        content: Text(
-          'Yêu cầu tham gia đã được gửi đến Trưởng nhóm. '
-          'Bạn sẽ vào được gia đình ngay khi Trưởng nhóm duyệt.',
-          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.5),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.link),
-            // Manager có thể đã duyệt ngay trong lúc user còn đứng ở dialog —
-            // trước đây bấm "Đã hiểu" chỉ go('/login') mù quáng, router dựa
-            // vào AuthProvider.hasFamily cache cũ (chưa refetch) nên vẫn đá về
-            // /family-setup dù BE đã có family thật. Refetch trước khi điều
-            // hướng, giống fix ở family_setup_screen.dart.
-            onPressed: () async {
-              final auth = context.read<AuthProvider>();
-              if (auth.isLoggedIn) {
-                await auth.refreshFamilyContext();
-              }
-              if (!mounted) return;
-              if (auth.hasFamily) {
-                context.go(switch (auth.user?.role) {
-                  UserRole.manager => '/manager/home',
-                  UserRole.deputy => '/deputy/home',
-                  _ => '/member/home',
-                });
-              } else {
-                context.go('/login');
-              }
-            },
-            child: Text('Đã hiểu',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+  void _startPolling() {
+    _poller?.cancel();
+    _poller = Timer.periodic(const Duration(seconds: 12), (_) => _loadMyRequests());
+  }
+
+  Future<void> _cancel(JoinRequest request) async {
+    setState(() => _loading = true);
+    try {
+      await context.read<InvitationProvider>().cancelMyJoinRequest(request.id);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final provider = context.watch<InvitationProvider>();
+    final family = _preview?['family'] is Map
+        ? Map<String, dynamic>.from(_preview!['family'] as Map)
+        : <String, dynamic>{};
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Header
-            Row(children: [
-              GestureDetector(
-                onTap: _goBack,
-                child: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.textPrimary),
-              ),
-              const SizedBox(width: 12),
-              Text('Tham gia gia đình',
-                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            ]),
-            const SizedBox(height: 32),
-
-            // Illustration
-            Center(
-              child: Container(
-                width: 120, height: 120,
-                decoration: BoxDecoration(
-                  color: AppColors.link.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+      appBar: AppBar(
+        backgroundColor: AppColors.white,
+        title: Text('Tham gia gia đình', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+      ),
+      body: _showMyRequests
+          ? _myRequests(provider)
+          : ListView(
+              padding: const EdgeInsets.all(24),
+              children: [
+                const Icon(Icons.group_add_rounded, size: 64, color: AppColors.primary500),
+                const SizedBox(height: 16),
+                Text('Nhập mã mời 8 ký tự', textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text('Bạn không cần xác thực email để gửi yêu cầu tham gia.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: _codeCtrl,
+                  maxLength: 8,
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
+                  style: GoogleFonts.robotoMono(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 4),
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(labelText: 'Mã mời', counterText: ''),
+                  onChanged: (_) {
+                    setState(() {
+                      _error = null;
+                      _preview = null;
+                    });
+                    if (_hasFullCode) _previewCode();
+                  },
                 ),
-                child: const Center(
-                  child: Text('👨‍👩‍👧‍👦', style: TextStyle(fontSize: 52)),
+                if (_error != null) Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(_error!, textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
                 ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            Center(
-              child: Text('Nhập mã mời',
-                  style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: Text('Dán token được gửi bởi Trưởng / Phó nhóm gia đình',
-                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
-                  textAlign: TextAlign.center),
-            ),
-            const SizedBox(height: 28),
-
-            // Code input
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _error != null ? AppColors.danger
-                       : _preview != null ? AppColors.success
-                       : const Color(0xFFE5E7EB),
-                  width: 2,
-                ),
-              ),
-              child: Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: _codeCtrl,
-                    textCapitalization: TextCapitalization.none,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-_]')),
-                    ],
-                    style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
-                        color: AppColors.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Dán token / link mời từ Trưởng nhóm',
-                      hintStyle: GoogleFonts.inter(
-                          fontSize: 15, color: AppColors.textMuted),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 18),
-                    ),
-                    onChanged: (v) {
-                      setState(() { _error = null; _preview = null; });
-                      if (v.trim().length >= 32) _lookupCode();
-                    },
-                  ),
-                ),
-                if (_loading)
-                  const SizedBox(
-                    width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else if (_preview != null)
-                  const Icon(Icons.check_circle_rounded, color: AppColors.success)
-                else if (_error != null)
-                  const Icon(Icons.error_rounded, color: AppColors.danger),
-              ]),
-            ),
-
-            if (_error != null) ...[
-              const SizedBox(height: 8),
-              Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
-            ],
-
-            // Family preview
-            if (_preview != null) ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(children: [
-                  const Text('🏠', style: TextStyle(fontSize: 28)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(
-                        (_preview!['family'] as Map?)?['name']?.toString() ??
-                            _preview!['familyName']?.toString() ?? 'Gia đình',
-                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                      ),
-                      Text(
-                        'Mời bởi: ${(_preview!['inviter'] as Map?)?['fullName']?.toString() ?? 'Quản trị viên'} · Token hợp lệ',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.success),
-                      ),
+                if (family.isNotEmpty) ...[
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(16)),
+                    child: Row(children: [
+                      const Icon(Icons.home_rounded, color: AppColors.safe),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text('Bạn sắp gửi yêu cầu vào ${family['name'] ?? 'gia đình này'}',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
                     ]),
                   ),
-                ]),
-              ),
-            ],
-
-            const SizedBox(height: 28),
-
-            // Join button
-            SizedBox(
-              width: double.infinity, height: 54,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.link,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _messageCtrl,
+                    maxLength: 500,
+                    maxLines: 3,
+                    decoration: const InputDecoration(labelText: 'Lời nhắn (không bắt buộc)'),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _loading || !_hasFullCode ? null : (_preview == null ? _previewCode : _submit),
+                    child: _loading ? const CircularProgressIndicator(color: Colors.white) : Text(
+                      _preview == null ? 'Kiểm tra mã' : auth.isLoggedIn ? 'Gửi yêu cầu tham gia' : 'Đăng nhập để gửi yêu cầu',
+                    ),
+                  ),
                 ),
-                onPressed: (_loading || (_preview == null && _codeCtrl.text.trim().length < 32)) ? null : (_preview == null ? _lookupCode : _joinFamily),
-                child: _loading
-                    ? const SizedBox(width: 22, height: 22,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text(_preview == null ? 'Kiểm tra mã mời' : 'Gửi yêu cầu tham gia',
-                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
-              ),
+              ],
             ),
+    );
+  }
 
-            // Từ chối lời mời — POST /invitations/{token}/reject, cần đăng
-            // nhập (BE xác định "lời mời gửi cho tôi" qua email đã login).
-            if (_preview != null && context.watch<AuthProvider>().isLoggedIn) ...[
-              const SizedBox(height: 10),
-              Center(
-                child: TextButton(
-                  onPressed: _loading ? null : _declineInvitation,
-                  child: Text('Từ chối lời mời này',
-                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger, fontWeight: FontWeight.w600)),
-                ),
+  Widget _myRequests(InvitationProvider provider) {
+    return RefreshIndicator(
+      onRefresh: _loadMyRequests,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text('Yêu cầu của tôi', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text('Tự động kiểm tra trạng thái mỗi 12 giây.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+          const SizedBox(height: 16),
+          if (provider.myJoinRequests.isEmpty)
+            const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Chưa có yêu cầu nào')))
+          else
+            ...provider.myJoinRequests.map((request) => Card(
+              child: ListTile(
+                title: Text(request.familyName ?? 'Gia đình', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                subtitle: Text('${request.statusLabel}${request.message == null ? '' : '\n${request.message}'}'),
+                isThreeLine: request.message != null,
+                trailing: request.isPending ? TextButton(onPressed: _loading ? null : () => _cancel(request), child: const Text('Hủy')) : null,
               ),
-            ],
-            const SizedBox(height: 16),
-
-            // Divider
-            Row(children: [
-              const Expanded(child: Divider()),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text('hoặc', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-              ),
-              const Expanded(child: Divider()),
-            ]),
-            const SizedBox(height: 16),
-
-            // Paste from clipboard
-            Center(
-              child: TextButton.icon(
-                onPressed: () async {
-                  final data = await Clipboard.getData(Clipboard.kTextPlain);
-                  if (data?.text != null) {
-                    final raw = data!.text!.trim();
-                    // Thử extract UUID từ query param ?token=...
-                    final uriToken = Uri.tryParse(raw)?.queryParameters['token'];
-                    // Regex UUID: 8-4-4-4-12 hex digits
-                    final uuidPattern = RegExp(
-                      r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}');
-                    final uuid = uriToken ?? uuidPattern.firstMatch(raw)?.group(0) ?? raw;
-                    _codeCtrl.text = uuid;
-                    setState(() { _error = null; _preview = null; });
-                    _lookupCode();
-                  }
-                },
-                icon: const Icon(Icons.paste_rounded, size: 16, color: AppColors.link),
-                label: Text('Dán từ clipboard',
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.link, fontWeight: FontWeight.w600)),
-              ),
-            ),
-          ]),
-        ),
+            )),
+        ],
       ),
     );
   }

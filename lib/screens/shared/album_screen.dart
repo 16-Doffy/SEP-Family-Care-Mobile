@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/album_media.dart';
+import '../../models/user.dart';
 import '../../providers/album_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
@@ -209,8 +210,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
   @override
   Widget build(BuildContext context) {
     final album = context.watch<AlbumProvider>();
-    final isAdmin =
-        context.watch<AuthProvider>().user?.isAdministrative == true;
+    // Current manual moderation contract is FAMILY_MANAGER only.
+    final isAdmin = context.watch<AuthProvider>().user?.role == UserRole.manager;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -226,8 +227,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
         ),
         actions: [
-          // Hàng đợi kiểm duyệt toàn gia đình — GET /albums/moderation
-          // (Manager/Deputy; kèm riskScore + tóm tắt AI cho từng media)
+          // Hàng đợi kiểm duyệt thủ công của Manager/Deputy.
           if (isAdmin)
             IconButton(
               tooltip: 'Hàng đợi kiểm duyệt',
@@ -275,8 +275,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  // Sheet hàng đợi kiểm duyệt: list media chờ/cần duyệt kèm điểm rủi ro AI,
-  // duyệt nhanh MARK_SAFE / KEEP_FLAGGED ngay trên từng dòng
+  // Sheet hàng đợi kiểm duyệt thủ công. Face AI không được gọi/hiển thị.
   void _showModerationQueueSheet() {
     final album = context.read<AlbumProvider>();
     showModalBottomSheet(
@@ -305,13 +304,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text(
-                      'AI chấm điểm rủi ro — chỉ là gợi ý, quyết định là của bạn',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
+                    Text('Đánh dấu ảnh/video hợp lệ trước khi cho phép gắn tag.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
                     const SizedBox(height: 10),
                     if (snap.connectionState != ConnectionState.done)
                       const Padding(
@@ -349,16 +342,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                             final mediaId = it['mediaId']?.toString() ?? '';
                             final status =
                                 it['moderationStatus']?.toString() ?? '';
-                            final latest = it['latestModeration'] is Map
-                                ? it['latestModeration'] as Map
-                                : const {};
-                            final risk = double.tryParse(
-                              latest['riskScore']?.toString() ?? '',
-                            );
-                            final summary =
-                                latest['summary']?.toString() ?? '';
-                            final needAction = status == 'NEED_REVIEW' ||
-                                status == 'FLAGGED';
+                            final needAction = status != 'SAFE';
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: Column(
@@ -374,34 +358,15 @@ class _AlbumScreenState extends State<AlbumScreen> {
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
-                                        status +
-                                            (risk == null
-                                                ? ''
-                                                : ' · rủi ro ${(risk * 100).round()}%'),
+                                        status,
                                         style: GoogleFonts.inter(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w700,
-                                          color: risk != null && risk >= 0.5
-                                              ? AppColors.danger
-                                              : AppColors.textPrimary,
+                                          color: AppColors.textPrimary,
                                         ),
                                       ),
                                     ),
                                   ]),
-                                  if (summary.isNotEmpty)
-                                    Padding(
-                                      padding:
-                                          const EdgeInsets.only(top: 2, left: 26),
-                                      child: Text(
-                                        summary,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          color: AppColors.textMuted,
-                                        ),
-                                      ),
-                                    ),
                                   if (needAction && mediaId.isNotEmpty)
                                     Padding(
                                       padding:
@@ -425,23 +390,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
                                           },
                                         ),
                                         const SizedBox(width: 8),
-                                        _queueAction(
-                                          label: 'Giữ cờ',
-                                          color: AppColors.danger,
-                                          onTap: () async {
-                                            try {
-                                              await album.reviewModeration(
-                                                mediaId,
-                                                decision: 'KEEP_FLAGGED',
-                                                reviewNote:
-                                                    'Giữ cờ sau khi kiểm tra thủ công',
-                                              );
-                                              setSheet(() {});
-                                            } catch (e) {
-                                              _snack(e);
-                                            }
-                                          },
-                                        ),
                                       ]),
                                     ),
                                 ],
@@ -495,36 +443,16 @@ class _AlbumScreenState extends State<AlbumScreen> {
         child: Row(
           children: [
             _chip(
-              label: 'Đang hiển thị',
-              selected: album.deletedView == AlbumDeletedView.active,
-              onTap: () => album.fetchMedia(
-                refresh: true,
-                deletedView: AlbumDeletedView.active,
-              ),
-            ),
-            _chip(
-              label: 'Thùng rác',
-              selected: album.deletedView == AlbumDeletedView.trash,
-              onTap: () => album.fetchMedia(
-                refresh: true,
-                deletedView: AlbumDeletedView.trash,
-              ),
-            ),
-            _chip(
               label: 'Tất cả',
               selected:
                   album.mediaType == null && album.moderationStatus == null,
-              onTap: () => album.fetchMedia(
-                refresh: true,
-                deletedView: album.deletedView,
-              ),
+              onTap: () => album.fetchMedia(refresh: true),
             ),
             _chip(
               label: 'Ảnh',
               selected: album.mediaType == AlbumMediaType.photo,
               onTap: () => album.fetchMedia(
                 refresh: true,
-                deletedView: album.deletedView,
                 mediaType: AlbumMediaType.photo,
               ),
             ),
@@ -533,7 +461,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
               selected: album.mediaType == AlbumMediaType.video,
               onTap: () => album.fetchMedia(
                 refresh: true,
-                deletedView: album.deletedView,
                 mediaType: AlbumMediaType.video,
               ),
             ),
@@ -543,7 +470,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   album.moderationStatus == AlbumModerationStatus.needReview,
               onTap: () => album.fetchMedia(
                 refresh: true,
-                deletedView: album.deletedView,
                 moderationStatus: AlbumModerationStatus.needReview,
               ),
             ),
@@ -788,21 +714,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 runSpacing: 8,
                 children: [
                   _statusBadge(media.moderationStatus),
-                  if (media.latestRiskScore != null)
-                    _pill('Risk ${(media.latestRiskScore! * 100).round()}%'),
-                  ...media.tags.map((t) => _pill('@${t.taggedMemberName}')),
+                  ...media.tags.map((t) => _tagChip(ctx, media, t)),
                 ],
               ),
-              if (media.latestModerationSummary?.isNotEmpty == true) ...[
-                const SizedBox(height: 12),
-                Text(
-                  media.latestModerationSummary!,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
               const SizedBox(height: 18),
               _actionList(ctx, media, isAdmin),
             ],
@@ -834,11 +748,11 @@ class _AlbumScreenState extends State<AlbumScreen> {
     AlbumMedia media,
     bool isAdmin,
   ) {
-    final trash =
-        context.read<AlbumProvider>().deletedView == AlbumDeletedView.trash;
+    final deleted = media.deletedAt != null;
     return Column(
       children: [
-        ListTile(
+        if (media.isSafe)
+          ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(
             Icons.edit_outlined,
@@ -862,7 +776,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             _showTagSheet(media);
           },
         ),
-        if (isAdmin && media.needsReview)
+        if (isAdmin && media.canManualReview)
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.verified_outlined, color: AppColors.safe),
@@ -872,24 +786,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               _showReviewSheet(media);
             },
           ),
-        if (isAdmin && media.isPending)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(
-              Icons.replay_outlined,
-              color: AppColors.textSecondary,
-            ),
-            title: const Text('Retry moderation'),
-            onTap: () async {
-              Navigator.pop(sheetContext);
-              try {
-                await context.read<AlbumProvider>().retryModeration(media.id);
-              } catch (e) {
-                _snack(e);
-              }
-            },
-          ),
-        if (trash)
+        if (deleted)
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.restore_rounded, color: AppColors.safe),
@@ -920,7 +817,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               }
             },
           ),
-        if (trash)
+        if (deleted)
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(
@@ -1100,27 +997,11 @@ class _AlbumScreenState extends State<AlbumScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: decision,
-                decoration: InputDecoration(
-                  labelText: 'Quyết định',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'MARK_SAFE',
-                    child: Text('Đánh dấu an toàn'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'KEEP_FLAGGED',
-                    child: Text('Giữ trạng thái flagged'),
-                  ),
-                ],
-                onChanged: (v) => setS(() => decision = v ?? decision),
+              const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.verified_outlined, color: AppColors.safe),
+                title: Text('Đánh dấu an toàn (SAFE)'),
               ),
-              const SizedBox(height: 12),
               TextField(
                 controller: noteCtrl,
                 maxLines: 3,
@@ -1177,11 +1058,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
         AppColors.danger,
         const Color(0xFFFEE2E2),
       ),
-      AlbumModerationStatus.processing => (
-        'AI',
-        AppColors.primary600,
-        AppColors.primary50,
-      ),
       AlbumModerationStatus.pending => (
         'PENDING',
         AppColors.textSecondary,
@@ -1216,6 +1092,25 @@ class _AlbumScreenState extends State<AlbumScreen> {
         label,
         style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
       ),
+    );
+  }
+
+  Widget _tagChip(BuildContext sheetContext, AlbumMedia media, AlbumTag tag) {
+    return InputChip(
+      label: Text('@${tag.taggedMemberName}'),
+      labelStyle: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
+      backgroundColor: const Color(0xFFF3F4F6),
+      deleteIcon: tag.canRemove ? const Icon(Icons.close_rounded, size: 16) : null,
+      onDeleted: tag.canRemove
+          ? () async {
+              try {
+                await context.read<AlbumProvider>().untagMember(media.id, tag.id);
+                if (mounted) Navigator.pop(sheetContext);
+              } catch (e) {
+                _snack(e);
+              }
+            }
+          : null,
     );
   }
 

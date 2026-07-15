@@ -121,8 +121,8 @@ String? computeRedirect({
   // null nếu không có gì đang chờ.
   String? pendingInviteToken,
   // true ngay sau register() hoặc khi POST /families trả 403 "chưa verify".
-  // Chỉ chặn đường vào /family-setup — KHÔNG chặn /join (claim invitation
-  // không yêu cầu verify, xem AuthProvider.createFamily).
+  // /join không yêu cầu verify; create family, regenerate code and approve
+  // join request are the actions guarded by BE verification.
   bool pendingEmailVerification = false,
 }) {
   // Đang khôi phục session đã lưu (đọc token + gọi /auth/me) — giữ ở
@@ -135,8 +135,7 @@ String? computeRedirect({
       loc == '/forgot-password';
   final onSetup  = loc == '/family-setup';
   final onVerify = loc == '/verify-email';
-  // JoinFamilyScreen tự xử lý lookup public, còn claim sẽ yêu cầu đăng nhập.
-  // endpoint) — không chặn về /login như các route khác.
+  // JoinFamilyScreen tự xử lý lookup public và gửi join request sau login.
   final onJoin  = loc == '/join';
 
   // Chưa đăng nhập → login (trừ /join, màn hình mời tham gia là public)
@@ -144,8 +143,7 @@ String? computeRedirect({
   if (!loggedIn && loc == '/splash') return '/login';
   if (!loggedIn) return null;
 
-  // Vừa đăng nhập/đăng ký xong và có lời mời đang chờ (lưới an toàn — phòng
-  // trường hợp accept thực ra cần đăng nhập) → quay lại /join trước khi
+  // Vừa đăng nhập/đăng ký xong và có mã mời đang chờ → quay lại /join trước khi
   // route theo role bình thường, để không mất token.
   if (onAuth && pendingInviteToken != null && pendingInviteToken.isNotEmpty) {
     return '/join?token=$pendingInviteToken';
@@ -166,9 +164,9 @@ String? computeRedirect({
 
   // Chưa verify email và chưa có gia đình → bắt về /verify-email trước khi
   // được vào /family-setup (POST /families sẽ 403 nếu chưa verify). Một khi
-  // đã có gia đình (vd. join qua /invitations/{token}/claim — không yêu cầu
+  // đã có gia đình (vd. được Manager duyệt join request — không yêu cầu
   // verify) thì không chặn nữa, để không giam người dùng hợp lệ.
-  if (pendingEmailVerification && !hasFamily) {
+  if (pendingEmailVerification && !hasFamily && !onJoin) {
     return onVerify ? null : '/verify-email';
   }
 
