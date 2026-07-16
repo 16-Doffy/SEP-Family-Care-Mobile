@@ -5,11 +5,13 @@ import '../services/api_client.dart';
 // trên BE — tạo SOS alert thật rồi đọc GET .../notifications, 2026-06-26).
 class AppNotification {
   final String id;
-  final String type;          // SOS | TASK | FINANCE | INVITATION | ... (mở rộng theo BE)
-  final String priority;      // CRITICAL | HIGH | MEDIUM | LOW
+  final String
+  type; // SOS | TASK | FINANCE | INVITATION | ... (mở rộng theo BE)
+  final String priority; // CRITICAL | HIGH | MEDIUM | LOW
   final String title;
   final String body;
-  final String? referenceType; // SOS_ALERT | TASK_ASSIGNMENT | ... — dùng để tap-routing
+  final String?
+  referenceType; // SOS_ALERT | TASK_ASSIGNMENT | ... — dùng để tap-routing
   final String? referenceId;
   final bool isRead;
   final DateTime createdAt;
@@ -26,32 +28,36 @@ class AppNotification {
     required this.createdAt,
   });
 
-  factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
-        id:            json['notificationId']?.toString() ?? json['id']?.toString() ?? '',
-        type:          json['type']?.toString() ?? '',
-        priority:      json['priority']?.toString() ?? 'MEDIUM',
-        title:         json['title']?.toString() ?? '',
-        body:          json['body']?.toString() ?? json['message']?.toString() ?? '',
+  factory AppNotification.fromJson(Map<String, dynamic> json) =>
+      AppNotification(
+        id: json['notificationId']?.toString() ?? json['id']?.toString() ?? '',
+        type: json['type']?.toString() ?? '',
+        priority: json['priority']?.toString() ?? 'MEDIUM',
+        title: json['title']?.toString() ?? '',
+        body: json['body']?.toString() ?? json['message']?.toString() ?? '',
         referenceType: json['referenceType']?.toString(),
-        referenceId:   json['referenceId']?.toString(),
-        isRead:        json['isRead'] as bool? ?? false,
-        createdAt:     DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+        referenceId: json['referenceId']?.toString(),
+        isRead: json['isRead'] as bool? ?? false,
+        createdAt:
+            DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+            DateTime.now(),
       );
 
   String get emoji => switch (type) {
-        'SOS'        => '🚨',
-        'TASK'       => '✅',
-        'FINANCE'    => '💰',
-        'INVITATION' => '✉️',
-        _            => '🔔',
-      };
+    'SOS' => '🚨',
+    'TASK' => '✅',
+    'FINANCE' => '💰',
+    'INVITATION' => '✉️',
+    'MEMBER_LEFT' => '🚪',
+    _ => '🔔',
+  };
 
   Color get accentColor => switch (priority) {
-        'CRITICAL' => const Color(0xFFDC2626),
-        'HIGH'     => const Color(0xFFEA580C),
-        'MEDIUM'   => const Color(0xFF2563EB),
-        _          => const Color(0xFF6B7280),
-      };
+    'CRITICAL' => const Color(0xFFDC2626),
+    'HIGH' => const Color(0xFFEA580C),
+    'MEDIUM' => const Color(0xFF2563EB),
+    _ => const Color(0xFF6B7280),
+  };
 }
 
 class NotificationProvider extends ChangeNotifier {
@@ -72,7 +78,9 @@ class NotificationProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final query = unreadOnly ? '?unreadOnly=true' : '';
-      final data = await ApiClient.instance.get('/families/$fid/notifications$query');
+      final data = await ApiClient.instance.get(
+        '/families/$fid/notifications$query',
+      );
       final list = data is List ? data : <dynamic>[];
       _notifications = list
           .whereType<Map>()
@@ -90,14 +98,23 @@ class NotificationProvider extends ChangeNotifier {
     final fid = ApiClient.instance.familyId;
     if (fid == null) return;
     try {
-      await ApiClient.instance.patch('/families/$fid/notifications/$notificationId/read', {});
+      await ApiClient.instance.patch(
+        '/families/$fid/notifications/$notificationId/read',
+        {},
+      );
       final idx = _notifications.indexWhere((n) => n.id == notificationId);
       if (idx != -1) {
         final old = _notifications[idx];
         _notifications[idx] = AppNotification(
-          id: old.id, type: old.type, priority: old.priority, title: old.title,
-          body: old.body, referenceType: old.referenceType, referenceId: old.referenceId,
-          isRead: true, createdAt: old.createdAt,
+          id: old.id,
+          type: old.type,
+          priority: old.priority,
+          title: old.title,
+          body: old.body,
+          referenceType: old.referenceType,
+          referenceId: old.referenceId,
+          isRead: true,
+          createdAt: old.createdAt,
         );
         notifyListeners();
       }
@@ -108,7 +125,10 @@ class NotificationProvider extends ChangeNotifier {
     final fid = ApiClient.instance.familyId;
     if (fid == null) return;
     try {
-      await ApiClient.instance.patch('/families/$fid/notifications/read-all', {});
+      await ApiClient.instance.patch(
+        '/families/$fid/notifications/read-all',
+        {},
+      );
       await fetchNotifications();
     } catch (_) {}
   }

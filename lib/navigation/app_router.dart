@@ -26,6 +26,7 @@ import '../screens/shared/album_screen.dart';
 import '../screens/shared/profile_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
+import '../screens/shared/change_password_screen.dart';
 
 // New screens
 import '../screens/parent/subscription_screen.dart';
@@ -51,14 +52,15 @@ import '../screens/parent/goal_contribution_screen.dart';
 import '../screens/parent/goal_detail_screen.dart';
 import '../screens/parent/reward_management_screen.dart';
 import '../screens/parent/member_finance_screen.dart';
+import '../screens/parent/member_detail_screen.dart';
 
 // Shell
 import 'family_shell.dart';
 
 final _rootKey = GlobalKey<NavigatorState>();
 final _managerKey = GlobalKey<NavigatorState>(debugLabel: 'manager');
-final _deputyKey  = GlobalKey<NavigatorState>(debugLabel: 'deputy');
-final _memberKey  = GlobalKey<NavigatorState>(debugLabel: 'member');
+final _deputyKey = GlobalKey<NavigatorState>(debugLabel: 'deputy');
+final _memberKey = GlobalKey<NavigatorState>(debugLabel: 'member');
 
 const _managerTabs = [
   FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Nhắn tin'),
@@ -84,14 +86,18 @@ const _memberTabs = [
 // /manager/* với các màn hình quản lý khác. Đã verify bằng tài khoản Deputy
 // thật trên BE thật (2026-06-22): cả 2 endpoint phía sau đều trả 403 cho
 // Deputy. Xem AppUser.canManageSubscription / canInviteMembers.
-const _managerOnlyPaths = {'/manager/subscription', '/manager/invite', '/manager/invite-requests'};
+const _managerOnlyPaths = {
+  '/manager/subscription',
+  '/manager/invite',
+  '/manager/invite-requests',
+};
 
 // Route dùng chung dù namespace /manager/* — Member chỉ xem (read-only),
 // không có nút quản lý nào hiện ra vì member_list_screen đã tự gate theo
 // canManageMemberRoles/canRemoveMembers/canInviteMembers (đều false với
 // Member). Không đưa Member vào /manager/* nói chung, chỉ mở lối riêng
 // cho đúng path này.
-const _memberSharedPaths = {'/manager/members'};
+const _memberSharedPaths = {'/manager/members', '/manager/member/:memberId'};
 
 // Path thuộc shell bottom-nav riêng của từng role — chỉ chính role đó được
 // vào (Deputy/Member không nên đi sâu vào Lịch/Album của Manager dù route
@@ -100,13 +106,28 @@ const _memberSharedPaths = {'/manager/members'};
 // (ví dụ /manager/members, /manager/finance-model, /manager/wallet...) nên
 // vẫn mở cho Deputy như bình thường.
 const _managerShellPaths = {
-  '/manager/home', '/manager/chat', '/manager/calendar', '/manager/sos', '/manager/album', '/manager/profile',
+  '/manager/home',
+  '/manager/chat',
+  '/manager/calendar',
+  '/manager/sos',
+  '/manager/album',
+  '/manager/profile',
 };
 const _deputyShellPaths = {
-  '/deputy/home', '/deputy/tasks', '/deputy/wallet', '/deputy/sos', '/deputy/chat', '/deputy/profile',
+  '/deputy/home',
+  '/deputy/tasks',
+  '/deputy/wallet',
+  '/deputy/sos',
+  '/deputy/chat',
+  '/deputy/profile',
 };
 const _memberShellPaths = {
-  '/member/home', '/member/tasks', '/member/wallet', '/member/sos', '/member/chat', '/member/profile',
+  '/member/home',
+  '/member/tasks',
+  '/member/wallet',
+  '/member/sos',
+  '/member/chat',
+  '/member/profile',
 };
 
 // Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
@@ -131,12 +152,15 @@ String? computeRedirect({
     return loc == '/splash' ? null : '/splash';
   }
 
-  final onAuth   = loc == '/login' || loc == '/register' || loc == '/splash' ||
+  final onAuth =
+      loc == '/login' ||
+      loc == '/register' ||
+      loc == '/splash' ||
       loc == '/forgot-password';
-  final onSetup  = loc == '/family-setup';
+  final onSetup = loc == '/family-setup';
   final onVerify = loc == '/verify-email';
   // JoinFamilyScreen tự xử lý lookup public và gửi join request sau login.
-  final onJoin  = loc == '/join';
+  final onJoin = loc == '/join';
 
   // Chưa đăng nhập → login (trừ /join, màn hình mời tham gia là public)
   if (!loggedIn && !onAuth && !onJoin) return '/login';
@@ -151,8 +175,8 @@ String? computeRedirect({
 
   final homePath = switch (role) {
     UserRole.manager => '/manager/home',
-    UserRole.deputy  => '/deputy/home',
-    _                 => '/member/home',
+    UserRole.deputy => '/deputy/home',
+    _ => '/member/home',
   };
 
   // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
@@ -179,6 +203,7 @@ String? computeRedirect({
   // chế độ chỉ xem, không có hành động quản trị nào hiện ra).
   if (role == UserRole.member &&
       !_memberSharedPaths.contains(loc) &&
+      !loc.startsWith('/manager/member/') &&
       (loc.startsWith('/manager/') || loc.startsWith('/deputy/'))) {
     return homePath;
   }
@@ -225,23 +250,26 @@ GoRouter createRouter(AuthProvider auth) {
       // Lưu lại token mời ngay khi vào /join — phòng trường hợp router cần
       // bắt đăng nhập trước (xem computeRedirect: pendingInviteToken).
       if (loc == '/join') {
-        final token = state.uri.queryParameters['token'] ??
+        final token =
+            state.uri.queryParameters['token'] ??
             state.uri.queryParameters['code'];
         if (token != null && token.isNotEmpty) {
           auth.savePendingInviteToken(token);
         }
       }
       final result = computeRedirect(
-        restoring:                 auth.restoring,
-        loggedIn:                  auth.isLoggedIn,
-        hasFamily:                 auth.hasFamily,
-        role:                      auth.isLoggedIn ? auth.user!.role : null,
-        loc:                       loc,
-        pendingInviteToken:        auth.pendingInviteToken,
-        pendingEmailVerification:  auth.pendingEmailVerification,
+        restoring: auth.restoring,
+        loggedIn: auth.isLoggedIn,
+        hasFamily: auth.hasFamily,
+        role: auth.isLoggedIn ? auth.user!.role : null,
+        loc: loc,
+        pendingInviteToken: auth.pendingInviteToken,
+        pendingEmailVerification: auth.pendingEmailVerification,
       );
       // Token đã được dùng để quay lại /join — xoá để không lặp lại lần sau.
-      if (result != null && result.startsWith('/join') && auth.pendingInviteToken != null) {
+      if (result != null &&
+          result.startsWith('/join') &&
+          auth.pendingInviteToken != null) {
         auth.clearPendingInviteToken();
       }
       // Ở lại /join (result == null): token đã nằm trong query param của màn
@@ -254,39 +282,81 @@ GoRouter createRouter(AuthProvider auth) {
     },
     routes: [
       // ── Auth ──────────────────────────────────────────────
-      GoRoute(path: '/splash',       builder: (_, _) => const SplashScreen()),
-      GoRoute(path: '/login',        builder: (_, _) => const LoginScreen()),
-      GoRoute(path: '/register',     builder: (_, _) => const RegisterScreen()),
-      GoRoute(path: '/verify-email', builder: (_, _) => const VerifyEmailScreen()),
-      GoRoute(path: '/family-setup', builder: (_, _) => const FamilySetupScreen()),
+      GoRoute(path: '/splash', builder: (_, _) => const SplashScreen()),
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/register', builder: (_, _) => const RegisterScreen()),
+      GoRoute(
+        path: '/verify-email',
+        builder: (_, state) =>
+            VerifyEmailScreen(returnTo: state.uri.queryParameters['returnTo']),
+      ),
+      GoRoute(
+        path: '/family-setup',
+        builder: (_, _) => const FamilySetupScreen(),
+      ),
 
       // ── Shared overlays (full-screen) ──────────────────────
-      GoRoute(path: '/notifications', builder: (_, _) => const NotificationsScreen()),
-      GoRoute(path: '/ai',            builder: (_, _) => const AIAssistantScreen()),
+      GoRoute(
+        path: '/notifications',
+        builder: (_, _) => const NotificationsScreen(),
+      ),
+      GoRoute(path: '/ai', builder: (_, _) => const AIAssistantScreen()),
 
       // ── Manager Shell (Trang chủ/Nhắn tin/Lịch/SOS/Album/Tôi) ──
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) => FamilyShell(navigationShell: shell, middleTabs: _managerTabs),
+        builder: (_, _, shell) =>
+            FamilyShell(navigationShell: shell, middleTabs: _managerTabs),
         branches: [
-          StatefulShellBranch(navigatorKey: _managerKey, routes: [
-            GoRoute(path: '/manager/home',  builder: (_, _) => const HomeDashboardScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/chat',  builder: (_, _) => const ChatScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/calendar', builder: (_, _) => const CalendarScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/sos',   builder: (_, _) => const SOSScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/album', builder: (_, _) => const AlbumScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/manager/profile', builder: (_, _) => const ProfileScreen()),
-          ]),
+          StatefulShellBranch(
+            navigatorKey: _managerKey,
+            routes: [
+              GoRoute(
+                path: '/manager/home',
+                builder: (_, _) => const HomeDashboardScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/manager/chat',
+                builder: (_, _) => const ChatScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/manager/calendar',
+                builder: (_, _) => const CalendarScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/manager/sos',
+                builder: (_, _) => const SOSScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/manager/album',
+                builder: (_, _) => const AlbumScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/manager/profile',
+                builder: (_, _) => const ProfileScreen(),
+              ),
+            ],
+          ),
         ],
       ),
 
@@ -294,67 +364,171 @@ GoRouter createRouter(AuthProvider auth) {
       // hình quản lý, không phải màn hình member thông thường) ──
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) => FamilyShell(navigationShell: shell, middleTabs: _deputyTabs),
+        builder: (_, _, shell) =>
+            FamilyShell(navigationShell: shell, middleTabs: _deputyTabs),
         branches: [
-          StatefulShellBranch(navigatorKey: _deputyKey, routes: [
-            GoRoute(path: '/deputy/home',  builder: (_, _) => const HomeDashboardScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/deputy/tasks',  builder: (_, _) => const TaskManagementScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/deputy/wallet', builder: (_, _) => const WalletScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/deputy/sos',   builder: (_, _) => const SOSScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/deputy/chat', builder: (_, _) => const ChatScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/deputy/profile', builder: (_, _) => const ProfileScreen()),
-          ]),
+          StatefulShellBranch(
+            navigatorKey: _deputyKey,
+            routes: [
+              GoRoute(
+                path: '/deputy/home',
+                builder: (_, _) => const HomeDashboardScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/deputy/tasks',
+                builder: (_, _) => const TaskManagementScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/deputy/wallet',
+                builder: (_, _) => const WalletScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/deputy/sos',
+                builder: (_, _) => const SOSScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/deputy/chat',
+                builder: (_, _) => const ChatScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/deputy/profile',
+                builder: (_, _) => const ProfileScreen(),
+              ),
+            ],
+          ),
         ],
       ),
 
       // ── Member Shell (Trang chủ/Nhiệm vụ/Ví/SOS/Chat/Tôi) ──────
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) => FamilyShell(navigationShell: shell, middleTabs: _memberTabs),
+        builder: (_, _, shell) =>
+            FamilyShell(navigationShell: shell, middleTabs: _memberTabs),
         branches: [
-          StatefulShellBranch(navigatorKey: _memberKey, routes: [
-            GoRoute(path: '/member/home',   builder: (_, _) => const ChildHomeScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/member/tasks',  builder: (_, _) => const ChildTasksScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/member/wallet', builder: (_, _) => const ChildWalletScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/member/sos',    builder: (_, _) => const SOSScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/member/chat',   builder: (_, _) => const ChatScreen()),
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(path: '/member/profile', builder: (_, _) => const ProfileScreen()),
-          ]),
+          StatefulShellBranch(
+            navigatorKey: _memberKey,
+            routes: [
+              GoRoute(
+                path: '/member/home',
+                builder: (_, _) => const ChildHomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/member/tasks',
+                builder: (_, _) => const ChildTasksScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/member/wallet',
+                builder: (_, _) => const ChildWalletScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/member/sos',
+                builder: (_, _) => const SOSScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/member/chat',
+                builder: (_, _) => const ChatScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/member/profile',
+                builder: (_, _) => const ProfileScreen(),
+              ),
+            ],
+          ),
         ],
       ),
 
       // ── Manager Specific Routes ───────────────────────────
-      GoRoute(path: '/manager/wallet',        builder: (_, _) => const WalletScreen()),
-      GoRoute(path: '/manager/tasks',         builder: (_, _) => const TaskManagementScreen()),
-      GoRoute(path: '/manager/reward-management', builder: (_, _) => const RewardManagementScreen()),
-      GoRoute(path: '/manager/subscription',  builder: (_, _) => const SubscriptionScreen()),
-      GoRoute(path: '/manager/invite',        builder: (_, _) => const InviteMemberScreen()),
-      GoRoute(path: '/manager/invite-requests', builder: (_, _) => const InvitationRequestsScreen()),
-      GoRoute(path: '/manager/members',       builder: (_, _) => const MemberListScreen()),
-      GoRoute(path: '/manager/finance-model', builder: (_, _) => const FinanceModelScreen()),
-      GoRoute(path: '/profile/edit',          builder: (_, _) => const EditProfileScreen()),
-      GoRoute(path: '/manager/finance-alerts', builder: (_, _) => const FinanceAlertsScreen()),
-      GoRoute(path: '/finance/support-requests', builder: (_, _) => const SupportRequestScreen()),
+      GoRoute(path: '/manager/wallet', builder: (_, _) => const WalletScreen()),
+      GoRoute(
+        path: '/manager/tasks',
+        builder: (_, _) => const TaskManagementScreen(),
+      ),
+      GoRoute(
+        path: '/manager/reward-management',
+        builder: (_, _) => const RewardManagementScreen(),
+      ),
+      GoRoute(
+        path: '/manager/subscription',
+        builder: (_, _) => const SubscriptionScreen(),
+      ),
+      GoRoute(
+        path: '/manager/invite',
+        builder: (_, _) => const InviteMemberScreen(),
+      ),
+      GoRoute(
+        path: '/manager/invite-requests',
+        builder: (_, _) => const InvitationRequestsScreen(),
+      ),
+      GoRoute(
+        path: '/manager/members',
+        builder: (_, _) => const MemberListScreen(),
+      ),
+      GoRoute(
+        path: '/manager/member/:memberId',
+        builder: (_, state) => MemberDetailScreen(
+          memberId: state.pathParameters['memberId'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: '/manager/finance-model',
+        builder: (_, _) => const FinanceModelScreen(),
+      ),
+      GoRoute(
+        path: '/profile/edit',
+        builder: (_, _) => const EditProfileScreen(),
+      ),
+      GoRoute(
+        path: '/profile/change-password',
+        builder: (_, _) => const ChangePasswordScreen(),
+      ),
+      GoRoute(
+        path: '/manager/finance-alerts',
+        builder: (_, _) => const FinanceAlertsScreen(),
+      ),
+      GoRoute(
+        path: '/finance/support-requests',
+        builder: (_, _) => const SupportRequestScreen(),
+      ),
       GoRoute(
         path: '/map',
         builder: (_, state) {
@@ -370,20 +544,34 @@ GoRouter createRouter(AuthProvider auth) {
       // Deputy (album_screen tự gate nút 🛡️ theo isAdministrative). Manager
       // vào qua tab shell /manager/album; Deputy/Member vào route phẳng này.
       GoRoute(path: '/album', builder: (_, _) => const AlbumScreen()),
-      GoRoute(path: '/manager/budget-plans', builder: (_, _) => const BudgetPlanScreen()),
+      GoRoute(
+        path: '/manager/budget-plans',
+        builder: (_, _) => const BudgetPlanScreen(),
+      ),
       GoRoute(
         path: '/manager/budget-plans/detail',
-        builder: (_, state) => BudgetPlanDetailScreen(planId: state.uri.queryParameters['planId'] ?? ''),
+        builder: (_, state) => BudgetPlanDetailScreen(
+          planId: state.uri.queryParameters['planId'] ?? '',
+        ),
       ),
-      GoRoute(path: '/manager/financial-goals', builder: (_, _) => const FinancialGoalScreen()),
-      GoRoute(path: '/manager/finance-reports', builder: (_, _) => const FinanceReportsScreen()),
+      GoRoute(
+        path: '/manager/financial-goals',
+        builder: (_, _) => const FinancialGoalScreen(),
+      ),
+      GoRoute(
+        path: '/manager/finance-reports',
+        builder: (_, _) => const FinanceReportsScreen(),
+      ),
       GoRoute(
         path: '/manager/goal-contribution',
-        builder: (_, state) => GoalContributionScreen(goalId: state.uri.queryParameters['goalId'] ?? ''),
+        builder: (_, state) => GoalContributionScreen(
+          goalId: state.uri.queryParameters['goalId'] ?? '',
+        ),
       ),
       GoRoute(
         path: '/manager/goal-detail',
-        builder: (_, state) => GoalDetailScreen(goalId: state.uri.queryParameters['goalId'] ?? ''),
+        builder: (_, state) =>
+            GoalDetailScreen(goalId: state.uri.queryParameters['goalId'] ?? ''),
       ),
       GoRoute(
         // Manager/Deputy xem tài chính tháng của member (memberId rỗng = của mình)
@@ -398,14 +586,25 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (_, state) => JoinFamilyScreen(
           // Link mời tạo bởi invite_member_screen dùng query param "token"
           // (không phải "code") — phải khớp tên ở cả 2 nơi.
-          initialCode: state.uri.queryParameters['token'] ?? state.uri.queryParameters['code'],
+          initialCode:
+              state.uri.queryParameters['token'] ??
+              state.uri.queryParameters['code'],
         ),
       ),
       // Deep link Stripe trả về sau checkout — BE đặt 2 URL này vào env:
       //   familycare://app/payment-success | familycare://app/payment-failed
-      GoRoute(path: '/payment-success', builder: (_, _) => const PaymentResultScreen(success: true)),
-      GoRoute(path: '/payment-failed',  builder: (_, _) => const PaymentResultScreen(success: false)),
-      GoRoute(path: '/forgot-password', builder: (_, _) => const ForgotPasswordScreen()),
+      GoRoute(
+        path: '/payment-success',
+        builder: (_, _) => const PaymentResultScreen(success: true),
+      ),
+      GoRoute(
+        path: '/payment-failed',
+        builder: (_, _) => const PaymentResultScreen(success: false),
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        builder: (_, _) => const ForgotPasswordScreen(),
+      ),
     ],
   );
 }

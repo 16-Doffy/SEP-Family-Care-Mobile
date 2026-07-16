@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
@@ -12,7 +13,9 @@ import '../../theme/app_colors.dart';
 // FamilySetupScreen (POST /families trả 403 nếu account chưa verify, xem
 // AuthProvider.createFamily / computeRedirect trong app_router.dart).
 class VerifyEmailScreen extends StatefulWidget {
-  const VerifyEmailScreen({super.key});
+  final String? returnTo;
+
+  const VerifyEmailScreen({super.key, this.returnTo});
 
   @override
   State<VerifyEmailScreen> createState() => _VerifyEmailScreenState();
@@ -20,7 +23,10 @@ class VerifyEmailScreen extends StatefulWidget {
 
 class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   static const _digitCount = 6;
-  final _controllers = List.generate(_digitCount, (_) => TextEditingController());
+  final _controllers = List.generate(
+    _digitCount,
+    (_) => TextEditingController(),
+  );
   final _focusNodes = List.generate(_digitCount, (_) => FocusNode());
 
   bool _verifying = false;
@@ -64,22 +70,45 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   Future<void> _verify() async {
     final code = _code;
     if (code.length != _digitCount || _verifying) return;
-    setState(() { _verifying = true; _error = null; });
+    setState(() {
+      _verifying = true;
+      _error = null;
+    });
     try {
       await context.read<AuthProvider>().verifyEmail(code);
-      if (mounted) context.go('/family-setup');
+      if (mounted) {
+        final target = widget.returnTo;
+        if (target != null && target.isNotEmpty && target != '/verify-email') {
+          context.go(target);
+        } else {
+          final auth = context.read<AuthProvider>();
+          if (auth.hasFamily) {
+            context.go(switch (auth.user?.role) {
+              UserRole.manager => '/manager/home',
+              UserRole.deputy => '/deputy/home',
+              _ => '/member/home',
+            });
+          } else {
+            context.go('/family-setup');
+          }
+        }
+      }
     } on ApiException catch (e) {
       if (mounted) {
-        setState(() => _error = e.statusCode == 400
-            ? 'Mã OTP không đúng hoặc đã hết hạn'
-            : e.message);
+        setState(
+          () => _error = e.statusCode == 400
+              ? 'Mã OTP không đúng hoặc đã hết hạn'
+              : e.message,
+        );
         for (final c in _controllers) {
           c.clear();
         }
         _focusNodes.first.requestFocus();
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _verifying = false);
     }
@@ -87,26 +116,35 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
   Future<void> _resend() async {
     if (_resending || _cooldown > 0) return;
-    setState(() { _resending = true; _error = null; });
+    setState(() {
+      _resending = true;
+      _error = null;
+    });
     final messenger = ScaffoldMessenger.of(context);
     try {
       await context.read<AuthProvider>().resendVerificationCode();
       if (mounted) {
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Đã gửi lại mã OTP tới email của bạn'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ));
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Đã gửi lại mã OTP tới email của bạn'),
+            backgroundColor: AppColors.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
         _startCooldown();
       }
     } on ApiException catch (e) {
       if (mounted) {
-        setState(() => _error = e.statusCode == 400
-            ? 'Vui lòng đợi trước khi gửi lại mã'
-            : e.message);
+        setState(
+          () => _error = e.statusCode == 400
+              ? 'Vui lòng đợi trước khi gửi lại mã'
+              : e.message,
+        );
       }
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _resending = false);
     }
@@ -116,7 +154,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     setState(() => _cooldown = 60);
     _cooldownTimer?.cancel();
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) { timer.cancel(); return; }
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
       setState(() => _cooldown--);
       if (_cooldown <= 0) timer.cancel();
     });
@@ -135,34 +176,51 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
               const SizedBox(height: 24),
               const Text('📧', style: TextStyle(fontSize: 64)),
               const SizedBox(height: 20),
-              Text('Xác thực email',
-                  style: GoogleFonts.inter(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary)),
+              Text(
+                'Xác thực email',
+                style: GoogleFonts.inter(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
                 email.isEmpty
                     ? 'Nhập mã OTP 6 số vừa được gửi tới email của bạn'
                     : 'Nhập mã OTP 6 số vừa được gửi tới\n$email',
-                style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted, height: 1.5),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: AppColors.textMuted,
+                  height: 1.5,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 40),
 
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(_digitCount, (i) => Padding(
-                  padding: EdgeInsets.only(right: i < _digitCount - 1 ? 10 : 0),
-                  child: _digitBox(i),
-                )),
+                children: List.generate(
+                  _digitCount,
+                  (i) => Padding(
+                    padding: EdgeInsets.only(
+                      right: i < _digitCount - 1 ? 10 : 0,
+                    ),
+                    child: _digitBox(i),
+                  ),
+                ),
               ),
 
               if (_error != null) ...[
                 const SizedBox(height: 16),
-                Text(_error!,
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger),
-                    textAlign: TextAlign.center),
+                Text(
+                  _error!,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.danger,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ],
 
               const SizedBox(height: 32),
@@ -173,17 +231,30 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.link,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     elevation: 0,
                   ),
-                  onPressed: (_verifying || _code.length != _digitCount) ? null : _verify,
+                  onPressed: (_verifying || _code.length != _digitCount)
+                      ? null
+                      : _verify,
                   child: _verifying
                       ? const SizedBox.square(
                           dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text('Xác thực',
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          'Xác thực',
                           style: GoogleFonts.inter(
-                              fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -193,13 +264,19 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 child: _resending
                     ? const SizedBox.square(
                         dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2))
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : Text(
-                        _cooldown > 0 ? 'Gửi lại mã sau ${_cooldown}s' : 'Gửi lại mã OTP',
+                        _cooldown > 0
+                            ? 'Gửi lại mã sau ${_cooldown}s'
+                            : 'Gửi lại mã OTP',
                         style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: _cooldown > 0 ? AppColors.textMuted : AppColors.link),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _cooldown > 0
+                              ? AppColors.textMuted
+                              : AppColors.link,
+                        ),
                       ),
               ),
 
@@ -209,8 +286,13 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                   await context.read<AuthProvider>().logout();
                   if (mounted) context.go('/login');
                 },
-                child: Text('Đăng xuất',
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
+                child: Text(
+                  'Đăng xuất',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
+                ),
               ),
             ],
           ),
@@ -240,7 +322,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
           maxLength: 1,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           style: GoogleFonts.inter(
-              fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
           decoration: InputDecoration(
             counterText: '',
             filled: true,
@@ -248,12 +333,17 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
             contentPadding: EdgeInsets.zero,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB), width: 1.5),
+              borderSide: const BorderSide(
+                color: Color(0xFFE5E7EB),
+                width: 1.5,
+              ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide(
-                color: _error != null ? AppColors.danger : const Color(0xFFE5E7EB),
+                color: _error != null
+                    ? AppColors.danger
+                    : const Color(0xFFE5E7EB),
                 width: 1.5,
               ),
             ),
@@ -263,8 +353,10 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
             ),
           ),
           onChanged: (v) => _onDigitChanged(index, v),
-          onTap: () => _controllers[index].selection =
-              TextSelection.fromPosition(TextPosition(offset: _controllers[index].text.length)),
+          onTap: () =>
+              _controllers[index].selection = TextSelection.fromPosition(
+                TextPosition(offset: _controllers[index].text.length),
+              ),
         ),
       ),
     );

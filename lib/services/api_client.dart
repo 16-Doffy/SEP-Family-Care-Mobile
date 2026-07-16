@@ -35,6 +35,7 @@ class ApiClient {
 
   void Function(String newAccess, String newRefresh)? onTokenRotated;
   void Function()? onSessionExpired;
+  void Function(String message)? onVerificationRequired;
 
   void setToken(String? token) => _token = token;
   void setRefreshToken(String? token) => _refreshToken = token;
@@ -50,6 +51,7 @@ class ApiClient {
     _familyId = null;
     onTokenRotated = null;
     onSessionExpired = null;
+    onVerificationRequired = null;
   }
 
   String familyPath(String subPath) {
@@ -219,10 +221,11 @@ class ApiClient {
                 ? (body['message'] as List).join(', ')
                 : body['message']?.toString() ?? body['error']?.toString())
           : null;
-      throw ApiException(
-        response.statusCode,
-        msg ?? 'Request failed (${response.statusCode})',
-      );
+      final message = msg ?? 'Request failed (${response.statusCode})';
+      if (response.statusCode == 403 && _isVerificationRequired(message)) {
+        onVerificationRequired?.call(message);
+      }
+      throw ApiException(response.statusCode, message);
     }
 
     // Unwrap { success, data }
@@ -232,6 +235,15 @@ class ApiClient {
       return body['data'];
     }
     return body;
+  }
+
+  bool _isVerificationRequired(String message) {
+    final normalized = message.toLowerCase();
+    return normalized.contains('verify') ||
+        normalized.contains('verified') ||
+        normalized.contains('verification') ||
+        normalized.contains('xác thực') ||
+        normalized.contains('xac thuc');
   }
 
   // Bọc jsonDecode để tránh FormatException thô lọt ra UI khi server/proxy
