@@ -1001,19 +1001,378 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     }
   }
 
+  // ── Parse phòng thủ (response schema chi tiết KHÔNG được Swagger document —
+  //    [VERIFY] với Nghĩa; đọc nhiều key fallback để không vỡ khi field đổi tên).
+
+  static String? _memberName(dynamic m) {
+    if (m is! Map) return null;
+    final d = m['displayName']?.toString();
+    if (d != null && d.isNotEmpty) return d;
+    final u = m['user'];
+    if (u is Map) {
+      final f = u['fullName']?.toString();
+      if (f != null && f.isNotEmpty) return f;
+    }
+    final flat = m['fullName']?.toString();
+    if (flat != null && flat.isNotEmpty) return flat;
+    return null;
+  }
+
+  static double? _d(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
+
+  static String _fmtTime(String iso) {
+    final d = DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return iso;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)} ${two(d.hour)}:${two(d.minute)}';
+  }
+
+  List<Map> _responses(Map<String, dynamic> d) {
+    for (final key in ['responses', 'sosResponses', 'alertResponses']) {
+      final v = d[key];
+      if (v is List) return v.whereType<Map>().toList();
+    }
+    return const [];
+  }
+
+  ({double lat, double lng})? _location(Map<String, dynamic> d) {
+    // Ưu tiên điểm vị trí mới nhất trong mảng locations, fallback toạ độ alert.
+    for (final key in ['locations', 'sosLocations']) {
+      final v = d[key];
+      if (v is List && v.isNotEmpty) {
+        final last = v.whereType<Map>().toList();
+        if (last.isNotEmpty) {
+          final lat = _d(last.last['latitude']);
+          final lng = _d(last.last['longitude']);
+          if (lat != null && lng != null) return (lat: lat, lng: lng);
+        }
+      }
+    }
+    final lat = _d(d['latitude'] ?? d['initialLatitude']);
+    final lng = _d(d['longitude'] ?? d['initialLongitude']);
+    if (lat != null && lng != null) return (lat: lat, lng: lng);
+    return null;
+  }
+
+  // Ánh xạ loại phản hồi → (emoji, màu nền node, nhãn hiển thị). Phân biệt
+  // "Đang đến" (VIEWED + message chứa "đang đến") với "Đã xem" như bản v0.
+  ({String emoji, Color color, String label}) _nodeStyle(String type, String message) {
+    final t = type.toUpperCase();
+    final onWay = message.toLowerCase().contains('đang đến');
+    switch (t) {
+      case 'VIEWED':
+        return onWay
+            ? (emoji: '🚗', color: AppColors.safe, label: 'Đang đến')
+            : (emoji: '👀', color: AppColors.avatarBlue, label: 'Đã xem');
+      case 'NEED_HELP':
+        return (emoji: '🆘', color: AppColors.sos, label: 'Cần trợ giúp');
+      case 'CONFIRM_SAFE':
+        return (emoji: '✅', color: AppColors.safe, label: 'Đã an toàn');
+      case 'RESOLVED':
+        return (emoji: '✔', color: AppColors.safe, label: 'Đã xử lý');
+      case 'CANCELED':
+        return (emoji: '✖', color: AppColors.textMuted, label: 'Đã hủy');
+      default:
+        return (emoji: '•', color: AppColors.textSecondary, label: type.isEmpty ? 'Phản hồi' : type);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('🔍 Chi tiết cảnh báo SOS', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-        const SizedBox(height: 16),
+    final maxH = MediaQuery.of(context).size.height * 0.9;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxH),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Grabber
+        Container(
+          margin: const EdgeInsets.only(top: 10, bottom: 6),
+          width: 40, height: 4,
+          decoration: BoxDecoration(
+              color: AppColors.progressTrack,
+              borderRadius: BorderRadius.circular(999)),
+        ),
         if (_loading)
-          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+          const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())
         else if (_error != null)
-          Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(_error!, style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger)),
+          )
         else
-          JsonReportView(data: _detail ?? {}),
+          Flexible(child: SingleChildScrollView(child: _content(_detail ?? {}))),
+      ]),
+    );
+  }
+
+  Widget _content(Map<String, dynamic> d) {
+    final sender = _memberName(d['triggeredByMember']) ??
+        _memberName(d['sender']) ??
+        _memberName(d['triggeredBy']) ??
+        d['senderName']?.toString() ??
+        'Thành viên';
+    final status = (d['status']?.toString() ?? 'ACTIVE').toUpperCase();
+    final createdAt = d['triggeredAt']?.toString() ?? d['createdAt']?.toString() ?? '';
+    final message = d['message']?.toString() ?? '';
+    final address = d['address']?.toString() ?? '';
+    final loc = _location(d);
+    final responses = _responses(d);
+    final resolvedBy = _memberName(d['resolvedByMember']);
+    final resolutionNote = d['resolutionNote']?.toString();
+
+    final isActive = status == 'ACTIVE';
+    final statusColor = isActive
+        ? AppColors.sos
+        : (status == 'RESOLVED' ? AppColors.safe : AppColors.textMuted);
+    final statusLabel = isActive
+        ? 'ĐANG KHẨN CẤP'
+        : (status == 'RESOLVED' ? 'ĐÃ XỬ LÝ' : (status == 'CANCELED' ? 'ĐÃ HỦY' : status));
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // ── Header đỏ gradient (v0 style) ──────────────────────────────────
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+          ),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(6)),
+              child: Text(statusLabel,
+                  style: GoogleFonts.inter(
+                      fontSize: 10, fontWeight: FontWeight.w800,
+                      color: Colors.white, letterSpacing: 0.5)),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => Navigator.of(context).maybePop(),
+              child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle),
+              alignment: Alignment.center,
+              child: const Text('🚨', style: TextStyle(fontSize: 24)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('SOS từ $sender',
+                    style: GoogleFonts.inter(
+                        fontSize: 19, fontWeight: FontWeight.w800, color: Colors.white)),
+                if (createdAt.isNotEmpty)
+                  Text('Lúc ${_fmtTime(createdAt)}',
+                      style: GoogleFonts.inter(
+                          fontSize: 12, color: Colors.white.withValues(alpha: 0.9))),
+              ]),
+            ),
+          ]),
+        ]),
+      ),
+
+      Padding(
+        padding: EdgeInsets.fromLTRB(20, 18, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (message.isNotEmpty) ...[
+            Text(message, style: GoogleFonts.inter(fontSize: 14, color: AppColors.textPrimary)),
+            const SizedBox(height: 16),
+          ],
+
+          // ── Vị trí ────────────────────────────────────────────────────
+          if (address.isNotEmpty || loc != null) ...[
+            Text('Vị trí',
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.progressTrack)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (address.isNotEmpty)
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.location_on_rounded, size: 18, color: AppColors.avatarBlue),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(address,
+                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary))),
+                  ]),
+                if (loc != null) ...[
+                  if (address.isNotEmpty) const SizedBox(height: 8),
+                  Text('Tọa độ: ${loc.lat.toStringAsFixed(4)}, ${loc.lng.toStringAsFixed(4)}',
+                      style: GoogleFonts.inter(
+                          fontSize: 11, color: AppColors.textMuted,
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: SizedBox(
+                      height: 140,
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: LatLng(loc.lat, loc.lng),
+                          initialZoom: 15,
+                          interactionOptions:
+                              const InteractionOptions(flags: InteractiveFlag.none),
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.familycare.app',
+                          ),
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: LatLng(loc.lat, loc.lng),
+                              width: 40, height: 40,
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                    shape: BoxShape.circle, color: AppColors.sos,
+                                    boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)]),
+                                child: const Center(child: Text('🚨', style: TextStyle(fontSize: 18))),
+                              ),
+                            ),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ]),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // ── Response Timeline (điểm chính lấy từ v0) ───────────────────
+          Text('Diễn biến phản hồi',
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          const SizedBox(height: 12),
+          _timelineNode(
+            emoji: '🚨', color: AppColors.sos,
+            title: 'SOS được gửi', subtitle: sender,
+            time: createdAt.isNotEmpty ? _fmtTime(createdAt) : null,
+            isLast: responses.isEmpty && status == 'ACTIVE',
+          ),
+          for (int i = 0; i < responses.length; i++)
+            _responseNode(responses[i], isLast: i == responses.length - 1 && status == 'ACTIVE'),
+          if (status == 'RESOLVED' || status == 'CANCELED')
+            _timelineNode(
+              emoji: status == 'RESOLVED' ? '✔' : '✖',
+              color: status == 'RESOLVED' ? AppColors.safe : AppColors.textMuted,
+              title: status == 'RESOLVED' ? 'Đã xử lý' : 'Đã hủy',
+              subtitle: [resolvedBy, resolutionNote].where((e) => (e ?? '').isNotEmpty).join(' · '),
+              time: null, isLast: true,
+            ),
+          if (responses.isEmpty && status == 'ACTIVE') ...[
+            const SizedBox(height: 4),
+            Text('Chưa có phản hồi nào',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, fontStyle: FontStyle.italic)),
+          ],
+
+          const SizedBox(height: 20),
+          // Status badge chip
+          Row(children: [
+            Container(width: 8, height: 8,
+                decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+            const SizedBox(width: 8),
+            Text('Trạng thái: $statusLabel',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: statusColor)),
+          ]),
+
+          // ── Dữ liệu kỹ thuật (giữ JsonReportView làm fallback [VERIFY]) ──
+          const SizedBox(height: 8),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(top: 4, bottom: 8),
+              title: Text('Dữ liệu kỹ thuật (schema [VERIFY])',
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+              children: [JsonReportView(data: d)],
+            ),
+          ),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _responseNode(Map r, {required bool isLast}) {
+    final type = (r['responseType'] ?? r['type'] ?? '').toString();
+    final msg = (r['message'] ?? '').toString();
+    final time = (r['respondedAt'] ?? r['createdAt'] ?? r['timestamp'] ?? '').toString();
+    final who = _memberName(r['respondedByMember']) ??
+        _memberName(r['member']) ??
+        _memberName(r['respondedBy']) ??
+        _memberName(r['user']) ??
+        r['memberName']?.toString() ??
+        'Thành viên';
+    final s = _nodeStyle(type, msg);
+    final subtitle = msg.isNotEmpty ? '$who · $msg' : who;
+    return _timelineNode(
+      emoji: s.emoji, color: s.color,
+      title: s.label, subtitle: subtitle,
+      time: time.isNotEmpty ? _fmtTime(time) : null,
+      isLast: isLast,
+    );
+  }
+
+  Widget _timelineNode({
+    required String emoji,
+    required Color color,
+    required String title,
+    String? subtitle,
+    String? time,
+    required bool isLast,
+  }) {
+    return IntrinsicHeight(
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Column(children: [
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: Text(emoji, style: const TextStyle(fontSize: 16)),
+          ),
+          if (!isLast)
+            Expanded(child: Container(width: 2, color: AppColors.progressTrack)),
+        ]),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(top: 4, bottom: isLast ? 0 : 16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              if (subtitle != null && subtitle.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Text(subtitle,
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+                ),
+              if (time != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Text(time,
+                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
+                ),
+            ]),
+          ),
+        ),
       ]),
     );
   }

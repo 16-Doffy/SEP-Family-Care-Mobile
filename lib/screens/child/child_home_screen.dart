@@ -8,10 +8,14 @@ import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/family_status_card.dart';
 import '../../widgets/ring_chart.dart';
 
 const _barData    = [40, 80, 60, 100, 75, 50, 90]; // placeholder weekly XP
 const _dayLabels  = ['T2','T3','T4','T5','T6','T7','CN'];
+
+// Nhãn badge chuông: quá 99 thì rút gọn để không phá layout.
+String _unreadLabel(int n) => n > 99 ? '99+' : '$n';
 
 class ChildHomeScreen extends StatefulWidget {
   const ChildHomeScreen({super.key});
@@ -159,14 +163,28 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                 style: TextStyle(fontSize: 20))),
                         if (context.watch<NotificationProvider>().unreadCount > 0)
                           Positioned(
-                              top: 6,
-                              right: 6,
+                              top: 2,
+                              right: 2,
                               child: Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: AppColors.danger))),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  constraints: const BoxConstraints(
+                                      minWidth: 16, minHeight: 16),
+                                  decoration: BoxDecoration(
+                                      color: AppColors.danger,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                          color: Colors.white, width: 1.5)),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                      _unreadLabel(context
+                                          .watch<NotificationProvider>()
+                                          .unreadCount),
+                                      style: GoogleFonts.inter(
+                                          fontSize: 9,
+                                          height: 1,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white)))),
                       ]),
                     ),
                   ],
@@ -237,6 +255,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ]),
                 ),
               ]),
+            ),
+
+            // ── Trạng thái gia đình (ai đang SOS) ────────────────────
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
+              child: FamilyStatusCard(),
             ),
 
             // ── XP Ring + balance ────────────────────────────────────

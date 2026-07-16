@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Internet permission -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Camera: quét QR lời mời (mobile_scanner) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
         android:label="family_care"

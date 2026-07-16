@@ -19,12 +19,17 @@ class LocationShare {
   factory LocationShare.fromJson(Map<String, dynamic> json) {
     final user =
         json['user'] is Map ? json['user'] as Map<String, dynamic> : <String, dynamic>{};
+    final displayName = json['displayName']?.toString() ??
+        json['fullName']?.toString() ??
+        user['displayName']?.toString() ??
+        user['fullName']?.toString() ??
+        'Thành viên';
     return LocationShare(
-      userId: user['id']?.toString() ?? '',
-      displayName: user['displayName']?.toString() ?? 'Thành viên',
-      latitude: _parseDouble(json['latitude']),
-      longitude: _parseDouble(json['longitude']),
-      updatedAt: json['updatedAt']?.toString(),
+      userId: json['userId']?.toString() ?? user['id']?.toString() ?? '',
+      displayName: displayName,
+      latitude: _parseDouble(json['latitude'] ?? json['lat']),
+      longitude: _parseDouble(json['longitude'] ?? json['lng']),
+      updatedAt: json['updatedAt']?.toString() ?? json['recordedAt']?.toString(),
     );
   }
 
@@ -39,27 +44,49 @@ class GpsProvider extends ChangeNotifier {
   bool _loading = false;
   bool _busy = false;
   String? _error;
+  bool _sharingUnavailable = false;
 
   List<LocationShare> get shares => _shares;
   bool get loading => _loading;
   bool get busy => _busy;
   String? get error => _error;
+  // true khi BE chưa triển khai /location/* (404) — dùng để UI hiện "đang phát
+  // triển" thay vì phơi raw "Cannot GET /api/v1/location/family".
+  bool get sharingUnavailable => _sharingUnavailable;
 
   Future<void> fetchFamilyLocations() async {
     _loading = true;
     _error = null;
+    _sharingUnavailable = false;
     notifyListeners();
     try {
       final data = await ApiClient.instance.get('/location/family');
-      final list = data is Map && data['shares'] is List
-          ? data['shares'] as List
-          : <dynamic>[];
+      final list = data is List
+          ? data
+          : data is Map && data['shares'] is List
+              ? data['shares'] as List
+              : data is Map && data['items'] is List
+                  ? data['items'] as List
+                  : data is Map && data['locations'] is List
+                      ? data['locations'] as List
+                      : <dynamic>[];
       _shares = list
           .whereType<Map>()
           .map((e) => LocationShare.fromJson(Map<String, dynamic>.from(e)))
           .toList();
     } catch (e) {
-      _error = e.toString();
+      // /location/family chưa được BE triển khai → 404 "Cannot GET ...". Đây
+      // KHÔNG phải lỗi thật, chỉ là tính năng chia sẻ vị trí chưa sẵn sàng —
+      // đặt cờ để UI hiện "đang phát triển", không phơi thông báo kỹ thuật.
+      final msg = e.toString();
+      if (msg.contains('Cannot GET') ||
+          msg.contains('404') ||
+          msg.toLowerCase().contains('not found')) {
+        _sharingUnavailable = true;
+        _error = null;
+      } else {
+        _error = 'Không tải được vị trí gia đình';
+      }
     } finally {
       _loading = false;
       notifyListeners();

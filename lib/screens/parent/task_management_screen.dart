@@ -572,7 +572,14 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   // ── Assign to member ──────────────────────────────────────────────────────
 
   void _showAssignSheet(BuildContext context, FamilyTask task) {
-    final members = context.read<FamilyProvider>().members;
+    // Chỉ member ACTIVE — tránh gán nhầm thành viên đã REMOVED (BE /families/my
+    // từng lẫn REMOVED) → khỏi bị "thành viên không hợp lệ". Nhất quán với
+    // picker định kỳ (_GenerateAssignments) vốn đã lọc isActive.
+    final members = context
+        .read<FamilyProvider>()
+        .members
+        .where((m) => m.isActive)
+        .toList();
     String? selectedId;
     bool submitting = false;
     String? sheetError;
@@ -633,8 +640,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   // ── Reassign (member báo bận) ─────────────────────────────────────────────
 
   void _showReassignSheet(BuildContext context, TaskAssignment a) {
-    // a.assignedToMemberId là familyMember.id — lọc đúng theo m.id
-    final members = context.read<FamilyProvider>().members.where((m) => m.id != a.assignedToMemberId).toList();
+    // a.assignedToMemberId là familyMember.id — lọc đúng theo m.id, và chỉ
+    // member ACTIVE (khỏi reassign nhầm sang thành viên đã REMOVED).
+    final members = context.read<FamilyProvider>().members
+        .where((m) => m.isActive && m.id != a.assignedToMemberId).toList();
     String? selectedId;
     bool submitting = false;
     String? sheetError;
