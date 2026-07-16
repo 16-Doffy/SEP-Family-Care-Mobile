@@ -5,6 +5,11 @@
 
 ---
 
+> ## ✅ ĐÃ THỰC HIỆN (cập nhật 2026-07-16)
+> Kế hoạch §5 đã chạy xong: **FF `giap` → `93612a9`** (backup `giap-backup-before-ff-20260715`), tái hoà WIP theo A/B/C — giữ poll/badge/manifest, ghép Album+badge ở `child_home`, **làm lại QR trên mã 8 ký tự** cho invite/join. Thêm map fix + SOS timeline + Home status. Hiện **9 commit local trên `giap`, chưa push**. `flutter test` 55/55 pass. Doc này giữ làm lịch sử phân tích trước-merge.
+
+---
+
 ## 0. TL;DR (đọc nhanh)
 
 | Chỉ số | Giá trị |

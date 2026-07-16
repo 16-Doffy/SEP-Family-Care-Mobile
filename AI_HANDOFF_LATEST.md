@@ -1,12 +1,28 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-07-11** (sau fast-forward lên origin/main + kéo Chat module)
-Branch: `giap` — đã **fast-forward = `origin/main` (`6621248`)**; team đã tích hợp fix của giap vào main.
-Latest commit: `6621248 feat: gán ĐỦ 18 endpoints chat — nhóm/1-1, ảnh, reaction, ghim, sửa/thu hồi`
-Backend Swagger (live): `https://api.familycare-digital.com/api/docs` · 147 paths / 188 ops (verify 07/11) **+ module Chat 18 endpoint BE ship sau đó**
+Last updated: **2026-07-16** (sau FF lên origin/main `93612a9` + tái hoà WIP: invite-code QR, poll thông báo, SOS timeline, Family Map)
+Branch: `giap` — đã **fast-forward tới `origin/main` (`93612a9`)** rồi chồng **9 commit local** (chưa push).
+Latest commit local: `416a192 fix(map): ẩn raw 'Cannot GET /location/family' (404) → note 'đang phát triển'`
+Backend Swagger (live): `https://api.familycare-digital.com/api/docs` · **183 paths** (verify 07/15) — đã có invite-code + join-request + admin + album
 API base in app: `https://api.familycare-digital.com/api/v1` (default trong `api_client.dart`, override qua `--dart-define`)
 
 > ⚠️ IP cũ `103.110.84.66` đã BỎ hẳn — mọi tài liệu nhắc IP này đều lỗi thời.
+
+---
+
+## 🆕 Cập nhật 2026-07-16 (phiên hiện tại)
+
+Sau khi FF `giap` lên `origin/main` (`93612a9`), đã tái hoà WIP + thêm cải tiến — **9 commit local, chưa push**:
+
+- **Invite chuyển hẳn sang MÃ MỜI 8 KÝ TỰ** (main `3c5f9cb` bỏ luồng `/invitations/{token}` cũ). FE thêm **QR thật + scanner** (`qr_flutter`, `mobile_scanner`): màn Mời hiện mã + QR encode `familycare://app/join?code=`; màn Tham gia có nút "Quét mã QR" → tự điền mã → `previewInviteCode` → `requestJoinByCode`. Quyền camera đã thêm AndroidManifest.
+- **Thông báo real-time (tạm, không cần BE)**: `FamilyShell` poll toàn cục **15s** (`fetchAlerts` + `fetchNotifications`), dừng khi app nền, fetch lại khi resume. **Badge số** chưa đọc trên chuông 2 home. (BE chưa có FCM/WebSocket.)
+- **SOS Response Timeline**: màn chi tiết cảnh báo (icon ℹ️) dựng timeline phản hồi từ `fetchAlertDetail().responses` — header đỏ, vị trí + mini-map, node 🚨→👀/🚗/🆘/✅→✔/✖. Parse phòng thủ (schema `responses[]` chưa document).
+- **Home "Trạng thái gia đình"**: `widgets/family_status_card.dart` từ `activeAlerts` (an toàn / ai đang SOS). Bản rút gọn — chưa gắn vị trí (chờ BE location).
+- **Family Map**: parse vị trí phòng thủ; **fix code chết `_pins`** trong `_locateMe`; **che raw "Cannot GET /location/family"** bằng note "🚧 đang phát triển" (cờ `sharingUnavailable`); khôi phục ±accuracy pin Tôi.
+- **Task**: lọc `isActive` ở picker giao việc & reassign (tránh gán nhầm member REMOVED).
+- **BE đã fix (team xác nhận 07/16)**: góp mục tiêu bỏ `ledgerEntryId`, gán task theo `FamilyMember.id` + bỏ chặn role, proof URL tự sinh lại. FE vốn đã tương thích → không phải sửa thêm (trừ lọc isActive).
+- **Báo cáo BE mới**: `BAO_CAO_BE_SOS_2026-07-16.md` — 3 EP location sharing (`GET /location/family`, `POST /location/update`, `PATCH /location/toggle`) + 3 điểm SOS-detail (schema `responses[]`, enum `ON_THE_WAY`, phone thành viên).
+- **Model/Build**: `userType` (SYSTEM_ADMIN) tách khỏi `familyRole` (main `fc59c69`); `planCode` đổi **FREE|MONTHLY|YEARLY**; hạ AGP 9.0.1→8.11.1 + giảm gradle heap. Verify: **55/55 test pass**, analyze 0 error.
 
 ---
 
@@ -63,9 +79,14 @@ Login / register / logout / refresh / me — wired. Token qua `flutter_secure_st
 ### Role & Route
 `familyRole` từ `/auth/me`: `FAMILY_MANAGER`→manager, `DEPUTY_MEMBER`→deputy, `FAMILY_MEMBER`→member. Capabilities trong `AppUser` — **hành động nhạy cảm KHÔNG dùng `isAdministrative` chung** mà tách riêng (`canInviteMembers`/`canRemoveMembers`/`canManageSubscription` chỉ Manager, đã verify BE trả 403 cho Deputy). Router guard chặn cross-shell.
 
-### Family & Invitation (flow claim → approve)
-GET/PATCH `/families/{id}` (đổi tên gia đình), DELETE member (soft-delete, lọc `status==ACTIVE`), POST invite, GET `/invitations/{token}` lookup, POST `/claim`, `/reject` (invitee tự chối), approve/reject (Manager). `InvitationRequestsScreen` cho Manager duyệt.
-- 🐛 Race-condition đã sửa: dialog "Đã gửi yêu cầu" refetch `refreshFamilyContext()` trước khi điều hướng (Manager có thể duyệt ngay lúc member còn ở dialog).
+### Family & Invitation — **MÃ MỜI 8 KÝ TỰ (main `3c5f9cb`, thay luồng token cũ)**
+GET/PATCH `/families/{id}` (đổi tên), DELETE member (soft-delete, lọc `status==ACTIVE`). **Luồng mời mới kiểu Zalo/Discord** (`invitation_provider.dart` viết lại):
+- Manager: `GET /families/{id}/invite-code` (mã hiện tại) · `POST .../invite-code/regenerate` (tạo/đổi mã, mã cũ vô hiệu ngay).
+- Người xin vào: `GET /invite-codes/{code}` (preview, public) · `POST /invite-codes/{code}/join-requests` (gửi yêu cầu, chỉ cần đăng nhập, KHÔNG cần verify email) · `GET /me/join-requests` (poll trạng thái) · `POST /me/join-requests/{id}/cancel`.
+- Manager duyệt: `GET /families/{id}/join-requests` · `POST .../{id}/approve` (chọn role+quan hệ) · `POST .../{id}/reject`. `InvitationRequestsScreen` (fetch 1 lần + refresh tay, chưa poll).
+- Mã 8 ký tự alphabet `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (bỏ I/O/0/1). **FE thêm QR + scanner** (xem changelog 07/16). `savePendingInviteToken` giữ tên cũ nhưng giá trị nay là **mã** (không phải token).
+- 🐛 Race-condition đã sửa: dialog "Đã gửi yêu cầu" refetch `refreshFamilyContext()` trước điều hướng (Manager có thể duyệt ngay lúc member còn ở dialog).
+- ⚠️ **Chưa realtime** cho join-request (module notifications còn stub) → Manager phải bấm refresh; Member poll `/me/join-requests` ~12s khi mở "Yêu cầu của tôi".
 
 ### Finance (module sâu nhất — 42/42 endpoint mobile đã nối)
 Overview · ledger · jars/models · categories · budget-plans (+lines +report +detail edit) · financial-goals (+detail +progress +allocations sửa/xóa) · **goal contribution plans** (suggestions/confirm/submit/approve/reject/shortage — `GoalContributionScreen`) · alerts (+detail +recompute) · monthly-finances/me · reports (planned-vs-actual, `FinanceReportsScreen`) · support-requests (+detail). Response schema chưa document → render qua `JsonReportView` generic.
@@ -94,19 +115,21 @@ Giáp wire 13 EP (`album_provider.dart` + `album_screen.dart` viết lại: uplo
 GET list · PATCH read · read-all. Tap routing theo `referenceType`. Field id thật là `notificationId`.
 
 ### Subscription
-GET current · GET `/subscription-plans` · POST `/checkout {planCode}`. `planCode` chuẩn **`FREE | PLUS | PREMIUM`** (annual-only, bỏ hardcode `FAMILY`). Nút Nâng cấp → checkout → `url_launcher` mở Stripe.
+GET current · GET `/subscription-plans` · POST `/checkout {planCode}`. `planCode` chuẩn **`FREE | MONTHLY | YEARLY`** (main `359d12b` — đổi từ FREE|PLUS|PREMIUM). Nút Nâng cấp → checkout → `url_launcher` mở Stripe.
 - ✅ **UX hạ gói (2026-07-13)**: CTA đổi thành "Hạ xuống {tên}" khi gói rẻ hơn gói đang dùng (so sánh `priceValue`) + dialog xác nhận trước checkout.
+- ✅ **Hết nháy FREE (main `627b2c4`)**: `_currentPlan` nullable = đang tải → hiện spinner, khoá checkout khi chưa biết gói (trước bị nháy FREE 2–3s).
 - ⚠️ `[VERIFY]` response `/checkout` **vẫn trống schema** trong Swagger — FE hiện chỉ đọc `data['checkoutUrl']` (chưa fallback `url`/`sessionId`). Hỏi Nghĩa field thật + luồng chọn FREE (downgrade?).
 
 ---
 
 ## Backend Gaps — KHÔNG fake call
 
-Swagger live vẫn **0 endpoint** cho (Chat đã CÓ — xem mục Chat ở trên):
-- **Album / photo**, **AI assistant**, **Calendar events** (`/events`), **FCM token** push
-- **Location sharing độc lập** ngoài SOS (chỉ có toạ độ trong ngữ cảnh 1 alert)
+Swagger live vẫn **0 endpoint** cho (Chat & Album nay đã CÓ — xem các mục trên):
+- **AI assistant**, **Calendar events** (`/events`), **FCM token** push (→ đang poll tạm ở `FamilyShell`)
+- **Location sharing độc lập** ngoài SOS (chỉ có toạ độ trong ngữ cảnh 1 alert) → **đã có báo cáo chính thức `BAO_CAO_BE_SOS_2026-07-16.md`**; FE che raw 404 bằng note "đang phát triển".
 - **PATCH /auth/me** (sửa profile), **role management user-facing** (UC18)
 - **Wearable pairing / SOS device settings**
+- ⚠️ **SOS alert detail** thiếu document `responses[]` + enum "đang đến" + phone thành viên (3 câu trong báo cáo trên).
 
 25 endpoint `/admin/*` mới (audit-logs, backups, docker infra, revenue, provisioning...) thuộc **Admin Web**, ngoài phạm vi FE Mobile.
 
@@ -119,20 +142,22 @@ Swagger live vẫn **0 endpoint** cho (Chat đã CÓ — xem mục Chat ở trê
 
 ---
 
-## Verification (2026-07-11)
+## Verification (2026-07-16)
 
-`flutter test` → **51/51 pass** · `flutter analyze lib test` → **0 error, 0 warning** (7 info-lint pre-existing).
-Test phủ: router redirect (verify mandatory), auth/role capabilities, register error mapping, SOS provider parse/guard. **Chưa có** integration test cho các luồng API mới (subscription/SOS-new/forgot-password) — cần chạy app thật đối chiếu BE.
+`flutter test` → **55/55 pass** · `flutter analyze lib` → **0 error** (11 info-lint pre-existing/từ main). Build APK debug OK (Gradle 9.1.0 / AGP 8.11.1 / Kotlin 2.3.20).
+Test phủ: router redirect (verify mandatory), auth/role capabilities (+2 test mới từ main), register error mapping, SOS provider parse/guard. **Chưa verify runtime** (cần device): SOS Timeline khi có `responses[]` thật; badge/poll thông báo; quét QR mã mời.
+- ⚠️ Windows build: cần **bật Developer Mode** (symlink cho plugin); nếu build lỗi lạ (BuildConfig exists / Dart compiler exited) → `flutter clean` (kill dart/java nếu `.dart_tool` bị khoá).
 
 ---
 
 ## Nhánh & Git
 
-`giap` đã **fast-forward = `origin/main` (`6621248`)** — team đã tích hợp fix của giap (verify-email + 2 bug auth) vào main rồi. Giờ giap chứa: toàn bộ main + Chat module + 2 SOS fix. **Chưa push** (origin/giap còn ở `785efc5`). Backup: `giap-backup-before-ff-20260711` (@785efc5), `giap-backup-20260710`. Thêm `.gitattributes` (LF) chống nhiễu CRLF — ⚠️ config ảnh hưởng cả team, nên PR bàn team.
+`giap` đã **FF tới `origin/main` (`93612a9`)** rồi chồng **9 commit local** (invite QR-code, poll+badge, map fix, SOS timeline, Home status, task isActive, map 404, build-config, docs). **Chưa push** (origin/giap còn ở `cb050e9`). Backup: `giap-backup-before-ff-20260715` (@cb050e9), `giap-backup-before-ff-20260711`, `giap-backup-20260710`.
 
 ## Next Suggested Work
 
-1. `[VERIFY]` 2 câu với Nghĩa (checkout field, chat WS).
-2. Harden checkout: `data['checkoutUrl'] ?? data['url'] ?? data['sessionId']`.
-3. Nối `pushLocationBatch` vào luồng buffer offline (provider sẵn, thiếu UI trigger).
-4. Test thủ công trên device: verify-email, create family, claim/approve, checkout, SOS, forgot-password.
+1. **Push `giap`** lên origin (9 commit) khi sẵn sàng.
+2. Gửi `BAO_CAO_BE_SOS_2026-07-16.md` cho Nghĩa (location sharing + 3 điểm SOS-detail) + hỏi fix task định kỳ (`generate-assignments`) có bỏ chặn role chưa.
+3. **Verify runtime trên device**: quét QR mã mời (2 máy), badge/poll thông báo, SOS Timeline với alert có phản hồi thật, block "Trạng thái gia đình".
+4. Khi BE ship location: đổi path `GpsProvider` (parse đã sẵn) → mở marker nhiều thành viên + family cards có vị trí.
+5. `[VERIFY]` tồn đọng: checkout field Stripe, chat WebSocket.

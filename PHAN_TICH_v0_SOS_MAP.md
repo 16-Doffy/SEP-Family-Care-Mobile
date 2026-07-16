@@ -3,7 +3,18 @@
 > **Ngày:** 2026-07-15 · **Người phân tích:** FE Mobile (Giáp)
 > **Nguồn v0:** `sos-feature.zip` (v0.app chat `sos-feature-uGcYWLkpl3S`)
 > **Đối tượng so sánh:** `sos_screen.dart`, `family_map_screen.dart`, `sos_provider.dart`, `gps_provider.dart`
-> **Mục đích:** Xác định lấy gì từ v0 trước khi vào chỉnh sửa code. Đây là tài liệu phân tích — CHƯA sửa code.
+> **Mục đích:** Xác định lấy gì từ v0 trước khi vào chỉnh sửa code.
+
+---
+
+> ## ✅ ĐÃ THỰC HIỆN (cập nhật 2026-07-16)
+> Scope §7 đã làm phần **không cần BE**:
+> - **A. Response Timeline** trong chi tiết SOS → ✅ **DONE** (`_SosAlertDetailSheet` trong `sos_screen.dart`, mở bằng icon ℹ️): header đỏ, vị trí + mini-map, node phản hồi 🚨→👀/🚗/🆘/✅→✔/✖. Parse phòng thủ, compile sạch.
+> - **B. Home "Trạng thái gia đình"** từ `activeAlerts` → ✅ **DONE** (`widgets/family_status_card.dart`, gắn 2 home). Bản rút gọn, chưa vị trí.
+> - **Polish SOS** (countdown số lớn, pulse) → đã có sẵn.
+> - **Family Map**: che raw "Cannot GET /location/family" + fix `_pins`.
+>
+> **Còn chờ BE** (§5): marker nhiều thành viên realtime + family cards có vị trí — đã có báo cáo `BAO_CAO_BE_SOS_2026-07-16.md`. 3 câu `[VERIFY]` §6 cũng nằm trong báo cáo đó.
 
 ---
 
