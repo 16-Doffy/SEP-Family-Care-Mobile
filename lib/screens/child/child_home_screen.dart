@@ -11,9 +11,6 @@ import '../../theme/app_colors.dart';
 import '../../widgets/family_status_card.dart';
 import '../../widgets/ring_chart.dart';
 
-const _barData    = [40, 80, 60, 100, 75, 50, 90]; // placeholder weekly XP
-const _dayLabels  = ['T2','T3','T4','T5','T6','T7','CN'];
-
 // Nhãn badge chuông: quá 99 thì rút gọn để không phá layout.
 String _unreadLabel(int n) => n > 99 ? '99+' : '$n';
 
@@ -23,10 +20,7 @@ class ChildHomeScreen extends StatefulWidget {
   State<ChildHomeScreen> createState() => _ChildHomeScreenState();
 }
 
-class _ChildHomeScreenState extends State<ChildHomeScreen>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _barCtrl;
-  late List<Animation<double>> _barAnims;
+class _ChildHomeScreenState extends State<ChildHomeScreen> {
   Timer? _xpTimer;
   int _displayXp = 0;
   double _ringP   = 0;
@@ -41,18 +35,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   @override
   void initState() {
     super.initState();
-
-    _barCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 800));
-    _barAnims = _barData
-        .map((v) => Tween<double>(begin: 0, end: v / 100.0).animate(
-              CurvedAnimation(
-                  parent: _barCtrl,
-                  curve: const Interval(0, 1, curve: Curves.easeOut)),
-            ))
-        .toList();
-    Future.delayed(
-        const Duration(milliseconds: 200), () => _barCtrl.forward());
 
     final start = DateTime.now();
     const dur = Duration(milliseconds: 900);
@@ -87,7 +69,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   @override
   void dispose() {
-    _barCtrl.dispose();
     _xpTimer?.cancel();
     _authListener?.removeListener(_onAuthChanged);
     super.dispose();
@@ -189,71 +170,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-
-                // Weekly XP bar chart (placeholder)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(16)),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text('XP tuần này',
-                        style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: Colors.white60,
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 10),
-                    AnimatedBuilder(
-                      animation: _barCtrl,
-                      builder: (_, _) => SizedBox(
-                        height: 80,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: List.generate(_barData.length, (i) {
-                            final pct   = _barAnims[i].value;
-                            final xpVal = (_barData[i] * 0.8).round();
-                            return Expanded(
-                              child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                Text('${xpVal}XP',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white70)),
-                                const SizedBox(height: 2),
-                                Expanded(
-                                  child: Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: FractionallySizedBox(
-                                      heightFactor: pct.clamp(0.02, 1.0),
-                                      child: Container(
-                                        margin: const EdgeInsets.symmetric(
-                                            horizontal: 2),
-                                        decoration: BoxDecoration(
-                                            color: AppColors.heroOrange,
-                                            borderRadius:
-                                                BorderRadius.circular(4)),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(_dayLabels[i],
-                                    style: GoogleFonts.inter(
-                                        fontSize: 9,
-                                        color: Colors.white38)),
-                              ]),
-                            );
-                          }),
-                        ),
-                      ),
-                    ),
-                  ]),
-                ),
+                // (Đã bỏ chart "XP tuần này" — dữ liệu placeholder hardcode,
+                // mâu thuẫn với vòng XP thật 0/500 bên dưới. Làm lại khi BE
+                // có API gamification.)
               ]),
             ),
 
