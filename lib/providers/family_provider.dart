@@ -84,6 +84,7 @@ class FamilyProvider extends ChangeNotifier {
     if (familyId == null) return;
     _loading = true;
     _error = null;
+    _members = [];
     notifyListeners();
     try {
       final data = await ApiClient.instance.get('/families/$familyId') as Map<String, dynamic>;
