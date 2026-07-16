@@ -31,6 +31,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       context.read<TaskProvider>().fetchTasks();
       context.read<TaskProvider>().fetchCategories();
       context.read<FamilyProvider>().fetchMembers();
+      // Cho badge 💳: đếm settlement chờ trả/tranh chấp trên icon AppBar.
+      context.read<TaskProvider>().fetchRewardSettlements();
     });
   }
 
@@ -43,6 +45,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     final tasks      = taskState.tasks;
     final active      = tasks.where((t) => t.status == 'ACTIVE').length;
     final completed   = tasks.where((t) => t.status == 'COMPLETED').length;
+    // Settlement cần Manager xử lý: chờ trả (PENDING_SETTLEMENT) + tranh chấp.
+    final pendingRewards = taskState.rewardSettlements
+        .where((s) => s.status == 'PENDING_SETTLEMENT' || s.status == 'DISPUTED')
+        .length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -62,12 +68,31 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               const Expanded(child: Center(child: Text('Quản lý Tasks', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)))),
               GestureDetector(
                 onTap: () => context.push('/manager/reward-management'),
-                child: Container(
-                  width: 40, height: 40,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)]),
-                  child: const Icon(Icons.payments_outlined, size: 18, color: AppColors.textPrimary),
-                ),
+                child: Stack(clipBehavior: Clip.none, children: [
+                  Container(
+                    width: 40, height: 40,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)]),
+                    child: const Icon(Icons.payments_outlined, size: 18, color: AppColors.textPrimary),
+                  ),
+                  // Badge số settlement chờ trả/tranh chấp — entry Quản lý
+                  // thưởng vốn chỉ là icon, không badge thì Manager không biết.
+                  if (pendingRewards > 0)
+                    Positioned(
+                      top: -2, right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        decoration: BoxDecoration(
+                            color: AppColors.danger,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white, width: 1.5)),
+                        alignment: Alignment.center,
+                        child: Text('$pendingRewards',
+                            style: GoogleFonts.inter(fontSize: 9, height: 1, fontWeight: FontWeight.w800, color: Colors.white)),
+                      ),
+                    ),
+                ]),
               ),
               GestureDetector(
                 onTap: () => _showCreateTaskSheet(context),
@@ -150,7 +175,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 _chip(st.label, st.bg, st.color),
                 if (task.isRecurring) _chip('🔁 ${task.schedule?.label ?? "Định kỳ"}', const Color(0xFFF0F9FF), const Color(0xFF0369A1)),
                 if (task.taskCategoryName != null) _chip('🏷️ ${task.taskCategoryName}', const Color(0xFFF3F4F6), AppColors.textSecondary),
-                if (task.rewardSetting != null) _chip('💰 ${task.rewardSetting!.label}', const Color(0xFFDCFCE7), const Color(0xFF16A34A)),
+                if (task.rewardSetting != null)
+                  _chip('💰 ${task.rewardSetting!.label}', const Color(0xFFDCFCE7), const Color(0xFF16A34A))
+                else
+                  _chip('🎁 Chưa đặt thưởng', const Color(0xFFF3F4F6), const Color(0xFF6B7280)),
               ]),
             ]),
           ),
@@ -489,6 +517,15 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       try {
                         await context.read<TaskProvider>().reviewSubmission(submission.id, approved: true, reviewNote: noteCtrl.text.trim());
                         if (ctx.mounted) Navigator.pop(ctx);
+                        // Task có thưởng → BE vừa tạo settlement chờ trả;
+                        // nhắc Manager sang màn Quản lý thưởng (icon 💳).
+                        if ((a.rewardSetting ?? a.task?.rewardSetting) != null) {
+                          sheetMessenger.showSnackBar(SnackBar(
+                            content: const Text('Đã duyệt ✅ — vào 💳 Quản lý thưởng (góc phải màn Tasks) để trả thưởng'),
+                            backgroundColor: AppColors.success,
+                            duration: const Duration(seconds: 4),
+                          ));
+                        }
                       } catch (e) {
                         setSheet(() => submitting = false);
                         sheetMessenger.showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger));
