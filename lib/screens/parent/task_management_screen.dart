@@ -202,7 +202,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 Row(children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => _showAssignSheet(context, task),
+                      // Task LẶP không dùng được POST .../assignments (BE trả
+                      // "Vui lòng sinh phân công ... bằng API lịch lặp") →
+                      // phân nhánh sang _ScheduleSheet (generate-assignments).
+                      onPressed: () => task.isRecurring
+                          ? _showScheduleSheet(context, task)
+                          : _showAssignSheet(context, task),
                       icon: const Icon(Icons.person_add_alt_rounded, size: 16),
                       label: Text('Giao việc', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
                       style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
