@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../services/api_client.dart';
 import '../theme/app_colors.dart';
+import 'notification_router.dart';
 
 // Tab thường (không phải SOS) trong bottom nav.
 class FamilyTab {
@@ -44,6 +46,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   static const _kPollInterval = Duration(seconds: 15);
   Timer? _pollTimer;
   bool _verificationDialogOpen = false;
+  NotificationProvider? _notif; // giữ ref để dùng trong dispose
 
   @override
   void initState() {
@@ -51,6 +54,12 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ApiClient.instance.onVerificationRequired = _showVerificationRequired;
+      // Realtime notification (Socket.IO /notifications) — REST poll bên dưới
+      // vẫn giữ làm fallback nếu socket rớt. Toast cho push-only (id null).
+      _notif = context.read<NotificationProvider>()
+        ..onTransient = _showTransientNotif;
+      _notif!.fetchUnreadCount();
+      _notif!.startRealtime();
       _refreshLive();
       _startPolling();
     });
@@ -64,7 +73,46 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         _showVerificationRequired) {
       ApiClient.instance.onVerificationRequired = null;
     }
+    if (_notif?.onTransient == _showTransientNotif) {
+      _notif!.onTransient = null;
+    }
+    _notif?.stopRealtime();
     super.dispose();
+  }
+
+  // Toast in-app cho notification realtime (persisted + push-only). Nút "Xem"
+  // điều hướng theo NotificationRouter (role-aware).
+  void _showTransientNotif(AppNotification n) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final role = context.read<AuthProvider>().user?.role;
+    final path = role == null
+        ? null
+        : NotificationRouter.routeFor(
+            referenceType: n.referenceType,
+            referenceId: n.referenceId,
+            role: role,
+          );
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 4),
+      backgroundColor: const Color(0xFF111827),
+      content: Text(
+        '${n.emoji}  ${n.title}${n.body.isNotEmpty ? ' — ${n.body}' : ''}',
+        style: GoogleFonts.inter(fontSize: 13, color: Colors.white),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      action: path == null
+          ? null
+          : SnackBarAction(
+              label: 'Xem',
+              textColor: Colors.white,
+              onPressed: () {
+                if (mounted) context.push(path);
+              },
+            ),
+    ));
   }
 
   @override

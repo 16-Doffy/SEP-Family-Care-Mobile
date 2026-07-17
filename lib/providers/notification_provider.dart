@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../services/notification_socket_service.dart';
 
 // Field id thật là `notificationId`, KHÔNG phải `id` (đã verify trực tiếp
 // trên BE — tạo SOS alert thật rồi đọc GET .../notifications, 2026-06-26).
@@ -47,15 +48,18 @@ class AppNotification {
     'SOS' => '🚨',
     'TASK' => '✅',
     'FINANCE' => '💰',
-    'INVITATION' => '✉️',
-    'MEMBER_LEFT' => '🚪',
+    'INVITATION' || 'JOIN_REQUEST' => '✉️',
+    'MEMBER' || 'MEMBER_LEFT' => '👤',
+    'ALBUM_TAG' => '🖼️',
+    'CALENDAR' => '📅',
+    'CHAT' => '💬',
     _ => '🔔',
   };
 
   Color get accentColor => switch (priority) {
     'CRITICAL' => const Color(0xFFDC2626),
     'HIGH' => const Color(0xFFEA580C),
-    'MEDIUM' => const Color(0xFF2563EB),
+    'MEDIUM' || 'NORMAL' => const Color(0xFF2563EB),
     _ => const Color(0xFF6B7280),
   };
 }
@@ -65,10 +69,80 @@ class NotificationProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
 
+  // Unread-count realtime theo từng family (event notification:unread-count).
+  final Map<String, int> _familyUnread = {};
+  bool _realtimeOn = false;
+
+  // Toast/banner cho notification push-only (id null) — UI shell gắn vào.
+  void Function(AppNotification n)? onTransient;
+
   List<AppNotification> get notifications => _notifications;
   bool get loading => _loading;
   String? get error => _error;
-  int get unreadCount => _notifications.where((n) => !n.isRead).length;
+
+  // Ưu tiên count realtime của family đang active; fallback đếm từ list.
+  int get unreadCount {
+    final fid = ApiClient.instance.familyId;
+    final rt = fid == null ? null : _familyUnread[fid];
+    return rt ?? _notifications.where((n) => !n.isRead).length;
+  }
+
+  // ── Realtime (Socket.IO /notifications) ──────────────────────────────────
+  void startRealtime() {
+    if (_realtimeOn) return;
+    _realtimeOn = true;
+    final svc = NotificationSocketService.instance;
+    svc.onNotification = _applyRealtime;
+    svc.onUnreadCount = (fid, count) {
+      if (fid != null) {
+        _familyUnread[fid] = count;
+        notifyListeners();
+      }
+    };
+    svc.connect();
+  }
+
+  void stopRealtime() {
+    _realtimeOn = false;
+    final svc = NotificationSocketService.instance;
+    svc.onNotification = null;
+    svc.onUnreadCount = null;
+    svc.disconnect();
+    _familyUnread.clear();
+  }
+
+  void _applyRealtime(Map<String, dynamic> payload) {
+    final n = AppNotification.fromJson(payload);
+    // id null = push-only: chỉ toast tức thời, KHÔNG thêm list / KHÔNG tăng
+    // badge (badge do event unread-count riêng đẩy). Xem hợp đồng WS.
+    final pushOnly = payload['id'] == null;
+    if (pushOnly) {
+      onTransient?.call(n);
+      return;
+    }
+    // Persisted: chèn lên đầu nếu chưa có, đồng thời toast nhẹ.
+    if (_notifications.every((e) => e.id != n.id)) {
+      _notifications = [n, ..._notifications];
+      onTransient?.call(n);
+      notifyListeners();
+    }
+  }
+
+  // Badge lúc khởi động (trước khi socket bắn event đầu tiên).
+  Future<void> fetchUnreadCount() async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) return;
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$fid/notifications/unread-count',
+      );
+      final c = data is Map ? (data['count'] as num?)?.toInt() : null;
+      if (c != null) {
+        _familyUnread[fid] = c;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
 
   Future<void> fetchNotifications({bool unreadOnly = false}) async {
     final fid = ApiClient.instance.familyId;
@@ -116,6 +190,9 @@ class NotificationProvider extends ChangeNotifier {
           isRead: true,
           createdAt: old.createdAt,
         );
+        // Giảm badge realtime ngay (socket cũng sẽ đẩy unread-count sau).
+        final cur = _familyUnread[fid];
+        if (cur != null && cur > 0) _familyUnread[fid] = cur - 1;
         notifyListeners();
       }
     } catch (_) {}
@@ -129,6 +206,7 @@ class NotificationProvider extends ChangeNotifier {
         '/families/$fid/notifications/read-all',
         {},
       );
+      _familyUnread[fid] = 0;
       await fetchNotifications();
     } catch (_) {}
   }

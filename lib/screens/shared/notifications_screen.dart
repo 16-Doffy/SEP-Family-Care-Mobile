@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../../models/user.dart';
+import '../../navigation/notification_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../theme/app_colors.dart';
@@ -22,26 +22,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
-  // Route theo role hiện tại — mỗi role có prefix riêng (/manager, /deputy,
-  // /member) trong family_shell.dart, không dùng chung 1 path cố định.
-  String _rolePrefix(UserRole role) => switch (role) {
-        UserRole.manager => '/manager',
-        UserRole.deputy  => '/deputy',
-        UserRole.member  => '/member',
-      };
-
   void _onTapNotification(BuildContext context, AppNotification n) {
     context.read<NotificationProvider>().markRead(n.id);
     final role = context.read<AuthProvider>().user?.role;
     if (role == null) return;
-    final prefix = _rolePrefix(role);
-    final path = switch (n.type) {
-      'SOS'     => '$prefix/sos',
-      'TASK'    => '$prefix/tasks',
-      'FINANCE' => '$prefix/wallet',
-      _         => null,
-    };
-    if (path != null) context.go(path);
+    // Điều hướng theo referenceType/referenceId (chuẩn hợp đồng WS); lạ/null
+    // → NotificationRouter trả null → ở lại màn danh sách, không crash.
+    final path = NotificationRouter.routeFor(
+      referenceType: n.referenceType,
+      referenceId: n.referenceId,
+      role: role,
+    );
+    if (path != null) context.push(path);
   }
 
   String _fmtTime(DateTime t) {

@@ -44,6 +44,11 @@ class ApiClient {
   String? get token => _token;
   String? get familyId => _familyId;
 
+  /// Origin của backend (bỏ `/api/v1`) — dùng cho namespace Socket.IO
+  /// (`<origin>/notifications`, `<origin>/sos`). Vd
+  /// `https://api.familycare-digital.com`.
+  static String get origin => _kBase.replaceFirst(RegExp(r'/api/v\d+$'), '');
+
   /// Xóa toàn bộ session data — gọi khi logout hoặc session expired
   void clearSession() {
     _token = null;
