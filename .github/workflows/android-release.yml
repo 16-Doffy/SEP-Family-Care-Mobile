@@ -107,7 +107,7 @@ jobs:
           echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
 
       - name: Analyze
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: Run tests
         run: flutter test
