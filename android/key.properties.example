@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties for local release builds.
+# Never commit key.properties, a .jks/.keystore file, or real passwords.
+storePassword=change-me
+keyPassword=change-me
+keyAlias=upload
+storeFile=upload-keystore.jks

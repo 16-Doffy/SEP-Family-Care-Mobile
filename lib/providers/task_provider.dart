@@ -407,7 +407,9 @@ class TaskProvider extends ChangeNotifier {
   // ── Tasks ────────────────────────────────────────────────────────────────
 
   Future<void> fetchTasks({String? status, String? taskCategoryId, String? priority, String? taskType}) async {
-    loading = true; error = null; notifyListeners();
+    loading = true; error = null;
+    tasks = [];
+    notifyListeners();
     try {
       final qs = _qs({'status': status, 'taskCategoryId': taskCategoryId, 'priority': priority, 'taskType': taskType, 'limit': 100});
       final data = await ApiClient.instance.get('/families/$_fid/tasks$qs');
@@ -475,7 +477,7 @@ class TaskProvider extends ChangeNotifier {
         'repeatInterval': repeatInterval,
         'startDate': startDate.toIso8601String(),
         if (endDate != null) 'endDate': endDate.toIso8601String(),
-        'dayOfWeek': ?dayOfWeek,
+        'dayOfWeek': dayOfWeek,
         'status': 'ACTIVE',
       },
     });
@@ -502,6 +504,7 @@ class TaskProvider extends ChangeNotifier {
       'startTime': ?startTime,
       'dueTime': ?dueTime,
     });
+    await fetchTaskAssignments(taskId);
     await fetchMyAssignments();
   }
 
@@ -542,6 +545,8 @@ class TaskProvider extends ChangeNotifier {
   }
 
   Future<void> fetchTaskAssignments(String taskId, {String? status}) async {
+    _assignmentsByTask[taskId] = [];
+    notifyListeners();
     try {
       final qs = _qs({'status': status, 'limit': 100});
       final data = await ApiClient.instance.get('/families/$_fid/tasks/$taskId/assignments$qs');

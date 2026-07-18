@@ -1,0 +1,257 @@
+name: Android Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name, for example 1.0.1
+        required: false
+        type: string
+      upload_to_drive:
+        description: Upload APK to Google Drive and generate a QR code
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.0"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Validate Android signing secrets
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for value in "$KEYSTORE_BASE64" "$STORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD"; do
+            if [ -z "$value" ]; then
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "::error::Missing one or more Android signing secrets. See docs/RELEASE_ANDROID.md."
+            exit 1
+          fi
+
+      - name: Create release signing files
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
+            "$STORE_PASSWORD" \
+            "$KEY_PASSWORD" \
+            "$KEY_ALIAS" \
+            "upload-keystore.jks" \
+            > android/key.properties
+
+      - name: Resolve release metadata
+        id: metadata
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="$(sed -n 's/^version: \([^+]*\).*/\1/p' pubspec.yaml)"
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version '$version'. Expected a semantic version such as 1.0.1."
+            exit 1
+          fi
+          apk_name="FamilyCare-${version}-${GITHUB_RUN_NUMBER}.apk"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$apk_name" >> "$GITHUB_OUTPUT"
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build signed release APK
+        env:
+          VERSION_NAME: ${{ steps.metadata.outputs.version }}
+          BUILD_NUMBER: ${{ steps.metadata.outputs.build_number }}
+          APK_NAME: ${{ steps.metadata.outputs.apk_name }}
+        run: |
+          flutter build apk --release \
+            --build-name "$VERSION_NAME" \
+            --build-number "$BUILD_NUMBER"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/$APK_NAME"
+          sha256sum "dist/$APK_NAME" > "dist/$APK_NAME.sha256"
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: familycare-android-${{ steps.metadata.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release for version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FamilyCare ${{ steps.metadata.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/${{ steps.metadata.outputs.apk_name }}
+            dist/${{ steps.metadata.outputs.apk_name }}.sha256
+
+      - name: Check optional Google Drive configuration
+        id: drive
+        shell: bash
+        env:
+          MANUAL_UPLOAD: ${{ inputs.upload_to_drive }}
+          TAG_UPLOAD: ${{ vars.GDRIVE_UPLOAD_ON_TAG }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          requested=false
+          if [ "$MANUAL_UPLOAD" = "true" ] || { [[ "$GITHUB_REF" == refs/tags/v* ]] && [ "$TAG_UPLOAD" = "true" ]; }; then
+            requested=true
+          fi
+
+          if [ "$requested" != "true" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Google Drive upload was not requested."
+          elif [ -z "$GOOGLE_CREDENTIALS" ] || [ -z "$GOOGLE_FOLDER_ID" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Google Drive upload was requested but its secrets are incomplete."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate to Google Drive
+        id: google_auth
+        if: steps.drive.outputs.enabled == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/drive.file
+
+      - name: Upload APK to Google Drive
+        id: drive_upload
+        if: steps.drive.outputs.enabled == 'true'
+        shell: bash
+        env:
+          ACCESS_TOKEN: ${{ steps.google_auth.outputs.access_token }}
+          FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          APK_NAME: ${{ steps.metadata.outputs.apk_name }}
+        run: |
+          metadata="$(jq -nc --arg name "$APK_NAME" --arg folder "$FOLDER_ID" \
+            '{name:$name, parents:[$folder]}')"
+          response="$(curl --fail-with-body --silent --show-error \
+            -X POST \
+            'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name' \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -F "metadata=$metadata;type=application/json;charset=UTF-8" \
+            -F "file=@dist/$APK_NAME;type=application/vnd.android.package-archive")"
+          file_id="$(echo "$response" | jq -r '.id')"
+          if [ -z "$file_id" ] || [ "$file_id" = "null" ]; then
+            echo "::error::Google Drive did not return a file id."
+            echo "$response"
+            exit 1
+          fi
+
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            "https://www.googleapis.com/drive/v3/files/$file_id/permissions" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"role":"reader","type":"anyone"}' > /dev/null
+
+          download_url="https://drive.google.com/uc?export=download&id=$file_id"
+          view_url="https://drive.google.com/file/d/$file_id/view"
+          echo "download_url=$download_url" >> "$GITHUB_OUTPUT"
+          echo "view_url=$view_url" >> "$GITHUB_OUTPUT"
+          echo "DOWNLOAD_URL=$download_url" >> "$GITHUB_ENV"
+
+      - name: Generate Android download QR code
+        if: steps.drive.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          python3 -m pip install --disable-pip-version-check "qrcode[pil]==8.2"
+          python3 -c 'import os, qrcode; qrcode.make(os.environ["DOWNLOAD_URL"]).save("dist/FamilyCare-Android-QR.png")'
+          printf '%s\n' "$DOWNLOAD_URL" > dist/FamilyCare-Android-download-url.txt
+
+      - name: Upload QR artifact
+        if: steps.drive.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: familycare-android-qr-${{ steps.metadata.outputs.version }}
+          path: |
+            dist/FamilyCare-Android-QR.png
+            dist/FamilyCare-Android-download-url.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Write release summary
+        shell: bash
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          APK_NAME: ${{ steps.metadata.outputs.apk_name }}
+          DRIVE_ENABLED: ${{ steps.drive.outputs.enabled }}
+          DRIVE_VIEW_URL: ${{ steps.drive_upload.outputs.view_url }}
+        run: |
+          {
+            echo "## FamilyCare Android release"
+            echo
+            echo "- Version: \`$VERSION\`"
+            echo "- APK: \`$APK_NAME\`"
+            echo "- Signed release artifact: uploaded"
+            if [ "$DRIVE_ENABLED" = "true" ]; then
+              echo "- Google Drive: $DRIVE_VIEW_URL"
+              echo "- QR artifact: generated"
+            else
+              echo "- Google Drive: skipped"
+            fi
+            echo
+            echo "iOS devices cannot install this APK. Use TestFlight or a web/PWA fallback for iPhone."
+          } >> "$GITHUB_STEP_SUMMARY"
