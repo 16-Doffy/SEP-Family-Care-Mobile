@@ -67,16 +67,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user        = context.watch<AuthProvider>().user;
+    final user = context.watch<AuthProvider>().user;
     final walletState = context.watch<WalletProvider>();
-    final taskState   = context.watch<TaskProvider>();
+    final taskState = context.watch<TaskProvider>();
 
-    final balance      = walletState.familyWallet?.balance ?? 0.0;
+    final balance = walletState.familyWallet?.balance ?? 0.0;
     final transactions = walletState.transactions;
-    final tasks        = taskState.tasks;
-    final doneTasks    = tasks.where((t) => t.status == 'COMPLETED').length;
-    final totalTasks   = tasks.length;
-    final taskPct      = totalTasks > 0 ? doneTasks / totalTasks : 0.0;
+    final tasks = taskState.tasks;
+    final doneTasks = tasks.where((t) => t.status == 'COMPLETED').length;
+    final totalTasks = tasks.length;
+    final taskPct = totalTasks > 0 ? doneTasks / totalTasks : 0.0;
 
     // income delta từ tháng trước — tính từ income transactions
     final totalIn = transactions
@@ -88,11 +88,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       body: Stack(
         children: [
           Positioned(
-            right: -60, bottom: 120,
+            right: -60,
+            bottom: 120,
             child: Container(
-              width: 220, height: 220,
+              width: 220,
+              height: 220,
               decoration: const BoxDecoration(
-                  shape: BoxShape.circle, color: AppColors.accentGlow),
+                shape: BoxShape.circle,
+                color: AppColors.accentGlow,
+              ),
             ),
           ),
           SafeArea(
@@ -107,6 +111,12 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 children: [
                   const SizedBox(height: 8),
+                  if (context
+                      .watch<AuthProvider>()
+                      .pendingEmailVerification) ...[
+                    _verifyEmailBanner(context),
+                    const SizedBox(height: 12),
+                  ],
 
                   // ── Header ──────────────────────────────────────
                   Row(
@@ -125,14 +135,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                             Text(
                               'Xin chào, ${user?.name ?? "Trưởng nhóm"} 👋',
                               style: GoogleFonts.inter(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                             Text(
                               'Gia đình ${user?.familyName ?? "Nguyễn"} · Hôm nay',
                               style: GoogleFonts.inter(
-                                  fontSize: 12, color: AppColors.textMuted),
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                              ),
                             ),
                           ],
                         ),
@@ -142,39 +155,56 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         child: Stack(
                           children: [
                             Container(
-                              width: 42, height: 42,
+                              width: 42,
+                              height: 42,
                               decoration: BoxDecoration(
                                 color: AppColors.white,
                                 borderRadius: BorderRadius.circular(21),
                                 boxShadow: [
                                   BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.06),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 4))
+                                    color: Colors.black.withValues(alpha: 0.06),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 4),
+                                  ),
                                 ],
                               ),
-                              child: const Icon(Icons.notifications_outlined,
-                                  size: 20, color: AppColors.textPrimary),
+                              child: const Icon(
+                                Icons.notifications_outlined,
+                                size: 20,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
-                            if (context.watch<NotificationProvider>().unreadCount > 0)
+                            if (context
+                                    .watch<NotificationProvider>()
+                                    .unreadCount >
+                                0)
                               Positioned(
-                                top: 4, right: 4,
+                                top: 4,
+                                right: 4,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 4, vertical: 1),
+                                    horizontal: 4,
+                                    vertical: 1,
+                                  ),
                                   constraints: const BoxConstraints(
-                                      minWidth: 16, minHeight: 16),
+                                    minWidth: 16,
+                                    minHeight: 16,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: AppColors.notification,
                                     borderRadius: BorderRadius.circular(999),
                                     border: Border.all(
-                                        color: AppColors.white, width: 1.5),
+                                      color: AppColors.white,
+                                      width: 1.5,
+                                    ),
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
-                                    _unreadLabel(context
-                                        .watch<NotificationProvider>()
-                                        .unreadCount),
+                                    _unreadLabel(
+                                      context
+                                          .watch<NotificationProvider>()
+                                          .unreadCount,
+                                    ),
                                     style: GoogleFonts.inter(
                                       fontSize: 9,
                                       height: 1,
@@ -200,7 +230,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     onTap: () => context.push('/manager/wallet'),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 22, vertical: 24),
+                        horizontal: 22,
+                        vertical: 24,
+                      ),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                           colors: [AppColors.heroOrange, AppColors.heroPurple],
@@ -210,43 +242,57 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.22),
-                              blurRadius: 44,
-                              offset: const Offset(0, 18))
+                            color: Colors.black.withValues(alpha: 0.22),
+                            blurRadius: 44,
+                            offset: const Offset(0, 18),
+                          ),
                         ],
                       ),
                       child: walletState.isLoading
                           ? const Center(
                               child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2))
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Quỹ Gia Đình',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 12, color: Colors.white70)),
+                                Text(
+                                  'Quỹ Gia Đình',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: Colors.white70,
+                                  ),
+                                ),
                                 const SizedBox(height: 8),
                                 Text(
                                   _fmtBalance(balance),
                                   style: GoogleFonts.inter(
-                                      fontSize: 36,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                      letterSpacing: -0.5),
+                                    fontSize: 36,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    letterSpacing: -0.5,
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 if (totalIn > 0)
                                   Text(
                                     '↑ +${_fmtBalance(totalIn)} tháng này',
                                     style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFFDCFCE7)),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFFDCFCE7),
+                                    ),
                                   )
                                 else
-                                  Text('Tap để xem chi tiết ví',
-                                      style: GoogleFonts.inter(
-                                          fontSize: 13, color: Colors.white54)),
+                                  Text(
+                                    'Tap để xem chi tiết ví',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      color: Colors.white54,
+                                    ),
+                                  ),
                               ],
                             ),
                     ),
@@ -256,22 +302,33 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   // ── Quick Actions ───────────────────────────────
                   Row(
                     children: [
-                      _quickCard('📋', 'Tasks',
-                          () => context.push('/manager/tasks')),
+                      _quickCard(
+                        '📋',
+                        'Tasks',
+                        () => context.push('/manager/tasks'),
+                      ),
                       const SizedBox(width: 12),
-                      _quickCard('👨‍👩‍👧', 'Thành viên',
-                          () => context.push('/manager/members')),
+                      _quickCard(
+                        '👨‍👩‍👧',
+                        'Thành viên',
+                        () => context.push('/manager/members'),
+                      ),
                       const SizedBox(width: 12),
-                      _quickCard('🫙', 'Ngân sách',
-                          () => context.push('/manager/finance-model')),
+                      _quickCard(
+                        '🫙',
+                        'Ngân sách',
+                        () => context.push('/manager/finance-model'),
+                      ),
                       const SizedBox(width: 12),
                       if (user?.canInviteMembers ?? false) ...[
-                        _quickCard('👥', 'Mời',
-                            () => context.push('/manager/invite')),
+                        _quickCard(
+                          '👥',
+                          'Mời',
+                          () => context.push('/manager/invite'),
+                        ),
                         const SizedBox(width: 12),
                       ],
-                      _quickCard('🗺️', 'Bản đồ',
-                          () => context.push('/map')),
+                      _quickCard('🗺️', 'Bản đồ', () => context.push('/map')),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -286,36 +343,48 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(children: [
-                                  const Icon(Icons.assignment_outlined,
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.assignment_outlined,
                                       size: 16,
-                                      color: AppColors.textPrimary),
-                                  const SizedBox(width: 8),
-                                  Text('Tasks',
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Tasks',
                                       style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textPrimary)),
-                                ]),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                                 const SizedBox(height: 4),
                                 taskState.loading
-                                    ? Text('Đang tải...',
+                                    ? Text(
+                                        'Đang tải...',
                                         style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            color: AppColors.textMuted))
+                                          fontSize: 12,
+                                          color: AppColors.textMuted,
+                                        ),
+                                      )
                                     : Text(
                                         '$doneTasks / $totalTasks hoàn thành',
                                         style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            color: AppColors.textMuted),
+                                          fontSize: 12,
+                                          color: AppColors.textMuted,
+                                        ),
                                       ),
                                 const SizedBox(height: 10),
                                 Row(
                                   children: [
                                     Expanded(
                                       child: ClipRRect(
-                                        borderRadius:
-                                            BorderRadius.circular(999),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
                                         child: LinearProgressIndicator(
                                           value: taskPct,
                                           minHeight: 8,
@@ -323,7 +392,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                               AppColors.progressTrack,
                                           valueColor:
                                               const AlwaysStoppedAnimation(
-                                                  AppColors.success),
+                                                AppColors.success,
+                                              ),
                                         ),
                                       ),
                                     ),
@@ -331,9 +401,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                     Text(
                                       '${(taskPct * 100).round()}%',
                                       style: GoogleFonts.inter(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.success),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.success,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -347,65 +418,82 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         child: GestureDetector(
                           onTap: () => context.push('/manager/members'),
                           child: _card(
-                          child: Consumer<FamilyProvider>(
-                            builder: (_, familyState, _) {
-                              final members = familyState.members;
-                              final colors = [
-                                AppColors.avatarPurple,
-                                AppColors.avatarOrange,
-                                AppColors.avatarBlue,
-                                AppColors.avatarTeal,
-                              ];
-                              final shown = members.take(3).toList();
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(children: [
-                                    const Icon(Icons.people_outline,
-                                        size: 16, color: AppColors.textPrimary),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '${members.length} thành viên',
-                                      style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textPrimary),
-                                    ),
-                                  ]),
-                                  const SizedBox(height: 4),
-                                  Text('Trong gia đình',
-                                      style: GoogleFonts.inter(
-                                          fontSize: 12,
-                                          color: AppColors.textMuted)),
-                                  const SizedBox(height: 8),
-                                  if (shown.isEmpty)
-                                    Text('Chưa có thành viên',
-                                        style: GoogleFonts.inter(
-                                            fontSize: 11,
-                                            color: AppColors.textMuted))
-                                  else
+                            child: Consumer<FamilyProvider>(
+                              builder: (_, familyState, _) {
+                                final members = familyState.members;
+                                final colors = [
+                                  AppColors.avatarPurple,
+                                  AppColors.avatarOrange,
+                                  AppColors.avatarBlue,
+                                  AppColors.avatarTeal,
+                                ];
+                                final shown = members.take(3).toList();
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
                                     Row(
-                                      children: shown.asMap().entries.map((e) {
-                                        final offset = e.key * -10.0;
-                                        final initial = (e.value.name.isNotEmpty
-                                            ? e.value.name[0]
-                                            : '?').toUpperCase();
-                                        return Transform.translate(
-                                          offset: Offset(offset, 0),
-                                          child: AvatarWidget(
-                                            initial: initial,
-                                            color: colors[e.key % colors.length],
-                                            size: 28,
-                                            showPresence: true,
+                                      children: [
+                                        const Icon(
+                                          Icons.people_outline,
+                                          size: 16,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${members.length} thành viên',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textPrimary,
                                           ),
-                                        );
-                                      }).toList(),
+                                        ),
+                                      ],
                                     ),
-                                ],
-                              );
-                            },
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Trong gia đình',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        color: AppColors.textMuted,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (shown.isEmpty)
+                                      Text(
+                                        'Chưa có thành viên',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: AppColors.textMuted,
+                                        ),
+                                      )
+                                    else
+                                      Row(
+                                        children: shown.asMap().entries.map((
+                                          e,
+                                        ) {
+                                          final offset = e.key * -10.0;
+                                          final initial =
+                                              (e.value.name.isNotEmpty
+                                                      ? e.value.name[0]
+                                                      : '?')
+                                                  .toUpperCase();
+                                          return Transform.translate(
+                                            offset: Offset(offset, 0),
+                                            child: AvatarWidget(
+                                              initial: initial,
+                                              color:
+                                                  colors[e.key % colors.length],
+                                              size: 28,
+                                              showPresence: true,
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
                           ),
-                        ),
                         ),
                       ),
                     ],
@@ -422,36 +510,45 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.06),
-                              blurRadius: 20,
-                              offset: const Offset(0, 4))
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 20,
+                            offset: const Offset(0, 4),
+                          ),
                         ],
                       ),
                       child: Row(
                         children: [
-                          const Text('🤖',
-                              style: TextStyle(fontSize: 28)),
+                          const Text('🤖', style: TextStyle(fontSize: 28)),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Trợ lý AI',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textPrimary)),
                                 Text(
-                                    'Hỏi về chi tiêu, tasks hay mẹo tiết kiệm…',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        color: AppColors.textMuted)),
+                                  'Trợ lý AI',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                Text(
+                                  'Hỏi về chi tiêu, tasks hay mẹo tiết kiệm…',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          const Text('→',
-                              style: TextStyle(
-                                  fontSize: 18, color: AppColors.link)),
+                          const Text(
+                            '→',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: AppColors.link,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -462,18 +559,24 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Giao dịch gần đây',
-                          style: GoogleFonts.inter(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary)),
+                      Text(
+                        'Giao dịch gần đây',
+                        style: GoogleFonts.inter(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
                       GestureDetector(
                         onTap: () => context.push('/manager/wallet'),
-                        child: Text('Xem tất cả →',
-                            style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.link)),
+                        child: Text(
+                          'Xem tất cả →',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.link,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -484,83 +587,87 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         ? const Padding(
                             padding: EdgeInsets.symmetric(vertical: 20),
                             child: Center(
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2)),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                           )
                         : transactions.isEmpty
-                            ? Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 20),
-                                child: Center(
-                                  child: Text(
-                                    'Chưa có giao dịch nào',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        color: AppColors.textMuted),
-                                  ),
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: Center(
+                              child: Text(
+                                'Chưa có giao dịch nào',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: AppColors.textMuted,
                                 ),
-                              )
-                            : Column(
-                                children: transactions
-                                    .take(5)
-                                    .map(
-                                      (tx) => Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 10),
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 38, height: 38,
-                                              decoration: const BoxDecoration(
-                                                  shape: BoxShape.circle,
-                                                  color: Color(0xFFF3F4F6)),
-                                              alignment: Alignment.center,
-                                              child: Text(
-                                                tx.signedAmount > 0 ? '💵' : '💸',
-                                                style: const TextStyle(
-                                                    fontSize: 18),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    tx.description,
-                                                    style: GoogleFonts.inter(
-                                                        fontSize: 14,
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                        color: AppColors
-                                                            .textPrimary),
-                                                  ),
-                                                  Text(
-                                                    tx.entryDate,
-                                                    style: GoogleFonts.inter(
-                                                        fontSize: 12,
-                                                        color:
-                                                            AppColors.textMuted),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                            Text(
-                                              '${tx.signedAmount > 0 ? '+' : '-'}${_fmtBalance(tx.signedAmount.abs())}',
-                                              style: GoogleFonts.inter(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: tx.signedAmount > 0
-                                                      ? AppColors.success
-                                                      : AppColors.danger),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
                               ),
+                            ),
+                          )
+                        : Column(
+                            children: transactions
+                                .take(5)
+                                .map(
+                                  (tx) => Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: const BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Color(0xFFF3F4F6),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            tx.signedAmount > 0 ? '💵' : '💸',
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                tx.description,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                              ),
+                                              Text(
+                                                tx.entryDate,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 12,
+                                                  color: AppColors.textMuted,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Text(
+                                          '${tx.signedAmount > 0 ? '+' : '-'}${_fmtBalance(tx.signedAmount.abs())}',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: tx.signedAmount > 0
+                                                ? AppColors.success
+                                                : AppColors.danger,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
                   ),
                   const SizedBox(height: 110),
                 ],
@@ -583,9 +690,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 20,
-                  offset: const Offset(0, 4))
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 20,
+                offset: const Offset(0, 4),
+              ),
             ],
           ),
           child: Column(
@@ -593,11 +701,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             children: [
               Text(icon, style: const TextStyle(fontSize: 22)),
               const SizedBox(height: 4),
-              Text(label,
-                  style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textSecondary)),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary,
+                ),
+              ),
             ],
           ),
         ),
@@ -613,12 +724,58 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 4))
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: child,
+    );
+  }
+
+  Widget _verifyEmailBanner(BuildContext context) {
+    final currentUri = GoRouter.of(
+      context,
+    ).routeInformationProvider.value.uri.toString();
+    return InkWell(
+      onTap: () => context.push(
+        '/verify-email?returnTo=${Uri.encodeComponent(currentUri)}',
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.mark_email_unread_outlined,
+              size: 20,
+              color: Color(0xFF92400E),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Email chưa xác thực. Xác thực ngay để dùng đầy đủ tính năng.',
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF92400E),
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: Color(0xFF92400E),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

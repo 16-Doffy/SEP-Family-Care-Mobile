@@ -1315,7 +1315,10 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     final type = (r['responseType'] ?? r['type'] ?? '').toString();
     final msg = (r['message'] ?? '').toString();
     final time = (r['respondedAt'] ?? r['createdAt'] ?? r['timestamp'] ?? '').toString();
-    final who = _memberName(r['respondedByMember']) ??
+    // Field chuẩn theo Swagger (SosResponseResponseDto, verify 2026-07-16):
+    // responderMember {displayName, user.fullName} — đặt ĐẦU chuỗi fallback.
+    final who = _memberName(r['responderMember']) ??
+        _memberName(r['respondedByMember']) ??
         _memberName(r['member']) ??
         _memberName(r['respondedBy']) ??
         _memberName(r['user']) ??

@@ -3,6 +3,8 @@
 > **Ngày:** 2026-07-16 · **Người báo:** FE Mobile (Giáp)
 > **Mức độ:** 🔴 **Chặn tính năng** — Bản đồ gia đình không hiển thị được vị trí thành viên
 > **Base URL:** `https://api.familycare-digital.com/api/v1`
+>
+> ✅ **Đã kiểm chứng 16/07** bằng fetch trọn `docs-json` prod (183 paths / 133 schemas, giống hệt bản Tuần 9): **Bug 1, B, C xác nhận còn nguyên**; riêng mục schema `responses[]` (A cũ) **rút lại** — Swagger đã document, xem Phụ lục.
 
 ---
 
@@ -10,7 +12,8 @@
 
 ## 1. Hiện tượng
 Màn **Bản đồ gia đình** hiển thị lỗi đỏ ngay trên UI: **`Cannot GET /api/v1/location/family`**.
-FE gọi 3 endpoint dưới đây, **cả 3 đều trả 404** (route chưa tồn tại trên BE):
+FE gọi 3 endpoint dưới đây, **cả 3 đều trả 404** (route chưa tồn tại trên BE).
+*(Đã đối chiếu `docs-json` prod fetch 16/07: cả 3 path **không có** trong 183 paths — location chỉ tồn tại trong ngữ cảnh SOS alert.)*
 
 | # | FE đang gọi | Mục đích |
 |---|---|---|
@@ -127,10 +130,9 @@ BE chọn 1 trong 2:
 
 ---
 
-# Phụ lục — 3 điểm SOS-detail thứ yếu (không chặn, cần chốt contract)
+# Phụ lục — các điểm SOS-detail thứ yếu (đã kiểm chứng lại 16/07 trên Swagger prod)
 
-> Không gấp bằng Bug 1. Timeline phản hồi SOS vẫn hiển thị được nhờ FE parse phỏng đoán, nhưng cần chốt để chuẩn 100%.
-
-- **A. Schema `responses[]` chưa document** — `GET /families/{familyId}/sos/alerts/{alertId}`: chốt tên field cho người phản hồi (+`displayName`), `responseType`, thời điểm, `message`.
-- **B. Thiếu enum "đang đến"** — `POST .../responses`: nút "Tôi đang đến" đang gửi `VIEWED` + so text `message`. Đề xuất thêm `responseType = ON_THE_WAY` (hoặc xác nhận enum đầy đủ).
-- **C. Thiếu phone thành viên** — alert detail nên embed `phone`/`phoneNumber` của `triggeredByMember` (và `respondedByMember`) để nút "Gọi" chạy cho người khác.
+- **A. Schema `responses[]`** — ✅ **RÚT LẠI, không cần BE làm gì**: Swagger **đã document đầy đủ**. `SosAlertResponseDto.responses[] = SosResponseResponseDto { id, sosAlertId, responderMemberId, responseType, message, respondedAt, responderMember }`, trong đó `responderMember = SosMemberSummaryResponseDto { id, displayName, familyRole, user{id, fullName, email, avatarUrl} }`. *(FE đã sửa parse theo field chuẩn `responderMember` — commit 16/07.)*
+- **B. Thiếu enum "đang đến"** — ❌ **XÁC NHẬN còn thiếu** (verify enum trong `CreateSosResponseDto`/`SosResponseResponseDto` = `VIEWED | CONFIRM_SAFE | NEED_HELP | RESOLVED | CANCELED`). Nút "Tôi đang đến" vẫn phải gửi `VIEWED` + so text `message`. → Đề xuất thêm `responseType = ON_THE_WAY`.
+- **C. Thiếu phone thành viên** — ❌ **XÁC NHẬN còn thiếu** (verify `SosMemberUserResponseDto` chỉ có `id, fullName, email, avatarUrl` — **không có phone**). → Đề xuất bổ sung `phone` vào `SosMemberUserResponseDto` để nút "Gọi" chạy cho người khác.
+- **D. (mới ghi nhận)** `status` alert có giá trị thứ 4 **`FALSE_ALARM`** trong enum — FE sẽ bổ sung nhãn hiển thị; BE lưu ý document luồng nào sinh ra status này.

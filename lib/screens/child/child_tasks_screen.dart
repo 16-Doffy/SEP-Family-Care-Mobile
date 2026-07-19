@@ -20,6 +20,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TaskProvider>().fetchMyAssignments();
+      // Cho banner 🎁: settlement WAITING_CONFIRMATION cần member xác nhận.
+      context.read<TaskProvider>().fetchRewardSettlements();
     });
   }
 
@@ -39,6 +41,131 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
 
   String _catIcon(String? cat) => cat == 'Học tập' ? '📚' : '🏠';
 
+  static String _fmtAmount(double v) {
+    final s = v.round().toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return '${buf.toString()} ₫';
+  }
+
+  // ── 🎁 Banner thưởng chờ xác nhận (WAITING_CONFIRMATION) + tranh chấp ─────
+  // Đọc thẳng danh sách reward-settlements để member KHÔNG bị "mù" thưởng khi
+  // BE không embed submission/rewardSetting vào my-assignments.
+  Widget _rewardBanner(TaskProvider taskState) {
+    final pending = taskState.rewardSettlements
+        .where((s) =>
+            s.status == 'WAITING_CONFIRMATION' || s.status == 'DISPUTED')
+        .toList();
+    if (pending.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Column(
+        children: pending
+            .map((s) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFDBA74)),
+                  ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          const Text('🎁', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Phần thưởng ${_fmtAmount(s.amount)} — ${s.statusLabel}',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF92400E)),
+                            ),
+                          ),
+                        ]),
+                        if (s.status == 'WAITING_CONFIRMATION') ...[
+                          const SizedBox(height: 8),
+                          Row(children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 34,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.success,
+                                      padding: EdgeInsets.zero),
+                                  onPressed: () => context
+                                      .read<TaskProvider>()
+                                      .confirmRewardReceived(s.id),
+                                  child: Text('✅ Đã nhận',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: SizedBox(
+                                height: 34,
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                      side: const BorderSide(
+                                          color: AppColors.danger)),
+                                  onPressed: () =>
+                                      _showRewardDisputeDialog(s.id),
+                                  child: Text('Chưa nhận',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.danger)),
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ],
+                      ]),
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  void _showRewardDisputeDialog(String settlementId) {
+    final reasonCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('Báo chưa nhận thưởng'),
+        content: TextField(
+          controller: reasonCtrl,
+          decoration: const InputDecoration(
+              hintText: 'Lý do (ví dụ: chưa nhận được tiền)'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dCtx), child: const Text('Hủy')),
+          ElevatedButton(
+            onPressed: () async {
+              final reason = reasonCtrl.text.trim();
+              if (reason.isEmpty) return;
+              Navigator.pop(dCtx);
+              await context
+                  .read<TaskProvider>()
+                  .createDispute(settlementId, reason);
+            },
+            child: const Text('Gửi'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final taskState = context.watch<TaskProvider>();
@@ -50,7 +177,10 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => taskState.fetchMyAssignments(),
+          onRefresh: () => Future.wait([
+            taskState.fetchMyAssignments(),
+            taskState.fetchRewardSettlements(),
+          ]),
           child: Column(children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -105,6 +235,11 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               ),
             ),
             const SizedBox(height: 12),
+
+            // 🎁 Thưởng chờ xác nhận — hiển thị ĐỘC LẬP với card assignment
+            // (my-assignments không embed latestSubmissionId → match theo
+            // submission không bao giờ khớp, xem task_provider).
+            _rewardBanner(taskState),
 
             if (taskState.loading && all.isEmpty)
               const Expanded(child: Center(child: CircularProgressIndicator()))
