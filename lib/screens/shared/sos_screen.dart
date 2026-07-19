@@ -48,6 +48,8 @@ class _SOSScreenState extends State<SOSScreen>
     // Refresh alerts when manager opens screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SosProvider>().fetchAlerts();
+      // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
+      context.read<SosProvider>().fetchEmergencyContacts();
     });
   }
 
@@ -385,34 +387,48 @@ class _SOSScreenState extends State<SOSScreen>
                               fontSize: 13, color: Colors.white38)),
                     ]),
             ),
-            // Emergency call buttons
+            // Liên hệ khẩn: ưu tiên danh bạ gia đình (BE), fallback hotline
+            // quốc gia khi gia đình chưa khai báo liên hệ nào.
             Padding(
               padding: const EdgeInsets.only(bottom: 80),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Liên hệ khẩn: ',
-                      style:
-                          GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
-                  ...['113', '115', '114'].map((n) => GestureDetector(
-                        onTap: () => launchUrl(Uri.parse('tel:$n')),
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 5),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(999),
-                              border:
-                                  Border.all(color: Colors.white24)),
-                          child: Text(n,
-                              style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white)),
-                        ),
-                      )),
-                ],
-              ),
+              child: Builder(builder: (context) {
+                final contacts = context.watch<SosProvider>().emergencyContacts;
+                final useFamily = contacts.isNotEmpty;
+                final entries = useFamily
+                    ? contacts
+                        .take(3)
+                        .map((c) => (label: c.contactName, phone: c.phoneNumber))
+                        .toList()
+                    : SosProvider.kDefaultHotlines
+                        .map((n) => (label: n, phone: n))
+                        .toList();
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(useFamily ? 'Gọi nhanh: ' : 'Liên hệ khẩn: ',
+                        style: GoogleFonts.inter(
+                            fontSize: 13, color: Colors.white38)),
+                    ...entries.map((e) => GestureDetector(
+                          onTap: () =>
+                              launchUrl(Uri.parse('tel:${e.phone}')),
+                          child: Container(
+                            margin:
+                                const EdgeInsets.symmetric(horizontal: 5),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: Colors.white24)),
+                            child: Text(e.label,
+                                style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white)),
+                          ),
+                        )),
+                  ],
+                );
+              }),
             ),
           ]),
         ]),
@@ -1137,9 +1153,13 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     final statusColor = isActive
         ? AppColors.sos
         : (status == 'RESOLVED' ? AppColors.safe : AppColors.textMuted);
-    final statusLabel = isActive
-        ? 'ĐANG KHẨN CẤP'
-        : (status == 'RESOLVED' ? 'ĐÃ XỬ LÝ' : (status == 'CANCELED' ? 'ĐÃ HỦY' : status));
+    final statusLabel = switch (status) {
+      'ACTIVE' => 'ĐANG KHẨN CẤP',
+      'RESOLVED' => 'ĐÃ XỬ LÝ',
+      'CANCELED' => 'ĐÃ HỦY',
+      'FALSE_ALARM' => 'BÁO ĐỘNG GIẢ',
+      _ => status,
+    };
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       // ── Header đỏ gradient (v0 style) ──────────────────────────────────
@@ -1280,11 +1300,21 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
           ),
           for (int i = 0; i < responses.length; i++)
             _responseNode(responses[i], isLast: i == responses.length - 1 && status == 'ACTIVE'),
-          if (status == 'RESOLVED' || status == 'CANCELED')
+          if (status == 'RESOLVED' ||
+              status == 'CANCELED' ||
+              status == 'FALSE_ALARM')
             _timelineNode(
-              emoji: status == 'RESOLVED' ? '✔' : '✖',
+              emoji: switch (status) {
+                'RESOLVED' => '✔',
+                'FALSE_ALARM' => '🔕',
+                _ => '✖',
+              },
               color: status == 'RESOLVED' ? AppColors.safe : AppColors.textMuted,
-              title: status == 'RESOLVED' ? 'Đã xử lý' : 'Đã hủy',
+              title: switch (status) {
+                'RESOLVED' => 'Đã xử lý',
+                'FALSE_ALARM' => 'Báo động giả',
+                _ => 'Đã hủy',
+              },
               subtitle: [resolvedBy, resolutionNote].where((e) => (e ?? '').isNotEmpty).join(' · '),
               time: null, isLast: true,
             ),

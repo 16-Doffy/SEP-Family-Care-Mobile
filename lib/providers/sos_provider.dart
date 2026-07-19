@@ -76,7 +76,68 @@ class SosAlert {
   }
 }
 
+/// Liên hệ khẩn cấp của gia đình (BE ship 19/07):
+/// GET/POST `/families/{id}/sos/emergency-contacts`,
+/// PATCH/DELETE `.../{contactId}`.
+class EmergencyContact {
+  final String id;
+  final String contactName;
+  final String phoneNumber;
+  final String? relationshipNote;
+  final int? priorityOrder;
+  final bool isActive;
+
+  const EmergencyContact({
+    required this.id,
+    required this.contactName,
+    required this.phoneNumber,
+    this.relationshipNote,
+    this.priorityOrder,
+    this.isActive = true,
+  });
+
+  factory EmergencyContact.fromJson(Map<String, dynamic> j) => EmergencyContact(
+        id: j['id']?.toString() ?? j['contactId']?.toString() ?? '',
+        contactName: j['contactName']?.toString() ?? 'Liên hệ',
+        phoneNumber: j['phoneNumber']?.toString() ?? '',
+        relationshipNote: j['relationshipNote']?.toString(),
+        priorityOrder: (j['priorityOrder'] as num?)?.toInt(),
+        isActive: j['isActive'] as bool? ?? true,
+      );
+}
+
 class SosProvider extends ChangeNotifier {
+  // ── Danh bạ khẩn cấp ─────────────────────────────────────────────────────
+  List<EmergencyContact> _contacts = [];
+  List<EmergencyContact> get emergencyContacts => _contacts;
+
+  /// Số gọi nhanh hiển thị ở màn SOS: ưu tiên danh bạ gia đình (ACTIVE, theo
+  /// priorityOrder); rỗng thì fallback hotline quốc gia.
+  static const kDefaultHotlines = ['113', '115', '114'];
+
+  Future<void> fetchEmergencyContacts() async {
+    final fid = _fid;
+    if (fid == null) return;
+    try {
+      final data =
+          await ApiClient.instance.get('/families/$fid/sos/emergency-contacts');
+      final raw = data is List
+          ? data
+          : (data is Map && data['items'] is List ? data['items'] : <dynamic>[]);
+      final list = (raw as List)
+          .whereType<Map>()
+          .map((e) => EmergencyContact.fromJson(Map<String, dynamic>.from(e)))
+          .where((c) => c.isActive && c.phoneNumber.isNotEmpty)
+          .toList()
+        ..sort((a, b) =>
+            (a.priorityOrder ?? 9999).compareTo(b.priorityOrder ?? 9999));
+      _contacts = list;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('SosProvider: fetchEmergencyContacts failed: $e');
+    }
+  }
+
   List<SosAlert> _alerts = [];
   bool _loading = false;
   bool _sending = false;
@@ -156,16 +217,20 @@ class SosProvider extends ChangeNotifier {
   }
 
   // PATCH /families/{familyId}/sos/alerts/{alertId}/resolve — chỉ
-  // FAMILY_MANAGER / DEPUTY_MEMBER.
-  Future<void> resolveAlert(String alertId, {String? resolutionNote}) =>
-      _patchAlert(alertId, 'resolve', resolutionNote);
+  // FAMILY_MANAGER / DEPUTY_MEMBER. [isFalseAlarm] (BE ship 19/07) = đóng với
+  // trạng thái FALSE_ALARM thay vì RESOLVED; cancel bỏ qua field này.
+  Future<void> resolveAlert(String alertId,
+          {String? resolutionNote, bool isFalseAlarm = false}) =>
+      _patchAlert(alertId, 'resolve', resolutionNote,
+          isFalseAlarm: isFalseAlarm);
 
   // PATCH /families/{familyId}/sos/alerts/{alertId}/cancel — chỉ
   // FAMILY_MANAGER / DEPUTY_MEMBER.
   Future<void> cancelAlert(String alertId, {String? resolutionNote}) =>
       _patchAlert(alertId, 'cancel', resolutionNote);
 
-  Future<void> _patchAlert(String alertId, String action, String? resolutionNote) async {
+  Future<void> _patchAlert(String alertId, String action, String? resolutionNote,
+      {bool isFalseAlarm = false}) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
     _ensureNoActionInProgress();
@@ -174,6 +239,7 @@ class SosProvider extends ChangeNotifier {
     try {
       await ApiClient.instance.patch('/families/$fid/sos/alerts/$alertId/$action', {
         if (resolutionNote != null && resolutionNote.isNotEmpty) 'resolutionNote': resolutionNote,
+        if (action == 'resolve' && isFalseAlarm) 'isFalseAlarm': true,
       });
       await fetchAlerts();
     } finally {
