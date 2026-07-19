@@ -648,25 +648,34 @@ class _SOSScreenState extends State<SOSScreen>
 
         const SizedBox(height: 14),
 
-        // Action buttons
-        Row(children: [
+        // Action buttons — cảnh báo CỦA MÌNH thì không thể "đang đến" chỗ
+        // chính mình; thay bằng tự xác nhận an toàn (confirm-safety).
+        Builder(builder: (context) {
+        final mine = alert.isMine(context.watch<AuthProvider>().user?.id);
+        return Row(children: [
           Expanded(
             child: GestureDetector(
               onTap: () async {
                 final sos = context.read<SosProvider>();
                 if (sos.sending) return;
                 try {
-                  // BE ship enum ON_THE_WAY (19/07) → gửi đúng loại phản hồi,
-                  // không còn mượn VIEWED + đoán chữ trong message.
-                  await sos.respond(
-                    alert.id,
-                    'ON_THE_WAY',
-                    message: 'Tôi đang đến',
-                  );
+                  if (mine) {
+                    await sos.confirmSafety(alert.id);
+                  } else {
+                    // BE ship enum ON_THE_WAY (19/07) → gửi đúng loại phản hồi,
+                    // không còn mượn VIEWED + đoán chữ trong message.
+                    await sos.respond(
+                      alert.id,
+                      'ON_THE_WAY',
+                      message: 'Tôi đang đến',
+                    );
+                  }
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Đã phản hồi SOS ✅'),
+                      SnackBar(
+                          content: Text(mine
+                              ? 'Đã báo cả nhà bạn an toàn ✅'
+                              : 'Đã phản hồi SOS ✅'),
                           backgroundColor: AppColors.success),
                     );
                   }
@@ -685,7 +694,7 @@ class _SOSScreenState extends State<SOSScreen>
                     color: AppColors.success,
                     borderRadius: BorderRadius.circular(12)),
                 alignment: Alignment.center,
-                child: Text('✅ Tôi đang đến',
+                child: Text(mine ? '🛟 Tôi đã an toàn' : '✅ Tôi đang đến',
                     style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -728,7 +737,8 @@ class _SOSScreenState extends State<SOSScreen>
               ),
             ),
           ],
-        ]),
+        ]);
+        }),
       ]),
     );
   }

@@ -72,6 +72,19 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       ));
       return;
     }
+    // Điểm đến trùng vị trí của mình (vd mở bản đồ từ cảnh báo do CHÍNH MÌNH
+    // phát) → chỉ đường vô nghĩa ("0 m"). Bỏ qua, báo nhẹ.
+    final selfDistance =
+        const Distance().as(LengthUnit.Meter, from, target).toDouble();
+    if (selfDistance < 50) {
+      if (!mounted) return;
+      _clearRoute();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Bạn đang ở ngay tại điểm này'),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _routing = true;
@@ -611,6 +624,10 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
 
     for (final alert in alerts) {
       if (!alert.hasLocation) continue;
+      // Cảnh báo do CHÍNH MÌNH phát: pin "Tôi" (GPS trực tiếp, chính xác hơn)
+      // đã đại diện vị trí này rồi → không thêm pin SOS nữa, tránh cùng một
+      // người hiện 2 lần trong danh sách.
+      if (alert.isMine(currentUserId)) continue;
       pins.add(_MemberPin(
         latlng: LatLng(alert.latitude!, alert.longitude!),
         name: alert.senderName,

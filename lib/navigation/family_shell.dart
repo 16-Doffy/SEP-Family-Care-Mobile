@@ -229,8 +229,13 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
+                        // Người PHÁT cảnh báo không được nhận thông điệp
+                        // "X cần trợ giúp" về chính mình.
                         activeAlerts.length == 1
-                            ? '${activeAlerts.first.senderName} cần trợ giúp khẩn cấp!'
+                            ? (activeAlerts.first.isMine(
+                                    context.read<AuthProvider>().user?.id)
+                                ? 'Bạn đang phát cảnh báo SOS — chạm để xác nhận an toàn'
+                                : '${activeAlerts.first.senderName} cần trợ giúp khẩn cấp!')
                             : '${activeAlerts.length} cảnh báo SOS đang hoạt động!',
                         style: GoogleFonts.inter(
                           fontSize: 13,

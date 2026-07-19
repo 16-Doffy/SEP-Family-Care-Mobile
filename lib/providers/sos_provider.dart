@@ -8,11 +8,22 @@ class SosAlert {
   final String message;
   final String address;
   final String senderName;
+  /// userId của người kích hoạt (`triggeredByMember.user.id`) — dùng để biết
+  /// cảnh báo này có phải DO CHÍNH MÌNH phát hay không. Thiếu nó thì UI đối
+  /// xử người phát như người nhận (banner "cần trợ giúp", nút "Tôi đang đến"
+  /// hiện trên máy nạn nhân).
+  final String? triggeredByUserId;
   final String createdAt;
   final String? resolutionNote;
   final String? resolvedByName;
   final double? latitude;
   final double? longitude;
+
+  /// true nếu cảnh báo do chính [myUserId] phát.
+  bool isMine(String? myUserId) =>
+      myUserId != null &&
+      myUserId.isNotEmpty &&
+      triggeredByUserId == myUserId;
 
   const SosAlert({
     required this.id,
@@ -21,6 +32,7 @@ class SosAlert {
     required this.message,
     required this.address,
     required this.senderName,
+    this.triggeredByUserId,
     required this.createdAt,
     this.resolutionNote,
     this.resolvedByName,
@@ -30,6 +42,17 @@ class SosAlert {
 
   bool get isActive => status == 'ACTIVE';
   bool get hasLocation => latitude != null && longitude != null;
+
+  // userId nằm trong member.user.id (member.id là FamilyMember.id, KHÁC).
+  static String? _memberUserId(dynamic m) {
+    if (m is! Map) return null;
+    final user = m['user'];
+    if (user is Map) {
+      final id = user['id']?.toString();
+      if (id != null && id.isNotEmpty) return id;
+    }
+    return m['userId']?.toString();
+  }
 
   // Tên hiển thị của 1 member object BE trả: {displayName, user: {fullName}}
   static String? _memberName(dynamic m) {
@@ -61,6 +84,10 @@ class SosAlert {
           _memberName(json['triggeredBy']) ??
           json['senderName']?.toString() ??
           'Thành viên',
+      // Swagger: triggeredByMember.user.id (verify 19/07).
+      triggeredByUserId: _memberUserId(json['triggeredByMember']) ??
+          _memberUserId(json['sender']) ??
+          _memberUserId(json['triggeredBy']),
       createdAt: json['triggeredAt']?.toString() ?? json['createdAt']?.toString() ?? '',
       resolutionNote: json['resolutionNote']?.toString(),
       resolvedByName: _memberName(json['resolvedByMember']),
