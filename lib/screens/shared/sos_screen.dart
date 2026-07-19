@@ -272,10 +272,27 @@ class _SOSScreenState extends State<SOSScreen>
       }
       return;
     }
+    final canResolve =
+        context.read<AuthProvider>().user?.canResolveSos == true;
     try {
       await sosState.confirmSafety(id);
+      // confirm-safety chỉ ghi nhận phản hồi (201) — cảnh báo vẫn ACTIVE.
+      // Có quyền thì đóng luôn; không thì nói rõ để user khỏi tưởng đã xong.
+      if (canResolve) {
+        await sosState.resolveAlert(id,
+            resolutionNote: 'Người phát đã xác nhận an toàn');
+      }
       _stopLocationStreaming();
-      if (mounted) setState(() => _sent = false);
+      if (mounted) {
+        setState(() => _sent = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(canResolve
+              ? 'Đã xác nhận an toàn và đóng cảnh báo ✅'
+              : 'Đã báo an toàn — cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng'),
+          duration: Duration(seconds: canResolve ? 2 : 4),
+          backgroundColor: AppColors.success,
+        ));
+      }
     } catch (e) {
       debugPrint('SOSScreen: confirmSafety failed: $e');
       if (mounted) {
@@ -658,9 +675,19 @@ class _SOSScreenState extends State<SOSScreen>
               onTap: () async {
                 final sos = context.read<SosProvider>();
                 if (sos.sending) return;
+                final canResolve =
+                    context.read<AuthProvider>().user?.canResolveSos == true;
                 try {
                   if (mine) {
+                    // ⚠️ BE: confirm-safety chỉ GHI NHẬN phản hồi CONFIRM_SAFE
+                    // (201), KHÔNG đổi status cảnh báo. Chỉ resolve/cancel
+                    // (Manager/Deputy) mới đóng được.
                     await sos.confirmSafety(alert.id);
+                    if (canResolve) {
+                      // Người phát có quyền quản lý → đóng luôn cho gọn.
+                      await sos.resolveAlert(alert.id,
+                          resolutionNote: 'Người phát đã xác nhận an toàn');
+                    }
                   } else {
                     // BE ship enum ON_THE_WAY (19/07) → gửi đúng loại phản hồi,
                     // không còn mượn VIEWED + đoán chữ trong message.
@@ -671,11 +698,15 @@ class _SOSScreenState extends State<SOSScreen>
                     );
                   }
                   if (context.mounted) {
+                    final msg = !mine
+                        ? 'Đã phản hồi SOS ✅'
+                        : (canResolve
+                            ? 'Đã xác nhận an toàn và đóng cảnh báo ✅'
+                            : 'Đã báo an toàn — cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng');
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                          content: Text(mine
-                              ? 'Đã báo cả nhà bạn an toàn ✅'
-                              : 'Đã phản hồi SOS ✅'),
+                          content: Text(msg),
+                          duration: Duration(seconds: mine && !canResolve ? 4 : 2),
                           backgroundColor: AppColors.success),
                     );
                   }
@@ -739,6 +770,24 @@ class _SOSScreenState extends State<SOSScreen>
           ],
         ]);
         }),
+
+        // Người phát KHÔNG có quyền đóng → giải thích vì sao cảnh báo vẫn
+        // ACTIVE sau khi bấm "Tôi đã an toàn" (BE: confirm-safety chỉ ghi
+        // nhận phản hồi, resolve/cancel mới đóng và chỉ Manager/Deputy).
+        if (alert.isMine(context.watch<AuthProvider>().user?.id) &&
+            context.watch<AuthProvider>().user?.canResolveSos != true) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            const Text('ⓘ', style: TextStyle(fontSize: 12, color: Colors.white38)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Báo an toàn xong, cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng.',
+                style: GoogleFonts.inter(fontSize: 11, color: Colors.white38),
+              ),
+            ),
+          ]),
+        ],
       ]),
     );
   }
