@@ -640,7 +640,13 @@ class _SOSScreenState extends State<SOSScreen>
                 final sos = context.read<SosProvider>();
                 if (sos.sending) return;
                 try {
-                  await sos.respond(alert.id, 'VIEWED', message: 'Tôi đang đến');
+                  // BE ship enum ON_THE_WAY (19/07) → gửi đúng loại phản hồi,
+                  // không còn mượn VIEWED + đoán chữ trong message.
+                  await sos.respond(
+                    alert.id,
+                    'ON_THE_WAY',
+                    message: 'Tôi đang đến',
+                  );
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
@@ -1058,14 +1064,18 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     return null;
   }
 
-  // Ánh xạ loại phản hồi → (emoji, màu nền node, nhãn hiển thị). Phân biệt
-  // "Đang đến" (VIEWED + message chứa "đang đến") với "Đã xem" như bản v0.
+  // Ánh xạ loại phản hồi → (emoji, màu nền node, nhãn hiển thị).
+  // BE ship enum ON_THE_WAY (19/07) → phân biệt "Đang đến" bằng ĐÚNG enum.
+  // Vẫn giữ fallback đoán theo message cho các phản hồi CŨ đã lưu dạng
+  // VIEWED + "Tôi đang đến" trước khi BE bổ sung enum.
   ({String emoji, Color color, String label}) _nodeStyle(String type, String message) {
     final t = type.toUpperCase();
-    final onWay = message.toLowerCase().contains('đang đến');
+    final legacyOnWay = message.toLowerCase().contains('đang đến');
     switch (t) {
+      case 'ON_THE_WAY':
+        return (emoji: '🚗', color: AppColors.safe, label: 'Đang đến');
       case 'VIEWED':
-        return onWay
+        return legacyOnWay
             ? (emoji: '🚗', color: AppColors.safe, label: 'Đang đến')
             : (emoji: '👀', color: AppColors.avatarBlue, label: 'Đã xem');
       case 'NEED_HELP':

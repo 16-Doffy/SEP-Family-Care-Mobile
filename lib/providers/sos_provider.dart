@@ -183,7 +183,8 @@ class SosProvider extends ChangeNotifier {
   }
 
   // POST /families/{familyId}/sos/alerts/{alertId}/responses — thành viên
-  // khác phản hồi cảnh báo (VIEWED / CONFIRM_SAFE / NEED_HELP).
+  // khác phản hồi cảnh báo. Enum BE (verify 19/07): VIEWED | ON_THE_WAY |
+  // CONFIRM_SAFE | NEED_HELP (RESOLVED/CANCELED do manager qua endpoint riêng).
   Future<void> respond(String alertId, String responseType, {String? message}) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
