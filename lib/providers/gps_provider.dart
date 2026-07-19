@@ -50,17 +50,25 @@ class GpsProvider extends ChangeNotifier {
   bool get loading => _loading;
   bool get busy => _busy;
   String? get error => _error;
-  // true khi BE chưa triển khai /location/* (404) — dùng để UI hiện "đang phát
-  // triển" thay vì phơi raw "Cannot GET /api/v1/location/family".
+  // Giữ làm lưới an toàn: nếu endpoint location 404 (BE rollback/đổi path),
+  // UI hiện "đang phát triển" thay vì phơi raw "Cannot GET ...".
   bool get sharingUnavailable => _sharingUnavailable;
 
+  // BE ship 3 EP location 19/07 (đúng contract BAO_CAO_BE_SOS_2026-07-16 §7
+  // phương án B — family-scoped). Path cũ `/location/*` đã chết, không dùng.
+  String? get _fid => ApiClient.instance.familyId;
+
   Future<void> fetchFamilyLocations() async {
+    final fid = _fid;
+    if (fid == null) return;
     _loading = true;
     _error = null;
     _sharingUnavailable = false;
     notifyListeners();
     try {
-      final data = await ApiClient.instance.get('/location/family');
+      final data = await ApiClient.instance.get(
+        '/families/$fid/members/locations',
+      );
       final list = data is List
           ? data
           : data is Map && data['shares'] is List
@@ -75,7 +83,7 @@ class GpsProvider extends ChangeNotifier {
           .map((e) => LocationShare.fromJson(Map<String, dynamic>.from(e)))
           .toList();
     } catch (e) {
-      // /location/family chưa được BE triển khai → 404 "Cannot GET ...". Đây
+      // Nếu endpoint location trả 404 (rollback/đổi path) → coi như chưa. Đây
       // KHÔNG phải lỗi thật, chỉ là tính năng chia sẻ vị trí chưa sẵn sàng —
       // đặt cờ để UI hiện "đang phát triển", không phơi thông báo kỹ thuật.
       final msg = e.toString();
@@ -94,10 +102,15 @@ class GpsProvider extends ChangeNotifier {
   }
 
   Future<void> toggleSharing(bool value) async {
+    final fid = _fid;
+    if (fid == null) return;
     _busy = true;
     notifyListeners();
     try {
-      await ApiClient.instance.patch('/location/toggle', {'isSharing': value});
+      await ApiClient.instance.patch(
+        '/families/$fid/members/me/location-sharing',
+        {'isSharing': value},
+      );
       await fetchFamilyLocations();
     } finally {
       _busy = false;
@@ -107,10 +120,12 @@ class GpsProvider extends ChangeNotifier {
 
   Future<void> updateLocation(double latitude, double longitude,
       {double accuracy = 18}) async {
+    final fid = _fid;
+    if (fid == null) return;
     _busy = true;
     notifyListeners();
     try {
-      await ApiClient.instance.post('/location/update', {
+      await ApiClient.instance.post('/families/$fid/locations', {
         'latitude': latitude,
         'longitude': longitude,
         'accuracy': accuracy,

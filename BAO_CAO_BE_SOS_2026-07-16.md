@@ -8,7 +8,21 @@
 
 ---
 
-# 🔴 Bug 1 — Thiếu nhóm API chia sẻ vị trí gia đình (404)
+# ✅ Bug 1 — ĐÃ ĐƯỢC BE GIẢI QUYẾT (19/07/2026)
+
+> BE đã ship **đúng contract phương án (B) family-scoped** ở §7:
+> `POST /families/{familyId}/locations` · `GET /families/{familyId}/members/locations` ·
+> `PATCH /families/{familyId}/members/me/location-sharing`.
+> Body khớp y đề xuất (`{latitude, longitude, accuracy?}`, `{isSharing}`).
+> **FE đã đổi path trong `gps_provider.dart` (19/07) — Family Map hết chặn.**
+> ⚠️ Còn lại: response của `GET members/locations` **chưa document schema** →
+> FE vẫn giữ parse phòng thủ; nhờ BE bổ sung DTO khi tiện.
+>
+> *Phần mô tả bug bên dưới giữ làm lịch sử.*
+
+---
+
+# 🔴 Bug 1 (lịch sử) — Thiếu nhóm API chia sẻ vị trí gia đình (404)
 
 ## 1. Hiện tượng
 Màn **Bản đồ gia đình** hiển thị lỗi đỏ ngay trên UI: **`Cannot GET /api/v1/location/family`**.
