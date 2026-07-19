@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../services/api_client.dart';
+import '../services/local_notification_service.dart';
 import '../theme/app_colors.dart';
 import 'notification_router.dart';
 
@@ -47,6 +48,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   Timer? _pollTimer;
   bool _verificationDialogOpen = false;
   NotificationProvider? _notif; // giữ ref để dùng trong dispose
+  // id các cảnh báo SOS đã bắn notification hệ thống — tránh poll 15s bắn lại
+  // cùng một cảnh báo mỗi chu kỳ.
+  final Set<String> _notifiedSosIds = {};
+  bool _sosSeeded = false;
 
   @override
   void initState() {
@@ -54,6 +59,11 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ApiClient.instance.onVerificationRequired = _showVerificationRequired;
+      // Notification hệ thống (khay + chuông). Chỉ chạy khi tiến trình app còn
+      // sống — app tắt hẳn vẫn cần FCM, xem KE_HOACH_NOTIFICATIONS_REALTIME.md.
+      LocalNotificationService.instance
+        ..onTapPayload = _onNotificationTapPayload
+        ..init();
       // Realtime notification (Socket.IO /notifications) — REST poll bên dưới
       // vẫn giữ làm fallback nếu socket rớt. Toast cho push-only (id null).
       _notif = context.read<NotificationProvider>()
@@ -84,6 +94,14 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   // điều hướng theo NotificationRouter (role-aware).
   void _showTransientNotif(AppNotification n) {
     if (!mounted) return;
+    // Bắn ra khay hệ thống (kêu + heads-up kể cả khi user đang ở app khác,
+    // miễn tiến trình còn sống).
+    LocalNotificationService.instance.show(
+      title: '${n.emoji} ${n.title}',
+      body: n.body,
+      isSos: n.type == 'SOS',
+      payload: '${n.referenceType ?? ''}|${n.referenceId ?? ''}',
+    );
     final messenger = ScaffoldMessenger.of(context);
     final role = context.read<AuthProvider>().user?.role;
     final path = role == null
@@ -139,8 +157,52 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
 
   void _refreshLive() {
     if (!mounted) return;
-    context.read<SosProvider>().fetchAlerts();
+    context.read<SosProvider>().fetchAlerts().then((_) => _notifyNewSos());
     context.read<NotificationProvider>().fetchNotifications();
+  }
+
+  // Bắn notification hệ thống cho cảnh báo SOS MỚI của người khác.
+  void _notifyNewSos() {
+    if (!mounted) return;
+    final alerts = context.read<SosProvider>().activeAlerts;
+    final myId = context.read<AuthProvider>().user?.id;
+    // Lần fetch đầu: chỉ ghi nhận cảnh báo đang có, KHÔNG bắn — tránh spam
+    // thông báo cũ ngay khi vừa mở app.
+    if (!_sosSeeded) {
+      _sosSeeded = true;
+      _notifiedSosIds.addAll(alerts.map((a) => a.id));
+      return;
+    }
+    for (final a in alerts) {
+      if (a.id.isEmpty || _notifiedSosIds.contains(a.id)) continue;
+      _notifiedSosIds.add(a.id);
+      if (a.isMine(myId)) continue; // không tự báo cảnh báo của chính mình
+      LocalNotificationService.instance.show(
+        title: '🚨 ${a.senderName} cần trợ giúp khẩn cấp!',
+        body: a.message.isNotEmpty ? a.message : 'Cảnh báo SOS từ gia đình',
+        isSos: true,
+        payload: 'SOS_ALERT|${a.id}',
+      );
+    }
+  }
+
+  // Payload dạng "referenceType|referenceId" → điều hướng như tap noti in-app.
+  void _onNotificationTapPayload(String payload) {
+    if (!mounted) return;
+    final parts = payload.split('|');
+    final role = context.read<AuthProvider>().user?.role;
+    if (role == null) return;
+    final path = NotificationRouter.routeFor(
+      referenceType: parts.isNotEmpty ? parts[0] : null,
+      referenceId: parts.length > 1 ? parts[1] : null,
+      role: role,
+    );
+    if (path == null) return;
+    if (NotificationRouter.isShellBranch(path)) {
+      context.go(path);
+    } else {
+      context.push(path);
+    }
   }
 
   Future<void> _showVerificationRequired(String message) async {
