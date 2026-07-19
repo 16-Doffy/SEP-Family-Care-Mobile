@@ -64,14 +64,19 @@ The workflow:
 
 ## 4. Optional Google Drive upload and QR code
 
-Create a Google Cloud service account, enable the Google Drive API, and share a
-Google Drive destination folder with the service-account email.
+Enable the Google Drive API in a Google Cloud project and create OAuth
+credentials for the Google account that owns the destination folder. Authorize
+the account for offline Drive access and store the resulting refresh token as a
+GitHub Secret. This lets the workflow upload into a personal `My Drive` folder
+without storing the Google account password.
 
 Add:
 
 | Type | Name | Value |
 | --- | --- | --- |
-| Secret | `GDRIVE_SERVICE_ACCOUNT_JSON` | Complete service-account JSON |
+| Secret | `GDRIVE_CLIENT_ID` | Google OAuth client ID |
+| Secret | `GDRIVE_CLIENT_SECRET` | Google OAuth client secret |
+| Secret | `GDRIVE_REFRESH_TOKEN` | Offline refresh token for the Drive owner |
 | Secret | `GDRIVE_FOLDER_ID` | ID from the shared Drive folder URL |
 | Variable | `GDRIVE_UPLOAD_ON_TAG` | Set to `true` for automatic tag uploads |
 
