@@ -7,6 +7,24 @@ import '../models/user.dart';
 /// Route đích khớp `app_router.dart` thật (role-aware). `referenceType` lạ
 /// (bản build cũ hơn backend) → `null` để **fallback về list, không crash**.
 class NotificationRouter {
+  /// Các path là **nhánh của StatefulShellRoute** (xem `app_router.dart`).
+  /// ⚠️ Bắt buộc điều hướng bằng `context.go()` — `context.push()` sẽ dựng
+  /// THÊM một shell chồng lên shell đang có, làm 2 shell dùng chung
+  /// `navigatorKey` GlobalKey của nhánh → crash Navigator
+  /// `'!keyReservation.contains(key)'`.
+  static const _shellBranchPaths = {
+    '/manager/home', '/manager/chat', '/manager/calendar',
+    '/manager/sos', '/manager/album', '/manager/profile',
+    '/deputy/home', '/deputy/tasks', '/deputy/wallet',
+    '/deputy/sos', '/deputy/chat', '/deputy/profile',
+    '/member/home', '/member/tasks', '/member/wallet',
+    '/member/sos', '/member/chat', '/member/profile',
+  };
+
+  /// true → dùng `context.go(path)`; false → `context.push(path)` (giữ back).
+  static bool isShellBranch(String path) =>
+      _shellBranchPaths.contains(path.split('?').first);
+
   static String? routeFor({
     required String? referenceType,
     required String? referenceId,

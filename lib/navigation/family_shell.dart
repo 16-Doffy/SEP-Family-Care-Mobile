@@ -109,7 +109,14 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
               label: 'Xem',
               textColor: Colors.white,
               onPressed: () {
-                if (mounted) context.push(path);
+                if (!mounted) return;
+                // Shell-branch → go (đổi tab); push sẽ nhân đôi shell →
+                // crash trùng GlobalKey. Xem NotificationRouter.isShellBranch.
+                if (NotificationRouter.isShellBranch(path)) {
+                  context.go(path);
+                } else {
+                  context.push(path);
+                }
               },
             ),
     ));

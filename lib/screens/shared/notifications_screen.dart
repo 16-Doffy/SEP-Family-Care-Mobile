@@ -33,7 +33,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       referenceId: n.referenceId,
       role: role,
     );
-    if (path != null) context.push(path);
+    if (path == null) return;
+    // Shell-branch → go (đổi tab). Push shell-branch sẽ nhân đôi shell và
+    // crash Navigator do trùng GlobalKey của nhánh.
+    if (NotificationRouter.isShellBranch(path)) {
+      context.go(path);
+    } else {
+      context.push(path);
+    }
   }
 
   String _fmtTime(DateTime t) {
