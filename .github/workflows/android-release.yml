@@ -149,7 +149,9 @@ jobs:
         env:
           MANUAL_UPLOAD: ${{ inputs.upload_to_drive }}
           TAG_UPLOAD: ${{ vars.GDRIVE_UPLOAD_ON_TAG }}
-          GOOGLE_CREDENTIALS: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
           GOOGLE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
         run: |
           requested=false
@@ -160,7 +162,10 @@ jobs:
           if [ "$requested" != "true" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "Google Drive upload was not requested."
-          elif [ -z "$GOOGLE_CREDENTIALS" ] || [ -z "$GOOGLE_FOLDER_ID" ]; then
+          elif [ -z "$GOOGLE_CLIENT_ID" ] || \
+               [ -z "$GOOGLE_CLIENT_SECRET" ] || \
+               [ -z "$GOOGLE_REFRESH_TOKEN" ] || \
+               [ -z "$GOOGLE_FOLDER_ID" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Google Drive upload was requested but its secrets are incomplete."
           else
@@ -170,11 +175,26 @@ jobs:
       - name: Authenticate to Google Drive
         id: google_auth
         if: steps.drive.outputs.enabled == 'true'
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
-          token_format: access_token
-          access_token_scopes: https://www.googleapis.com/auth/drive.file
+        shell: bash
+        env:
+          CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          response="$(curl --fail-with-body --silent --show-error \
+            -X POST \
+            'https://oauth2.googleapis.com/token' \
+            --data-urlencode "client_id=$CLIENT_ID" \
+            --data-urlencode "client_secret=$CLIENT_SECRET" \
+            --data-urlencode "refresh_token=$REFRESH_TOKEN" \
+            --data-urlencode 'grant_type=refresh_token')"
+          access_token="$(echo "$response" | jq -r '.access_token')"
+          if [ -z "$access_token" ] || [ "$access_token" = "null" ]; then
+            echo "::error::Google OAuth did not return an access token."
+            exit 1
+          fi
+          echo "::add-mask::$access_token"
+          echo "access_token=$access_token" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK to Google Drive
         id: drive_upload
