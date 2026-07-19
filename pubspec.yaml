@@ -50,6 +50,22 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# ── Launcher icon (biểu tượng app ngoài màn hình thiết bị) ─────────────────
+# Nguồn: assets/images/FamilyCare_logo.png là LOGOTYPE (có chữ "FamilyCare"),
+# không dùng thẳng được vì ở 48dp chữ không đọc nổi và adaptive icon cắt tròn
+# sẽ mất chữ. Nên tách riêng phần MARK (nhà + 3 người):
+#   app_icon.png            — mark trên nền trắng (icon legacy)
+#   app_icon_foreground.png — mark nền trong suốt, chừa safe-zone (adaptive)
+# Sinh lại icon sau khi đổi ảnh:  dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false # repo chưa có thư mục ios/
+  image_path: "assets/images/app_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
+  min_sdk_android: 24
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

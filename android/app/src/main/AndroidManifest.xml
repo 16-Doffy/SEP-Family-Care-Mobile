@@ -12,7 +12,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
-        android:label="family_care"
+        android:label="Family Care"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
