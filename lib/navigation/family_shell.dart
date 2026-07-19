@@ -45,6 +45,8 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   // khác khi app đang mở. Dừng khi app xuống nền cho đỡ pin/băng thông, và
   // fetch lại NGAY khi quay lại foreground để không phải chờ hết 1 chu kỳ.
   static const _kPollInterval = Duration(seconds: 15);
+  // Ở nền vẫn poll (để SOS nổ được khi user đang ở app khác), chỉ giãn chu kỳ.
+  static const _kPollIntervalBackground = Duration(seconds: 30);
   Timer? _pollTimer;
   bool _verificationDialogOpen = false;
   NotificationProvider? _notif; // giữ ref để dùng trong dispose
@@ -142,17 +144,28 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _refreshLive();
-      _startPolling();
-    } else {
-      _pollTimer?.cancel();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _refreshLive();
+        _startPolling(background: false);
+      case AppLifecycleState.detached:
+        // App đang bị hủy → dừng hẳn.
+        _pollTimer?.cancel();
+      default:
+        // ⚠️ KHÔNG dừng poll khi xuống nền. Đây là app an toàn: cảnh báo SOS
+        // phải nổ được lúc người dùng đang ở app khác. Trước đây hủy timer ở
+        // đây nên notification chỉ hiện khi mở lại app.
+        // Giãn chu kỳ để đỡ pin/băng thông.
+        _startPolling(background: true);
     }
   }
 
-  void _startPolling() {
+  void _startPolling({bool background = false}) {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(_kPollInterval, (_) => _refreshLive());
+    _pollTimer = Timer.periodic(
+      background ? _kPollIntervalBackground : _kPollInterval,
+      (_) => _refreshLive(),
+    );
   }
 
   void _refreshLive() {
