@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' hide Polyline;
@@ -27,6 +28,14 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   bool    _locating = false;
   String? _locError;
 
+  // Đẩy vị trí định kỳ khi đang bật chia sẻ + màn bản đồ đang mở. Chỉ chạy
+  // trong lúc mở màn này (chưa có background service) — đủ cho luồng "cả nhà
+  // cùng mở bản đồ xem nhau".
+  static const _kPushInterval = Duration(seconds: 30);
+  Timer? _pushTimer;
+
+  String? get _myUserId => context.read<AuthProvider>().user?.id;
+
   @override
   void initState() {
     super.initState();
@@ -38,12 +47,67 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       } else {
         _locateMe(center: true);
       }
+      _syncPushTimer();
     });
+  }
+
+  @override
+  void dispose() {
+    _pushTimer?.cancel();
+    super.dispose();
+  }
+
+  // Bật timer khi đang chia sẻ, tắt khi không.
+  void _syncPushTimer() {
+    if (!mounted) return;
+    final sharing = context.read<GpsProvider>().mySharing;
+    _pushTimer?.cancel();
+    if (!sharing) return;
+    _pushMyLocationNow();
+    _pushTimer = Timer.periodic(_kPushInterval, (_) => _pushMyLocationNow());
+  }
+
+  Future<void> _pushMyLocationNow() async {
+    if (!mounted) return;
+    final gps = context.read<GpsProvider>();
+    if (!gps.mySharing) return;
+    final pos = _myPos;
+    if (pos == null) return;
+    await gps.updateLocation(
+      pos.latitude,
+      pos.longitude,
+      accuracy: _myAccuracy ?? 18,
+      silent: true, // timer nền — không nhấp nháy UI
+    );
+  }
+
+  Future<void> _toggleSharing(bool value) async {
+    final gps = context.read<GpsProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await gps.toggleSharing(value, myUserId: _myUserId);
+      if (!mounted) return;
+      _syncPushTimer();
+      messenger.showSnackBar(SnackBar(
+        content: Text(value
+            ? 'Đã bật chia sẻ vị trí với gia đình'
+            : 'Đã tắt chia sẻ vị trí'),
+        backgroundColor: value ? AppColors.safe : AppColors.textMuted,
+        duration: const Duration(seconds: 2),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text('Không đổi được chia sẻ vị trí: '
+            '${e.toString().replaceFirst('Exception: ', '')}'),
+        backgroundColor: AppColors.danger,
+      ));
+    }
   }
 
   Future<void> _refreshFamilyLocations() async {
     await Future.wait([
-      context.read<GpsProvider>().fetchFamilyLocations(),
+      context.read<GpsProvider>().fetchFamilyLocations(myUserId: _myUserId),
       context.read<SosProvider>().fetchAlerts(),
     ]);
   }
@@ -240,6 +304,9 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
             loading: gps.loading,
             error: gps.error,
             sharingUnavailable: gps.sharingUnavailable,
+            sharing: gps.mySharing,
+            busy: gps.busy,
+            onToggleSharing: _toggleSharing,
             onTap: (pin) {
               _mapCtrl.move(pin.latlng, 16);
               _showPinDetail(pin);
@@ -574,12 +641,18 @@ class _MemberLegend extends StatelessWidget {
   final bool loading;
   final String? error;
   final bool sharingUnavailable;
+  final bool sharing;
+  final bool busy;
+  final void Function(bool) onToggleSharing;
   final void Function(_MemberPin) onTap;
   const _MemberLegend({
     required this.pins,
     required this.loading,
     required this.error,
     required this.sharingUnavailable,
+    required this.sharing,
+    required this.busy,
+    required this.onToggleSharing,
     required this.onTap,
   });
 
@@ -597,16 +670,50 @@ class _MemberLegend extends StatelessWidget {
                   blurRadius: 16,
                   offset: const Offset(0, 4))
             ]),
-        child: Row(children: [
-          const Text('📍', style: TextStyle(fontSize: 20)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Nhấn 📍 bên dưới để hiển thị vị trí của bạn',
-              style: GoogleFonts.inter(
-                  fontSize: 13, color: AppColors.textMuted),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            const Text('📍', style: TextStyle(fontSize: 20)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Nhấn 📍 bên dưới để hiển thị vị trí của bạn',
+                style: GoogleFonts.inter(
+                    fontSize: 13, color: AppColors.textMuted),
+              ),
             ),
-          ),
+          ]),
+          // Vẫn phải cho bật chia sẻ ở trạng thái rỗng — nếu không user không
+          // có cách nào bật để xuất hiện trên bản đồ nhà mình.
+          Row(children: [
+            Icon(
+              sharing
+                  ? Icons.location_on_rounded
+                  : Icons.location_off_rounded,
+              size: 16,
+              color: sharing ? AppColors.safe : AppColors.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                sharing
+                    ? 'Đang chia sẻ vị trí của bạn'
+                    : 'Chia sẻ vị trí của bạn',
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color:
+                        sharing ? AppColors.safe : AppColors.textSecondary),
+              ),
+            ),
+            Transform.scale(
+              scale: 0.75,
+              child: Switch(
+                value: sharing,
+                onChanged: busy ? null : onToggleSharing,
+                activeThumbColor: AppColors.safe,
+              ),
+            ),
+          ]),
         ]),
       );
     }
@@ -662,7 +769,43 @@ class _MemberLegend extends StatelessWidget {
               SizedBox(width: 12),
               _LegendDot(color: AppColors.sos, label: 'SOS'),
             ]),
-            const SizedBox(height: 8),
+            // Bật/tắt chia sẻ vị trí của mình — khi bật, màn này đẩy vị trí
+            // định kỳ 30s để các thành viên khác thấy mình trên bản đồ.
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(children: [
+                Icon(
+                  sharing
+                      ? Icons.location_on_rounded
+                      : Icons.location_off_rounded,
+                  size: 16,
+                  color: sharing ? AppColors.safe : AppColors.textMuted,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    sharing
+                        ? 'Đang chia sẻ vị trí của bạn'
+                        : 'Chia sẻ vị trí của bạn',
+                    style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: sharing
+                            ? AppColors.safe
+                            : AppColors.textSecondary),
+                  ),
+                ),
+                Transform.scale(
+                  scale: 0.75,
+                  child: Switch(
+                    value: sharing,
+                    onChanged: busy ? null : onToggleSharing,
+                    activeThumbColor: AppColors.safe,
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 4),
             ...pins.map((pin) => GestureDetector(
                   onTap: () => onTap(pin),
                   child: Padding(
