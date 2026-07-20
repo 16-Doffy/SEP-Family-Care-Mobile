@@ -106,6 +106,46 @@ void main() {
     expect(TabOptionX.fromId('khong-ton-tai'), isNull);
   });
 
+  test('mọi role đều chọn được cả 6 mục', () {
+    for (final role in UserRole.values) {
+      expect(allowedTabsFor(role).length, TabOption.values.length);
+    }
+  });
+
+  test('branchOrderFor phản ánh đúng cấu hình của từng role', () async {
+    final p = TabConfigProvider(store: _FakeStore());
+
+    // Member mặc định [tasks, wallet, chat] → branch 4, 5, 1.
+    expect(p.branchOrderFor(UserRole.member), [
+      kHomeBranchIndex,
+      TabOption.tasks.branchIndex,
+      TabOption.wallet.branchIndex,
+      kSosBranchIndex,
+      TabOption.chat.branchIndex,
+      kProfileBranchIndex,
+    ]);
+
+    // Deputy đổi vị trí 3 sang Lịch → chỉ ô đó đổi, 3 ô cố định giữ nguyên.
+    await p.setTabAt(UserRole.deputy, 1, TabOption.calendar);
+    final deputy = p.branchOrderFor(UserRole.deputy);
+    expect(deputy[2], TabOption.calendar.branchIndex);
+    expect(deputy[0], kHomeBranchIndex);
+    expect(deputy[3], kSosBranchIndex);
+    expect(deputy[5], kProfileBranchIndex);
+  });
+
+  test('không có branch index nào trùng nhau trên thanh nav', () async {
+    final p = TabConfigProvider(store: _FakeStore());
+    for (final role in UserRole.values) {
+      final order = p.branchOrderFor(role);
+      expect(
+        order.toSet().length,
+        order.length,
+        reason: '$role: branch trùng → có ô không bao giờ tới được',
+      );
+    }
+  });
+
   test('reset trả về mặc định của role', () async {
     final p = TabConfigProvider(store: _FakeStore());
     await p.setTabAt(UserRole.manager, 0, TabOption.map);
