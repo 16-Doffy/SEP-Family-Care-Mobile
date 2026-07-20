@@ -100,7 +100,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
     final members = context.read<FamilyProvider>().members;
-    final selectedMembers = {...event?.participantMemberIds ?? const <String>[]};
+    final selectedMembers = {
+      ...event?.participantMemberIds ?? const <String>[],
+    };
 
     final titleCtrl = TextEditingController(text: event?.title ?? '');
     final locationCtrl = TextEditingController(text: event?.location ?? '');

@@ -253,18 +253,20 @@ class CalendarProvider extends ChangeNotifier {
       isRecurring: isRecurring,
       reminderEnabled: reminderEnabled,
     );
-    final res = await ApiClient.instance
-        .post('/families/$_fid/calendar/events', {
-          'title': title.trim(),
-          'description': ?_clean(description),
-          'location': ?_clean(location),
-          'startTime': startTime.toUtc().toIso8601String(),
-          'endTime': ?endTime?.toUtc().toIso8601String(),
-          'isRecurring': isRecurring,
-          'reminderEnabled': reminderEnabled,
-          // Bỏ trống → BE tự thêm toàn bộ thành viên (theo flow Nhật mô tả).
-          'participantMemberIds': ?_ids(participantMemberIds),
-        });
+    final res = await ApiClient.instance.post(
+      '/families/$_fid/calendar/events',
+      {
+        'title': title.trim(),
+        'description': ?_clean(description),
+        'location': ?_clean(location),
+        'startTime': startTime.toUtc().toIso8601String(),
+        'endTime': ?endTime?.toUtc().toIso8601String(),
+        'isRecurring': isRecurring,
+        'reminderEnabled': reminderEnabled,
+        // Bỏ trống → BE tự thêm toàn bộ thành viên (theo flow Nhật mô tả).
+        'participantMemberIds': ?_ids(participantMemberIds),
+      },
+    );
     await fetchEvents(startTime);
     return res.isNotEmpty ? FamilyCalendarEvent.fromJson(res) : null;
   }
