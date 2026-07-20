@@ -287,7 +287,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                           children: [
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => context.push('/member/wallet'),
+                                // go() chứ KHÔNG push(): đây là branch của
+                                // shell, push sẽ dựng shell thứ hai dùng chung
+                                // GlobalKey của nhánh → crash Navigator.
+                                onTap: () => context.go('/member/wallet'),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 8,
@@ -385,7 +388,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                             // chối). Không có quyền tạo/sửa/hủy.
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => context.push('/calendar'),
+                                onTap: () => context.go('/member/calendar'),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 8,
@@ -598,7 +601,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
             )
           else
             GestureDetector(
-              onTap: () => context.push('/member/tasks'),
+              onTap: () => context.go('/member/tasks'), // shell branch → go()
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,

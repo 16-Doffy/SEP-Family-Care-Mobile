@@ -128,6 +128,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => context.push('/profile/change-password'),
               ),
               _tile('🔔', 'Thông báo', onTap: () {}),
+              // Mọi role đều tùy chỉnh được — cấu hình lưu riêng theo role.
+              _tile(
+                '🧭',
+                'Thanh điều hướng',
+                onTap: () => context.push('/settings/tabs'),
+              ),
             ]),
             const SizedBox(height: 16),
 

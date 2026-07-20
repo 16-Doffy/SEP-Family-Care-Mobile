@@ -4,37 +4,28 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../models/tab_option.dart';
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
+import '../providers/tab_config_provider.dart';
 import '../services/api_client.dart';
 import '../services/local_notification_service.dart';
 import '../services/push_service.dart';
 import '../theme/app_colors.dart';
 import 'notification_router.dart';
 
-// Tab thường (không phải SOS) trong bottom nav.
-class FamilyTab {
-  final IconData icon;
-  final String label;
-  const FamilyTab({required this.icon, required this.label});
-}
-
-// Shell dùng chung cho cả 3 role (Manager/Deputy/Member) — khác biệt giữa
-// role chỉ nằm ở danh sách tab + route đích (định nghĩa ở app_router.dart),
-// không ảnh hưởng tới logic phân quyền (xem AppUser.canXxx trong
-// lib/models/user.dart).
+// Shell dùng chung cho cả 3 role (Manager/Deputy/Member). Mỗi role khai đủ 9
+// branch (xem kShellBranchOrder trong models/tab_option.dart) vì
+// StatefulShellRoute.indexedStack cố định branch lúc dựng router.
 //
-// Thứ tự 6 vị trí luôn cố định: 0 Trang chủ, 1-2 middleTabs[0..1], 3 SOS
-// (nút tròn đỏ đặc biệt, giống nhau mọi role), 4 middleTabs[2], 5 Tôi.
+// Thanh nav luôn 6 ô, thứ tự cố định và người dùng KHÔNG đổi được:
+//   0 Trang chủ │ 1 tùy chọn │ 2 tùy chọn │ 3 SOS │ 4 tùy chọn │ 5 Tôi
+// Ba ô tùy chọn ánh xạ sang branch nào là do TabConfigProvider quyết định.
 class FamilyShell extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
-  final List<FamilyTab> middleTabs; // đúng 3 phần tử: vị trí 1, 2, 4
-  const FamilyShell({
-    super.key,
-    required this.navigationShell,
-    required this.middleTabs,
-  });
+  const FamilyShell({super.key, required this.navigationShell});
 
   @override
   State<FamilyShell> createState() => _FamilyShellState();
@@ -78,6 +69,11 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         ..onTransient = _showTransientNotif;
       _notif!.fetchUnreadCount();
       _notif!.startRealtime();
+      // Cấu hình thanh nav nằm trong secure storage → đọc bất đồng bộ. Chưa
+      // đọc xong thì tabsFor() trả mặc định của role, nên thanh nav vẫn dựng
+      // được ngay, không chờ.
+      final role = context.read<AuthProvider>().user?.role;
+      if (role != null) context.read<TabConfigProvider>().load(role);
       _refreshLive();
       _startPolling();
     });
@@ -120,32 +116,34 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
             role: role,
           );
     messenger.clearSnackBars();
-    messenger.showSnackBar(SnackBar(
-      duration: const Duration(seconds: 4),
-      backgroundColor: const Color(0xFF111827),
-      content: Text(
-        '${n.emoji}  ${n.title}${n.body.isNotEmpty ? ' — ${n.body}' : ''}',
-        style: GoogleFonts.inter(fontSize: 13, color: Colors.white),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 4),
+        backgroundColor: const Color(0xFF111827),
+        content: Text(
+          '${n.emoji}  ${n.title}${n.body.isNotEmpty ? ' — ${n.body}' : ''}',
+          style: GoogleFonts.inter(fontSize: 13, color: Colors.white),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        action: path == null
+            ? null
+            : SnackBarAction(
+                label: 'Xem',
+                textColor: Colors.white,
+                onPressed: () {
+                  if (!mounted) return;
+                  // Shell-branch → go (đổi tab); push sẽ nhân đôi shell →
+                  // crash trùng GlobalKey. Xem NotificationRouter.isShellBranch.
+                  if (NotificationRouter.isShellBranch(path)) {
+                    context.go(path);
+                  } else {
+                    context.push(path);
+                  }
+                },
+              ),
       ),
-      action: path == null
-          ? null
-          : SnackBarAction(
-              label: 'Xem',
-              textColor: Colors.white,
-              onPressed: () {
-                if (!mounted) return;
-                // Shell-branch → go (đổi tab); push sẽ nhân đôi shell →
-                // crash trùng GlobalKey. Xem NotificationRouter.isShellBranch.
-                if (NotificationRouter.isShellBranch(path)) {
-                  context.go(path);
-                } else {
-                  context.push(path);
-                }
-              },
-            ),
-    ));
+    );
   }
 
   @override
@@ -281,10 +279,20 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     );
   }
 
+  Widget _tabItem(TabOption option, UserRole role, int current) => _NavItem(
+    icon: option.icon,
+    label: option.labelFor(role),
+    index: option.branchIndex,
+    current: current,
+    onTap: () => _go(option.branchIndex),
+  );
+
   @override
   Widget build(BuildContext context) {
     final activeAlerts = context.watch<SosProvider>().activeAlerts;
     final current = widget.navigationShell.currentIndex;
+    final role = context.watch<AuthProvider>().user?.role ?? UserRole.member;
+    final tabs = context.watch<TabConfigProvider>().tabsFor(role);
 
     return Scaffold(
       body: Column(
@@ -314,9 +322,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
                         // "X cần trợ giúp" về chính mình.
                         activeAlerts.length == 1
                             ? (activeAlerts.first.isMine(
-                                    context.read<AuthProvider>().user?.id)
-                                ? 'Bạn đang phát cảnh báo SOS — chạm để xác nhận an toàn'
-                                : '${activeAlerts.first.senderName} cần trợ giúp khẩn cấp!')
+                                    context.read<AuthProvider>().user?.id,
+                                  )
+                                  ? 'Bạn đang phát cảnh báo SOS — chạm để xác nhận an toàn'
+                                  : '${activeAlerts.first.senderName} cần trợ giúp khẩn cấp!')
                             : '${activeAlerts.length} cảnh báo SOS đang hoạt động!',
                         style: GoogleFonts.inter(
                           fontSize: 13,
@@ -359,42 +368,24 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
                 _NavItem(
                   icon: Icons.home_rounded,
                   label: 'Trang chủ',
-                  index: 0,
+                  index: kHomeBranchIndex,
                   current: current,
-                  onTap: () => _go(0),
+                  onTap: () => _go(kHomeBranchIndex),
                 ),
-                _NavItem(
-                  icon: widget.middleTabs[0].icon,
-                  label: widget.middleTabs[0].label,
-                  index: 1,
-                  current: current,
-                  onTap: () => _go(1),
-                ),
-                _NavItem(
-                  icon: widget.middleTabs[1].icon,
-                  label: widget.middleTabs[1].label,
-                  index: 2,
-                  current: current,
-                  onTap: () => _go(2),
-                ),
+                _tabItem(tabs[0], role, current),
+                _tabItem(tabs[1], role, current),
                 _SOSNavItem(
                   hasAlert: activeAlerts.isNotEmpty,
                   current: current,
-                  onTap: () => _go(3),
+                  onTap: () => _go(kSosBranchIndex),
                 ),
-                _NavItem(
-                  icon: widget.middleTabs[2].icon,
-                  label: widget.middleTabs[2].label,
-                  index: 4,
-                  current: current,
-                  onTap: () => _go(4),
-                ),
+                _tabItem(tabs[2], role, current),
                 _NavItem(
                   icon: Icons.person_rounded,
                   label: 'Tôi',
-                  index: 5,
+                  index: kProfileBranchIndex,
                   current: current,
-                  onTap: () => _go(5),
+                  onTap: () => _go(kProfileBranchIndex),
                 ),
               ],
             ),

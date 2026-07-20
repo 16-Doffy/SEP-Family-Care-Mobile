@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/notification_provider.dart';
@@ -70,6 +71,10 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final user = context.watch<AuthProvider>().user;
     final walletState = context.watch<WalletProvider>();
     final taskState = context.watch<TaskProvider>();
+
+    // Màn này dùng chung cho Manager VÀ Deputy, nên phím tắt phải trỏ vào shell
+    // của đúng role: hardcode /manager/* sẽ khiến Deputy bị redirect về home.
+    final seg = user?.role == UserRole.deputy ? 'deputy' : 'manager';
 
     final balance = walletState.familyWallet?.balance ?? 0.0;
     final transactions = walletState.transactions;
@@ -227,7 +232,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
                   // ── Hero Wallet Card ────────────────────────────
                   GestureDetector(
-                    onTap: () => context.push('/manager/wallet'),
+                    onTap: () => context.go('/$seg/wallet'),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 22,
@@ -305,7 +310,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       _quickCard(
                         '📋',
                         'Tasks',
-                        () => context.push('/manager/tasks'),
+                        () => context.go('/$seg/tasks'),
                       ),
                       const SizedBox(width: 12),
                       _quickCard(
@@ -328,7 +333,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         ),
                         const SizedBox(width: 12),
                       ],
-                      _quickCard('🗺️', 'Bản đồ', () => context.push('/map')),
+                      _quickCard(
+                        '🗺️',
+                        'Bản đồ',
+                        () => context.go('/$seg/map'),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -338,7 +347,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => context.push('/manager/tasks'),
+                          onTap: () => context.go('/$seg/tasks'),
                           child: _card(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -568,7 +577,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: () => context.push('/manager/wallet'),
+                        onTap: () => context.go('/$seg/wallet'),
                         child: Text(
                           'Xem tất cả →',
                           style: GoogleFonts.inter(

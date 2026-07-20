@@ -25,6 +25,7 @@ import '../screens/shared/sos_screen.dart';
 import '../screens/shared/album_screen.dart';
 import '../screens/shared/profile_screen.dart';
 import '../screens/shared/notifications_screen.dart';
+import '../screens/shared/tab_settings_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
 import '../screens/shared/change_password_screen.dart';
 
@@ -62,25 +63,47 @@ final _managerKey = GlobalKey<NavigatorState>(debugLabel: 'manager');
 final _deputyKey = GlobalKey<NavigatorState>(debugLabel: 'deputy');
 final _memberKey = GlobalKey<NavigatorState>(debugLabel: 'member');
 
-const _managerTabs = [
-  FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Nhắn tin'),
-  FamilyTab(icon: Icons.calendar_month_rounded, label: 'Lịch'),
-  FamilyTab(icon: Icons.photo_library_rounded, label: 'Album'),
-];
-const _deputyTabs = [
-  FamilyTab(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ'),
-  // Deputy mở WalletScreen = ví & sổ quỹ CHUNG của gia đình → "Sổ thu chi"
-  FamilyTab(icon: Icons.account_balance_wallet_rounded, label: 'Sổ thu chi'),
-  FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Chat'),
-];
-// Member mở ChildWalletScreen = khai báo tài chính cá nhân theo tháng
-// (monthly-finances/me) — KHÔNG phải ví tiền (member không được xem ví chung,
-// by design đã chốt 2026-07-11) → gọi "Tài chính" cho đúng bản chất
-const _memberTabs = [
-  FamilyTab(icon: Icons.task_alt_rounded, label: 'Nhiệm vụ'),
-  FamilyTab(icon: Icons.savings_rounded, label: 'Sổ thu chi'),
-  FamilyTab(icon: Icons.chat_bubble_rounded, label: 'Chat'),
-];
+// Mỗi role khai đủ 9 branch theo thứ tự CỐ ĐỊNH:
+//   0 home │ 1 chat │ 2 calendar │ 3 map │ 4 tasks │ 5 wallet │ 6 album
+//   │ 7 sos │ 8 profile
+// (khớp kShellBranchOrder + kSosBranchIndex/kProfileBranchIndex trong
+// models/tab_option.dart — đổi bên nào phải đổi bên kia).
+//
+// Phải khai đủ cả 9 dù thanh nav chỉ hiện 6, vì StatefulShellRoute.indexedStack
+// cố định branch lúc dựng router, không đổi được lúc chạy. Thanh nav chỉ ánh xạ
+// vị trí hiển thị → branch index theo cấu hình người dùng (TabConfigProvider).
+//
+// chat/calendar/map/album/sos/profile dùng chung màn cho mọi role; home/tasks/
+// wallet khác nhau nên nhận qua tham số — Member mở ChildWalletScreen (khai báo
+// tài chính cá nhân), Manager/Deputy mở WalletScreen (ví & sổ quỹ CHUNG).
+List<StatefulShellBranch> _roleBranches({
+  required String seg,
+  required GlobalKey<NavigatorState> homeKey,
+  required Widget home,
+  required Widget tasks,
+  required Widget wallet,
+}) {
+  StatefulShellBranch branch(
+    String path,
+    Widget child, {
+    GlobalKey<NavigatorState>? key,
+  }) => StatefulShellBranch(
+    navigatorKey: key,
+    routes: [GoRoute(path: '/$seg/$path', builder: (_, _) => child)],
+  );
+
+  return [
+    branch('home', home, key: homeKey),
+    branch('chat', const ChatScreen()),
+    branch('calendar', const CalendarScreen()),
+    branch('map', const FamilyMapScreen()),
+    branch('tasks', tasks),
+    branch('wallet', wallet),
+    branch('album', const AlbumScreen()),
+    branch('sos', const SOSScreen()),
+    branch('profile', const ProfileScreen()),
+  ];
+}
 
 // Route Manager-only — Deputy KHÔNG được vào dù dùng chung namespace
 // /manager/* với các màn hình quản lý khác. Đã verify bằng tài khoản Deputy
@@ -100,35 +123,31 @@ const _managerOnlyPaths = {
 const _memberSharedPaths = {'/manager/members', '/manager/member/:memberId'};
 
 // Path thuộc shell bottom-nav riêng của từng role — chỉ chính role đó được
-// vào (Deputy/Member không nên đi sâu vào Lịch/Album của Manager dù route
-// vẫn nằm dưới /manager/*; Manager không có lý do gì vào /deputy/* hay
-// /member/*). Các route quản lý dùng chung KHÔNG nằm trong các set này
-// (ví dụ /manager/members, /manager/finance-model, /manager/wallet...) nên
-// vẫn mở cho Deputy như bình thường.
-const _managerShellPaths = {
-  '/manager/home',
-  '/manager/chat',
-  '/manager/calendar',
-  '/manager/sos',
-  '/manager/album',
-  '/manager/profile',
+// vào (Deputy/Member không nên đi sâu vào shell của Manager dù route vẫn nằm
+// dưới /manager/*; Manager không có lý do gì vào /deputy/* hay /member/*).
+// Các route quản lý dùng chung KHÔNG nằm trong các set này (ví dụ
+// /manager/members, /manager/finance-model...) nên vẫn mở cho Deputy.
+//
+// Sinh từ _roleBranches để không bao giờ lệch: mỗi role có đủ 9 branch, thêm
+// branch mới là tự động được chặn đúng, không phải nhớ sửa 3 chỗ.
+Set<String> _shellPathsOf(String seg) => {
+  for (final p in [
+    'home',
+    'chat',
+    'calendar',
+    'map',
+    'tasks',
+    'wallet',
+    'album',
+    'sos',
+    'profile',
+  ])
+    '/$seg/$p',
 };
-const _deputyShellPaths = {
-  '/deputy/home',
-  '/deputy/tasks',
-  '/deputy/wallet',
-  '/deputy/sos',
-  '/deputy/chat',
-  '/deputy/profile',
-};
-const _memberShellPaths = {
-  '/member/home',
-  '/member/tasks',
-  '/member/wallet',
-  '/member/sos',
-  '/member/chat',
-  '/member/profile',
-};
+
+final _managerShellPaths = _shellPathsOf('manager');
+final _deputyShellPaths = _shellPathsOf('deputy');
+final _memberShellPaths = _shellPathsOf('member');
 
 // Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
 // riêng để unit test được mà không cần render cây widget thật.
@@ -301,188 +320,56 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (_, _) => const NotificationsScreen(),
       ),
       GoRoute(path: '/ai', builder: (_, _) => const AIAssistantScreen()),
+      GoRoute(
+        path: '/settings/tabs',
+        builder: (_, _) => const TabSettingsScreen(),
+      ),
 
       // ── Manager Shell (Trang chủ/Nhắn tin/Lịch/SOS/Album/Tôi) ──
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) =>
-            FamilyShell(navigationShell: shell, middleTabs: _managerTabs),
-        branches: [
-          StatefulShellBranch(
-            navigatorKey: _managerKey,
-            routes: [
-              GoRoute(
-                path: '/manager/home',
-                builder: (_, _) => const HomeDashboardScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/manager/chat',
-                builder: (_, _) => const ChatScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/manager/calendar',
-                builder: (_, _) => const CalendarScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/manager/sos',
-                builder: (_, _) => const SOSScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/manager/album',
-                builder: (_, _) => const AlbumScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/manager/profile',
-                builder: (_, _) => const ProfileScreen(),
-              ),
-            ],
-          ),
-        ],
+        builder: (_, _, shell) => FamilyShell(navigationShell: shell),
+        branches: _roleBranches(
+          seg: 'manager',
+          homeKey: _managerKey,
+          home: const HomeDashboardScreen(),
+          tasks: const TaskManagementScreen(),
+          wallet: const WalletScreen(),
+        ),
       ),
 
       // ── Deputy Shell (Trang chủ/Nhiệm vụ/Ví/SOS/Chat/Tôi — mở màn
       // hình quản lý, không phải màn hình member thông thường) ──
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) =>
-            FamilyShell(navigationShell: shell, middleTabs: _deputyTabs),
-        branches: [
-          StatefulShellBranch(
-            navigatorKey: _deputyKey,
-            routes: [
-              GoRoute(
-                path: '/deputy/home',
-                builder: (_, _) => const HomeDashboardScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/deputy/tasks',
-                builder: (_, _) => const TaskManagementScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/deputy/wallet',
-                builder: (_, _) => const WalletScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/deputy/sos',
-                builder: (_, _) => const SOSScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/deputy/chat',
-                builder: (_, _) => const ChatScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/deputy/profile',
-                builder: (_, _) => const ProfileScreen(),
-              ),
-            ],
-          ),
-        ],
+        builder: (_, _, shell) => FamilyShell(navigationShell: shell),
+        branches: _roleBranches(
+          seg: 'deputy',
+          homeKey: _deputyKey,
+          home: const HomeDashboardScreen(),
+          tasks: const TaskManagementScreen(),
+          wallet: const WalletScreen(),
+        ),
       ),
 
       // ── Member Shell (Trang chủ/Nhiệm vụ/Ví/SOS/Chat/Tôi) ──────
       StatefulShellRoute.indexedStack(
         parentNavigatorKey: _rootKey,
-        builder: (_, _, shell) =>
-            FamilyShell(navigationShell: shell, middleTabs: _memberTabs),
-        branches: [
-          StatefulShellBranch(
-            navigatorKey: _memberKey,
-            routes: [
-              GoRoute(
-                path: '/member/home',
-                builder: (_, _) => const ChildHomeScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/member/tasks',
-                builder: (_, _) => const ChildTasksScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/member/wallet',
-                builder: (_, _) => const ChildWalletScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/member/sos',
-                builder: (_, _) => const SOSScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/member/chat',
-                builder: (_, _) => const ChatScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/member/profile',
-                builder: (_, _) => const ProfileScreen(),
-              ),
-            ],
-          ),
-        ],
+        builder: (_, _, shell) => FamilyShell(navigationShell: shell),
+        branches: _roleBranches(
+          seg: 'member',
+          homeKey: _memberKey,
+          home: const ChildHomeScreen(),
+          tasks: const ChildTasksScreen(),
+          wallet: const ChildWalletScreen(),
+        ),
       ),
 
       // ── Manager Specific Routes ───────────────────────────
-      GoRoute(path: '/manager/wallet', builder: (_, _) => const WalletScreen()),
-      GoRoute(
-        path: '/manager/tasks',
-        builder: (_, _) => const TaskManagementScreen(),
-      ),
+      // /manager/wallet và /manager/tasks đã chuyển thành branch của shell (xem
+      // _roleBranches) để dùng làm tab được → KHÔNG khai lại ở đây, go_router
+      // không cho trùng path. Nơi gọi phải dùng context.go(), không dùng
+      // push() — push lên shell branch sẽ dựng shell thứ hai trùng GlobalKey.
       GoRoute(
         path: '/manager/reward-management',
         builder: (_, _) => const RewardManagementScreen(),

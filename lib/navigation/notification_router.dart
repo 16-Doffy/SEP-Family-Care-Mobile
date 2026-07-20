@@ -12,25 +12,23 @@ class NotificationRouter {
   /// THÊM một shell chồng lên shell đang có, làm 2 shell dùng chung
   /// `navigatorKey` GlobalKey của nhánh → crash Navigator
   /// `'!keyReservation.contains(key)'`.
-  static const _shellBranchPaths = {
-    '/manager/home',
-    '/manager/chat',
-    '/manager/calendar',
-    '/manager/sos',
-    '/manager/album',
-    '/manager/profile',
-    '/deputy/home',
-    '/deputy/tasks',
-    '/deputy/wallet',
-    '/deputy/sos',
-    '/deputy/chat',
-    '/deputy/profile',
-    '/member/home',
-    '/member/tasks',
-    '/member/wallet',
-    '/member/sos',
-    '/member/chat',
-    '/member/profile',
+  /// Sinh từ danh sách branch thay vì liệt kê tay — mỗi role có đủ 9 branch
+  /// (xem `_roleBranches` trong app_router.dart), liệt kê 27 dòng bằng tay thì
+  /// sớm muộn cũng lệch.
+  static final _shellBranchPaths = {
+    for (final seg in ['manager', 'deputy', 'member'])
+      for (final p in [
+        'home',
+        'chat',
+        'calendar',
+        'map',
+        'tasks',
+        'wallet',
+        'album',
+        'sos',
+        'profile',
+      ])
+        '/$seg/$p',
   };
 
   /// true → dùng `context.go(path)`; false → `context.push(path)` (giữ back).
@@ -56,7 +54,7 @@ class NotificationRouter {
       case 'SOS_ALERT':
         return '/$shell/sos';
       case 'ALBUM_MEDIA':
-        return '/album'; // route phẳng, mọi role vào được
+        return '/$shell/album';
       case 'JOIN_REQUEST':
         return isMgr ? '/manager/invite-requests' : null;
       case 'FAMILY': // vừa được duyệt vào / bị xoá khỏi family
@@ -66,12 +64,12 @@ class NotificationRouter {
             ? '/manager/member/$id'
             : (isMgr ? '/manager/members' : null);
       case 'TASK_ASSIGNMENT':
-        return isMgr ? '/manager/tasks' : '/member/tasks';
+        return '/$shell/tasks';
       case 'CALENDAR_EVENT':
-        // Manager giữ tab shell; Deputy/Member đi route phẳng /calendar. Trước
-        // đây trả null cho non-manager → chính người được mời tham gia lại
-        // không bấm được vào thông báo để phản hồi.
-        return role == UserRole.manager ? '/manager/calendar' : '/calendar';
+        // Mọi role đều có branch calendar riêng. Trước đây trả null cho
+        // non-manager → chính người được mời tham gia lại không bấm được vào
+        // thông báo để phản hồi (ACCEPTED|DECLINED|MAYBE).
+        return '/$shell/calendar';
       case 'BUDGET_ALERT':
         return isMgr ? '/manager/finance-alerts' : null;
       case 'FINANCIAL_GOAL':

@@ -24,20 +24,18 @@ void main() {
     }
   });
 
-  test('Manager giữ tab shell, Deputy/Member đi route phẳng /calendar', () {
+  test('mỗi role đi vào branch calendar của chính mình', () {
     expect(routeFor(UserRole.manager), '/manager/calendar');
-    expect(routeFor(UserRole.deputy), '/calendar');
-    expect(routeFor(UserRole.member), '/calendar');
+    expect(routeFor(UserRole.deputy), '/deputy/calendar');
+    expect(routeFor(UserRole.member), '/member/calendar');
   });
 
-  test(
-    '/manager/calendar là shell branch → phải go(); /calendar thì push()',
-    () {
-      // push() lên shell branch sẽ dựng 2 shell trùng GlobalKey → crash.
-      expect(NotificationRouter.isShellBranch('/manager/calendar'), isTrue);
-      expect(NotificationRouter.isShellBranch('/calendar'), isFalse);
-    },
-  );
+  test('calendar của mọi role là shell branch → phải go(), không push()', () {
+    // push() lên shell branch sẽ dựng 2 shell trùng GlobalKey → crash.
+    for (final seg in ['manager', 'deputy', 'member']) {
+      expect(NotificationRouter.isShellBranch('/$seg/calendar'), isTrue);
+    }
+  });
 
   test('chỉ Manager/Deputy được quản lý lịch, Member thì không', () {
     AppUser user(UserRole r) => AppUser(
