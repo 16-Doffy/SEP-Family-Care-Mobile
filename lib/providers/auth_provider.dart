@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user.dart';
 import '../services/api_client.dart';
+import '../services/push_service.dart';
 
 class _FamilyContext {
   final String? id;
@@ -421,6 +422,9 @@ class AuthProvider extends ChangeNotifier {
   // POST /auth/logout
   Future<void> logout() async {
     final refreshToken = _user?.refreshToken;
+    // Hủy FCM token TRƯỚC khi xóa session (cần access token để gọi DELETE) —
+    // nếu không, máy dùng chung sẽ nhận push của tài khoản cũ.
+    await PushService.instance.unregister();
     // Xóa session ngay lập tức — không đợi server response
     _user = null;
     _pendingEmailVerification = false;

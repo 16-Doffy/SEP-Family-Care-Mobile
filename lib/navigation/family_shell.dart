@@ -9,6 +9,7 @@ import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../services/api_client.dart';
 import '../services/local_notification_service.dart';
+import '../services/push_service.dart';
 import '../theme/app_colors.dart';
 import 'notification_router.dart';
 
@@ -66,6 +67,11 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       LocalNotificationService.instance
         ..onTapPayload = _onNotificationTapPayload
         ..init();
+      // FCM push — kênh duy nhất nhận được khi app ở nền/đã tắt. Đã đăng nhập
+      // tới đây nên gọi POST /devices/tokens được ngay.
+      PushService.instance
+        ..onTapPayload = _onNotificationTapPayload
+        ..start();
       // Realtime notification (Socket.IO /notifications) — REST poll bên dưới
       // vẫn giữ làm fallback nếu socket rớt. Toast cho push-only (id null).
       _notif = context.read<NotificationProvider>()

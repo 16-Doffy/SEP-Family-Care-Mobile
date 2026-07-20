@@ -1,5 +1,7 @@
 plugins {
     id("com.android.application")
+    // Firebase (FCM) — phải đứng trước Flutter plugin.
+    id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -19,8 +21,12 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.familycare.family_care"
+        // ⚠️ TẠM ĐỔI 20/07: phải khớp package_name trong google-services.json
+        // BE cấp (com.company.familycare) thì Firebase mới build được.
+        // Package "đúng" của app là com.familycare.family_care (= namespace).
+        // Khi BE thêm com.familycare.family_care vào Firebase project
+        // familycare-387d1 và cấp file mới → đổi lại dòng này về cũ.
+        applicationId = "com.company.familycare"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
