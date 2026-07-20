@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../models/feature_access.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 
@@ -129,31 +130,38 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     setState(() => _plansLoading = true);
     try {
       final data = await ApiClient.instance.get('/subscription-plans');
-      final list = data is List ? data : (data['items'] as List? ?? data['data'] as List? ?? []);
+      final list = data is List
+          ? data
+          : (data['items'] as List? ?? data['data'] as List? ?? []);
       if (list.isNotEmpty) {
         final mapped = list.map((p) {
-          final code    = p['planCode']?.toString() ?? '';
-          final name    = p['name']?.toString() ?? code;
+          final code = p['planCode']?.toString() ?? '';
+          final name = p['name']?.toString() ?? code;
           // BE trả annualPrice/storageLimit dạng string ("180000") — ép as num
           // sẽ throw và rơi về gói cứng, phải tryParse qua toString
-          final annual  = double.tryParse(p['annualPrice']?.toString() ?? '') ?? 0;
-          final maxM    = p['maxMembers']?.toString() ?? '∞';
-          final stoMB   = double.tryParse(p['storageLimit']?.toString() ?? '') ?? 0;
-          final stoStr  = stoMB >= 1024
+          final annual =
+              double.tryParse(p['annualPrice']?.toString() ?? '') ?? 0;
+          final maxM = p['maxMembers']?.toString() ?? '∞';
+          final stoMB =
+              double.tryParse(p['storageLimit']?.toString() ?? '') ?? 0;
+          final stoStr = stoMB >= 1024
               ? '${(stoMB / 1024).toStringAsFixed(0)} GB'
               : '${stoMB.toStringAsFixed(0)} MB';
-          final feat    = p['featureAccess'] is Map ? p['featureAccess'] as Map : const {};
-          // Map đúng các key featureAccess BE đang dùng
+          final feat = FeatureAccess.fromJson(p['featureAccess']);
+          // BE mới dùng key lồng như calendar.enabled; helper vẫn hỗ trợ key phẳng cũ.
           final features = <String>[
             '✅ Task & Wallet cơ bản',
             '✅ Chat nhóm & Thông báo',
-            if (feat['aiEnabled'] == true) '✅ Tính năng AI',
-            if (feat['advancedFinance'] == true) '✅ Tài chính nâng cao',
-            if (feat['advancedReports'] == true) '✅ Báo cáo nâng cao',
-            if (feat['aiChatbot'] == true) '✅ AI Chatbot',
-            if (feat['sos'] == true) '✅ SOS khẩn cấp',
-            if (feat['unlimitedStorage'] == true) '✅ Lưu trữ không giới hạn',
-            if (feat['maxFamilies'] != null && feat['maxFamilies'] != false)
+            if (feat.calendarEnabled) '✅ Calendar',
+            if (feat.calendarReminders) '✅ Nhắc lịch',
+            if (feat.calendarRecurringEvents) '✅ Sự kiện lặp lại',
+            if (feat.aiEnabled) '✅ Tính năng AI',
+            if (feat.advancedFinance) '✅ Tài chính nâng cao',
+            if (feat.advancedReports) '✅ Báo cáo nâng cao',
+            if (feat.aiChatbot) '✅ AI Chatbot',
+            if (feat.sos) '✅ SOS khẩn cấp',
+            if (feat.unlimitedStorage) '✅ Lưu trữ không giới hạn',
+            if (feat.maxFamilies != null && feat.maxFamilies != false)
               '✅ Nhiều gia đình',
           ];
 
@@ -186,7 +194,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             gradientColors: gradient,
             members: maxM == '0' ? 'Không giới hạn' : 'tối đa $maxM thành viên',
             storage: stoStr,
-            db: code == 'GOLD' || code == 'PREMIUM' ? 'Docker riêng / gia đình' : 'Shared DB + RLS',
+            db: code == 'GOLD' || code == 'PREMIUM'
+                ? 'Docker riêng / gia đình'
+                : 'Shared DB + RLS',
             features: features,
           );
         }).toList();
@@ -228,7 +238,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   Future<void> _subscribe(_PlanData plan) async {
     // _currentPlan == null: chưa biết gói hiện tại — đừng cho checkout kẻo
     // nâng/hạ nhầm chính gói đang dùng
-    if (_currentPlan == null || plan.id == _currentPlan || _checkingOutPlan != null) {
+    if (_currentPlan == null ||
+        plan.id == _currentPlan ||
+        _checkingOutPlan != null) {
       return;
     }
     final fid = ApiClient.instance.familyId;
@@ -239,16 +251,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       final ok = await showDialog<bool>(
         context: context,
         builder: (dCtx) => AlertDialog(
-          title: Text('Hạ xuống ${plan.name}?',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+          title: Text(
+            'Hạ xuống ${plan.name}?',
+            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
           content: Text(
-              'Gia đình sẽ mất các quyền lợi của gói hiện tại (thành viên, dung lượng, tính năng nâng cao). Bạn chắc chứ?',
-              style: GoogleFonts.inter(fontSize: 13.5, height: 1.5)),
+            'Gia đình sẽ mất các quyền lợi của gói hiện tại (thành viên, dung lượng, tính năng nâng cao). Bạn chắc chứ?',
+            style: GoogleFonts.inter(fontSize: 13.5, height: 1.5),
+          ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('Giữ gói hiện tại')),
             TextButton(
-                onPressed: () => Navigator.pop(dCtx, true),
-                child: const Text('Hạ gói', style: TextStyle(color: AppColors.danger))),
+              onPressed: () => Navigator.pop(dCtx, false),
+              child: const Text('Giữ gói hiện tại'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dCtx, true),
+              child: const Text(
+                'Hạ gói',
+                style: TextStyle(color: AppColors.danger),
+              ),
+            ),
           ],
         ),
       );
@@ -271,10 +293,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         throw Exception('Không mở được trang thanh toán');
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(e.toString().replaceFirst('Exception: ', '')),
-        backgroundColor: AppColors.danger,
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _checkingOutPlan = null);
     }
@@ -285,162 +309,214 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(children: [
-          // ── Header ────────────────────────────────────────────
-          Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Row(children: [
-              GestureDetector(
-                onTap: () => context.pop(),
-                child: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
+        child: Column(
+          children: [
+            // ── Header ────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => context.pop(),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
                             color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 20)
-                      ]),
-                  child: const Icon(Icons.arrow_back_ios_new_rounded,
-                      size: 18, color: AppColors.textPrimary),
-                ),
-              ),
-              const Expanded(
-                child: Center(
-                  child: Text('Gói đăng ký',
-                      style: TextStyle(
+                            blurRadius: 20,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        size: 18,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  const Expanded(
+                    child: Center(
+                      child: Text(
+                        'Gói đăng ký',
+                        style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary)),
-                ),
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 40),
+                ],
               ),
-              const SizedBox(width: 40),
-            ]),
-          ),
+            ),
 
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              children: [
-                // ── Gói hiện tại ──────────────────────────────
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: [
+                  // ── Gói hiện tại ──────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
                       color: const Color(0xFFF0F9FF),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                          color: const Color(0xFFBAE6FD), width: 1.5)),
-                  child: Row(children: [
-                    const Text('📋',
-                        style: TextStyle(fontSize: 20)),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Gói hiện tại của gia đình',
+                        color: const Color(0xFFBAE6FD),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text('📋', style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Gói hiện tại của gia đình',
                                 style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    color: AppColors.textMuted)),
-                            Text(
-                              _currentPlan == null
-                                  ? 'Đang tải...'
-                                  : _plans.any((p) => p.id == _currentPlan)
-                                      ? _plans.firstWhere((p) => p.id == _currentPlan).name
-                                      : _currentPlan!,
-                              style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                              Text(
+                                _currentPlan == null
+                                    ? 'Đang tải...'
+                                    : _plans.any((p) => p.id == _currentPlan)
+                                    ? _plans
+                                          .firstWhere(
+                                            (p) => p.id == _currentPlan,
+                                          )
+                                          .name
+                                    : _currentPlan!,
+                                style: GoogleFonts.inter(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,
                                   color: _currentPlan == null
                                       ? AppColors.textMuted
-                                      : AppColors.textPrimary),
+                                      : AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_currentPlan == null)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
                             ),
-                          ]),
-                    ),
-                    if (_currentPlan == null)
-                      const SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                            color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(999)),
-                        child: Text('Đang dùng',
-                            style: GoogleFonts.inter(
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFF2563EB,
+                              ).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Đang dùng',
+                              style: GoogleFonts.inter(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: const Color(0xFF2563EB))),
-                      ),
-                  ]),
-                ),
-                const SizedBox(height: 20),
+                                color: const Color(0xFF2563EB),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
 
-                Text('Chọn gói phù hợp',
+                  Text(
+                    'Chọn gói phù hợp',
                     style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary)),
-                const SizedBox(height: 4),
-                Text(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
                     'Không giới hạn thành viên · Hủy bất cứ lúc nào',
                     style: GoogleFonts.inter(
-                        fontSize: 13, color: AppColors.textMuted)),
-                const SizedBox(height: 16),
-
-                // ── Plan cards ────────────────────────────────
-                if (_plansLoading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 32),
-                      child: CircularProgressIndicator(),
+                      fontSize: 13,
+                      color: AppColors.textMuted,
                     ),
-                  )
-                else
-                ..._plans.map((plan) => _PlanCard(
-                      plan: plan,
-                      isCurrent: plan.id == _currentPlan,
-                      isDowngrade: plan.priceValue < _currentPriceValue,
-                      isCheckingOut: _checkingOutPlan == plan.id,
-                      onSubscribe: () => _subscribe(plan),
-                    )),
+                  ),
+                  const SizedBox(height: 16),
 
-                const SizedBox(height: 16),
+                  // ── Plan cards ────────────────────────────────
+                  if (_plansLoading)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else
+                    ..._plans.map(
+                      (plan) => _PlanCard(
+                        plan: plan,
+                        isCurrent: plan.id == _currentPlan,
+                        isDowngrade: plan.priceValue < _currentPriceValue,
+                        isCheckingOut: _checkingOutPlan == plan.id,
+                        onSubscribe: () => _subscribe(plan),
+                      ),
+                    ),
 
-                // ── Architecture note ─────────────────────────
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
+                  const SizedBox(height: 16),
+
+                  // ── Architecture note ─────────────────────────
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
                       color: const Color(0xFFF8F5FF),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                          color: const Color(0xFFDDD6FE), width: 1)),
-                  child: Column(
+                        color: const Color(0xFFDDD6FE),
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('🔒  Bảo mật dữ liệu',
-                            style: GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary)),
+                        Text(
+                          '🔒  Bảo mật dữ liệu',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                         const SizedBox(height: 8),
                         Text(
-                            'Free & Family: Dữ liệu được bảo vệ bằng Row-Level Security (RLS) — mỗi gia đình chỉ thấy dữ liệu của mình.\n\nPremium: Docker container riêng biệt cho từng gia đình — hoàn toàn độc lập.',
-                            style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                                height: 1.5)),
-                      ]),
-                ),
-                const SizedBox(height: 80),
-              ],
+                          'Free & Family: Dữ liệu được bảo vệ bằng Row-Level Security (RLS) — mỗi gia đình chỉ thấy dữ liệu của mình.\n\nPremium: Docker container riêng biệt cho từng gia đình — hoàn toàn độc lập.',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 80),
+                ],
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
@@ -474,116 +550,157 @@ class _PlanCard extends StatelessWidget {
             : Border.all(color: const Color(0xFFF3F4F6), width: 1.5),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: isCurrent ? 0.08 : 0.04),
-              blurRadius: 24,
-              offset: const Offset(0, 6)),
+            color: Colors.black.withValues(alpha: isCurrent ? 0.08 : 0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 6),
+          ),
         ],
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // ── Plan header gradient ─────────────────────────
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient:
-                LinearGradient(colors: plan.gradientColors, begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-          ),
-          child: Row(children: [
-            Text(plan.emoji, style: const TextStyle(fontSize: 28)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(plan.name,
-                    style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Plan header gradient ─────────────────────────
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: plan.gradientColors,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(22),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(plan.emoji, style: const TextStyle(fontSize: 28)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        plan.name,
+                        style: GoogleFonts.inter(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: plan.id == 'FREE'
+                              ? AppColors.textPrimary
+                              : Colors.white,
+                        ),
+                      ),
+                      Text(
+                        '${plan.members} · ${plan.storage}',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: plan.id == 'FREE'
+                              ? AppColors.textMuted
+                              : Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      plan.price,
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
                         color: plan.id == 'FREE'
                             ? AppColors.textPrimary
-                            : Colors.white)),
-                Text('${plan.members} · ${plan.storage}',
-                    style: GoogleFonts.inter(
-                        fontSize: 12,
+                            : Colors.white,
+                      ),
+                    ),
+                    Text(
+                      plan.period,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
                         color: plan.id == 'FREE'
                             ? AppColors.textMuted
-                            : Colors.white70)),
-              ]),
-            ),
-            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(plan.price,
-                  style: GoogleFonts.inter(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: plan.id == 'FREE'
-                          ? AppColors.textPrimary
-                          : Colors.white)),
-              Text(plan.period,
-                  style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: plan.id == 'FREE'
-                          ? AppColors.textMuted
-                          : Colors.white70)),
-            ]),
-          ]),
-        ),
-
-        // ── Features ────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ...plan.features.map(
-                (f) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(f,
-                      style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: f.startsWith('✅')
-                              ? AppColors.textPrimary
-                              : AppColors.textMuted)),
+                            : Colors.white70,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
+              ],
+            ),
+          ),
 
-              // ── CTA Button ───────────────────────────
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        isCurrent ? const Color(0xFFF3F4F6) : plan.color,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+          // ── Features ────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...plan.features.map(
+                  (f) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      f,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: f.startsWith('✅')
+                            ? AppColors.textPrimary
+                            : AppColors.textMuted,
+                      ),
+                    ),
                   ),
-                  onPressed: (isCurrent || isCheckingOut) ? null : onSubscribe,
-                  child: isCheckingOut
-                      ? SizedBox(
-                          width: 20, height: 20,
-                          child: CircularProgressIndicator(
+                ),
+                const SizedBox(height: 16),
+
+                // ── CTA Button ───────────────────────────
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isCurrent
+                          ? const Color(0xFFF3F4F6)
+                          : plan.color,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: (isCurrent || isCheckingOut)
+                        ? null
+                        : onSubscribe,
+                    child: isCheckingOut
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: plan.id == 'FREE' ? AppColors.textPrimary : Colors.white),
-                        )
-                      : Text(
-                          isCurrent
-                              ? '✓ Đang sử dụng'
-                              : '${isDowngrade ? 'Hạ xuống' : 'Nâng cấp'} ${plan.name}',
-                          style: GoogleFonts.inter(
+                              color: plan.id == 'FREE'
+                                  ? AppColors.textPrimary
+                                  : Colors.white,
+                            ),
+                          )
+                        : Text(
+                            isCurrent
+                                ? '✓ Đang sử dụng'
+                                : '${isDowngrade ? 'Hạ xuống' : 'Nâng cấp'} ${plan.name}',
+                            style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                               color: isCurrent
                                   ? AppColors.textMuted
                                   : plan.id == 'FREE'
-                                      ? AppColors.textPrimary
-                                      : Colors.white),
-                        ),
+                                  ? AppColors.textPrimary
+                                  : Colors.white,
+                            ),
+                          ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 }
