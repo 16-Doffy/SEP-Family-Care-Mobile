@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/album_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/calendar_provider.dart';
 import 'providers/money_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/task_provider.dart';
@@ -36,6 +37,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => SupportRequestProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProvider(create: (_) => CalendarProvider()),
       ],
       child: const FamilyCareApp(),
     ),

@@ -1,173 +1,756 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/calendar_provider.dart';
+import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
-
-// ── EventType enum — color-coding theo FAMILY_CARE_SYSTEM.md Section 9 ─────
-// 5 loại sự kiện, mỗi loại một màu riêng để phân biệt trên Calendar
-enum EventType {
-  task(     '📋 Task',          Color(0xFF2563EB)), // calTask   = planned
-  event(    '📅 Sự kiện',       Color(0xFF7C3AED)), // calEvent  = shared
-  travel(   '✈️ Du lịch',       Color(0xFF0EA5E9)), // calTravel = cyan (token mới)
-  birthday( '🎂 Sinh nhật',     Color(0xFFF59E0B)), // calBirthday = accent/500
-  health(   '🏥 Sức khỏe',      Color(0xFFEF4444)); // calHealth = sos
-
-  final String label;
-  final Color color;
-  const EventType(this.label, this.color);
-}
-
-class CalendarEvent {
-  final String title;
-  final EventType type;
-  const CalendarEvent({required this.title, required this.type});
-  Color get color => type.color;
-}
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
+
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  DateTime _focus = DateTime(2026, 5);
+  late DateTime _focus;
   int? _selected;
   bool _showLegend = false;
 
-  // Mock events — colors từ EventType enum (không hard-code màu)
-  static const _events = <int, List<CalendarEvent>>{
-    3:  [CalendarEvent(title: 'Khám sức khỏe định kỳ',  type: EventType.health)],
-    8:  [CalendarEvent(title: 'Sinh nhật Mẹ 🎂',         type: EventType.birthday)],
-    15: [
-          CalendarEvent(title: 'Họp phụ huynh',          type: EventType.event),
-          CalendarEvent(title: 'Dọn nhà cuối tuần',       type: EventType.task),
+  int get _daysInMonth => DateUtils.getDaysInMonth(_focus.year, _focus.month);
+  int get _firstWeekday => DateTime(_focus.year, _focus.month, 1).weekday % 7;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _focus = DateTime(now.year, now.month);
+    _selected = now.day;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+  }
+
+  Future<void> _reload() async {
+    final family = context.read<FamilyProvider>();
+    await Future.wait([
+      context.read<CalendarProvider>().fetchBootstrap(_focus),
+      // Cần cho ô chọn người tham gia; chỉ tải một lần vì danh sách ít đổi.
+      if (family.members.isEmpty) family.fetchMembers(),
+    ]);
+  }
+
+  /// Bị chặn vì gói → dialog kèm CTA nâng cấp. Lỗi khác → SnackBar như cũ.
+  Future<void> _handleError(Object e) async {
+    if (!CalendarProvider.isFeatureLocked(e)) {
+      _showMessage(e.toString(), isError: true);
+      return;
+    }
+    if (!mounted) return;
+    final upgrade = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cần nâng cấp gói'),
+        content: Text(
+          e is FeatureLockedException
+              ? '${e.toString()}.\n\nNâng cấp gói để mở tính năng này cho cả gia đình.'
+              : 'Gói hiện tại không cho phép thao tác này.\n\n$e',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Nâng cấp gói'),
+          ),
         ],
-    20: [CalendarEvent(title: 'Dã ngoại gia đình 🏕️',   type: EventType.travel)],
-    25: [CalendarEvent(title: 'Hạn đóng học phí',        type: EventType.task)],
-    28: [CalendarEvent(title: 'Tiệc sinh nhật An 🎉',    type: EventType.birthday)],
-  };
+      ),
+    );
+    if (upgrade == true && mounted) context.push('/manager/subscription');
+  }
 
-  int get _daysInMonth =>
-      DateUtils.getDaysInMonth(_focus.year, _focus.month);
-  int get _firstWeekday =>
-      DateTime(_focus.year, _focus.month, 1).weekday % 7; // Sun=0
+  Future<void> _moveMonth(int delta) async {
+    setState(() {
+      _focus = DateTime(_focus.year, _focus.month + delta);
+      _selected = null;
+    });
+    await _reload();
+  }
 
-  // ── Add event dialog ────────────────────────────────────────────────────
-  void _showAddEvent() {
-    final titleCtrl = TextEditingController();
-    EventType selectedType = EventType.event;
-    showModalBottomSheet(
+  Map<int, List<FamilyCalendarEvent>> _eventsByDay(
+    List<FamilyCalendarEvent> events,
+  ) {
+    final map = <int, List<FamilyCalendarEvent>>{};
+    for (final e in events) {
+      if (e.startTime.year != _focus.year ||
+          e.startTime.month != _focus.month) {
+        continue;
+      }
+      map.putIfAbsent(e.startTime.day, () => []).add(e);
+    }
+    return map;
+  }
+
+  Future<void> _showEventForm({FamilyCalendarEvent? event}) async {
+    final provider = context.read<CalendarProvider>();
+    if (event == null && !provider.canCreateEvents) {
+      await _handleError(const FeatureLockedException('calendar.enabled'));
+      return;
+    }
+    final members = context.read<FamilyProvider>().members;
+    final selectedMembers = {...event?.participantMemberIds ?? const <String>[]};
+
+    final titleCtrl = TextEditingController(text: event?.title ?? '');
+    final locationCtrl = TextEditingController(text: event?.location ?? '');
+    final descCtrl = TextEditingController(text: event?.description ?? '');
+    final fallbackDay = (_selected ?? DateTime.now().day)
+        .clamp(1, DateUtils.getDaysInMonth(_focus.year, _focus.month))
+        .toInt();
+    final baseDate =
+        event?.startTime ?? DateTime(_focus.year, _focus.month, fallbackDay, 9);
+    DateTime start = baseDate;
+    DateTime? end = event?.endTime ?? baseDate.add(const Duration(hours: 1));
+    bool reminder = event?.reminderEnabled ?? false;
+    bool recurring = event?.isRecurring ?? false;
+
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.fromLTRB(
-              24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('➕  Thêm sự kiện',
-                  style: GoogleFonts.inter(
+        builder: (ctx, setSheet) {
+          Future<void> pickDate() async {
+            final picked = await showDatePicker(
+              context: ctx,
+              initialDate: start,
+              firstDate: DateTime(2020),
+              lastDate: DateTime(2035),
+            );
+            if (picked == null) return;
+            setSheet(() {
+              start = DateTime(
+                picked.year,
+                picked.month,
+                picked.day,
+                start.hour,
+                start.minute,
+              );
+              end = end == null
+                  ? null
+                  : DateTime(
+                      picked.year,
+                      picked.month,
+                      picked.day,
+                      end!.hour,
+                      end!.minute,
+                    );
+            });
+          }
+
+          Future<void> pickTime({required bool forEnd}) async {
+            final source = forEnd ? end ?? start : start;
+            final picked = await showTimePicker(
+              context: ctx,
+              initialTime: TimeOfDay.fromDateTime(source),
+            );
+            if (picked == null) return;
+            setSheet(() {
+              final updated = DateTime(
+                start.year,
+                start.month,
+                start.day,
+                picked.hour,
+                picked.minute,
+              );
+              if (forEnd) {
+                end = updated;
+              } else {
+                start = updated;
+              }
+            });
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              MediaQuery.of(ctx).viewInsets.bottom + 24,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    event == null ? 'Thêm sự kiện' : 'Cập nhật sự kiện',
+                    style: GoogleFonts.inter(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-              if (_selected != null)
-                Text(
-                    'Ngày $_selected tháng ${_focus.month}/${_focus.year}',
-                    style: GoogleFonts.inter(
-                        fontSize: 13, color: AppColors.textMuted)),
-              const SizedBox(height: 16),
-
-              // Tên sự kiện
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                    border: Border.all(
-                        color: const Color(0xFFE5E7EB), width: 1.5),
-                    borderRadius: BorderRadius.circular(14)),
-                child: TextField(
-                  controller: titleCtrl,
-                  decoration: InputDecoration(
-                    hintText: 'Tên sự kiện...',
-                    hintStyle:
-                        GoogleFonts.inter(color: AppColors.textMuted),
-                    border: InputBorder.none,
-                  ),
-                  style: GoogleFonts.inter(
-                      fontSize: 15, color: AppColors.textPrimary),
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // Loại sự kiện (color picker)
-              Text('Loại sự kiện',
-                  style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8, runSpacing: 8,
-                children: EventType.values.map((t) {
-                  final sel = selectedType == t;
-                  return GestureDetector(
-                    onTap: () => setSheet(() => selectedType = t),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: sel
-                            ? t.color
-                            : t.color.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(999),
-                        border: sel
-                            ? null
-                            : Border.all(
-                                color: t.color.withValues(alpha: 0.3)),
-                      ),
-                      child: Text(t.label,
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color:
-                                  sel ? Colors.white : t.color)),
+                      color: AppColors.textPrimary,
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 20),
-
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: selectedType.color,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14))),
-                  onPressed: () {
-                    // TODO: gọi API POST /calendar
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                            '${selectedType.label} "${titleCtrl.text}" đã thêm ✅'),
-                        backgroundColor: selectedType.color,
+                  ),
+                  const SizedBox(height: 16),
+                  _field(titleCtrl, 'Tên sự kiện'),
+                  const SizedBox(height: 12),
+                  _field(locationCtrl, 'Địa điểm'),
+                  const SizedBox(height: 12),
+                  _field(descCtrl, 'Ghi chú', maxLines: 2),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _pickerButton(
+                          icon: Icons.calendar_today_rounded,
+                          label: '${start.day}/${start.month}/${start.year}',
+                          onTap: pickDate,
+                        ),
                       ),
-                    );
-                  },
-                  child: Text('Thêm sự kiện',
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _pickerButton(
+                          icon: Icons.schedule_rounded,
+                          label: _timeLabel(start),
+                          onTap: () => pickTime(forEnd: false),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _pickerButton(
+                          icon: Icons.timelapse_rounded,
+                          label: end == null ? '--:--' : _timeLabel(end!),
+                          onTap: () => pickTime(forEnd: true),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Nhắc lịch'),
+                    subtitle: provider.canUseReminders
+                        ? null
+                        : const Text('Cần quyền calendar.reminders'),
+                    value: reminder,
+                    onChanged: provider.canUseReminders
+                        ? (v) => setSheet(() => reminder = v)
+                        : null,
+                  ),
+                  if (members.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Người tham gia',
                       style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      selectedMembers.isEmpty
+                          ? 'Chưa chọn — mặc định cả gia đình'
+                          : 'Đã chọn ${selectedMembers.length} thành viên',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: members.map((m) {
+                        final picked = selectedMembers.contains(m.id);
+                        return FilterChip(
+                          label: Text(m.name.isEmpty ? m.email : m.name),
+                          selected: picked,
+                          onSelected: (v) => setSheet(() {
+                            if (v) {
+                              selectedMembers.add(m.id);
+                            } else {
+                              selectedMembers.remove(m.id);
+                            }
+                          }),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Lặp lại'),
+                    subtitle: provider.canUseRecurring
+                        ? null
+                        : const Text('Cần quyền calendar.recurringEvents'),
+                    value: recurring,
+                    onChanged: provider.canUseRecurring
+                        ? (v) => setSheet(() => recurring = v)
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.link,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () async {
+                        final title = titleCtrl.text.trim();
+                        if (title.isEmpty) {
+                          _showMessage(
+                            'Vui lòng nhập tên sự kiện',
+                            isError: true,
+                          );
+                          return;
+                        }
+                        try {
+                          if (event == null) {
+                            await provider.createEvent(
+                              title: title,
+                              location: locationCtrl.text,
+                              description: descCtrl.text,
+                              startTime: start,
+                              endTime: end,
+                              reminderEnabled: reminder,
+                              isRecurring: recurring,
+                              participantMemberIds: selectedMembers.toList(),
+                            );
+                          } else {
+                            await provider.updateEvent(
+                              event.id,
+                              title: title,
+                              location: locationCtrl.text,
+                              description: descCtrl.text,
+                              startTime: start,
+                              endTime: end,
+                              reminderEnabled: reminder,
+                              isRecurring: recurring,
+                              participantMemberIds: selectedMembers.toList(),
+                              month: DateTime(start.year, start.month),
+                            );
+                          }
+                          if (!mounted || !ctx.mounted) return;
+                          Navigator.pop(ctx);
+                          setState(() {
+                            _focus = DateTime(start.year, start.month);
+                            _selected = start.day;
+                          });
+                          _showMessage('Đã lưu sự kiện');
+                        } catch (e) {
+                          await _handleError(e);
+                        }
+                      },
+                      child: Text(
+                        'Lưu',
+                        style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<CalendarProvider>();
+    final today = DateTime.now();
+    final eventsByDay = _eventsByDay(provider.events);
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _header(),
+            if (_showLegend) _legend(),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _reload,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
+                  children: [
+                    const SizedBox(height: 10),
+                    _calendarGrid(today, eventsByDay),
+                    const SizedBox(height: 16),
+                    _sectionTitle(),
+                    if (provider.loading)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (provider.error != null)
+                      _empty(provider.error!, isError: true)
+                    else
+                      ..._eventList(eventsByDay),
+                  ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'calendar_fab',
+        onPressed: () => _showEventForm(),
+        backgroundColor: provider.canCreateEvents
+            ? AppColors.link
+            : AppColors.textMuted,
+        child: const Icon(Icons.add_rounded, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _header() => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+    child: Row(
+      children: [
+        const Icon(Icons.calendar_month_rounded, color: AppColors.link),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            'Lịch gia đình',
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const Spacer(),
+        TextButton(
+          onPressed: () => setState(() => _showLegend = !_showLegend),
+          child: const Text('Chú thích'),
+        ),
+        IconButton(
+          onPressed: () => _moveMonth(-1),
+          icon: const Icon(Icons.chevron_left_rounded),
+        ),
+        Text(
+          'Tháng ${_focus.month}/${_focus.year}',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        IconButton(
+          onPressed: () => _moveMonth(1),
+          icon: const Icon(Icons.chevron_right_rounded),
+        ),
+      ],
+    ),
+  );
+
+  Widget _legend() {
+    const items = [
+      ('Task', Color(0xFF2563EB)),
+      ('Sự kiện', Color(0xFF7C3AED)),
+      ('Du lịch', Color(0xFF0EA5E9)),
+      ('Sinh nhật', Color(0xFFF59E0B)),
+      ('Sức khỏe', Color(0xFFEF4444)),
+    ];
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: _surfaceDecoration(),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 8,
+        children: items
+            .map(
+              (i) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: i.$2,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    i.$1,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _calendarGrid(
+    DateTime today,
+    Map<int, List<FamilyCalendarEvent>> eventsByDay,
+  ) {
+    return Container(
+      decoration: _surfaceDecoration(),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Row(
+              children: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+                  .map(
+                    (d) => Expanded(
+                      child: Center(
+                        child: Text(
+                          d,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: d == 'CN'
+                                ? AppColors.sos
+                                : AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF3F4F6)),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 1,
+              ),
+              itemCount: _firstWeekday + _daysInMonth,
+              itemBuilder: (_, i) {
+                if (i < _firstWeekday) return const SizedBox();
+                final day = i - _firstWeekday + 1;
+                final isToday =
+                    today.year == _focus.year &&
+                    today.month == _focus.month &&
+                    today.day == day;
+                final isSelected = _selected == day;
+                final dayEvents = eventsByDay[day] ?? const [];
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    _selected = _selected == day ? null : day;
+                  }),
+                  child: Container(
+                    margin: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected
+                          ? AppColors.link
+                          : isToday
+                          ? AppColors.link.withValues(alpha: 0.1)
+                          : null,
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Text(
+                          '$day',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: isToday || isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                            color: isSelected
+                                ? Colors.white
+                                : isToday
+                                ? AppColors.link
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                        if (dayEvents.isNotEmpty)
+                          Positioned(
+                            bottom: 3,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: dayEvents.take(3).map((e) {
+                                return Container(
+                                  width: 4,
+                                  height: 4,
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isSelected ? Colors.white : e.color,
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle() => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(
+      _selected != null
+          ? 'Ngày $_selected tháng ${_focus.month}'
+          : 'Sự kiện tháng ${_focus.month}',
+      style: GoogleFonts.inter(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textMuted,
+      ),
+    ),
+  );
+
+  List<Widget> _eventList(Map<int, List<FamilyCalendarEvent>> eventsByDay) {
+    final visible = _selected == null
+        ? eventsByDay
+        : {_selected!: eventsByDay[_selected] ?? const <FamilyCalendarEvent>[]};
+    if (visible.isEmpty || visible.values.every((list) => list.isEmpty)) {
+      return [_empty('Không có sự kiện')];
+    }
+
+    final widgets = <Widget>[];
+    final days = visible.keys.toList()..sort();
+    for (final day in days) {
+      for (final event in visible[day]!) {
+        widgets.add(_eventCard(event));
+      }
+    }
+    return widgets;
+  }
+
+  Widget _eventCard(FamilyCalendarEvent event) {
+    final provider = context.read<CalendarProvider>();
+    return InkWell(
+      onTap: () => _showEventForm(event: event),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border(left: BorderSide(color: event.color, width: 4)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: event.color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  event.typeLabel,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: event.color,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${event.startTime.day}/${event.startTime.month} · ${event.timeLabel}'
+                      '${event.location == null ? '' : ' · ${event.location}'}',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: provider.canUseReminders
+                    ? 'Nhắc lịch'
+                    : 'Nhắc lịch — cần nâng cấp gói',
+                // Cố ý KHÔNG disable khi thiếu quyền: bấm vào sẽ ném
+                // FeatureLockedException → dialog nâng cấp, rõ hơn nút chết.
+                onPressed: () async {
+                  try {
+                    await provider.updateReminder(
+                      event.id,
+                      !event.reminderEnabled,
+                      _focus,
+                    );
+                  } catch (e) {
+                    await _handleError(e);
+                  }
+                },
+                icon: Icon(
+                  event.reminderEnabled
+                      ? Icons.notifications_active_rounded
+                      : Icons.notifications_none_rounded,
+                  color: event.reminderEnabled
+                      ? event.color
+                      : AppColors.textMuted,
+                ),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (value) => _handleMenu(event, value),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'ACCEPTED', child: Text('Tham gia')),
+                  PopupMenuItem(value: 'MAYBE', child: Text('Có thể')),
+                  PopupMenuItem(value: 'DECLINED', child: Text('Từ chối')),
+                  PopupMenuDivider(),
+                  PopupMenuItem(value: 'cancel', child: Text('Hủy sự kiện')),
+                ],
               ),
             ],
           ),
@@ -176,343 +759,98 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final today = DateTime.now();
+  Future<void> _handleMenu(FamilyCalendarEvent event, String value) async {
+    final provider = context.read<CalendarProvider>();
+    try {
+      if (value == 'cancel') {
+        await provider.cancelEvent(event.id, _focus);
+        _showMessage('Đã hủy sự kiện');
+      } else {
+        await provider.respond(event.id, value);
+        await provider.fetchEvents(_focus);
+        _showMessage('Đã cập nhật phản hồi');
+      }
+    } catch (e) {
+      await _handleError(e);
+    }
+  }
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(children: [
-          // ── Header ────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Row(children: [
-              const Text('📅', style: TextStyle(fontSize: 24)),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text('Lịch gia đình',
-                    style: GoogleFonts.inter(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary),
-                    overflow: TextOverflow.ellipsis),
-              ),
-              const Spacer(),
-              // Legend toggle
-              GestureDetector(
-                onTap: () => setState(() => _showLegend = !_showLegend),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                      color: _showLegend
-                          ? AppColors.link
-                          : AppColors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: _showLegend
-                              ? AppColors.link
-                              : const Color(0xFFE5E7EB))),
-                  child: Text('Chú thích',
-                      style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _showLegend
-                              ? Colors.white
-                              : AppColors.textSecondary)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => setState(() =>
-                    _focus = DateTime(_focus.year, _focus.month - 1)),
-                child: const Icon(Icons.chevron_left_rounded,
-                    color: AppColors.textSecondary),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  'Tháng ${_focus.month}/${_focus.year}',
-                  style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary),
-                ),
-              ),
-              GestureDetector(
-                onTap: () => setState(() =>
-                    _focus = DateTime(_focus.year, _focus.month + 1)),
-                child: const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textSecondary),
-              ),
-            ]),
-          ),
-
-          // ── Legend (collapsible) ───────────────────────────────
-          if (_showLegend)
-            Container(
-              margin:
-                  const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.06),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4))
-                  ]),
-              child: Wrap(
-                spacing: 16, runSpacing: 8,
-                children: EventType.values.map((t) => Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                        width: 10, height: 10,
-                        decoration: BoxDecoration(
-                            color: t.color,
-                            shape: BoxShape.circle)),
-                    const SizedBox(width: 6),
-                    Text(t.label,
-                        style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary)),
-                  ],
-                )).toList(),
-              ),
-            ),
-          if (_showLegend) const SizedBox(height: 10),
-
-          // ── Calendar grid ──────────────────────────────────────
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 20,
-                      offset: const Offset(0, 4))
-                ]),
-            child: Column(children: [
-              // Day-of-week headers
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
-                  children: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
-                      .map((d) => Expanded(
-                            child: Center(
-                              child: Text(d,
-                                  style: GoogleFonts.inter(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: d == 'CN'
-                                          ? AppColors.sos
-                                          : AppColors.textMuted)),
-                            ),
-                          ))
-                      .toList(),
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFFF3F4F6)),
-
-              // Days grid
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 7, childAspectRatio: 1),
-                  itemCount: _firstWeekday + _daysInMonth,
-                  itemBuilder: (_, i) {
-                    if (i < _firstWeekday) return const SizedBox();
-                    final day = i - _firstWeekday + 1;
-                    final isToday = today.year == _focus.year &&
-                        today.month == _focus.month &&
-                        today.day == day;
-                    final evts = _events[day] ?? [];
-                    final isSel = _selected == day;
-
-                    return GestureDetector(
-                      onTap: () => setState(() =>
-                          _selected = _selected == day ? null : day),
-                      child: Container(
-                        margin: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isSel
-                              ? AppColors.link
-                              : isToday
-                                  ? AppColors.link
-                                      .withValues(alpha: 0.1)
-                                  : null,
-                        ),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Text('$day',
-                                style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    fontWeight: isToday || isSel
-                                        ? FontWeight.w700
-                                        : FontWeight.w400,
-                                    color: isSel
-                                        ? Colors.white
-                                        : isToday
-                                            ? AppColors.link
-                                            : AppColors.textPrimary)),
-                            // Dot indicators cho mỗi event type (max 3)
-                            if (evts.isNotEmpty)
-                              Positioned(
-                                bottom: 3,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: evts
-                                      .take(3)
-                                      .map((e) => Container(
-                                            width: 4, height: 4,
-                                            margin: const EdgeInsets
-                                                .symmetric(horizontal: 1),
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: isSel
-                                                  ? Colors.white
-                                                  : e.color,
-                                            ),
-                                          ))
-                                      .toList(),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ]),
-          ),
-
-          const SizedBox(height: 12),
-
-          // ── Event list ─────────────────────────────────────────
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    _selected != null
-                        ? 'Ngày $_selected tháng ${_focus.month}'
-                        : 'Sự kiện tháng ${_focus.month}',
-                    style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textMuted),
-                  ),
-                ),
-                ..._buildEventList(),
-              ],
-            ),
-          ),
-        ]),
-      ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'calendar_fab',
-        onPressed: _showAddEvent,
-        backgroundColor: AppColors.link,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+  Widget _field(
+    TextEditingController controller,
+    String hint, {
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        hintText: hint,
+        filled: true,
+        fillColor: const Color(0xFFF9FAFB),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
       ),
     );
   }
 
-  List<Widget> _buildEventList() {
-    final map = _selected != null
-        ? {_selected!: _events[_selected] ?? <CalendarEvent>[]}
-        : _events;
-
-    if (map.isEmpty ||
-        (map.length == 1 && map.values.first.isEmpty)) {
-      return [
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 40),
-            child: Text('Không có sự kiện',
-                style: GoogleFonts.inter(
-                    fontSize: 14, color: AppColors.textMuted)),
-          ),
-        )
-      ];
-    }
-
-    final List<Widget> widgets = [];
-    final sortedDays = map.keys.toList()..sort();
-
-    for (final day in sortedDays) {
-      final evts = map[day]!;
-      if (evts.isEmpty) continue;
-      for (final e in evts) {
-        widgets.add(Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border(left: BorderSide(color: e.color, width: 4)),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2))
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(children: [
-              // Type badge
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                    color: e.color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6)),
-                child: Text(e.type.label,
-                    style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: e.color)),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(e.title,
-                          style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary)),
-                      Text(
-                          'Ngày $day tháng ${_focus.month}',
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: AppColors.textMuted)),
-                    ]),
-              ),
-              Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textMuted, size: 18),
-            ]),
-          ),
-        ));
-      }
-    }
-    return widgets;
+  Widget _pickerButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 16),
+      label: Text(label, overflow: TextOverflow.ellipsis),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
+
+  Widget _empty(String text, {bool isError = false}) => Padding(
+    padding: const EdgeInsets.only(top: 40),
+    child: Center(
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.inter(
+          fontSize: 14,
+          color: isError ? AppColors.danger : AppColors.textMuted,
+        ),
+      ),
+    ),
+  );
+
+  BoxDecoration _surfaceDecoration() => BoxDecoration(
+    color: AppColors.white,
+    borderRadius: BorderRadius.circular(20),
+    boxShadow: [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.06),
+        blurRadius: 20,
+        offset: const Offset(0, 4),
+      ),
+    ],
+  );
+
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message.replaceFirst('Exception: ', '')),
+        backgroundColor: isError ? AppColors.danger : AppColors.link,
+      ),
+    );
+  }
+
+  static String _timeLabel(DateTime date) =>
+      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 }
