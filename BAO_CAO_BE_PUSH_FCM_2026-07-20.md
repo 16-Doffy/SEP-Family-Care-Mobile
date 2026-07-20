@@ -1,5 +1,66 @@
 # Báo cáo BE — Thông báo không đến được khi app ở nền / đã tắt (cần FCM)
 
+---
+
+## 🔴 CẬP NHẬT 20/07 — Đã nhận `google-services.json` từ BE, nhưng CÒN 2 CHẶN
+
+### Chặn 1 — SAI PACKAGE NAME (chặn cứng, không build được)
+
+| | Giá trị |
+|---|---|
+| Package name **thật của app mobile** | **`com.familycare.family_care`** |
+| Package trong `google-services.json` BE gửi | **`com.company.familycare`** |
+
+File config này thuộc về một app Android **khác**. Ráp vào là Gradle fail ngay:
+```
+No matching client found for package name 'com.familycare.family_care'
+```
+Nguồn package name thật (`android/app/build.gradle.kts`):
+```kotlin
+namespace      = "com.familycare.family_care"
+applicationId  = "com.familycare.family_care"
+```
+
+**👉 Cần BE:** vào Firebase project `familycare-387d1` → **Add app → Android** → nhập
+package name **`com.familycare.family_care`** → tải `google-services.json` mới gửi lại.
+*(Không cần tạo project mới, chỉ thêm 1 Android app vào project đang có.)*
+
+> Phương án thay thế (**KHÔNG khuyến nghị**): đổi `applicationId` của mobile thành
+> `com.company.familycare`. Việc này đổi định danh app — mất toàn bộ bản đã cài khi test,
+> phải cấu hình lại deep link `familycare://app`, launcher icon, và lệch với APK đã phát
+> cho hội đồng. Thêm app vào Firebase nhanh hơn nhiều.
+
+### Chặn 2 — Cần bằng chứng FCM THỰC SỰ gửi được
+
+BE báo *"grep log boot staging, không có dòng kênh FCM bị tắt (chỉ còn WS)"*.
+Vấn đề: **không có log báo tắt ≠ đã gửi push thành công**. Hiện chưa có bằng chứng nào
+cho thấy một push đã rời khỏi server.
+
+Thêm một nghi vấn cụ thể: file env mẫu dùng biến **`FCM_SERVER_KEY`** — đây là
+**Legacy FCM API**, Google đã **ngừng hoạt động từ 2024**. Nếu BE đang gửi qua
+`fcm.googleapis.com/fcm/send` với server key thì mọi push sẽ fail (404 / 401), kể cả khi
+FE tích hợp đúng.
+
+**👉 Cần BE xác nhận 1 trong 2:**
+- [ ] Đang dùng **FCM HTTP v1** (`https://fcm.googleapis.com/v1/projects/familycare-387d1/messages:send`) với **service account JSON** (Firebase Admin SDK) — đúng chuẩn hiện tại; **hoặc**
+- [ ] Vẫn dùng `FCM_SERVER_KEY` legacy → **cần chuyển sang HTTP v1**.
+
+**👉 Cách chứng minh nhanh nhất:** BE tự gửi 1 push test tới 1 token bất kỳ (dùng Firebase
+Console → Cloud Messaging → Send test message, hoặc script Admin SDK) rồi gửi FE **log
+response** (`messages/…` id trả về hoặc lỗi). Có dòng đó là chắc chắn kênh gửi sống.
+
+### Trạng thái FE
+Đã sẵn sàng ráp: channel `sos_alerts` / `general_notifications` đã tạo, `NotificationRouter`
+deep-link đã có, chỗ gọi `POST /devices/tokens` đã xác định. **Chỉ chờ file config đúng
+package** — nhận được là wire xong trong ngày.
+
+### Ghi chú nhỏ
+`api_key` trong `google-services.json` **không phải secret** (nó nằm sẵn trong mọi APK),
+nên việc gửi qua chat không phải sự cố bảo mật. Tuy vậy nên đặt **API key restriction**
+theo package name + SHA-1 trong Google Cloud Console cho đúng chuẩn.
+
+---
+
 > **Ngày:** 2026-07-20 · **Người báo:** FE Mobile (Giáp) · **Mức độ:** 🔴 Chặn tính năng cảnh báo SOS
 > **Tóm tắt 1 dòng:** FE đã làm hết phần client làm được; thông báo vẫn không tới khi app ở nền vì **chưa có push FCM**. Cần BE xác nhận 4 điểm ở §3.
 
