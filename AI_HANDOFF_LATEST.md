@@ -1,10 +1,349 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-07-16** (sau FF lên origin/main `93612a9` + tái hoà WIP: invite-code QR, poll thông báo, SOS timeline, Family Map)
-Branch: `giap` — đã **fast-forward tới `origin/main` (`93612a9`)** rồi chồng **9 commit local** (chưa push).
-Latest commit local: `416a192 fix(map): ẩn raw 'Cannot GET /location/family' (404) → note 'đang phát triển'`
-Backend Swagger (live): `https://api.familycare-digital.com/api/docs` · **183 paths** (verify 07/15) — đã có invite-code + join-request + admin + album
-API base in app: `https://api.familycare-digital.com/api/v1` (default trong `api_client.dart`, override qua `--dart-define`)
+Last updated: **2026-07-19**
+
+## Snapshot hiện tại 2026-07-19 — đọc phần này trước
+
+> Snapshot này thay thế các kết luận CI/CD trong snapshot 2026-07-18 và các
+> phần lịch sử phía dưới. Không xóa lịch sử vì vẫn chứa thông tin wiring/API.
+
+### Kết luận ngắn
+
+- **Admin Web CI/CD: DONE.**
+- **Mobile CI: DONE.**
+- **Android signed release + Google Drive + QR: DONE.**
+- **Bảo mật nhiều tài khoản Admin: chưa thể kết luận DONE; phải được BE enforce.**
+- **iOS native/TestFlight: chưa thực hiện; iPhone dùng Web/PWA làm fallback.**
+
+### Git và trạng thái repository
+
+#### Mobile — `D:\Desktop\mobile-sep`
+
+- Repository: `16-Doffy/SEP-Family-Care-Mobile`.
+- `origin/main`: merge commit `5fe0708` (PR #2).
+- Commit triển khai Google Drive OAuth: `18d43ae`.
+- Nội dung tracked trên nhánh local `NDuy` đã được đối chiếu và giống
+  `origin/main`; local chỉ thiếu merge-history commits.
+- CI/CD đã được commit, push và merge vào `main`; không còn code CI/CD cần
+  commit/push.
+- Working tree local còn:
+  - modified `AI_HANDOFF_LATEST.md`;
+  - untracked `.claude/`;
+  - untracked `.vscode/settings.json`.
+- Chỉ commit `AI_HANDOFF_LATEST.md` sau cập nhật này. Không tự động commit
+  `.claude/` hoặc `.vscode/settings.json` nếu nhóm chưa thống nhất dùng chung.
+
+#### Admin Web — `D:\Desktop\sep`
+
+- Repository GitHub hiện dùng: `16-Doffy/SEP-Family-Care-WEB`
+  (remote cũ có thể redirect từ tên `SEP-Family-Care-Third-s`).
+- `origin/main`: merge commit `15038e8` (PR #1).
+- Commit CI/CD chính:
+  - `25bb110` — thêm Web Admin CI/CD;
+  - `2360f89` — chuyển deployment sang Vercel, bỏ VPS deployment.
+- Nội dung tracked trên nhánh local `NDuy` đã được đối chiếu và giống
+  `origin/main`; local chỉ thiếu merge-history commits.
+- Các file untracked như `.claude/`, script Swagger và file tạm không thuộc
+  CI/CD; không commit chung nếu chưa review.
+
+### Admin Web CI/CD — DONE
+
+- Workflow nằm tại root repository:
+  `.github/workflows/web-admin.yml`.
+- Monorepo dùng pnpm workspace; Admin Next.js nằm tại `apps/web`.
+- GitHub Actions đã chạy thành công:
+  - type-check/build shared package và Admin Web;
+  - Next.js production build;
+  - verify Docker build bằng `apps/web/Dockerfile`.
+- GitHub Actions không SSH/VPS và không push GHCR ở phương án hiện tại.
+- CD dùng Vercel Git Integration:
+  - PR/branch tạo Preview deployment;
+  - merge/push `main` tạo Production deployment.
+- Production URL:
+  `https://family-care-admin.vercel.app`.
+- Vercel Environment Variables đã cấu hình cho Production/Preview:
+  - `NEXT_PUBLIC_API_URL`;
+  - `NEXT_PUBLIC_SOCKET_URL`;
+  - `BACKEND_API_ORIGIN`.
+- Các Vercel API project cũ đã disconnect khỏi Git repository. Dấu đỏ lịch sử
+  trong commit/check cũ không phản ánh Web Admin CI/CD hiện tại.
+- Tài liệu: `D:\Desktop\sep\docs\WEB_ADMIN_CICD.md`.
+
+### Mobile CI — DONE
+
+- Workflow: `.github/workflows/mobile-ci.yml`.
+- Tự chạy khi `push` hoặc `pull_request`.
+- Các bước chính:
+  - `flutter analyze --no-fatal-infos`;
+  - `flutter test`;
+  - build APK debug;
+  - upload build artifact.
+- Run gần nhất đã kiểm tra: pass.
+
+### Android signed release, Google Drive và QR — DONE
+
+- Workflow: `.github/workflows/android-release.yml`.
+- Có thể chạy:
+  - thủ công bằng `workflow_dispatch`; hoặc
+  - tự động khi push tag `v*`.
+- Release keystore được giữ bên ngoài repository:
+  `D:\Desktop\FamilyCare-Release-Keys\upload-keystore.jks`.
+- Alias: `upload`.
+- GitHub Repository Secrets đã cấu hình, chỉ ghi tên, không ghi giá trị:
+  - `ANDROID_KEYSTORE_BASE64`;
+  - `ANDROID_KEYSTORE_PASSWORD`;
+  - `ANDROID_KEY_ALIAS`;
+  - `ANDROID_KEY_PASSWORD`;
+  - `GDRIVE_CLIENT_ID`;
+  - `GDRIVE_CLIENT_SECRET`;
+  - `GDRIVE_REFRESH_TOKEN`;
+  - `GDRIVE_FOLDER_ID`.
+- Google Drive dùng **OAuth cá nhân**, không còn dùng Service Account.
+- Google Cloud project: `FamilyCare-Mobile-Release`.
+- Google Drive API đã bật; OAuth app/client đã cấu hình.
+- Folder Drive đích: `FamilyCare-APK-Releases`.
+- Android Release run thành công:
+  - run ID: `29675484478`;
+  - source: `main` tại merge commit `5fe0708`;
+  - status: Success;
+  - artifacts: 2;
+  - signed APK: `FamilyCare-1.0.0-3.apk`;
+  - APK đã upload vào Google Drive;
+  - QR tải APK đã được tạo.
+- Artifact trực tiếp:
+  - QR:
+    `https://github.com/16-Doffy/SEP-Family-Care-Mobile/actions/runs/29675484478/artifacts/8438908227`;
+  - signed APK:
+    `https://github.com/16-Doffy/SEP-Family-Care-Mobile/actions/runs/29675484478/artifacts/8438906932`.
+- QR hiện được upload lên GitHub Actions artifact. Nếu muốn ảnh QR cũng nằm
+  trong Google Drive thì upload thủ công, hoặc bổ sung một bước upload QR vào
+  workflow ở lần cải tiến sau.
+- Tài liệu: `docs/RELEASE_ANDROID.md`.
+
+### Hành vi release về sau
+
+- Không cần cấu hình lại Google Cloud, OAuth, GitHub Secrets hoặc keystore.
+- Mỗi commit/PR thông thường chỉ chạy Mobile CI; không phát hành APK để tránh
+  tạo quá nhiều bản release.
+- Khi cần phát hành thủ công:
+  1. Actions → Android Release → Run workflow;
+  2. chọn `main`;
+  3. nhập version hoặc để trống để dùng version trong `pubspec.yaml`;
+  4. bật `Upload APK to Google Drive and generate a QR code`;
+  5. chạy workflow.
+- Muốn tag release tự upload Drive, tạo Repository Variable:
+  `GDRIVE_UPLOAD_ON_TAG=true`, sau đó push tag, ví dụ `v1.0.1`.
+- Không tái sử dụng/version-overwrite tùy tiện. Phải backup đúng release
+  keystore; mất/đổi keystore có thể làm APK mới không cập nhật đè lên bản cũ.
+
+### Bảo mật và dữ liệu nhạy cảm
+
+- Không commit `.jks`, `.keystore`, `android/key.properties`, `.env`, OAuth
+  Client Secret, refresh/access token, mật khẩu hoặc Base64 keystore.
+- GitHub Secrets/Variables là cấu hình ngoài Git; không ghi giá trị vào handoff.
+- Bảo mật nhiều Admin phải do BE enforce:
+  - RBAC/permission server-side cho mọi `/admin/*`;
+  - không tin role do FE gửi;
+  - session revocation, audit log, rate limit và MFA nếu áp dụng;
+  - kiểm thử `401`/`403` và nhiều Admin độc lập.
+- Checklist: `docs/BE_ADMIN_SECURITY_CHECKLIST.md`.
+
+### Việc còn lại/khuyến nghị
+
+1. Quét QR bằng thiết bị Android, tải/cài APK và smoke-test login, refresh,
+   role routing, Task, Finance, SOS và Profile.
+2. Backup release keystore ở ít nhất hai nơi an toàn; lưu mật khẩu trong
+   password manager.
+3. Tùy chọn đặt `GDRIVE_UPLOAD_ON_TAG=true` nếu nhóm muốn tag release tự upload
+   Drive.
+4. Tùy chọn cập nhật workflow để upload cả ảnh QR lên Google Drive.
+5. Nếu cần iOS native: chuẩn bị macOS/Xcode, Apple Developer, signing và
+   TestFlight. APK không cài được trên iPhone; hiện dùng Web/PWA fallback.
+6. Tiếp tục làm việc với BE về checklist bảo mật nhiều Admin và hợp đồng
+   Notifications realtime.
+
+## Snapshot 2026-07-18 — lịch sử
+
+### Phạm vi hệ thống
+
+- Mobile Flutter: `D:\Desktop\mobile-sep` — Family Manager, Deputy Member,
+  Family Member và Wear OS.
+- Admin Web: `D:\Desktop\sep` — `SYSTEM_ADMIN`, là Git repository độc lập.
+- Hai frontend dùng chung backend và Swagger:
+  `https://api.familycare-digital.com/api/docs`.
+- OpenAPI JSON: `https://api.familycare-digital.com/api/docs-json`.
+- API base Mobile: `https://api.familycare-digital.com/api/v1`.
+- Swagger là nguồn chính cho endpoint/DTO/enum; SRS và Use Case Tracker là
+  nguồn nghiệp vụ. Nếu khác nhau phải xác minh với BE, không fake API.
+- `FinalReport_Template (1).docx` chứa nội dung TailorStore mẫu, không phải
+  nghiệp vụ FamilyCare.
+
+### Git và CI/CD Android
+
+- Nhánh làm việc: `NDuy`.
+- Commit thêm CI/release: `9c90557`.
+- Commit sửa analyzer: `be9a470`.
+- Pull Request `NDuy -> main` đã chạy cả push check và pull-request check xanh.
+- Workflow Android Release đã chạy thành công trên `main`, head commit
+  `1e7b12a`.
+- Mobile CI tự chạy khi `push` hoặc `pull_request`:
+  - `flutter analyze --no-fatal-infos`
+  - `flutter test`
+  - build APK debug
+  - upload debug artifact
+- Android Release chỉ chạy thủ công hoặc khi push tag `v*`; không tự phát hành
+  sau mỗi commit thông thường.
+- PR còn mang theo bốn sửa chức năng có chủ đích:
+  - `lib/providers/family_provider.dart`
+  - `lib/providers/task_provider.dart`
+  - `lib/screens/parent/reward_management_screen.dart`
+  - `lib/screens/parent/task_management_screen.dart`
+
+### Release Android đã hoàn thành
+
+- Release keystore được tạo bên ngoài repository:
+  `D:\FamilyCare-Secrets\upload-keystore.jks`.
+- Alias: `upload`.
+- GitHub Repository Secrets đã cấu hình:
+  - `ANDROID_KEYSTORE_BASE64`
+  - `ANDROID_KEYSTORE_PASSWORD`
+  - `ANDROID_KEY_ALIAS`
+  - `ANDROID_KEY_PASSWORD`
+- Không bao giờ ghi giá trị secrets, mật khẩu hoặc Base64 vào source/handoff.
+- Signed APK build thành công:
+  `FamilyCare-1.0.0-1.apk`.
+- Artifact: `familycare-android-1.0.0`, kèm file `.sha256`.
+- Run Android Release thành công: `29637020372`.
+- APK chỉ cài được trên Android. iOS cần IPA + Apple signing + TestFlight,
+  hoặc dùng Web/PWA làm phương án thay thế.
+- Phải giữ và backup đúng keystore trên cho mọi release sau; đổi/mất keystore
+  có thể khiến APK mới không cập nhật đè lên bản đã cài.
+
+### Verification gần nhất
+
+- Mobile CI push: pass.
+- Mobile CI pull request: pass.
+- Android signed release workflow: pass.
+- `flutter test`: **55/55 pass**.
+- Analyze: không có error/warning; còn 11 lint mức `info`.
+- APK debug build: pass.
+- APK signed release build: pass.
+- Chưa xác nhận runtime signed APK trên thiết bị Android sau khi tải về.
+
+### Trạng thái yêu cầu mentor
+
+#### 1. Bảo mật khi mở rộng nhiều Admin — phụ thuộc BE
+
+- **Chưa hoàn thành ở cấp hệ thống.** FE route guard chỉ hỗ trợ UX, không phải
+  ranh giới bảo mật.
+- Checklist cần gửi và thống nhất với BE nằm tại
+  `docs/BE_ADMIN_SECURITY_CHECKLIST.md`.
+- BE cần:
+  - cấm đăng ký công khai với `SYSTEM_ADMIN`;
+  - tách `SUPER_ADMIN`/`ADMIN` hoặc permission tương đương;
+  - enforce authorization trên mọi `/admin/*`, mặc định từ chối;
+  - không tin role/permission do FE gửi;
+  - bảo vệ Super Admin cuối cùng;
+  - hỗ trợ MFA, rate limit, quản lý/thu hồi session;
+  - vô hiệu session sau đổi mật khẩu, đổi role hoặc khóa tài khoản;
+  - ghi audit log bất biến cho hành động nhạy cảm.
+- QA cần kiểm tra `401` khi chưa đăng nhập, `403` với user không đủ quyền,
+  session bị thu hồi sau khi Admin bị khóa/hạ quyền và audit actor tách biệt
+  giữa nhiều Admin.
+
+#### 3. FE setup CI/CD
+
+- **Mobile Flutter: DONE.** CI khi push/PR đã chạy analyze, 55 tests, build
+  debug APK và upload artifact; signed Android Release trên `main` đã pass.
+- **Admin Web: CHƯA DONE.** Repo `D:\Desktop\sep` đã có Dockerfile/Compose
+  nhưng chưa có GitHub Actions CI/CD riêng và chưa verify Docker image trên CI.
+- Khi làm Admin Web CI/CD cần BE xác nhận API production URL, CORS, cookie
+  domain và health-check endpoint.
+
+#### 4. Dockerfile, APK, Google Drive, QR và iOS
+
+- **Signed Android APK: DONE.** Đã build có chữ ký, tạo SHA-256 và upload
+  GitHub Actions artifact.
+- **Google Drive + QR: PARTIAL.** Workflow/code upload Drive và sinh QR đã có,
+  nhưng chưa cấu hình service account/secrets và chưa chạy thử với Drive bật.
+- Còn cần `GDRIVE_SERVICE_ACCOUNT_JSON`, `GDRIVE_FOLDER_ID`, tùy chọn
+  `GDRIVE_UPLOAD_ON_TAG=true`, sau đó chạy release và kiểm tra link/QR thật.
+- **iOS: CHƯA DONE.** APK không cài được trên iPhone. Muốn phát hành iOS cần
+  macOS/Xcode, Apple Developer, signing và TestFlight; nếu chưa có thì dùng
+  Web/PWA. QR cuối nên điều hướng Android tới APK và iOS tới TestFlight/PWA.
+- Dockerfile không dùng để tạo APK Flutter. Dockerfile hiện liên quan chủ yếu
+  tới Admin Web/deployment web.
+
+### Notifications realtime — hợp đồng BE mới nhận 2026-07-18
+
+- Thông tin lịch sử phía dưới nói “BE chưa có FCM/WebSocket” đã **lỗi thời**.
+- BE đã cung cấp hợp đồng Socket.IO namespace `/notifications`, tự join room
+  `user:<userId>` bằng access token; không có Client → Server event.
+- Server events:
+  - `notification:new`;
+  - `notification:unread-count`;
+  - `notification:error`.
+- REST notification vẫn dùng để list, lấy unread count, mark read/read-all.
+- FCM token theo user/device:
+  - `POST /api/v1/devices/tokens`;
+  - `DELETE /api/v1/devices/tokens/:token` khi logout.
+- `notification:new.id != null`: notification persisted, được thêm vào list và
+  badge. `id == null`: push-only, chỉ toast/banner tức thời, không thêm list và
+  không tăng badge.
+- CHAT hiện là push-only và FCM có thể chứa toàn bộ nội dung tin nhắn; cần chốt
+  với BE/Product chính sách ẩn nội dung nhạy cảm trên lock screen.
+- **FE chưa tích hợp Socket.IO/FCM theo hợp đồng mới.** Polling 15 giây trong
+  snapshot lịch sử chỉ là giải pháp tạm.
+- Trước khi code cần BE xác nhận:
+  1. URL Socket.IO production, Socket.IO path và server version;
+  2. `/devices/tokens` đã deploy production và xuất hiện trên Swagger;
+  3. thống nhất payload dùng `id` hay `notificationId`;
+  4. unread count là theo family hay tổng tài khoản;
+  5. chiến lược REST resync sau reconnect để lấy sự kiện bị bỏ lỡ;
+  6. Firebase Android config và APNs/iOS config;
+  7. chính sách hiển thị nội dung CHAT trên lock screen;
+  8. test account/kịch bản token hết hạn, nhiều thiết bị và bị xóa khỏi family.
+
+### Việc còn lại, theo thứ tự
+
+1. Cài `FamilyCare-1.0.0-1.apk` trên Android và smoke-test login, refresh,
+   role routing, Task, Finance, SOS và Profile. Nếu đang cài debug APK có chữ
+   ký khác, phải gỡ bản debug trước (sẽ mất dữ liệu local).
+2. Backup keystore ở ít nhất hai nơi an toàn và lưu mật khẩu trong password
+   manager.
+3. Cấu hình Google Drive + QR:
+   - tạo Google Cloud service account;
+   - bật Google Drive API;
+   - share folder đích cho service-account email;
+   - thêm `GDRIVE_SERVICE_ACCOUNT_JSON`, `GDRIVE_FOLDER_ID`;
+   - tùy chọn variable `GDRIVE_UPLOAD_ON_TAG=true`;
+   - chạy Android Release với Drive upload bật.
+4. Mở workspace Admin `D:\Desktop\sep` và thêm CI/CD riêng cho Next.js/Docker.
+   Admin repo đã có `apps/web/Dockerfile`, `apps/api/Dockerfile`,
+   `docker-compose.yml`, `docker-compose.prod.yml` nhưng chưa có GitHub Actions.
+5. Gửi `docs/BE_ADMIN_SECURITY_CHECKLIST.md` cho BE. Bảo mật nhiều Admin phải
+   được enforce ở backend; FE route guard không phải security boundary.
+6. Gửi các câu hỏi Notifications realtime ở trên cho BE, sau đó tích hợp
+   Socket.IO, REST resync và FCM token lifecycle vào Mobile.
+7. Chốt phương án iOS: TestFlight nếu có Apple Developer + macOS/Xcode;
+   nếu chưa có thì dùng Web/PWA cho thiết bị iPhone.
+
+### Trạng thái local và quy tắc bàn giao
+
+- Tài khoản/window Codex này chỉ sửa code; commit/push thực hiện ở window Git
+  khác và phải báo danh sách file trước khi stage.
+- Lần kiểm tra gần nhất local chỉ còn untracked `.claude/` và
+  `.vscode/settings.json`; không commit nếu nhóm chưa chủ đích dùng chung.
+- Sau khi main đã merge, window Git nên đồng bộ bằng:
+  `git fetch origin`, `git switch main`, `git pull origin main`.
+- Không commit `.jks`, `.keystore`, `android/key.properties`, `.env`, Google
+  credentials hoặc bất kỳ secret nào.
+- File hướng dẫn release: `docs/RELEASE_ANDROID.md`.
+- Checklist BE nhiều Admin: `docs/BE_ADMIN_SECURITY_CHECKLIST.md`.
+
+> Phần từ “Cập nhật 2026-07-16” trở xuống là snapshot lịch sử chi tiết. Một số
+> thông tin nhánh/commit trong phần lịch sử đã lỗi thời; dùng snapshot
+> 2026-07-18 ở trên làm trạng thái hiện hành.
 
 > ⚠️ IP cũ `103.110.84.66` đã BỎ hẳn — mọi tài liệu nhắc IP này đều lỗi thời.
 

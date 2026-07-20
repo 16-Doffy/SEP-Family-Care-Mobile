@@ -513,7 +513,7 @@ class _UnavailabilityTab extends StatelessWidget {
               DropdownButtonFormField<String>(
                 initialValue: newMemberId,
                 decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
-                items: members.map((m) => DropdownMenuItem(value: m.userId, child: Text(m.name))).toList(),
+                items: members.map((m) => DropdownMenuItem(value: m.id, child: Text(m.name))).toList(),
                 onChanged: (v) => setSheet(() => newMemberId = v),
               ),
             ],
