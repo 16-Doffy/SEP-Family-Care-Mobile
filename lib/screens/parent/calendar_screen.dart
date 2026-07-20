@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
@@ -21,6 +22,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   int get _daysInMonth => DateUtils.getDaysInMonth(_focus.year, _focus.month);
   int get _firstWeekday => DateTime(_focus.year, _focus.month, 1).weekday % 7;
+
+  /// Manager/Deputy mới được tạo/sửa/hủy event. Member chỉ xem và phản hồi
+  /// tham gia — BE cũng chặn tương ứng, gate ở FE để không hiện nút chết.
+  bool get _canManage =>
+      context.read<AuthProvider>().user?.canManageCalendar ?? false;
 
   @override
   void initState() {
@@ -47,24 +53,33 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return;
     }
     if (!mounted) return;
+    // /manager/subscription là manager-only (xem _managerOnlyPaths trong
+    // app_router). Deputy/Member bấm vào sẽ bị redirect về home → dead-end.
+    // Với họ chỉ báo để nhờ Trưởng nhóm nâng cấp, không hiện nút.
+    final canUpgrade =
+        context.read<AuthProvider>().user?.canManageSubscription ?? false;
+    final base = e is FeatureLockedException
+        ? e.toString()
+        : 'Gói hiện tại không cho phép thao tác này.\n\n$e';
     final upgrade = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cần nâng cấp gói'),
         content: Text(
-          e is FeatureLockedException
-              ? '${e.toString()}.\n\nNâng cấp gói để mở tính năng này cho cả gia đình.'
-              : 'Gói hiện tại không cho phép thao tác này.\n\n$e',
+          canUpgrade
+              ? '$base.\n\nNâng cấp gói để mở tính năng này cho cả gia đình.'
+              : '$base.\n\nVui lòng liên hệ Trưởng nhóm để nâng cấp gói.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Để sau'),
+            child: Text(canUpgrade ? 'Để sau' : 'Đã hiểu'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Nâng cấp gói'),
-          ),
+          if (canUpgrade)
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Nâng cấp gói'),
+            ),
         ],
       ),
     );
@@ -411,14 +426,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'calendar_fab',
-        onPressed: () => _showEventForm(),
-        backgroundColor: provider.canCreateEvents
-            ? AppColors.link
-            : AppColors.textMuted,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
-      ),
+      // Member không có quyền tạo → ẩn hẳn FAB thay vì để bấm rồi ăn 403.
+      floatingActionButton: !_canManage
+          ? null
+          : FloatingActionButton(
+              heroTag: 'calendar_fab',
+              onPressed: () => _showEventForm(),
+              backgroundColor: provider.canCreateEvents
+                  ? AppColors.link
+                  : AppColors.textMuted,
+              child: const Icon(Icons.add_rounded, color: Colors.white),
+            ),
     );
   }
 
@@ -658,7 +676,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _eventCard(FamilyCalendarEvent event) {
     final provider = context.read<CalendarProvider>();
     return InkWell(
-      onTap: () => _showEventForm(event: event),
+      // Member chạm vào không mở form sửa — chỉ Manager/Deputy.
+      onTap: _canManage ? () => _showEventForm(event: event) : null,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -746,12 +765,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
               PopupMenuButton<String>(
                 onSelected: (value) => _handleMenu(event, value),
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'ACCEPTED', child: Text('Tham gia')),
-                  PopupMenuItem(value: 'MAYBE', child: Text('Có thể')),
-                  PopupMenuItem(value: 'DECLINED', child: Text('Từ chối')),
-                  PopupMenuDivider(),
-                  PopupMenuItem(value: 'cancel', child: Text('Hủy sự kiện')),
+                // Phản hồi tham gia: mọi role (đây là lý do Member cần màn này).
+                // Hủy sự kiện: chỉ Manager/Deputy.
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'ACCEPTED',
+                    child: Text('Tham gia'),
+                  ),
+                  const PopupMenuItem(value: 'MAYBE', child: Text('Có thể')),
+                  const PopupMenuItem(
+                    value: 'DECLINED',
+                    child: Text('Từ chối'),
+                  ),
+                  if (_canManage) ...[
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: 'cancel',
+                      child: Text('Hủy sự kiện'),
+                    ),
+                  ],
                 ],
               ),
             ],

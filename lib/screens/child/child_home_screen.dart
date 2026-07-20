@@ -379,6 +379,40 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            // Lịch — route phẳng, Member vào để xem sự kiện gia
+                            // đình và phản hồi tham gia (Tham gia/Có thể/Từ
+                            // chối). Không có quyền tạo/sửa/hủy.
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => context.push('/calendar'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDBEAFE),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      const Text(
+                                        '📅',
+                                        style: TextStyle(fontSize: 18),
+                                      ),
+                                      Text(
+                                        'Lịch',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF2563EB),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ],

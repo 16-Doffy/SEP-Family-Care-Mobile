@@ -544,6 +544,14 @@ GoRouter createRouter(AuthProvider auth) {
       // Deputy (album_screen tự gate nút 🛡️ theo isAdministrative). Manager
       // vào qua tab shell /manager/album; Deputy/Member vào route phẳng này.
       GoRoute(path: '/album', builder: (_, _) => const AlbumScreen()),
+      // Lịch — mọi role vào được. BE tự tạo participants khi Manager tạo event
+      // và gửi notification CALENDAR, nên Member/Deputy PHẢI có màn để phản hồi
+      // (POST .../respond: ACCEPTED|DECLINED|MAYBE). Trước đây Lịch chỉ là tab
+      // của Manager → người được mời không có chỗ nào trả lời, tính năng respond
+      // chết. Manager vẫn vào qua tab shell /manager/calendar; Deputy/Member đi
+      // route phẳng này. calendar_screen tự gate nút tạo/sửa/hủy theo
+      // AppUser.canManageCalendar.
+      GoRoute(path: '/calendar', builder: (_, _) => const CalendarScreen()),
       GoRoute(
         path: '/manager/budget-plans',
         builder: (_, _) => const BudgetPlanScreen(),

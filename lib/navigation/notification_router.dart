@@ -13,12 +13,24 @@ class NotificationRouter {
   /// `navigatorKey` GlobalKey của nhánh → crash Navigator
   /// `'!keyReservation.contains(key)'`.
   static const _shellBranchPaths = {
-    '/manager/home', '/manager/chat', '/manager/calendar',
-    '/manager/sos', '/manager/album', '/manager/profile',
-    '/deputy/home', '/deputy/tasks', '/deputy/wallet',
-    '/deputy/sos', '/deputy/chat', '/deputy/profile',
-    '/member/home', '/member/tasks', '/member/wallet',
-    '/member/sos', '/member/chat', '/member/profile',
+    '/manager/home',
+    '/manager/chat',
+    '/manager/calendar',
+    '/manager/sos',
+    '/manager/album',
+    '/manager/profile',
+    '/deputy/home',
+    '/deputy/tasks',
+    '/deputy/wallet',
+    '/deputy/sos',
+    '/deputy/chat',
+    '/deputy/profile',
+    '/member/home',
+    '/member/tasks',
+    '/member/wallet',
+    '/member/sos',
+    '/member/chat',
+    '/member/profile',
   };
 
   /// true → dùng `context.go(path)`; false → `context.push(path)` (giữ back).
@@ -56,14 +68,17 @@ class NotificationRouter {
       case 'TASK_ASSIGNMENT':
         return isMgr ? '/manager/tasks' : '/member/tasks';
       case 'CALENDAR_EVENT':
-        return role == UserRole.manager ? '/manager/calendar' : null;
+        // Manager giữ tab shell; Deputy/Member đi route phẳng /calendar. Trước
+        // đây trả null cho non-manager → chính người được mời tham gia lại
+        // không bấm được vào thông báo để phản hồi.
+        return role == UserRole.manager ? '/manager/calendar' : '/calendar';
       case 'BUDGET_ALERT':
         return isMgr ? '/manager/finance-alerts' : null;
       case 'FINANCIAL_GOAL':
         return isMgr
             ? (id.isNotEmpty
-                ? '/manager/goal-detail?goalId=$id'
-                : '/manager/financial-goals')
+                  ? '/manager/goal-detail?goalId=$id'
+                  : '/manager/financial-goals')
             : null;
       case 'CONVERSATION':
         return '/$shell/chat';
