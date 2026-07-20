@@ -8,11 +8,22 @@ class SosAlert {
   final String message;
   final String address;
   final String senderName;
+  /// userId của người kích hoạt (`triggeredByMember.user.id`) — dùng để biết
+  /// cảnh báo này có phải DO CHÍNH MÌNH phát hay không. Thiếu nó thì UI đối
+  /// xử người phát như người nhận (banner "cần trợ giúp", nút "Tôi đang đến"
+  /// hiện trên máy nạn nhân).
+  final String? triggeredByUserId;
   final String createdAt;
   final String? resolutionNote;
   final String? resolvedByName;
   final double? latitude;
   final double? longitude;
+
+  /// true nếu cảnh báo do chính [myUserId] phát.
+  bool isMine(String? myUserId) =>
+      myUserId != null &&
+      myUserId.isNotEmpty &&
+      triggeredByUserId == myUserId;
 
   const SosAlert({
     required this.id,
@@ -21,6 +32,7 @@ class SosAlert {
     required this.message,
     required this.address,
     required this.senderName,
+    this.triggeredByUserId,
     required this.createdAt,
     this.resolutionNote,
     this.resolvedByName,
@@ -30,6 +42,17 @@ class SosAlert {
 
   bool get isActive => status == 'ACTIVE';
   bool get hasLocation => latitude != null && longitude != null;
+
+  // userId nằm trong member.user.id (member.id là FamilyMember.id, KHÁC).
+  static String? _memberUserId(dynamic m) {
+    if (m is! Map) return null;
+    final user = m['user'];
+    if (user is Map) {
+      final id = user['id']?.toString();
+      if (id != null && id.isNotEmpty) return id;
+    }
+    return m['userId']?.toString();
+  }
 
   // Tên hiển thị của 1 member object BE trả: {displayName, user: {fullName}}
   static String? _memberName(dynamic m) {
@@ -61,6 +84,10 @@ class SosAlert {
           _memberName(json['triggeredBy']) ??
           json['senderName']?.toString() ??
           'Thành viên',
+      // Swagger: triggeredByMember.user.id (verify 19/07).
+      triggeredByUserId: _memberUserId(json['triggeredByMember']) ??
+          _memberUserId(json['sender']) ??
+          _memberUserId(json['triggeredBy']),
       createdAt: json['triggeredAt']?.toString() ?? json['createdAt']?.toString() ?? '',
       resolutionNote: json['resolutionNote']?.toString(),
       resolvedByName: _memberName(json['resolvedByMember']),
@@ -76,7 +103,68 @@ class SosAlert {
   }
 }
 
+/// Liên hệ khẩn cấp của gia đình (BE ship 19/07):
+/// GET/POST `/families/{id}/sos/emergency-contacts`,
+/// PATCH/DELETE `.../{contactId}`.
+class EmergencyContact {
+  final String id;
+  final String contactName;
+  final String phoneNumber;
+  final String? relationshipNote;
+  final int? priorityOrder;
+  final bool isActive;
+
+  const EmergencyContact({
+    required this.id,
+    required this.contactName,
+    required this.phoneNumber,
+    this.relationshipNote,
+    this.priorityOrder,
+    this.isActive = true,
+  });
+
+  factory EmergencyContact.fromJson(Map<String, dynamic> j) => EmergencyContact(
+        id: j['id']?.toString() ?? j['contactId']?.toString() ?? '',
+        contactName: j['contactName']?.toString() ?? 'Liên hệ',
+        phoneNumber: j['phoneNumber']?.toString() ?? '',
+        relationshipNote: j['relationshipNote']?.toString(),
+        priorityOrder: (j['priorityOrder'] as num?)?.toInt(),
+        isActive: j['isActive'] as bool? ?? true,
+      );
+}
+
 class SosProvider extends ChangeNotifier {
+  // ── Danh bạ khẩn cấp ─────────────────────────────────────────────────────
+  List<EmergencyContact> _contacts = [];
+  List<EmergencyContact> get emergencyContacts => _contacts;
+
+  /// Số gọi nhanh hiển thị ở màn SOS: ưu tiên danh bạ gia đình (ACTIVE, theo
+  /// priorityOrder); rỗng thì fallback hotline quốc gia.
+  static const kDefaultHotlines = ['113', '115', '114'];
+
+  Future<void> fetchEmergencyContacts() async {
+    final fid = _fid;
+    if (fid == null) return;
+    try {
+      final data =
+          await ApiClient.instance.get('/families/$fid/sos/emergency-contacts');
+      final raw = data is List
+          ? data
+          : (data is Map && data['items'] is List ? data['items'] : <dynamic>[]);
+      final list = (raw as List)
+          .whereType<Map>()
+          .map((e) => EmergencyContact.fromJson(Map<String, dynamic>.from(e)))
+          .where((c) => c.isActive && c.phoneNumber.isNotEmpty)
+          .toList()
+        ..sort((a, b) =>
+            (a.priorityOrder ?? 9999).compareTo(b.priorityOrder ?? 9999));
+      _contacts = list;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('SosProvider: fetchEmergencyContacts failed: $e');
+    }
+  }
+
   List<SosAlert> _alerts = [];
   bool _loading = false;
   bool _sending = false;
@@ -156,16 +244,20 @@ class SosProvider extends ChangeNotifier {
   }
 
   // PATCH /families/{familyId}/sos/alerts/{alertId}/resolve — chỉ
-  // FAMILY_MANAGER / DEPUTY_MEMBER.
-  Future<void> resolveAlert(String alertId, {String? resolutionNote}) =>
-      _patchAlert(alertId, 'resolve', resolutionNote);
+  // FAMILY_MANAGER / DEPUTY_MEMBER. [isFalseAlarm] (BE ship 19/07) = đóng với
+  // trạng thái FALSE_ALARM thay vì RESOLVED; cancel bỏ qua field này.
+  Future<void> resolveAlert(String alertId,
+          {String? resolutionNote, bool isFalseAlarm = false}) =>
+      _patchAlert(alertId, 'resolve', resolutionNote,
+          isFalseAlarm: isFalseAlarm);
 
   // PATCH /families/{familyId}/sos/alerts/{alertId}/cancel — chỉ
   // FAMILY_MANAGER / DEPUTY_MEMBER.
   Future<void> cancelAlert(String alertId, {String? resolutionNote}) =>
       _patchAlert(alertId, 'cancel', resolutionNote);
 
-  Future<void> _patchAlert(String alertId, String action, String? resolutionNote) async {
+  Future<void> _patchAlert(String alertId, String action, String? resolutionNote,
+      {bool isFalseAlarm = false}) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
     _ensureNoActionInProgress();
@@ -174,6 +266,7 @@ class SosProvider extends ChangeNotifier {
     try {
       await ApiClient.instance.patch('/families/$fid/sos/alerts/$alertId/$action', {
         if (resolutionNote != null && resolutionNote.isNotEmpty) 'resolutionNote': resolutionNote,
+        if (action == 'resolve' && isFalseAlarm) 'isFalseAlarm': true,
       });
       await fetchAlerts();
     } finally {
@@ -183,7 +276,8 @@ class SosProvider extends ChangeNotifier {
   }
 
   // POST /families/{familyId}/sos/alerts/{alertId}/responses — thành viên
-  // khác phản hồi cảnh báo (VIEWED / CONFIRM_SAFE / NEED_HELP).
+  // khác phản hồi cảnh báo. Enum BE (verify 19/07): VIEWED | ON_THE_WAY |
+  // CONFIRM_SAFE | NEED_HELP (RESOLVED/CANCELED do manager qua endpoint riêng).
   Future<void> respond(String alertId, String responseType, {String? message}) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');

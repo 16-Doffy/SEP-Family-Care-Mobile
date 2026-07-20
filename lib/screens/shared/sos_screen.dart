@@ -48,6 +48,8 @@ class _SOSScreenState extends State<SOSScreen>
     // Refresh alerts when manager opens screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SosProvider>().fetchAlerts();
+      // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
+      context.read<SosProvider>().fetchEmergencyContacts();
     });
   }
 
@@ -270,10 +272,27 @@ class _SOSScreenState extends State<SOSScreen>
       }
       return;
     }
+    final canResolve =
+        context.read<AuthProvider>().user?.canResolveSos == true;
     try {
       await sosState.confirmSafety(id);
+      // confirm-safety chỉ ghi nhận phản hồi (201) — cảnh báo vẫn ACTIVE.
+      // Có quyền thì đóng luôn; không thì nói rõ để user khỏi tưởng đã xong.
+      if (canResolve) {
+        await sosState.resolveAlert(id,
+            resolutionNote: 'Người phát đã xác nhận an toàn');
+      }
       _stopLocationStreaming();
-      if (mounted) setState(() => _sent = false);
+      if (mounted) {
+        setState(() => _sent = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(canResolve
+              ? 'Đã xác nhận an toàn và đóng cảnh báo ✅'
+              : 'Đã báo an toàn — cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng'),
+          duration: Duration(seconds: canResolve ? 2 : 4),
+          backgroundColor: AppColors.success,
+        ));
+      }
     } catch (e) {
       debugPrint('SOSScreen: confirmSafety failed: $e');
       if (mounted) {
@@ -385,34 +404,48 @@ class _SOSScreenState extends State<SOSScreen>
                               fontSize: 13, color: Colors.white38)),
                     ]),
             ),
-            // Emergency call buttons
+            // Liên hệ khẩn: ưu tiên danh bạ gia đình (BE), fallback hotline
+            // quốc gia khi gia đình chưa khai báo liên hệ nào.
             Padding(
               padding: const EdgeInsets.only(bottom: 80),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Liên hệ khẩn: ',
-                      style:
-                          GoogleFonts.inter(fontSize: 13, color: Colors.white38)),
-                  ...['113', '115', '114'].map((n) => GestureDetector(
-                        onTap: () => launchUrl(Uri.parse('tel:$n')),
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 5),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(999),
-                              border:
-                                  Border.all(color: Colors.white24)),
-                          child: Text(n,
-                              style: GoogleFonts.inter(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white)),
-                        ),
-                      )),
-                ],
-              ),
+              child: Builder(builder: (context) {
+                final contacts = context.watch<SosProvider>().emergencyContacts;
+                final useFamily = contacts.isNotEmpty;
+                final entries = useFamily
+                    ? contacts
+                        .take(3)
+                        .map((c) => (label: c.contactName, phone: c.phoneNumber))
+                        .toList()
+                    : SosProvider.kDefaultHotlines
+                        .map((n) => (label: n, phone: n))
+                        .toList();
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(useFamily ? 'Gọi nhanh: ' : 'Liên hệ khẩn: ',
+                        style: GoogleFonts.inter(
+                            fontSize: 13, color: Colors.white38)),
+                    ...entries.map((e) => GestureDetector(
+                          onTap: () =>
+                              launchUrl(Uri.parse('tel:${e.phone}')),
+                          child: Container(
+                            margin:
+                                const EdgeInsets.symmetric(horizontal: 5),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(color: Colors.white24)),
+                            child: Text(e.label,
+                                style: GoogleFonts.inter(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white)),
+                          ),
+                        )),
+                  ],
+                );
+              }),
             ),
           ]),
         ]),
@@ -632,19 +665,48 @@ class _SOSScreenState extends State<SOSScreen>
 
         const SizedBox(height: 14),
 
-        // Action buttons
-        Row(children: [
+        // Action buttons — cảnh báo CỦA MÌNH thì không thể "đang đến" chỗ
+        // chính mình; thay bằng tự xác nhận an toàn (confirm-safety).
+        Builder(builder: (context) {
+        final mine = alert.isMine(context.watch<AuthProvider>().user?.id);
+        return Row(children: [
           Expanded(
             child: GestureDetector(
               onTap: () async {
                 final sos = context.read<SosProvider>();
                 if (sos.sending) return;
+                final canResolve =
+                    context.read<AuthProvider>().user?.canResolveSos == true;
                 try {
-                  await sos.respond(alert.id, 'VIEWED', message: 'Tôi đang đến');
+                  if (mine) {
+                    // ⚠️ BE: confirm-safety chỉ GHI NHẬN phản hồi CONFIRM_SAFE
+                    // (201), KHÔNG đổi status cảnh báo. Chỉ resolve/cancel
+                    // (Manager/Deputy) mới đóng được.
+                    await sos.confirmSafety(alert.id);
+                    if (canResolve) {
+                      // Người phát có quyền quản lý → đóng luôn cho gọn.
+                      await sos.resolveAlert(alert.id,
+                          resolutionNote: 'Người phát đã xác nhận an toàn');
+                    }
+                  } else {
+                    // BE ship enum ON_THE_WAY (19/07) → gửi đúng loại phản hồi,
+                    // không còn mượn VIEWED + đoán chữ trong message.
+                    await sos.respond(
+                      alert.id,
+                      'ON_THE_WAY',
+                      message: 'Tôi đang đến',
+                    );
+                  }
                   if (context.mounted) {
+                    final msg = !mine
+                        ? 'Đã phản hồi SOS ✅'
+                        : (canResolve
+                            ? 'Đã xác nhận an toàn và đóng cảnh báo ✅'
+                            : 'Đã báo an toàn — cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng');
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Đã phản hồi SOS ✅'),
+                      SnackBar(
+                          content: Text(msg),
+                          duration: Duration(seconds: mine && !canResolve ? 4 : 2),
                           backgroundColor: AppColors.success),
                     );
                   }
@@ -663,7 +725,7 @@ class _SOSScreenState extends State<SOSScreen>
                     color: AppColors.success,
                     borderRadius: BorderRadius.circular(12)),
                 alignment: Alignment.center,
-                child: Text('✅ Tôi đang đến',
+                child: Text(mine ? '🛟 Tôi đã an toàn' : '✅ Tôi đang đến',
                     style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -706,7 +768,26 @@ class _SOSScreenState extends State<SOSScreen>
               ),
             ),
           ],
-        ]),
+        ]);
+        }),
+
+        // Người phát KHÔNG có quyền đóng → giải thích vì sao cảnh báo vẫn
+        // ACTIVE sau khi bấm "Tôi đã an toàn" (BE: confirm-safety chỉ ghi
+        // nhận phản hồi, resolve/cancel mới đóng và chỉ Manager/Deputy).
+        if (alert.isMine(context.watch<AuthProvider>().user?.id) &&
+            context.watch<AuthProvider>().user?.canResolveSos != true) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            const Text('ⓘ', style: TextStyle(fontSize: 12, color: Colors.white38)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Báo an toàn xong, cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng.',
+                style: GoogleFonts.inter(fontSize: 11, color: Colors.white38),
+              ),
+            ),
+          ]),
+        ],
       ]),
     );
   }
@@ -1058,14 +1139,18 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     return null;
   }
 
-  // Ánh xạ loại phản hồi → (emoji, màu nền node, nhãn hiển thị). Phân biệt
-  // "Đang đến" (VIEWED + message chứa "đang đến") với "Đã xem" như bản v0.
+  // Ánh xạ loại phản hồi → (emoji, màu nền node, nhãn hiển thị).
+  // BE ship enum ON_THE_WAY (19/07) → phân biệt "Đang đến" bằng ĐÚNG enum.
+  // Vẫn giữ fallback đoán theo message cho các phản hồi CŨ đã lưu dạng
+  // VIEWED + "Tôi đang đến" trước khi BE bổ sung enum.
   ({String emoji, Color color, String label}) _nodeStyle(String type, String message) {
     final t = type.toUpperCase();
-    final onWay = message.toLowerCase().contains('đang đến');
+    final legacyOnWay = message.toLowerCase().contains('đang đến');
     switch (t) {
+      case 'ON_THE_WAY':
+        return (emoji: '🚗', color: AppColors.safe, label: 'Đang đến');
       case 'VIEWED':
-        return onWay
+        return legacyOnWay
             ? (emoji: '🚗', color: AppColors.safe, label: 'Đang đến')
             : (emoji: '👀', color: AppColors.avatarBlue, label: 'Đã xem');
       case 'NEED_HELP':
@@ -1127,9 +1212,13 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     final statusColor = isActive
         ? AppColors.sos
         : (status == 'RESOLVED' ? AppColors.safe : AppColors.textMuted);
-    final statusLabel = isActive
-        ? 'ĐANG KHẨN CẤP'
-        : (status == 'RESOLVED' ? 'ĐÃ XỬ LÝ' : (status == 'CANCELED' ? 'ĐÃ HỦY' : status));
+    final statusLabel = switch (status) {
+      'ACTIVE' => 'ĐANG KHẨN CẤP',
+      'RESOLVED' => 'ĐÃ XỬ LÝ',
+      'CANCELED' => 'ĐÃ HỦY',
+      'FALSE_ALARM' => 'BÁO ĐỘNG GIẢ',
+      _ => status,
+    };
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       // ── Header đỏ gradient (v0 style) ──────────────────────────────────
@@ -1270,11 +1359,21 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
           ),
           for (int i = 0; i < responses.length; i++)
             _responseNode(responses[i], isLast: i == responses.length - 1 && status == 'ACTIVE'),
-          if (status == 'RESOLVED' || status == 'CANCELED')
+          if (status == 'RESOLVED' ||
+              status == 'CANCELED' ||
+              status == 'FALSE_ALARM')
             _timelineNode(
-              emoji: status == 'RESOLVED' ? '✔' : '✖',
+              emoji: switch (status) {
+                'RESOLVED' => '✔',
+                'FALSE_ALARM' => '🔕',
+                _ => '✖',
+              },
               color: status == 'RESOLVED' ? AppColors.safe : AppColors.textMuted,
-              title: status == 'RESOLVED' ? 'Đã xử lý' : 'Đã hủy',
+              title: switch (status) {
+                'RESOLVED' => 'Đã xử lý',
+                'FALSE_ALARM' => 'Báo động giả',
+                _ => 'Đã hủy',
+              },
               subtitle: [resolvedBy, resolutionNote].where((e) => (e ?? '').isNotEmpty).join(' · '),
               time: null, isLast: true,
             ),

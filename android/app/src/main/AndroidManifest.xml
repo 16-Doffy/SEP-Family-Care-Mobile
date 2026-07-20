@@ -9,10 +9,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Camera: quét QR lời mời (mobile_scanner) -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Thông báo hệ thống (Android 13+ bắt buộc xin runtime) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
-        android:label="family_care"
+        android:label="Family Care"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

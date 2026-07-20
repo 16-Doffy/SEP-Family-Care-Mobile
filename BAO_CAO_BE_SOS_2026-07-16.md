@@ -8,7 +8,21 @@
 
 ---
 
-# 🔴 Bug 1 — Thiếu nhóm API chia sẻ vị trí gia đình (404)
+# ✅ Bug 1 — ĐÃ ĐƯỢC BE GIẢI QUYẾT (19/07/2026)
+
+> BE đã ship **đúng contract phương án (B) family-scoped** ở §7:
+> `POST /families/{familyId}/locations` · `GET /families/{familyId}/members/locations` ·
+> `PATCH /families/{familyId}/members/me/location-sharing`.
+> Body khớp y đề xuất (`{latitude, longitude, accuracy?}`, `{isSharing}`).
+> **FE đã đổi path trong `gps_provider.dart` (19/07) — Family Map hết chặn.**
+> ⚠️ Còn lại: response của `GET members/locations` **chưa document schema** →
+> FE vẫn giữ parse phòng thủ; nhờ BE bổ sung DTO khi tiện.
+>
+> *Phần mô tả bug bên dưới giữ làm lịch sử.*
+
+---
+
+# 🔴 Bug 1 (lịch sử) — Thiếu nhóm API chia sẻ vị trí gia đình (404)
 
 ## 1. Hiện tượng
 Màn **Bản đồ gia đình** hiển thị lỗi đỏ ngay trên UI: **`Cannot GET /api/v1/location/family`**.
@@ -133,6 +147,6 @@ BE chọn 1 trong 2:
 # Phụ lục — các điểm SOS-detail thứ yếu (đã kiểm chứng lại 16/07 trên Swagger prod)
 
 - **A. Schema `responses[]`** — ✅ **RÚT LẠI, không cần BE làm gì**: Swagger **đã document đầy đủ**. `SosAlertResponseDto.responses[] = SosResponseResponseDto { id, sosAlertId, responderMemberId, responseType, message, respondedAt, responderMember }`, trong đó `responderMember = SosMemberSummaryResponseDto { id, displayName, familyRole, user{id, fullName, email, avatarUrl} }`. *(FE đã sửa parse theo field chuẩn `responderMember` — commit 16/07.)*
-- **B. Thiếu enum "đang đến"** — ❌ **XÁC NHẬN còn thiếu** (verify enum trong `CreateSosResponseDto`/`SosResponseResponseDto` = `VIEWED | CONFIRM_SAFE | NEED_HELP | RESOLVED | CANCELED`). Nút "Tôi đang đến" vẫn phải gửi `VIEWED` + so text `message`. → Đề xuất thêm `responseType = ON_THE_WAY`.
-- **C. Thiếu phone thành viên** — ❌ **XÁC NHẬN còn thiếu** (verify `SosMemberUserResponseDto` chỉ có `id, fullName, email, avatarUrl` — **không có phone**). → Đề xuất bổ sung `phone` vào `SosMemberUserResponseDto` để nút "Gọi" chạy cho người khác.
+- **B. Thiếu enum "đang đến"** — ✅ **BE ĐÃ SHIP (19/07)**: enum nay là `VIEWED | ON_THE_WAY | CONFIRM_SAFE | NEED_HELP | RESOLVED | CANCELED`. **FE đã chuyển nút "Tôi đang đến" sang gửi `ON_THE_WAY`** và timeline map theo đúng enum (giữ fallback đoán message cho phản hồi cũ đã lưu dạng `VIEWED`). Xong.
+- **C. Thiếu phone thành viên** — ❌ **VẪN CÒN THIẾU** (re-verify 19/07: `SosMemberUserResponseDto` vẫn chỉ có `id, fullName, email, avatarUrl`). → Nhờ bổ sung `phone` để nút "Gọi" chạy cho người khác. **Đây là mục SOS duy nhất còn nợ.**
 - **D. (mới ghi nhận)** `status` alert có giá trị thứ 4 **`FALSE_ALARM`** trong enum — FE sẽ bổ sung nhãn hiển thị; BE lưu ý document luồng nào sinh ra status này.
