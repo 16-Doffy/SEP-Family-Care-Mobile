@@ -161,9 +161,17 @@ class CalendarProvider extends ChangeNotifier {
   /// tránh nhảy về tháng hiện tại và làm event vừa sửa biến mất khỏi danh sách.
   DateTime? _lastMonth;
 
-  bool get canCreateEvents => featureAccess?.calendarEnabled ?? true;
-  bool get canUseReminders => featureAccess?.calendarReminders ?? false;
-  bool get canUseRecurring => featureAccess?.calendarRecurringEvents ?? false;
+  /// Chưa gọi được, hoặc BE trả `featureAccess` rỗng → coi như KHÔNG BIẾT.
+  /// Fail-open và để BE trả 403 quyết định, thay vì tự chặn người dùng khỏi
+  /// tính năng mà gói của họ vốn có (Free Plan có "Calendar view/create basic
+  /// event" theo mô tả của Nhật).
+  bool get _accessUnknown => featureAccess == null || featureAccess!.isUnknown;
+
+  bool get canCreateEvents => _accessUnknown || featureAccess!.calendarEnabled;
+  bool get canUseReminders =>
+      _accessUnknown || featureAccess!.calendarReminders;
+  bool get canUseRecurring =>
+      _accessUnknown || featureAccess!.calendarRecurringEvents;
 
   /// Nhận diện "bị khóa do gói" từ cả hai nguồn: check phía FE
   /// ([FeatureLockedException]) và 403 do BE trả về.
@@ -206,6 +214,20 @@ class CalendarProvider extends ChangeNotifier {
           ? data['featureAccess'] ?? plan['featureAccess']
           : plan['featureAccess'];
       featureAccess = FeatureAccess.fromJson(access);
+      // Schema featureAccess chưa được BE chốt (Swagger khai `type: object`
+      // trần) — log raw để đối chiếu key thật với giả định calendar.enabled /
+      // calendar.reminders / calendar.recurringEvents. Xem VERIFY #1.
+      // ⚠️ flag() trả false CẢ KHI key không tồn tại, nên "không có quyền" và
+      // "sai tên key" nhìn giống hệt nhau nếu không có dòng log này.
+      debugPrint(
+        'CalendarProvider: subscription keys='
+        '${data is Map ? data.keys.toList() : data.runtimeType} '
+        'plan keys=${plan.keys.toList()} '
+        'featureAccess=${featureAccess!.raw} '
+        '(unknown=${featureAccess!.isUnknown}) '
+        '→ create=$canCreateEvents reminders=$canUseReminders '
+        'recurring=$canUseRecurring',
+      );
       if (notify) notifyListeners();
     } catch (e) {
       debugPrint('CalendarProvider: fetchFeatureAccess failed: $e');

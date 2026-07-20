@@ -58,8 +58,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     // Với họ chỉ báo để nhờ Trưởng nhóm nâng cấp, không hiện nút.
     final canUpgrade =
         context.read<AuthProvider>().user?.canManageSubscription ?? false;
+    // Message của BE đã có dấu chấm cuối câu — KHÔNG nối thêm '.' vào $base,
+    // trước đây làm hiện "…nâng cấp gói.." trên máy thật.
     final base = e is FeatureLockedException
-        ? e.toString()
+        ? '${e.toString()}.'
         : 'Gói hiện tại không cho phép thao tác này.\n\n$e';
     final upgrade = await showDialog<bool>(
       context: context,
@@ -67,8 +69,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         title: const Text('Cần nâng cấp gói'),
         content: Text(
           canUpgrade
-              ? '$base.\n\nNâng cấp gói để mở tính năng này cho cả gia đình.'
-              : '$base.\n\nVui lòng liên hệ Trưởng nhóm để nâng cấp gói.',
+              ? '$base\n\nNâng cấp gói để mở tính năng này cho cả gia đình.'
+              : '$base\n\nVui lòng liên hệ Trưởng nhóm để nâng cấp gói.',
         ),
         actions: [
           TextButton(
@@ -440,43 +442,57 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  // Tách 2 dòng: trước đây tiêu đề + "Chú thích" + điều hướng tháng nằm chung
+  // một Row, trong đó Flexible(tiêu đề) và Spacer() cùng chia phần dư nên tiêu
+  // đề bị ép còn "L…" trên máy thật (quan sát 2026-07-20).
   Widget _header() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-    child: Row(
+    padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.calendar_month_rounded, color: AppColors.link),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            'Lịch gia đình',
-            style: GoogleFonts.inter(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
+        Row(
+          children: [
+            const Icon(Icons.calendar_month_rounded, color: AppColors.link),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Lịch gia đình',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            overflow: TextOverflow.ellipsis,
-          ),
+            TextButton(
+              onPressed: () => setState(() => _showLegend = !_showLegend),
+              child: const Text('Chú thích'),
+            ),
+          ],
         ),
-        const Spacer(),
-        TextButton(
-          onPressed: () => setState(() => _showLegend = !_showLegend),
-          child: const Text('Chú thích'),
-        ),
-        IconButton(
-          onPressed: () => _moveMonth(-1),
-          icon: const Icon(Icons.chevron_left_rounded),
-        ),
-        Text(
-          'Tháng ${_focus.month}/${_focus.year}',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        IconButton(
-          onPressed: () => _moveMonth(1),
-          icon: const Icon(Icons.chevron_right_rounded),
+        Row(
+          children: [
+            IconButton(
+              onPressed: () => _moveMonth(-1),
+              icon: const Icon(Icons.chevron_left_rounded),
+            ),
+            Expanded(
+              child: Text(
+                'Tháng ${_focus.month}/${_focus.year}',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: () => _moveMonth(1),
+              icon: const Icon(Icons.chevron_right_rounded),
+            ),
+          ],
         ),
       ],
     ),

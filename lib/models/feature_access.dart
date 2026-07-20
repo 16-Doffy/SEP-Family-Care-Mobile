@@ -3,6 +3,14 @@ class FeatureAccess {
 
   const FeatureAccess(this.raw);
 
+  /// BE chưa nói gì về quyền (thiếu field, hoặc trả `{}` — quan sát thật
+  /// 2026-07-20 trên `GET /families/{id}/subscription`).
+  ///
+  /// Phải phân biệt với "đã trả lời và quyền = false": map rỗng mà coi là
+  /// không-có-quyền thì gating fail-CLOSED, chặn cả tính năng gói Free vốn
+  /// được dùng. Nơi gọi nên fail-open và để BE trả 403 quyết định.
+  bool get isUnknown => raw.isEmpty;
+
   factory FeatureAccess.fromJson(dynamic json) {
     if (json is Map) {
       return FeatureAccess(Map<String, dynamic>.from(json));
