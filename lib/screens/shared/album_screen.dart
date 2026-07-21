@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 import 'album_face_section.dart';
+import 'album_people_screen.dart';
 
 class AlbumScreen extends StatefulWidget {
   const AlbumScreen({super.key});
@@ -229,6 +230,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
         ),
         actions: [
+          // "Mọi người" — chia album theo thành viên (kiểu Google Photos).
+          IconButton(
+            tooltip: 'Mọi người',
+            icon: const Icon(
+              Icons.people_alt_outlined,
+              color: AppColors.textSecondary,
+            ),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AlbumPeopleScreen()),
+            ),
+          ),
           // Hàng đợi kiểm duyệt thủ công của Manager/Deputy.
           if (isAdmin)
             IconButton(
@@ -615,7 +627,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _MediaThumb(media: media),
+            AlbumMediaThumb(media: media),
             if (media.isVideo)
               const Align(
                 alignment: Alignment.center,
@@ -1151,15 +1163,15 @@ Widget _thumbImage(String url) => Image.network(
 /// Ô ảnh trong lưới. API list không trả signed URL nên nếu [media] thiếu URL,
 /// widget này gọi [AlbumProvider.resolveDisplayUrl] (chỉ GET detail để lấy URL)
 /// rồi hiện ảnh. Có URL sẵn thì vẽ thẳng, không gọi mạng.
-class _MediaThumb extends StatefulWidget {
-  const _MediaThumb({required this.media});
+class AlbumMediaThumb extends StatefulWidget {
+  const AlbumMediaThumb({super.key, required this.media});
   final AlbumMedia media;
 
   @override
-  State<_MediaThumb> createState() => _MediaThumbState();
+  State<AlbumMediaThumb> createState() => AlbumMediaThumbState();
 }
 
-class _MediaThumbState extends State<_MediaThumb> {
+class AlbumMediaThumbState extends State<AlbumMediaThumb> {
   Future<String?>? _future;
 
   @override
@@ -1169,10 +1181,10 @@ class _MediaThumbState extends State<_MediaThumb> {
   }
 
   @override
-  void didUpdateWidget(_MediaThumb old) {
-    super.didUpdateWidget(old);
+  void didUpdateWidget(AlbumMediaThumb oldWidget) {
+    super.didUpdateWidget(oldWidget);
     // GridView tái sử dụng widget khi cuộn → media có thể đổi sang item khác.
-    if (old.media.id != widget.media.id) _maybeResolve();
+    if (oldWidget.media.id != widget.media.id) _maybeResolve();
   }
 
   void _maybeResolve() {

@@ -81,6 +81,18 @@ class AlbumProvider extends ChangeNotifier {
     }
   }
 
+  /// Ảnh có gắn thẻ một thành viên — cho tab "Theo thành viên" (kiểu Google
+  /// Photos → Mọi người). Dùng filter taggedMemberId của BE. Trả list riêng,
+  /// KHÔNG đụng _items của lưới chính.
+  Future<List<AlbumMedia>> fetchTaggedMedia(String memberId) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/albums/media${_qs({'taggedMemberId': memberId, 'limit': 100, 'sortOrder': 'DESC'})}',
+    );
+    return _list(
+      data,
+    ).map(AlbumMedia.fromJson).where((m) => m.id.isNotEmpty).toList();
+  }
+
   Future<AlbumMedia?> fetchDetail(String mediaId) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/albums/media/$mediaId',

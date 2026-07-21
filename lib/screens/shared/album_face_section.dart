@@ -51,11 +51,26 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       return;
     }
     try {
-      final scan = await _face.fetchScanStatus(widget.mediaId);
-      final sug = await _face.fetchSuggestions(widget.mediaId);
+      var scan = await _face.fetchScanStatus(widget.mediaId);
+      var sug = await _face.fetchSuggestions(widget.mediaId);
+
+      // Tự quét khi mở ảnh nếu CHƯA quét (giống trải nghiệm Google Photos:
+      // không bắt người dùng bấm nút). force=false nên BE đã quét rồi sẽ không
+      // quét lại. Chỉ với ảnh SAFE — tag chỉ gắn được cho media SAFE.
+      if (widget.isSafe && sug.isEmpty && scan == FaceScanState.notScanned) {
+        try {
+          await _face.requestScan(widget.mediaId);
+          await Future.delayed(const Duration(seconds: 2));
+          scan = await _face.fetchScanStatus(widget.mediaId);
+          sug = await _face.fetchSuggestions(widget.mediaId);
+        } catch (_) {
+          // Auto-quét lỗi thì im lặng, người dùng vẫn bấm "Quét" thủ công được.
+        }
+      }
+
       if (!mounted) return;
       setState(() {
-        _scan = scan;
+        _scan = sug.isNotEmpty ? FaceScanState.hasSuggestions : scan;
         _suggestions = sug;
         _loading = false;
       });
