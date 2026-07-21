@@ -50,6 +50,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   FinanceModelType _model = FinanceModelType.fiveJars;
   bool _saving = false;
   bool _loadingCurrent = true;
+  bool _hasLocalEdits = false;
   // Tên model hiện gia đình đang active (để hiện banner — null nếu chưa có)
   String? _currentModelTypeLabel;
 
@@ -98,6 +99,10 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     final provider = context.read<fp.FinanceProvider>();
     await provider.fetchAll();
     if (!mounted) return;
+    if (_hasLocalEdits || _saving) {
+      setState(() => _loadingCurrent = false);
+      return;
+    }
     // FinanceProvider.activeModel fallback về model đầu tiên (kể cả DRAFT)
     // khi gia đình chưa có model nào ACTIVE — chỉ coi là "đang áp dụng" khi
     // status thật sự ACTIVE, tránh hiện banner sai cho model chưa activate.
@@ -288,7 +293,10 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   }) {
     final sel = _model == model;
     return GestureDetector(
-      onTap: () => setState(() => _model = model),
+      onTap: () => setState(() {
+        _model = model;
+        _hasLocalEdits = true;
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(16),
@@ -333,7 +341,10 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
           if (isCustom) ...[
             const SizedBox(width: 6),
             GestureDetector(
-              onTap: () => setState(() => _customJars.removeAt(idx)),
+              onTap: () => setState(() {
+                _customJars.removeAt(idx);
+                _hasLocalEdits = true;
+              }),
               child: const Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
             ),
           ],
@@ -343,7 +354,10 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
           min: 1, max: 100,
           activeColor: jar.color,
           inactiveColor: jar.color.withValues(alpha: 0.15),
-          onChanged: (v) => setState(() => jar.percent = v.roundToDouble()),
+          onChanged: (v) => setState(() {
+            jar.percent = v.roundToDouble();
+            _hasLocalEdits = true;
+          }),
         ),
       ]),
     );
@@ -400,6 +414,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                 _customJars.add(FinanceJarUi(name: name, emoji: '💼', color: colors[_customJars.length % colors.length], percent: pct));
                 _customNameCtrl.clear();
                 _customPercentCtrl.clear();
+                _hasLocalEdits = true;
               });
             },
             child: Container(
@@ -488,11 +503,15 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       await provider.activateModel(created.id);
 
       if (mounted) {
+        setState(() {
+          _currentModelTypeLabel = modelName;
+          _hasLocalEdits = false;
+          _loadingCurrent = false;
+        });
         messenger.showSnackBar(const SnackBar(
           content: Text('Đã lưu và áp dụng mô hình tài chính ✅'),
           backgroundColor: AppColors.success,
         ));
-        context.pop();
       }
     } catch (e) {
       messenger.showSnackBar(SnackBar(

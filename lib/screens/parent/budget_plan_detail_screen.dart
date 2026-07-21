@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/money_input.dart';
 
 // GET .../budget-plans/{id} (chi tiết + lines), PATCH plan, PATCH/DELETE
 // budget-lines — các endpoint BE có sẵn nhưng trước đây FE chưa gọi.
@@ -188,6 +189,11 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
             const SizedBox(height: 4),
             Text('Kế hoạch: ${_fmt(line.plannedAmount)}${line.actualAmount != null ? ' · Thực tế: ${_fmt(line.actualAmount)}' : ''}',
                 style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+            if (line.thresholdAmount != null)
+              Text(
+                'Cảnh báo khi vượt: ${_fmt(line.thresholdAmount)}',
+                style: GoogleFonts.inter(fontSize: 11, color: AppColors.danger),
+              ),
           ]),
         ),
         if (editable) ...[
@@ -215,9 +221,15 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
   }
 
   void _showAddLineSheet(BuildContext context) {
-    final categories = context.read<FinanceProvider>().categories;
+    final categories = context
+        .read<FinanceProvider>()
+        .categories
+        .where((category) => category.categoryType == 'EXPENSE')
+        .toList();
     String? categoryId = categories.isNotEmpty ? categories.first.id : null;
     final amountCtrl = TextEditingController();
+    final thresholdCtrl = TextEditingController();
+    var essentialType = 'NEUTRAL';
     bool submitting = false;
     String? sheetError;
 
@@ -245,6 +257,27 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
               ),
               const SizedBox(height: 12),
               _inputBox(amountCtrl, 'Số tiền kế hoạch (₫)', keyboardType: TextInputType.number),
+              const SizedBox(height: 12),
+              _inputBox(
+                thresholdCtrl,
+                'Ngưỡng cảnh báo (₫, tùy chọn)',
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 10),
+              Text('Loại chi tiêu', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ('ESSENTIAL', 'Thiết yếu'),
+                  ('NON_ESSENTIAL', 'Không thiết yếu'),
+                  ('NEUTRAL', 'Trung lập'),
+                ].map((item) => ChoiceChip(
+                  label: Text(item.$2),
+                  selected: essentialType == item.$1,
+                  onSelected: (_) => setSheet(() => essentialType = item.$1),
+                )).toList(),
+              ),
             ],
             if (sheetError != null) ...[
               const SizedBox(height: 10),
@@ -256,14 +289,22 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: submitting || categories.isEmpty ? null : () async {
-                  final amt = double.tryParse(amountCtrl.text.trim());
-                  if (categoryId == null || amt == null || amt <= 0) {
+                  final amt = parseMoneyInput(amountCtrl.text);
+                  if (categoryId == null || amt <= 0) {
                     setSheet(() => sheetError = 'Chọn danh mục và nhập số tiền hợp lệ');
                     return;
                   }
                   setSheet(() { submitting = true; sheetError = null; });
                   try {
-                    await context.read<FinanceProvider>().addBudgetLine(widget.planId, categoryId: categoryId!, plannedAmount: amt);
+                    await context.read<FinanceProvider>().addBudgetLine(
+                      widget.planId,
+                      categoryId: categoryId!,
+                      plannedAmount: amt,
+                      thresholdAmount: thresholdCtrl.text.trim().isEmpty
+                          ? null
+                          : parseMoneyInput(thresholdCtrl.text),
+                      essentialType: essentialType,
+                    );
                     if (ctx.mounted) Navigator.pop(ctx);
                     await _load();
                   } catch (e) {
@@ -282,8 +323,20 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
   }
 
   void _showEditLineSheet(BuildContext context, BudgetLine line) {
-    final amountCtrl = TextEditingController(text: line.plannedAmount.round().toString());
+    final amountCtrl = TextEditingController(
+      text: ThousandsSeparatorInputFormatter.formatThousands(
+        line.plannedAmount.round().toString(),
+      ),
+    );
+    final thresholdCtrl = TextEditingController(
+      text: line.thresholdAmount == null
+          ? ''
+          : ThousandsSeparatorInputFormatter.formatThousands(
+              line.thresholdAmount!.round().toString(),
+            ),
+    );
     final noteCtrl = TextEditingController(text: line.note ?? '');
+    var essentialType = line.essentialType ?? 'NEUTRAL';
     bool submitting = false;
     String? sheetError;
 
@@ -300,6 +353,25 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
             const SizedBox(height: 16),
             _inputBox(amountCtrl, 'Số tiền kế hoạch (₫)', keyboardType: TextInputType.number),
             const SizedBox(height: 12),
+            _inputBox(
+              thresholdCtrl,
+              'Ngưỡng cảnh báo (₫, tùy chọn)',
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              children: [
+                ('ESSENTIAL', 'Thiết yếu'),
+                ('NON_ESSENTIAL', 'Không thiết yếu'),
+                ('NEUTRAL', 'Trung lập'),
+              ].map((item) => ChoiceChip(
+                label: Text(item.$2),
+                selected: essentialType == item.$1,
+                onSelected: (_) => setSheet(() => essentialType = item.$1),
+              )).toList(),
+            ),
+            const SizedBox(height: 12),
             _inputBox(noteCtrl, 'Ghi chú (tùy chọn)'),
             if (sheetError != null) ...[
               const SizedBox(height: 10),
@@ -311,8 +383,8 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: submitting ? null : () async {
-                  final amt = double.tryParse(amountCtrl.text.trim());
-                  if (amt == null || amt <= 0) {
+                  final amt = parseMoneyInput(amountCtrl.text);
+                  if (amt <= 0) {
                     setSheet(() => sheetError = 'Nhập số tiền hợp lệ');
                     return;
                   }
@@ -320,6 +392,10 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                   try {
                     await context.read<FinanceProvider>().updateBudgetLine(
                       line.id, plannedAmount: amt,
+                      thresholdAmount: thresholdCtrl.text.trim().isEmpty
+                          ? null
+                          : parseMoneyInput(thresholdCtrl.text),
+                      essentialType: essentialType,
                       note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
                     );
                     if (ctx.mounted) Navigator.pop(ctx);
@@ -341,8 +417,20 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
 
   void _showEditPlanSheet(BuildContext context, BudgetPlan plan) {
     final nameCtrl = TextEditingController(text: plan.planName);
-    final incomeCtrl = TextEditingController(text: plan.expectedSharedIncome?.round().toString() ?? '');
-    final expenseCtrl = TextEditingController(text: plan.expectedSharedExpense?.round().toString() ?? '');
+    final incomeCtrl = TextEditingController(
+      text: plan.expectedSharedIncome == null
+          ? ''
+          : ThousandsSeparatorInputFormatter.formatThousands(
+              plan.expectedSharedIncome!.round().toString(),
+            ),
+    );
+    final expenseCtrl = TextEditingController(
+      text: plan.expectedSharedExpense == null
+          ? ''
+          : ThousandsSeparatorInputFormatter.formatThousands(
+              plan.expectedSharedExpense!.round().toString(),
+            ),
+    );
     bool submitting = false;
     String? sheetError;
 
@@ -386,8 +474,12 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                     await context.read<FinanceProvider>().updateBudgetPlan(
                       widget.planId,
                       planName: nameCtrl.text.trim(),
-                      expectedSharedIncome: double.tryParse(incomeCtrl.text.trim()),
-                      expectedSharedExpense: double.tryParse(expenseCtrl.text.trim()),
+                      expectedSharedIncome: incomeCtrl.text.trim().isEmpty
+                          ? null
+                          : parseMoneyInput(incomeCtrl.text),
+                      expectedSharedExpense: expenseCtrl.text.trim().isEmpty
+                          ? null
+                          : parseMoneyInput(expenseCtrl.text),
                     );
                     if (ctx.mounted) Navigator.pop(ctx);
                     await _load();
@@ -412,6 +504,9 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
         child: TextField(
           controller: ctrl,
           keyboardType: keyboardType,
+          inputFormatters: keyboardType == TextInputType.number
+              ? const [ThousandsSeparatorInputFormatter()]
+              : null,
           decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),

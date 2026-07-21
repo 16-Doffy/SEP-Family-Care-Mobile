@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/c/Users/N DUY/AppData/Local/Microsoft/WindowsApps/python.exe\" \"D:/Temp/claude/d--Desktop-mobile-sep/e8839412-d290-4d8c-ac60-931f3717500a/scratchpad/make_zip.py\")",
+      "Bash(git diff *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(\"/c/Program Files/PostgreSQL/16/pgAdmin 4/python/python.exe\" \"D:/Temp/claude/d--Desktop-mobile-sep/e8839412-d290-4d8c-ac60-931f3717500a/scratchpad/make_zip.py\")",
+      "Bash(\"/c/Program Files/PostgreSQL/16/pgAdmin 4/python/python.exe\" \"D:/Temp/claude/d--Desktop-mobile-sep/e8839412-d290-4d8c-ac60-931f3717500a/scratchpad/verify_zip.py\")"
+    ]
+  }
+}

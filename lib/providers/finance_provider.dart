@@ -100,7 +100,7 @@ class FinanceCategory {
 class BudgetPlan {
   final String id;
   final String planName;
-  final String periodType; // MONTHLY | WEEKLY | ...
+  final String periodType; // MONTHLY | QUARTERLY | YEARLY
   final String periodStart;
   final String periodEnd;
   final double? expectedSharedIncome;
@@ -196,8 +196,10 @@ class FinancialGoal {
   final String goalName;
   final double targetAmount;
   final String? deadline;
-  final String status; // ACTIVE | COMPLETED | CANCELED
+  final String status; // ACTIVE | ACHIEVED | CANCELED | AT_RISK
   final double? progressPercent;
+  final double? currentAmount;
+  final double? remainingAmount;
 
   const FinancialGoal({
     required this.id,
@@ -206,6 +208,8 @@ class FinancialGoal {
     this.deadline,
     required this.status,
     this.progressPercent,
+    this.currentAmount,
+    this.remainingAmount,
   });
 
   // Với includeProgress=true BE bọc item thành {goal: {...}, progress: {...}}
@@ -228,20 +232,55 @@ class FinancialGoal {
             goal['progressPercent'] ??
             j['progressPercent'],
       ),
+      currentAmount: _moneyNull(
+        progress?['currentAmount'] ??
+            goal['currentAmount'] ??
+            j['currentAmount'],
+      ),
+      remainingAmount: _moneyNull(
+        progress?['remainingAmount'] ??
+            goal['remainingAmount'] ??
+            j['remainingAmount'],
+      ),
     );
   }
 
-  Color get statusColor => switch (status) {
-    'COMPLETED' => const Color(0xFF16A34A),
-    'CANCELED' => const Color(0xFFDC2626),
-    _ => const Color(0xFF2563EB),
-  };
+  /// BE dùng `ACHIEVED`; một số response cũ trả `COMPLETED`. Ở list có thể
+  /// status chưa cập nhật kịp, nhưng progress đã là 100%, nên dùng cả hai để
+  /// tránh hiển thị sai "Đang tiết kiệm" và tránh cho góp dư.
+  bool get isAchieved =>
+      status == 'ACHIEVED' ||
+      status == 'COMPLETED' ||
+      (progressPercent ?? 0) >= 100;
 
-  String get statusLabel => switch (status) {
-    'COMPLETED' => 'Đã đạt mục tiêu',
-    'CANCELED' => 'Đã hủy',
-    _ => 'Đang tiết kiệm',
-  };
+  /// List endpoint đôi khi chỉ trả `progressPercent`, còn endpoint chi tiết mới
+  /// có `currentAmount`. Dùng số suy ra để UI không hiển thị sai 0 ₫ / mục tiêu.
+  double? get displayCurrentAmount => currentAmount ??
+      (progressPercent == null
+          ? null
+          : targetAmount * (progressPercent!.clamp(0, 100) / 100));
+
+  Color get statusColor {
+    if (isAchieved) return const Color(0xFF16A34A);
+    return switch (status) {
+      'CANCELED' => const Color(0xFFDC2626),
+      'AT_RISK' => const Color(0xFFDC2626),
+      _ => const Color(0xFF2563EB),
+    };
+  }
+
+  String get statusLabel {
+    if (isAchieved) return 'Đã hoàn thành';
+    return switch (status) {
+      'CANCELED' => 'Đã hủy',
+      'AT_RISK' => 'Có nguy cơ không đạt',
+      _ => 'Đang tiết kiệm',
+    };
+  }
+
+  /// AT_RISK là cảnh báo tiến độ, không phải trạng thái đóng mục tiêu.
+  /// Chỉ mục tiêu đã hoàn thành hoặc đã hủy mới không được góp thêm.
+  bool get canContribute => !isAchieved && status != 'CANCELED';
 }
 
 // GET .../financial-goals/{goalId}/allocations — 1 lần góp tiền (ad-hoc, khác
@@ -335,14 +374,21 @@ class GoalContributionPlan {
     required this.raw,
   });
 
-  bool get isPending => status.toUpperCase() == 'PENDING';
+  // Live BE response uses PLANNED for a plan waiting for its member to submit
+  // (the older FE assumption was PENDING).
+  bool get isPending {
+    final value = status.toUpperCase();
+    return value == 'PENDING' || value == 'PLANNED';
+  }
   bool get isSubmitted => status.toUpperCase() == 'SUBMITTED';
   bool get isApproved => status.toUpperCase() == 'APPROVED';
+  bool get isPaid => status.toUpperCase() == 'PAID';
   bool get isRejected => status.toUpperCase() == 'REJECTED';
 
   String get statusLabel => switch (status.toUpperCase()) {
     'SUBMITTED' => '⏳ Chờ duyệt',
     'APPROVED' => '✅ Đã duyệt',
+    'PAID' => '✅ Đã hoàn thành',
     'REJECTED' => '❌ Bị từ chối',
     _ => '📋 Chưa nộp',
   };
@@ -350,6 +396,7 @@ class GoalContributionPlan {
   Color get statusColor => switch (status.toUpperCase()) {
     'SUBMITTED' => const Color(0xFFD97706),
     'APPROVED' => const Color(0xFF16A34A),
+    'PAID' => const Color(0xFF16A34A),
     'REJECTED' => const Color(0xFFDC2626),
     _ => const Color(0xFF6B7280),
   };
@@ -374,6 +421,7 @@ class GoalContributionPlan {
       memberName:
           memberMap?['fullName']?.toString() ??
           memberMap?['displayName']?.toString() ??
+          j['displayName']?.toString() ??
           j['memberName']?.toString() ??
           'Thành viên',
       plannedAmount: _money(j['plannedAmount']),
@@ -665,18 +713,19 @@ class FinanceProvider extends ChangeNotifier {
     return FinanceJar.fromJson(res);
   }
 
-  Future<void> createCategory({
+  Future<FinanceCategory?> createCategory({
     required String name,
     required String categoryType,
     String? essentialType,
   }) async {
-    await ApiClient.instance.post('/families/$_fid/finance/categories', {
+    final res = await ApiClient.instance.post('/families/$_fid/finance/categories', {
       'name': name,
       'categoryType': categoryType,
       'essentialType': ?essentialType,
     });
     await _fetchCategories();
     notifyListeners();
+    return res.isEmpty ? null : FinanceCategory.fromJson(res);
   }
 
   // ── Mutations: Budget Plan ────────────────────────────────────────────────
@@ -688,6 +737,7 @@ class FinanceProvider extends ChangeNotifier {
     required DateTime periodEnd,
     double? expectedSharedIncome,
     double? expectedSharedExpense,
+    List<Map<String, dynamic>> lines = const [],
   }) async {
     final res = await ApiClient.instance
         .post('/families/$_fid/finance/budget-plans', {
@@ -697,10 +747,28 @@ class FinanceProvider extends ChangeNotifier {
           'periodEnd': periodEnd.toIso8601String(),
           'expectedSharedIncome': ?expectedSharedIncome,
           'expectedSharedExpense': ?expectedSharedExpense,
+          'lines': lines,
         });
+
+    // `lines` is part of CreateBudgetPlanDto.  Some deployed BE versions
+    // created the plan but silently omitted those nested lines.  Verify the
+    // result once and add any missing line through the documented endpoint so
+    // a newly-created plan can be activated immediately.
+    final plan = res.isNotEmpty ? BudgetPlan.fromJson(res) : null;
+    if (plan != null && lines.isNotEmpty) {
+      final detail = await fetchBudgetPlanDetail(plan.id);
+      if (detail.$2.isEmpty) {
+        for (final line in lines) {
+          await ApiClient.instance.post(
+            '/families/$_fid/finance/budget-plans/${plan.id}/lines',
+            line,
+          );
+        }
+      }
+    }
     await _fetchBudgetPlans();
     notifyListeners();
-    return res.isNotEmpty ? BudgetPlan.fromJson(res) : null;
+    return plan;
   }
 
   /// action: activate | close | cancel
@@ -717,10 +785,19 @@ class FinanceProvider extends ChangeNotifier {
     String planId, {
     required String categoryId,
     required double plannedAmount,
+    double? thresholdAmount,
+    double? thresholdPercent,
+    String? essentialType,
   }) async {
     await ApiClient.instance.post(
       '/families/$_fid/finance/budget-plans/$planId/lines',
-      {'categoryId': categoryId, 'plannedAmount': plannedAmount},
+      {
+        'categoryId': categoryId,
+        'plannedAmount': plannedAmount,
+        'thresholdAmount': ?thresholdAmount,
+        'thresholdPercent': ?thresholdPercent,
+        'essentialType': ?essentialType,
+      },
     );
     notifyListeners();
   }
@@ -1053,7 +1130,9 @@ class FinanceProvider extends ChangeNotifier {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-plans${_qs({'month': month, 'year': year})}',
     );
-    return _list(data).map(GoalContributionPlan.fromJson).toList();
+    return _contributionPlanList(data)
+        .map(GoalContributionPlan.fromJson)
+        .toList();
   }
 
   // POST .../financial-goals/{goalId}/contribution-plans/{planId}/submit — thành viên xác nhận đã đóng góp
@@ -1145,5 +1224,35 @@ class FinanceProvider extends ChangeNotifier {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+  }
+
+  /// Contribution-plan list responses have arrived from BE as both a bare
+  /// list and nested objects (for example `{ data: { plans: [...] } }`).
+  /// Keep this endpoint-specific unwrapping narrow instead of weakening the
+  /// generic parser used by unrelated Finance APIs.
+  static List<Map<String, dynamic>> _contributionPlanList(dynamic data) {
+    final direct = _list(data);
+    if (direct.isNotEmpty) return direct;
+    if (data is! Map) return const [];
+
+    final map = Map<String, dynamic>.from(data);
+    if (map.containsKey('contributionPlanId') ||
+        map.containsKey('planId') ||
+        (map.containsKey('id') && map.containsKey('plannedAmount'))) {
+      return [map];
+    }
+
+    for (final key in const [
+      'plans',
+      'contributionPlans',
+      'memberPlans',
+      'members',
+      'results',
+      'data',
+    ]) {
+      final nested = _contributionPlanList(map[key]);
+      if (nested.isNotEmpty) return nested;
+    }
+    return const [];
   }
 }

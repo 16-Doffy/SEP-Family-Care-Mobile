@@ -1,6 +1,116 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-07-19**
+Last updated: **2026-07-22**
+
+## Snapshot hiện tại 2026-07-22 — Finance + Face Profile QA (đọc phần này trước)
+
+### Git / commit handoff
+
+- Nhánh làm việc: `NDuy`.
+- Working tree **chưa commit**. `git diff --check` đã pass.
+- Nhóm thay đổi chức năng cần commit cùng nhau là 25 file tracked trong
+  `API_DOCS.md`, `lib/` (Finance, Face Profile, Album, notification) và các
+  file untracked sau:
+  - `lib/providers/face_profile_provider.dart`;
+  - `lib/screens/shared/face_suggestions_sheet.dart`;
+  - `test/face_profile_provider_test.dart`.
+- `BAO_CAO_BE_FACE_ROLE_FEATURE_2026-07-21.md` là báo cáo gửi BE, chỉ add nếu
+  nhóm muốn version-control tài liệu này.
+- Không add/commit `.claude/settings*.json` hoặc `.vscode/settings.json` nếu
+  chưa thống nhất cấu hình dùng chung.
+- Chưa chạy được full `dart format`/`flutter analyze` trong phiên này vì tiến
+  trình Flutter/Android Studio đang giữ tool lâu quá timeout; đã kiểm tra diff
+  tĩnh và `git diff --check`. Cần chạy CI hoặc `flutter analyze` + `flutter
+  test` sau khi commit.
+
+### Những thay đổi FE đã làm
+
+#### Face Profile / Album
+
+- Thêm `FaceProfileProvider`, UI thiết lập Face Profile tại member detail,
+  upload từng ảnh, trạng thái enroll/enable/disable/delete và UI xem/xử lý AI
+  face suggestions trong Album.
+- Feature gate Face Profile/face suggestion theo subscription feature access;
+  tài liệu endpoint được bổ sung vào `API_DOCS.md`.
+- Đã test enroll với ảnh thật: FE gửi request đúng nhưng BE trả
+  `Face image is not enrollable`. Đây là response/validation BE, không phải
+  crash FE. Cần BE cung cấp tiêu chí ảnh hoặc mẫu ảnh được chấp nhận.
+
+#### Finance — Budget, goal, alert, report
+
+- Chuẩn hóa input tiền dùng dấu chấm (`100000` -> `100.000`) và parse an toàn
+  tại các form Budget, Goal contribution, Monthly Finance và Ledger.
+- Budget Plan: tạo DRAFT có dòng ngân sách đầu tiên; tạo category inline khi
+  cần; thêm/sửa/xóa budget line; action activate/cancel/close hiển thị lỗi BE
+  rõ ràng; report dropdown ẩn plan CANCELED, giữ CLOSED lịch sử và ưu tiên
+  ACTIVE. Nút xem report không hiện ở plan đã hủy.
+- Goal: sửa mapping trạng thái BE `ACHIEVED`; card/list hiển thị đúng số đã
+  góp/mục tiêu, ngày `dd/MM/yyyy`, trạng thái hoàn thành và chặn góp thêm khi
+  đã đạt. Detail rút từ JSON kỹ thuật xuống tiến độ dễ đọc; allocation có
+  create/edit/delete.
+- Goal Contribution Plan: sửa FE gửi `FamilyMember.id` (không phải `userId`),
+  parse response BE bọc trong `members`, nhận status thực tế `PLANNED` và
+  `PAID`, hiển thị card gọn thay JSON thô và tính thiếu hụt gọn theo plan.
+- Finance Alert: làm rõ nút `Tính lại cảnh báo từ dữ liệu hiện tại`; trạng thái
+  "Đã xem"/"Đã xử lý"; resolve không giả vờ thay đổi số liệu, recompute có thể
+  tạo lại alert nếu điều kiện nguồn vẫn còn. Alert RESOLVED không còn ở list.
+  Detail đã ẩn UUID/field kỹ thuật. Badge notification in-app/local notification
+  cập nhật theo unread count (launcher badge tùy thiết bị).
+- Finance Report: localize enum/ngày/số tiền, ẩn field kỹ thuật trong report
+  mode và thêm mô tả nghiệp vụ cho ba tab.
+
+#### Finance — Model, Monthly Finance, Ledger
+
+- Finance Model: lưu 5 Jars/80-20/Custom ở lại màn hình, cập nhật banner model
+  vừa áp dụng ngay, không `pop()` về tab Tôi và không để response tải cũ ghi đè
+  state người dùng vừa chỉnh.
+- Monthly Finance: thêm shortcut "Tài chính tháng của tôi" cho mọi role;
+  format tiền và lưu/đọc lại expected income, personal expense, shared
+  contribution cùng visibility.
+- Ledger/Wallet: form ghi thu/chi dùng format tiền và danh mục; giao dịch gần
+  đây + lịch sử hiển thị `dd/MM/yyyy HH:mm` thay ISO raw.
+
+### Runtime test đã làm trên emulator
+
+- Goal allocation/góp trực tiếp: tạo, sửa và xóa đã thao tác; status/progress
+  cập nhật đúng (ví dụ 8.000.000 / 15.000.000 = 53%).
+- Budget: tạo Draft, thêm dòng, sửa số tiền, xóa dòng, cancel plan; validation
+  yêu cầu ít nhất một dòng trước activate đã hoạt động.
+- Alerts: acknowledge/resolve/recompute đã test. Sau khi góp đủ mục tiêu và
+  điều chỉnh budget threshold, alert tương ứng biến mất sau recompute.
+- Reports: đã mở và đối chiếu Budget, Non-essential, Budget & Goal.
+- Goal contribution plan: Manager confirm/update và GET list đã test; 3 member
+  plan hiển thị được sau fix parser. **Chưa test** Member submit rồi
+  Manager approve/reject.
+- Monthly Finance: Manager lưu `20.000.000 / 7.000.000 / 1.000.000`, bật
+  visibility, thoát vào lại vẫn còn đúng.
+- Ledger: ghi một thu và một chi; dấu tiền/số dư cập nhật đúng. Thời gian đã
+  format để dễ đọc.
+
+### Cần test tiếp (cần đăng nhập Member)
+
+1. Goal contribution plan: member `submit` -> Manager `approve`/`reject`.
+2. Spending support request: Member create/cancel -> Manager approve/reject.
+3. Monthly summary/privacy: tắt một visibility ở Member, Manager/Deputy xem
+   summary phải thấy field private là null/"Riêng tư".
+
+### Lỗi / câu hỏi cần báo BE
+
+1. **Goal contribution plan actual bị tính sai ngữ cảnh:** Sau khi tạo plan
+   tháng 7, response `GET .../contribution-plans?month=7&year=2026` gán khoản
+   goal allocation cũ `8.100.000` của Manager vào `actualAmount` plan mới có
+   `plannedAmount` chỉ `222.222`, status `PAID`. Xác nhận whether allocation
+   lịch sử có được tính vào plan tạo sau đó hay chỉ giao dịch submit/approve
+   của đúng plan mới được tính.
+2. **Ledger timezone:** máy/emulator GMT+7 lúc 02:57 nhưng BE trả cùng wall
+   clock với hậu tố `Z`, ví dụ `2026-07-22T02:56:26.705Z`. `Z` nghĩa UTC là sai
+   ngữ nghĩa (nếu convert chuẩn sẽ lệch +7 giờ). FE đang hiển thị theo giờ local
+   được người dùng nhập; BE cần trả UTC thật hoặc offset `+07:00` nhất quán.
+3. **Face Profile enroll:** BE trả `Face image is not enrollable` với ảnh chân
+   dung thực. Cần contract điều kiện ảnh/face quality và mã lỗi chi tiết để FE
+   hướng dẫn người dùng.
+
+---
 
 ## Snapshot hiện tại 2026-07-19 — đọc phần này trước
 

@@ -89,6 +89,20 @@ class LedgerEntry {
   double get legacyAmount => signedAmount;
   String get legacyDescription => description;
   String get legacyCreatedAt => entryDate;
+
+  /// BE currently appends `Z` while preserving the local wall-clock value
+  /// submitted by the app. Treat that value as local for display; converting
+  /// it with `toLocal()` would incorrectly add seven hours in Vietnam.
+  String get displayEntryDate {
+    final localValue = entryDate.endsWith('Z')
+        ? entryDate.substring(0, entryDate.length - 1)
+        : entryDate;
+    final parsed = DateTime.tryParse(localValue);
+    if (parsed == null) return entryDate;
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${two(parsed.day)}/${two(parsed.month)}/${parsed.year} '
+        '${two(parsed.hour)}:${two(parsed.minute)}';
+  }
 }
 
 // Alias để không cần sửa các screen cũ ngay

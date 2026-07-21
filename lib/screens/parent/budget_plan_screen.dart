@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/money_input.dart';
 
 class BudgetPlanScreen extends StatefulWidget {
   const BudgetPlanScreen({super.key});
@@ -138,17 +139,19 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
             ]),
           ),
         ]),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          height: 34,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(padding: EdgeInsets.zero, side: const BorderSide(color: Color(0xFFE5E7EB))),
-            onPressed: () => context.push('/manager/finance-reports'),
-            icon: const Icon(Icons.bar_chart_rounded, size: 15, color: AppColors.link),
-            label: Text('Xem báo cáo kế hoạch vs thực tế', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.link)),
+        if (plan.status != 'CANCELED') ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 34,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(padding: EdgeInsets.zero, side: const BorderSide(color: Color(0xFFE5E7EB))),
+              onPressed: () => context.push('/manager/finance-reports'),
+              icon: const Icon(Icons.bar_chart_rounded, size: 15, color: AppColors.link),
+              label: Text('Xem báo cáo kế hoạch vs thực tế', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.link)),
+            ),
           ),
-        ),
+        ],
         if (plan.status == 'DRAFT' || plan.status == 'ACTIVE') ...[
           const SizedBox(height: 12),
           Row(children: [
@@ -158,7 +161,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                   height: 36,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, padding: EdgeInsets.zero),
-                    onPressed: () => context.read<FinanceProvider>().budgetPlanAction(plan.id, 'activate'),
+                    onPressed: () => _runPlanAction(context, plan, 'activate'),
                     child: Text('Kích hoạt', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                   ),
                 ),
@@ -168,7 +171,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                 child: SizedBox(
                   height: 36,
                   child: OutlinedButton(
-                    onPressed: () => context.read<FinanceProvider>().budgetPlanAction(plan.id, 'close'),
+                    onPressed: () => _runPlanAction(context, plan, 'close'),
                     child: Text('Đóng', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700)),
                   ),
                 ),
@@ -179,7 +182,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                 height: 36,
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(side: const BorderSide(color: AppColors.danger)),
-                  onPressed: () => context.read<FinanceProvider>().budgetPlanAction(plan.id, 'cancel'),
+                  onPressed: () => _runPlanAction(context, plan, 'cancel'),
                   child: Text('Hủy', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.danger)),
                 ),
               ),
@@ -195,6 +198,18 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
     final nameCtrl = TextEditingController();
     final incomeCtrl = TextEditingController();
     final expenseCtrl = TextEditingController();
+    final firstLineCtrl = TextEditingController();
+    final thresholdCtrl = TextEditingController();
+    final newCategoryCtrl = TextEditingController();
+    final expenseCategories = context
+        .read<FinanceProvider>()
+        .categories
+        .where((category) => category.categoryType == 'EXPENSE')
+        .toList();
+    String? firstLineCategoryId =
+        expenseCategories.isEmpty ? null : expenseCategories.first.id;
+    var isCreatingCategory = expenseCategories.isEmpty;
+    var newCategoryEssentialType = 'NEUTRAL';
     String periodType = 'MONTHLY';
     bool submitting = false;
     String? sheetError;
@@ -218,9 +233,9 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
               Text('Kỳ hạn', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 6),
               Wrap(spacing: 8, children: [
-                for (final p in ['MONTHLY', 'WEEKLY', 'YEARLY'])
+                for (final p in ['MONTHLY', 'QUARTERLY', 'YEARLY'])
                   ChoiceChip(
-                    label: Text(switch (p) { 'MONTHLY' => 'Hàng tháng', 'WEEKLY' => 'Hàng tuần', _ => 'Hàng năm' }),
+                    label: Text(switch (p) { 'MONTHLY' => 'Hàng tháng', 'QUARTERLY' => 'Hàng quý', _ => 'Hàng năm' }),
                     selected: periodType == p,
                     onSelected: (_) => setSheet(() => periodType = p),
                   ),
@@ -229,10 +244,101 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
               Text('Thu nhập dự kiến (₫)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 6),
               _inputBox(incomeCtrl, 'VD: 20000000', keyboardType: TextInputType.number),
+              const SizedBox(height: 4),
+              Text(
+                'Tổng số tiền gia đình dự kiến thu trong kỳ này.',
+                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+              ),
               const SizedBox(height: 12),
               Text('Chi tiêu dự kiến (₫)', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 6),
               _inputBox(expenseCtrl, 'VD: 15000000', keyboardType: TextInputType.number),
+              const SizedBox(height: 4),
+              Text(
+                'Tổng ngân sách dự kiến chi cho tất cả danh mục trong kỳ.',
+                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 16),
+              Text('Dòng ngân sách đầu tiên', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              const SizedBox(height: 4),
+              Text('Bắt buộc để có thể kích hoạt kế hoạch.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              const SizedBox(height: 10),
+              if (expenseCategories.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: firstLineCategoryId,
+                  decoration: InputDecoration(
+                    labelText: 'Danh mục chi',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: [
+                    ...expenseCategories.map(
+                      (category) => DropdownMenuItem(
+                        value: category.id,
+                        child: Text(category.name),
+                      ),
+                    ),
+                    const DropdownMenuItem(
+                      value: '__create_new_category__',
+                      child: Text('+ Tạo danh mục Chi mới'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setSheet(() {
+                      isCreatingCategory =
+                          value == '__create_new_category__';
+                      firstLineCategoryId =
+                          isCreatingCategory ? null : value;
+                      sheetError = null;
+                    });
+                  },
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (isCreatingCategory)
+                ...[
+                  Text(
+                    expenseCategories.isEmpty
+                        ? 'Chưa có danh mục Chi. Tạo danh mục đầu tiên ngay bên dưới.'
+                        : 'Nhập thông tin danh mục Chi mới.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: expenseCategories.isEmpty
+                          ? AppColors.danger
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _inputBox(newCategoryCtrl, 'Tên danh mục Chi, VD: Ăn uống'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ('ESSENTIAL', 'Thiết yếu'),
+                      ('NON_ESSENTIAL', 'Không thiết yếu'),
+                      ('NEUTRAL', 'Trung lập'),
+                    ].map((item) => ChoiceChip(
+                      label: Text(item.$2),
+                      selected: newCategoryEssentialType == item.$1,
+                      onSelected: (_) => setSheet(() => newCategoryEssentialType = item.$1),
+                    )).toList(),
+                  ),
+                ],
+              const SizedBox(height: 10),
+              _inputBox(firstLineCtrl, 'Ngân sách cho danh mục này (₫)', keyboardType: TextInputType.number),
+              const SizedBox(height: 4),
+              Text(
+                'Phần tiền được phân bổ cho danh mục đã chọn ở trên.',
+                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 10),
+              _inputBox(thresholdCtrl, 'Cảnh báo khi đã chi đến (₫, tùy chọn)', keyboardType: TextInputType.number),
+              const SizedBox(height: 4),
+              Text(
+                'Ví dụ ngân sách 5.000.000 ₫, nhập 4.000.000 ₫ để được cảnh báo sớm.',
+                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+              ),
               if (sheetError != null) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -245,25 +351,77 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                 onPressed: submitting ? null : () async {
-                  if (nameCtrl.text.trim().isEmpty) return;
+                  final firstLineAmount = parseMoneyInput(firstLineCtrl.text);
+                  final expectedExpense = _optionalMoney(expenseCtrl.text);
+                  final thresholdAmount = _optionalMoney(thresholdCtrl.text);
+                  if (nameCtrl.text.trim().isEmpty || firstLineAmount <= 0 ||
+                      (firstLineCategoryId == null && newCategoryCtrl.text.trim().isEmpty)) {
+                    setSheet(() => sheetError = 'Nhập tên kế hoạch, danh mục Chi và số tiền kế hoạch lớn hơn 0.');
+                    return;
+                  }
+                  if (expectedExpense != null &&
+                      firstLineAmount > expectedExpense) {
+                    setSheet(
+                      () => sheetError =
+                          'Dòng ngân sách đầu tiên không được lớn hơn Chi tiêu dự kiến.',
+                    );
+                    return;
+                  }
+                  if (thresholdAmount != null && thresholdAmount <= 0) {
+                    setSheet(() => sheetError =
+                        'Ngưỡng cảnh báo phải là số tiền lớn hơn 0.');
+                    return;
+                  }
                   setSheet(() { submitting = true; sheetError = null; });
                   try {
                     final now = DateTime.now();
-                    final end = periodType == 'WEEKLY'
-                        ? now.add(const Duration(days: 7))
+                    final end = periodType == 'QUARTERLY'
+                        ? DateTime(now.year, now.month + 3, now.day)
                         : periodType == 'YEARLY'
                             ? DateTime(now.year + 1, now.month, now.day)
                             : DateTime(now.year, now.month + 1, now.day);
-                    await context.read<FinanceProvider>().createBudgetPlan(
+                    final finance = context.read<FinanceProvider>();
+                    var categoryId = firstLineCategoryId;
+                    if (categoryId == null) {
+                      final created = await finance.createCategory(
+                        name: newCategoryCtrl.text.trim(),
+                        categoryType: 'EXPENSE',
+                        essentialType: newCategoryEssentialType,
+                      );
+                      categoryId = created?.id;
+                      if (categoryId == null || categoryId.isEmpty) {
+                        final matching = finance.categories
+                            .where(
+                              (category) =>
+                                  category.categoryType == 'EXPENSE' &&
+                                  category.name == newCategoryCtrl.text.trim(),
+                            )
+                            .toList();
+                        categoryId =
+                            matching.isEmpty ? null : matching.last.id;
+                      }
+                      if (categoryId == null || categoryId.isEmpty) {
+                        throw Exception('Không thể tạo danh mục Chi. Vui lòng thử lại.');
+                      }
+                    }
+                    await finance.createBudgetPlan(
                       planName: nameCtrl.text.trim(),
                       periodType: periodType,
                       periodStart: now,
                       periodEnd: end,
-                      expectedSharedIncome: double.tryParse(incomeCtrl.text.trim()),
-                      expectedSharedExpense: double.tryParse(expenseCtrl.text.trim()),
+                      expectedSharedIncome: _optionalMoney(incomeCtrl.text),
+                      expectedSharedExpense: _optionalMoney(expenseCtrl.text),
+                      lines: [
+                        {
+                          'categoryId': categoryId!,
+                          'plannedAmount': firstLineAmount,
+                          'thresholdAmount': thresholdAmount,
+                        },
+                      ],
                     );
                     if (ctx.mounted) Navigator.pop(ctx);
                   } catch (e) {
+                    debugPrint('Budget plan create failed: $e');
                     setSheet(() { submitting = false; sheetError = e.toString().replaceFirst('Exception: ', ''); });
                   }
                 },
@@ -284,8 +442,42 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
         child: TextField(
           controller: ctrl,
           keyboardType: keyboardType,
+          inputFormatters: keyboardType == TextInputType.number
+              ? const [ThousandsSeparatorInputFormatter()]
+              : null,
           decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),
       );
+
+  double? _optionalMoney(String input) =>
+      input.trim().isEmpty ? null : parseMoneyInput(input);
+
+  Future<void> _runPlanAction(
+    BuildContext context,
+    BudgetPlan plan,
+    String action,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<FinanceProvider>().budgetPlanAction(plan.id, action);
+      if (!context.mounted) return;
+      final label = switch (action) {
+        'activate' => 'Đã kích hoạt kế hoạch',
+        'close' => 'Đã đóng kế hoạch',
+        _ => 'Đã hủy kế hoạch',
+      };
+      messenger.showSnackBar(
+        SnackBar(content: Text(label), backgroundColor: AppColors.success),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
 }

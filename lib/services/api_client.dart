@@ -155,6 +155,47 @@ class ApiClient {
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
   }
 
+  /// Upload nhiều file trong cùng một multipart request. Dùng cho các contract
+  /// yêu cầu mảng binary, ví dụ Face Profile `files[]` (3–5 ảnh). Không dùng
+  /// vòng lặp upload đơn lẻ vì BE chỉ bắt đầu enroll khi nhận đủ mảng files.
+  Future<Map<String, dynamic>> uploadFiles({
+    required String path,
+    required List<String> filePaths,
+    String fieldName = 'files',
+    Map<String, String>? fields,
+    List<String?>? mimeTypes,
+  }) async {
+    if (filePaths.isEmpty) {
+      throw ArgumentError.value(
+        filePaths,
+        'filePaths',
+        'Phải có ít nhất một file',
+      );
+    }
+    Future<http.Response> doUpload() async {
+      final request = http.MultipartRequest('POST', _uri(path));
+      if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+      if (fields != null && fields.isNotEmpty) request.fields.addAll(fields);
+      for (var i = 0; i < filePaths.length; i++) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            fieldName,
+            filePaths[i],
+            contentType: MediaType.parse(
+              mimeTypes != null && i < mimeTypes.length && mimeTypes[i] != null
+                  ? mimeTypes[i]!
+                  : _guessMimeType(filePaths[i]),
+            ),
+          ),
+        );
+      }
+      return http.Response.fromStream(await request.send());
+    }
+
+    final result = await _send(doUpload);
+    return result is Map<String, dynamic> ? result : <String, dynamic>{};
+  }
+
   static String _guessMimeType(String path) {
     final ext = path.split('.').last.toLowerCase();
     return switch (ext) {

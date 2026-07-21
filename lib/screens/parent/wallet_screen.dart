@@ -1,36 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../models/money_request.dart';
 import '../../providers/money_provider.dart';
+import '../../providers/finance_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/ring_chart.dart';
 import '../../widgets/waffle_chart.dart';
-
-// Tự động thêm dấu phẩy khi nhập số: 4000 → 4,000
-class _ThousandsSeparatorFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll(',', '');
-    if (digits.isEmpty) return newValue.copyWith(text: '');
-    if (double.tryParse(digits) == null) return oldValue;
-    final formatted = digits.replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (m) => '${m[1]},',
-    );
-    return newValue.copyWith(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-  }
-}
+import '../../widgets/money_input.dart';
 
 String _fmt(int n) =>
     '${n.toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (m) => "${m[1]},")} ₫';
@@ -50,6 +30,7 @@ class _WalletScreenState extends State<WalletScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<WalletProvider>().fetchWallets();
       context.read<MoneyProvider>().fetchRequests();
+      context.read<FinanceProvider>().fetchAll();
     });
   }
 
@@ -436,7 +417,7 @@ class _WalletScreenState extends State<WalletScreen> {
                             ),
                           ),
                           Text(
-                            tx.entryDate,
+                            tx.displayEntryDate,
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               color: AppColors.textMuted,
@@ -611,6 +592,13 @@ class _WalletScreenState extends State<WalletScreen> {
   void _showRecordSheet(BuildContext context, {required bool isIncome}) {
     final amountCtrl = TextEditingController();
     final descCtrl = TextEditingController();
+    final categories = context
+        .read<FinanceProvider>()
+        .categories
+        .where((category) =>
+            category.categoryType == (isIncome ? 'INCOME' : 'EXPENSE'))
+        .toList();
+    String? categoryId = categories.isNotEmpty ? categories.first.id : null;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -618,8 +606,9 @@ class _WalletScreenState extends State<WalletScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
           28,
           28,
           28,
@@ -651,12 +640,11 @@ class _WalletScreenState extends State<WalletScreen> {
               controller: amountCtrl,
               keyboardType: TextInputType.number,
               inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                _ThousandsSeparatorFormatter(),
+                ThousandsSeparatorInputFormatter(),
               ],
               decoration: InputDecoration(
                 labelText: 'Số tiền (₫)',
-                hintText: 'VD: 500,000',
+                hintText: 'VD: 500.000',
                 suffixText: '₫',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -664,6 +652,27 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            if (categories.isNotEmpty) ...[
+              DropdownButtonFormField<String>(
+                initialValue: categoryId,
+                decoration: InputDecoration(
+                  labelText: 'Danh mục',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                items: categories
+                    .map(
+                      (category) => DropdownMenuItem(
+                        value: category.id,
+                        child: Text(category.name),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) => setSheet(() => categoryId = value),
+              ),
+              const SizedBox(height: 12),
+            ],
             TextField(
               controller: descCtrl,
               decoration: InputDecoration(
@@ -688,10 +697,8 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
                 onPressed: () async {
-                  final amount = double.tryParse(
-                    amountCtrl.text.replaceAll(',', ''),
-                  );
-                  if (amount == null || amount <= 0) return;
+                  final amount = parseMoneyInput(amountCtrl.text);
+                  if (amount <= 0) return;
                   final desc = descCtrl.text.trim().isNotEmpty
                       ? descCtrl.text.trim()
                       : (isIncome ? 'Thu nhập' : 'Chi tiêu');
@@ -700,6 +707,7 @@ class _WalletScreenState extends State<WalletScreen> {
                       amount: amount,
                       description: desc,
                       isIncome: isIncome,
+                      categoryId: categoryId,
                     );
                     if (ctx.mounted) Navigator.pop(ctx);
                   } catch (e) {
@@ -724,6 +732,7 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
             ),
           ],
+          ),
         ),
       ),
     );
