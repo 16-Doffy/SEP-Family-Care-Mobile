@@ -29,7 +29,6 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
   String? _error;
   List<ContributionSuggestion> _suggestions = [];
   List<GoalContributionPlan> _plans = [];
-  Map<String, dynamic>? _shortage;
 
   @override
   void initState() {
@@ -47,13 +46,11 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
       final results = await Future.wait([
         provider.fetchContributionSuggestions(widget.goalId, _month, _year),
         provider.fetchContributionPlans(widget.goalId, _month, _year),
-        provider.fetchContributionShortage(widget.goalId, _month, _year),
       ]);
       if (mounted) {
         setState(() {
           _suggestions = results[0] as List<ContributionSuggestion>;
           _plans = results[1] as List<GoalContributionPlan>;
-          _shortage = results[2] as Map<String, dynamic>;
         });
       }
     } catch (e) {
@@ -516,7 +513,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                     final entries = <({String memberId, double plannedAmount})>[];
                     for (final m in members) {
                       final amt = parseMoneyInput(amountCtrls[m.id]!.text);
-                      if (amt != null && amt > 0) {
+                      if (amt > 0) {
                         entries.add((memberId: m.id, plannedAmount: amt));
                       }
                     }

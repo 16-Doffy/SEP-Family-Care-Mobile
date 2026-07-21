@@ -413,7 +413,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                       expectedSharedExpense: _optionalMoney(expenseCtrl.text),
                       lines: [
                         {
-                          'categoryId': categoryId!,
+                          'categoryId': categoryId,
                           'plannedAmount': firstLineAmount,
                           'thresholdAmount': thresholdAmount,
                         },
