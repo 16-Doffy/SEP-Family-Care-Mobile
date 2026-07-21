@@ -11,6 +11,7 @@ import '../../providers/album_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import 'album_face_section.dart';
 
 class AlbumScreen extends StatefulWidget {
   const AlbumScreen({super.key});
@@ -709,6 +710,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   _statusBadge(media.moderationStatus),
                   ...media.tags.map((t) => _tagChip(ctx, media, t)),
                 ],
+              ),
+              const SizedBox(height: 14),
+              AlbumFaceSection(
+                mediaId: media.id,
+                isImage: !media.isVideo,
+                isSafe: media.isSafe,
               ),
               const SizedBox(height: 18),
               _actionList(ctx, media, isAdmin),
