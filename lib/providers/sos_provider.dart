@@ -133,10 +133,106 @@ class EmergencyContact {
       );
 }
 
+/// Cài đặt SOS của gia đình — khớp UpdateSosSettingsDto (Swagger tuần 10).
+/// GET /sos/settings không khai schema response, nên parse phòng thủ: field
+/// thiếu thì dùng mặc định "bật" cho các cờ an toàn (an toàn hơn khi thiếu dữ
+/// liệu là bật cảnh báo, không phải tắt).
+class SosSettings {
+  final bool isEnabled;
+  final bool notifyAllMembers;
+  final bool autoCreateAlertFromFall;
+  final bool locationRequired;
+
+  const SosSettings({
+    this.isEnabled = true,
+    this.notifyAllMembers = true,
+    this.autoCreateAlertFromFall = false,
+    this.locationRequired = true,
+  });
+
+  static bool _b(dynamic v, bool fallback) => v is bool ? v : fallback;
+
+  factory SosSettings.fromJson(Map<String, dynamic> j) => SosSettings(
+        isEnabled: _b(j['isEnabled'], true),
+        notifyAllMembers: _b(j['notifyAllMembers'], true),
+        autoCreateAlertFromFall: _b(j['autoCreateAlertFromFall'], false),
+        locationRequired: _b(j['locationRequired'], true),
+      );
+
+  SosSettings copyWith({
+    bool? isEnabled,
+    bool? notifyAllMembers,
+    bool? autoCreateAlertFromFall,
+    bool? locationRequired,
+  }) =>
+      SosSettings(
+        isEnabled: isEnabled ?? this.isEnabled,
+        notifyAllMembers: notifyAllMembers ?? this.notifyAllMembers,
+        autoCreateAlertFromFall:
+            autoCreateAlertFromFall ?? this.autoCreateAlertFromFall,
+        locationRequired: locationRequired ?? this.locationRequired,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'isEnabled': isEnabled,
+        'notifyAllMembers': notifyAllMembers,
+        'autoCreateAlertFromFall': autoCreateAlertFromFall,
+        'locationRequired': locationRequired,
+      };
+}
+
 class SosProvider extends ChangeNotifier {
   // ── Danh bạ khẩn cấp ─────────────────────────────────────────────────────
   List<EmergencyContact> _contacts = [];
   List<EmergencyContact> get emergencyContacts => _contacts;
+
+  // ── Cài đặt SOS ───────────────────────────────────────────────────────────
+  SosSettings? _settings;
+  bool _settingsLoading = false;
+  SosSettings? get settings => _settings;
+  bool get settingsLoading => _settingsLoading;
+
+  // GET /families/{familyId}/sos/settings
+  Future<void> fetchSettings() async {
+    final fid = _fid;
+    if (fid == null) return;
+    _settingsLoading = true;
+    notifyListeners();
+    try {
+      final data = await ApiClient.instance.get('/families/$fid/sos/settings');
+      final map = data is Map
+          ? Map<String, dynamic>.from(data)
+          : <String, dynamic>{};
+      // BE có thể bọc trong { settings: {...} } hoặc trả phẳng.
+      final inner = map['settings'] is Map
+          ? Map<String, dynamic>.from(map['settings'] as Map)
+          : map;
+      _settings = SosSettings.fromJson(inner);
+    } catch (e) {
+      debugPrint('SosProvider: fetchSettings failed: $e');
+    } finally {
+      _settingsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // PATCH /families/{familyId}/sos/settings — cập nhật lạc quan: đổi UI ngay,
+  // rollback nếu BE lỗi để công tắc không kẹt ở trạng thái sai.
+  Future<void> updateSettings(SosSettings next) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    final prev = _settings;
+    _settings = next;
+    notifyListeners();
+    try {
+      await ApiClient.instance
+          .patch('/families/$fid/sos/settings', next.toJson());
+    } catch (e) {
+      _settings = prev;
+      notifyListeners();
+      rethrow;
+    }
+  }
 
   /// Số gọi nhanh hiển thị ở màn SOS: ưu tiên danh bạ gia đình (ACTIVE, theo
   /// priorityOrder); rỗng thì fallback hotline quốc gia.

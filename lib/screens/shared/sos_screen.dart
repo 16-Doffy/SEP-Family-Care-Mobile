@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/json_report_view.dart';
+import 'sos_settings_screen.dart';
 
 class SOSScreen extends StatefulWidget {
   const SOSScreen({super.key});
@@ -1026,7 +1027,22 @@ class _SOSScreenState extends State<SOSScreen>
                       color: Colors.white54)),
             ),
           ),
-          const SizedBox(width: 40),
+          // Cài đặt SOS (bật/tắt, báo cả nhà, té ngã, vị trí) — thay chỗ trống
+          // cân bằng nút back trước đây.
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SosSettingsScreen())),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.1)),
+              alignment: Alignment.center,
+              child: const Icon(Icons.settings_rounded,
+                  size: 20, color: Colors.white70),
+            ),
+          ),
         ]),
       );
 
