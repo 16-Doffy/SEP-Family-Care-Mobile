@@ -106,7 +106,7 @@ class AlbumProvider extends ChangeNotifier {
       // Keep detail usable if a signed URL/detail succeeds but tags cannot load.
     }
     final idx = _items.indexWhere((m) => m.id == mediaId);
-    if (idx >= 0) _items[idx] = _items[idx].merge(detail);
+    if (idx >= 0) _items[idx] = _items[idx].merge(detail, replaceTags: true);
     notifyListeners();
     return detail;
   }

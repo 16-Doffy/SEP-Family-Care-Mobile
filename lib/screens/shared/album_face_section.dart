@@ -6,7 +6,7 @@ import '../../providers/album_face_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 
-/// Section "Gợi ý khuôn mặt (AI)" trong màn chi tiết ảnh album.
+/// Section "Người trong ảnh" trong màn chi tiết ảnh album.
 ///
 /// Quét khuôn mặt → BE trả gợi ý thành viên → user Xác nhận (tạo tag chính
 /// thức) hoặc Từ chối. Chỉ mở khi gói có `album.faceSuggestions`; chưa có quyền
@@ -20,11 +20,13 @@ class AlbumFaceSection extends StatefulWidget {
     required this.mediaId,
     required this.isImage,
     required this.isSafe,
+    required this.hasRecognizedTag,
   });
 
   final String mediaId;
   final bool isImage;
   final bool isSafe;
+  final bool hasRecognizedTag;
 
   @override
   State<AlbumFaceSection> createState() => _AlbumFaceSectionState();
@@ -45,6 +47,10 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
   }
 
   Future<void> _load() async {
+    if (!widget.isImage) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     await _face.fetchFeatureAccess();
     if (!_face.canUseFaceSuggestions) {
       if (mounted) setState(() => _loading = false);
@@ -54,17 +60,14 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       var scan = await _face.fetchScanStatus(widget.mediaId);
       var sug = await _face.fetchSuggestions(widget.mediaId);
 
-      // Tự quét khi mở ảnh nếu CHƯA quét (giống trải nghiệm Google Photos:
-      // không bắt người dùng bấm nút). force=false nên BE đã quét rồi sẽ không
-      // quét lại. Chỉ với ảnh SAFE — tag chỉ gắn được cho media SAFE.
-      if (widget.isSafe && sug.isEmpty && scan == FaceScanState.notScanned) {
+      if (_shouldAutoScan(scan, sug)) {
         try {
           await _face.requestScan(widget.mediaId);
           await Future.delayed(const Duration(seconds: 2));
           scan = await _face.fetchScanStatus(widget.mediaId);
           sug = await _face.fetchSuggestions(widget.mediaId);
         } catch (_) {
-          // Auto-quét lỗi thì im lặng, người dùng vẫn bấm "Quét" thủ công được.
+          // Keep the manual scan button available if the priority scan fails.
         }
       }
 
@@ -77,6 +80,13 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  bool _shouldAutoScan(FaceScanState scan, List<FaceSuggestion> suggestions) {
+    return widget.isSafe &&
+        !widget.hasRecognizedTag &&
+        suggestions.isEmpty &&
+        scan == FaceScanState.notScanned;
   }
 
   Future<void> _scanNow() async {
@@ -181,7 +191,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
               ),
               const SizedBox(width: 8),
               Text(
-                'Gợi ý khuôn mặt (AI)',
+                'Người trong ảnh',
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -232,7 +242,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       borderRadius: BorderRadius.circular(10),
     ),
     child: Text(
-      'Gợi ý khuôn mặt bằng AI là tính năng của gói nâng cao. Bạn vẫn có thể '
+      'Nhận diện người trong ảnh là tính năng của gói nâng cao. Bạn vẫn có thể '
       'gắn thẻ thành viên thủ công.',
       style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
     ),

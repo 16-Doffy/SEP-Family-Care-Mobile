@@ -14,6 +14,15 @@ import '../../theme/app_colors.dart';
 import 'album_face_section.dart';
 import 'album_people_screen.dart';
 
+typedef _AlbumStatusBadgeBuilder =
+    Widget Function(AlbumModerationStatus status);
+typedef _AlbumActionListBuilder =
+    Widget Function(
+      BuildContext context,
+      AlbumMedia media,
+      VoidCallback onChanged,
+    );
+
 class AlbumScreen extends StatefulWidget {
   const AlbumScreen({super.key});
 
@@ -637,11 +646,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   size: 38,
                 ),
               ),
-            Positioned(
-              left: 6,
-              top: 6,
-              child: _statusBadge(media.moderationStatus),
-            ),
+            if (media.moderationStatus != AlbumModerationStatus.safe)
+              Positioned(
+                left: 6,
+                top: 6,
+                child: _statusBadge(media.moderationStatus),
+              ),
             if (media.isPending)
               Container(
                 color: Colors.black.withValues(alpha: 0.35),
@@ -661,96 +671,26 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  Widget _mediaPreview(AlbumMedia media) {
-    final url = media.displayUrl;
-    if (url.isEmpty) return _thumbPlaceholder(isVideo: media.isVideo);
-    return _thumbImage(url);
-  }
-
   Future<void> _openDetail(AlbumMedia initial, bool isAdmin) async {
-    AlbumMedia media = initial;
-    try {
-      media =
-          await context.read<AlbumProvider>().fetchDetail(initial.id) ??
-          initial;
-    } catch (_) {
-      media = initial;
-    }
+    final items = context.read<AlbumProvider>().items;
+    final initialIndex = items.indexWhere((m) => m.id == initial.id);
     if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.82,
-          minChildSize: 0.45,
-          maxChildSize: 0.95,
-          builder: (_, controller) => ListView(
-            controller: controller,
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-            children: [
-              _detailMedia(media),
-              const SizedBox(height: 14),
-              Text(
-                media.caption?.isNotEmpty == true
-                    ? media.caption!
-                    : 'Chưa có caption',
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _AlbumDetailViewer(
+          initialItems: items.isEmpty ? [initial] : items,
+          initialIndex: initialIndex < 0 ? 0 : initialIndex,
+          isAdmin: isAdmin,
+          statusBadgeBuilder: _statusBadge,
+          actionListBuilder: (viewerContext, media, refreshDetail) =>
+              _actionList(
+                viewerContext,
+                media,
+                isAdmin,
+                closeBeforeAction: false,
+                onChanged: refreshDetail,
               ),
-              const SizedBox(height: 6),
-              Text(
-                '${media.uploaderName} · ${_fmtDate(media.createdAt)} · ${_scopeLabel(media.visibilityScope)}',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: AppColors.textMuted,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _statusBadge(media.moderationStatus),
-                  ...media.tags.map((t) => _tagChip(ctx, media, t)),
-                ],
-              ),
-              const SizedBox(height: 14),
-              AlbumFaceSection(
-                mediaId: media.id,
-                isImage: !media.isVideo,
-                isSafe: media.isSafe,
-              ),
-              const SizedBox(height: 18),
-              _actionList(ctx, media, isAdmin),
-            ],
-          ),
         ),
-      ),
-    );
-  }
-
-  Widget _detailMedia(AlbumMedia media) {
-    final url = media.fileUrl ?? media.displayUrl;
-    return AspectRatio(
-      aspectRatio: 1,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: url.isEmpty
-            ? _mediaPreview(media)
-            : Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _mediaPreview(media),
-              ),
       ),
     );
   }
@@ -758,8 +698,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
   Widget _actionList(
     BuildContext sheetContext,
     AlbumMedia media,
-    bool isAdmin,
-  ) {
+    bool isAdmin, {
+    bool closeBeforeAction = true,
+    VoidCallback? onChanged,
+  }) {
     final deleted = media.deletedAt != null;
     return Column(
       children: [
@@ -772,8 +714,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
             ),
             title: const Text('Sửa caption / quyền xem'),
             onTap: () {
-              Navigator.pop(sheetContext);
-              _showEditSheet(media);
+              if (closeBeforeAction) Navigator.pop(sheetContext);
+              _showEditSheet(
+                media,
+                hostContext: closeBeforeAction ? null : sheetContext,
+                onSaved: onChanged,
+              );
             },
           ),
         ListTile(
@@ -784,8 +730,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
           title: const Text('Tag thành viên'),
           onTap: () {
-            Navigator.pop(sheetContext);
-            _showTagSheet(media);
+            if (closeBeforeAction) Navigator.pop(sheetContext);
+            _showTagSheet(
+              media,
+              hostContext: closeBeforeAction ? null : sheetContext,
+              onTagged: onChanged,
+            );
           },
         ),
         if (isAdmin && media.canManualReview)
@@ -794,8 +744,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
             leading: const Icon(Icons.verified_outlined, color: AppColors.safe),
             title: const Text('Manual review'),
             onTap: () {
-              Navigator.pop(sheetContext);
-              _showReviewSheet(media);
+              if (closeBeforeAction) Navigator.pop(sheetContext);
+              _showReviewSheet(
+                media,
+                hostContext: closeBeforeAction ? null : sheetContext,
+                onReviewed: onChanged,
+              );
             },
           ),
         if (deleted)
@@ -804,9 +758,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
             leading: const Icon(Icons.restore_rounded, color: AppColors.safe),
             title: const Text('Khôi phục'),
             onTap: () async {
-              Navigator.pop(sheetContext);
+              if (closeBeforeAction) Navigator.pop(sheetContext);
               try {
                 await context.read<AlbumProvider>().restore(media.id);
+                if (!closeBeforeAction && sheetContext.mounted) {
+                  Navigator.pop(sheetContext);
+                }
               } catch (e) {
                 _snack(e);
               }
@@ -821,9 +778,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
             ),
             title: const Text('Xóa mềm'),
             onTap: () async {
-              Navigator.pop(sheetContext);
+              if (closeBeforeAction) Navigator.pop(sheetContext);
               try {
                 await context.read<AlbumProvider>().softDelete(media.id);
+                if (!closeBeforeAction && sheetContext.mounted) {
+                  Navigator.pop(sheetContext);
+                }
               } catch (e) {
                 _snack(e);
               }
@@ -838,9 +798,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
             ),
             title: const Text('Xóa vĩnh viễn'),
             onTap: () async {
-              Navigator.pop(sheetContext);
+              if (closeBeforeAction) Navigator.pop(sheetContext);
               try {
                 await context.read<AlbumProvider>().permanentDelete(media.id);
+                if (!closeBeforeAction && sheetContext.mounted) {
+                  Navigator.pop(sheetContext);
+                }
               } catch (e) {
                 _snack(e);
               }
@@ -850,11 +813,15 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  void _showEditSheet(AlbumMedia media) {
+  void _showEditSheet(
+    AlbumMedia media, {
+    BuildContext? hostContext,
+    VoidCallback? onSaved,
+  }) {
     final captionCtrl = TextEditingController(text: media.caption ?? '');
     var scope = media.visibilityScope;
     showModalBottomSheet(
-      context: context,
+      context: hostContext ?? context,
       isScrollControlled: true,
       backgroundColor: AppColors.white,
       shape: const RoundedRectangleBorder(
@@ -914,6 +881,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                         caption: captionCtrl.text,
                         visibilityScope: scope,
                       );
+                      onSaved?.call();
                     } catch (e) {
                       _snack(e);
                     }
@@ -927,14 +895,18 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  void _showTagSheet(AlbumMedia media) {
+  void _showTagSheet(
+    AlbumMedia media, {
+    BuildContext? hostContext,
+    VoidCallback? onTagged,
+  }) {
     final members = context
         .read<FamilyProvider>()
         .members
         .where((m) => m.isActive)
         .toList();
     showModalBottomSheet(
-      context: context,
+      context: hostContext ?? context,
       backgroundColor: AppColors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -975,6 +947,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                           media.id,
                           m.id,
                         );
+                        onTagged?.call();
                       } catch (e) {
                         _snack(e);
                       }
@@ -988,11 +961,15 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  void _showReviewSheet(AlbumMedia media) {
+  void _showReviewSheet(
+    AlbumMedia media, {
+    BuildContext? hostContext,
+    VoidCallback? onReviewed,
+  }) {
     final noteCtrl = TextEditingController(text: 'Đã kiểm tra thủ công.');
     var decision = 'MARK_SAFE';
     showModalBottomSheet(
-      context: context,
+      context: hostContext ?? context,
       isScrollControlled: true,
       backgroundColor: AppColors.white,
       shape: const RoundedRectangleBorder(
@@ -1040,6 +1017,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                             ? 'Đã kiểm tra thủ công.'
                             : noteCtrl.text.trim(),
                       );
+                      onReviewed?.call();
                     } catch (e) {
                       _snack(e);
                     }
@@ -1103,7 +1081,258 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  Widget _tagChip(BuildContext sheetContext, AlbumMedia media, AlbumTag tag) {
+  static String _scopeLabel(AlbumVisibilityScope scope) {
+    return switch (scope) {
+      AlbumVisibilityScope.family => 'Gia đình',
+      AlbumVisibilityScope.private => 'Riêng tư',
+      AlbumVisibilityScope.managerOnly => 'Chỉ Trưởng/Phó nhóm',
+    };
+  }
+}
+
+class _AlbumDetailViewer extends StatefulWidget {
+  const _AlbumDetailViewer({
+    required this.initialItems,
+    required this.initialIndex,
+    required this.isAdmin,
+    required this.statusBadgeBuilder,
+    required this.actionListBuilder,
+  });
+
+  final List<AlbumMedia> initialItems;
+  final int initialIndex;
+  final bool isAdmin;
+  final _AlbumStatusBadgeBuilder statusBadgeBuilder;
+  final _AlbumActionListBuilder actionListBuilder;
+
+  @override
+  State<_AlbumDetailViewer> createState() => _AlbumDetailViewerState();
+}
+
+class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
+  late final PageController _pageController;
+  late final List<AlbumMedia> _items;
+  final Map<String, AlbumMedia> _details = {};
+  final Set<String> _loadingIds = {};
+  late int _index;
+  bool _chromeVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List<AlbumMedia>.from(widget.initialItems);
+    _index = widget.initialIndex.clamp(0, _items.length - 1);
+    _pageController = PageController(initialPage: _index);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAround(_index));
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  AlbumMedia get _media {
+    final base = _items[_index];
+    return _details[base.id] ?? base;
+  }
+
+  AlbumMedia _mediaAt(int index) {
+    final base = _items[index];
+    return _details[base.id] ?? base;
+  }
+
+  Future<void> _loadDetail(
+    int index, {
+    bool force = false,
+    bool quiet = false,
+  }) async {
+    if (index < 0 || index >= _items.length) return;
+    final id = _items[index].id;
+    if (!force && (_details.containsKey(id) || _loadingIds.contains(id))) {
+      return;
+    }
+    if (mounted) setState(() => _loadingIds.add(id));
+    try {
+      final detail = await context.read<AlbumProvider>().fetchDetail(id);
+      if (!mounted || detail == null) return;
+      setState(() => _details[id] = detail);
+    } catch (e) {
+      if (!quiet) _snack(e);
+    } finally {
+      if (mounted) setState(() => _loadingIds.remove(id));
+    }
+  }
+
+  void _loadAround(int index) {
+    _loadDetail(index);
+    _loadDetail(index - 1, quiet: true);
+    _loadDetail(index + 1, quiet: true);
+  }
+
+  void _refreshCurrent() {
+    _loadDetail(_index, force: true);
+  }
+
+  void _toggleChrome() {
+    setState(() => _chromeVisible = !_chromeVisible);
+  }
+
+  void _snack(Object error, {bool ok = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: ok ? AppColors.success : AppColors.danger,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            itemCount: _items.length,
+            onPageChanged: (next) {
+              setState(() => _index = next);
+              _loadAround(next);
+            },
+            itemBuilder: (_, i) =>
+                _AlbumDetailMediaPage(media: _mediaAt(i), onTap: _toggleChrome),
+          ),
+          if (_chromeVisible) _topBar(),
+          if (_chromeVisible) _infoPanel(),
+        ],
+      ),
+    );
+  }
+
+  Widget _topBar() {
+    final media = _media;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 6, 12, 8),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Đóng',
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back_rounded),
+                color: Colors.white,
+              ),
+              Expanded(
+                child: Text(
+                  '${_index + 1}/${_items.length} · ${_fmtDate(media.createdAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (media.isVideo)
+                const Icon(
+                  Icons.play_circle_fill_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoPanel() {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.22,
+      minChildSize: 0.06,
+      maxChildSize: 0.78,
+      builder: (_, controller) {
+        final media = _media;
+        final loading = _loadingIds.contains(media.id);
+        return DecoratedBox(
+          decoration: const BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: ListView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D5DB),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                if (loading) ...[
+                  const LinearProgressIndicator(minHeight: 2),
+                  const SizedBox(height: 12),
+                ],
+                Text(
+                  media.caption?.isNotEmpty == true
+                      ? media.caption!
+                      : 'Chưa có caption',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${media.uploaderName} · ${_fmtDate(media.createdAt)} · ${_scopeLabel(media.visibilityScope)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    widget.statusBadgeBuilder(media.moderationStatus),
+                    ...media.tags.map((t) => _tagChip(media, t)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                AlbumFaceSection(
+                  mediaId: media.id,
+                  isImage: !media.isVideo,
+                  isSafe: media.isSafe,
+                  hasRecognizedTag: media.tags.isNotEmpty,
+                ),
+                const SizedBox(height: 12),
+                widget.actionListBuilder(context, media, _refreshCurrent),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _tagChip(AlbumMedia media, AlbumTag tag) {
     return InputChip(
       label: Text('@${tag.taggedMemberName}'),
       labelStyle: GoogleFonts.inter(
@@ -1117,10 +1346,11 @@ class _AlbumScreenState extends State<AlbumScreen> {
       onDeleted: tag.canRemove
           ? () async {
               try {
-                final album = context.read<AlbumProvider>();
-                await album.untagMember(media.id, tag.id);
-                if (!mounted || !sheetContext.mounted) return;
-                Navigator.pop(sheetContext);
+                await context.read<AlbumProvider>().untagMember(
+                  media.id,
+                  tag.id,
+                );
+                _refreshCurrent();
               } catch (e) {
                 _snack(e);
               }
@@ -1140,6 +1370,109 @@ class _AlbumScreenState extends State<AlbumScreen> {
   static String _fmtDate(DateTime? date) {
     if (date == null) return 'Không rõ ngày';
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+}
+
+class _AlbumDetailMediaPage extends StatefulWidget {
+  const _AlbumDetailMediaPage({required this.media, required this.onTap});
+
+  final AlbumMedia media;
+  final VoidCallback onTap;
+
+  @override
+  State<_AlbumDetailMediaPage> createState() => _AlbumDetailMediaPageState();
+}
+
+class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
+  Future<String?>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeResolve();
+  }
+
+  @override
+  void didUpdateWidget(_AlbumDetailMediaPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.media.id != widget.media.id ||
+        oldWidget.media.displayUrl != widget.media.displayUrl ||
+        oldWidget.media.fileUrl != widget.media.fileUrl) {
+      _maybeResolve();
+    }
+  }
+
+  void _maybeResolve() {
+    final direct = widget.media.fileUrl ?? widget.media.displayUrl;
+    _future = direct.isNotEmpty
+        ? null
+        : context.read<AlbumProvider>().resolveDisplayUrl(widget.media);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final direct = widget.media.fileUrl ?? widget.media.displayUrl;
+    if (direct.isNotEmpty) return _media(direct);
+    final future = _future;
+    if (future == null) return _empty();
+    return FutureBuilder<String?>(
+      future: future,
+      builder: (_, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+        final url = snap.data;
+        if (url == null || url.isEmpty) return _empty();
+        return _media(url);
+      },
+    );
+  }
+
+  Widget _media(String url) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          InteractiveViewer(
+            minScale: 1,
+            maxScale: 4,
+            child: Center(
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => _empty(),
+              ),
+            ),
+          ),
+          if (widget.media.isVideo)
+            const Center(
+              child: Icon(
+                Icons.play_circle_fill_rounded,
+                color: Colors.white,
+                size: 64,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _empty() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onTap,
+      child: Center(
+        child: Icon(
+          widget.media.isVideo ? Icons.movie_outlined : Icons.image_outlined,
+          color: Colors.white70,
+          size: 52,
+        ),
+      ),
+    );
   }
 }
 

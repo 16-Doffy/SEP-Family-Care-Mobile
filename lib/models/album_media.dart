@@ -6,7 +6,6 @@ enum AlbumVisibilityScope { family, private, managerOnly }
 
 enum AlbumModerationStatus { pending, safe, needReview, flagged }
 
-
 String _str(dynamic value) => value?.toString() ?? '';
 
 Map<String, dynamic>? _map(dynamic value) {
@@ -99,7 +98,8 @@ class AlbumTag {
             'Thanh vien',
       ),
       tagNote: json['tagNote']?.toString(),
-      canRemove: (json['permissions'] is Map
+      canRemove:
+          (json['permissions'] is Map
               ? (json['permissions'] as Map)['canRemove']
               : json['canRemove']) ==
           true,
@@ -214,7 +214,7 @@ class AlbumMedia {
     );
   }
 
-  AlbumMedia merge(AlbumMedia detail) {
+  AlbumMedia merge(AlbumMedia detail, {bool replaceTags = false}) {
     return AlbumMedia(
       id: id,
       mediaType: detail.mediaType == AlbumMediaType.unknown
@@ -235,7 +235,9 @@ class AlbumMedia {
       latestRiskScore: detail.latestRiskScore ?? latestRiskScore,
       latestModerationSummary:
           detail.latestModerationSummary ?? latestModerationSummary,
-      tags: detail.tags.isNotEmpty ? detail.tags : tags,
+      tags: replaceTags
+          ? detail.tags
+          : (detail.tags.isNotEmpty ? detail.tags : tags),
       raw: {...raw, ...detail.raw},
     );
   }
