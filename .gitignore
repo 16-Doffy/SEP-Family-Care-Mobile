@@ -45,3 +45,9 @@ app.*.map.json
 /android/app/release
 /android/build/
 /android/app/build/
+
+# Rác scratch ở gốc repo — KHÔNG dùng *.lock vì sẽ nuốt pubspec.lock (app
+# Flutter phải commit file này). Neo ở gốc để chỉ bắt đúng file lạc.
+/.lock
+# Ảnh chụp màn hình tạm khi debug (flutter_01.png, flutter_02.png, ...)
+/flutter_*.png

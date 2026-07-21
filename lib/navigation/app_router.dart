@@ -26,6 +26,7 @@ import '../screens/shared/album_screen.dart';
 import '../screens/shared/profile_screen.dart';
 import '../screens/shared/notifications_screen.dart';
 import '../screens/shared/tab_settings_screen.dart';
+import '../screens/shared/wearables_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
 import '../screens/shared/change_password_screen.dart';
 
@@ -323,6 +324,10 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(
         path: '/settings/tabs',
         builder: (_, _) => const TabSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/wearables',
+        builder: (_, _) => const WearablesScreen(),
       ),
 
       // ── Manager Shell (Trang chủ/Nhắn tin/Lịch/SOS/Album/Tôi) ──

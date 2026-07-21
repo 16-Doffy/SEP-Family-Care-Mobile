@@ -9,6 +9,7 @@ import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/ai_chatbot_icon.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/family_status_card.dart';
 
@@ -527,7 +528,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Text('🤖', style: TextStyle(fontSize: 28)),
+                          const AiChatbotIcon(size: 36),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(

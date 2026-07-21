@@ -8,6 +8,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
+import 'chat_shared_content_screen.dart';
 
 /// Chat gia đình — gán ĐỦ 18 endpoints module chat của BE (2026-07-11):
 /// nhóm mặc định + nhóm tùy chỉnh + chat 1-1, gửi text/ảnh, sửa/thu hồi,
@@ -681,6 +682,12 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         centerTitle: false,
         actions: [
+          IconButton(
+            tooltip: 'Nội dung đã chia sẻ',
+            icon: const Icon(Icons.perm_media_outlined, color: AppColors.textMuted, size: 21),
+            onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ChatSharedContentScreen())),
+          ),
           IconButton(
             icon: const Icon(Icons.push_pin_outlined, color: AppColors.textMuted, size: 21),
             onPressed: _showPinnedSheet,

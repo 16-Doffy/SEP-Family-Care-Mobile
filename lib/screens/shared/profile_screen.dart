@@ -134,6 +134,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 'Thanh điều hướng',
                 onTap: () => context.push('/settings/tabs'),
               ),
+              // Quản lý thiết bị đeo (đồng hồ/định vị). Mọi role vào được;
+              // ghép/gỡ chỉ Manager/Deputy (gate trong màn).
+              _tile(
+                '⌚',
+                'Thiết bị đeo',
+                onTap: () => context.push('/wearables'),
+              ),
             ]),
             const SizedBox(height: 16),
 

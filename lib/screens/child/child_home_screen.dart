@@ -8,6 +8,7 @@ import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/ai_chatbot_icon.dart';
 import '../../widgets/family_status_card.dart';
 import '../../widgets/ring_chart.dart';
 
@@ -334,10 +335,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                   ),
                                   child: Column(
                                     children: [
-                                      const Text(
-                                        '🤖',
-                                        style: TextStyle(fontSize: 18),
-                                      ),
+                                      const AiChatbotIcon(size: 24),
                                       Text(
                                         'AI',
                                         style: GoogleFonts.inter(
