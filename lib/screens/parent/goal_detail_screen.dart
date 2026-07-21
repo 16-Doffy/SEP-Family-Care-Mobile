@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/json_report_view.dart';
+import '../../widgets/money_input.dart';
 
 // GET .../financial-goals/{id}, PATCH, GET .../progress, GET/PATCH/DELETE
 // .../allocations — các endpoint BE có sẵn nhưng trước đây FE chưa gọi.
@@ -56,7 +56,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
     final s = v.round().toString();
     final buf = StringBuffer();
     for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
       buf.write(s[i]);
     }
     return '${buf.toString()} ₫';
@@ -122,10 +122,10 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                   children: [
-                    _summaryCard(goal),
+                    _summaryCard(goal, _progress),
                     const SizedBox(height: 16),
                     _sectionLabel('Tiến độ chi tiết'),
-                    _card(child: JsonReportView(data: _progress ?? {})),
+                    _progressCard(goal, _progress),
                     const SizedBox(height: 16),
                     _sectionLabel('Lịch sử đóng góp'),
                     if (_allocations.isEmpty)
@@ -155,8 +155,11 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
         child: child,
       );
 
-  Widget _summaryCard(FinancialGoal goal) {
+  Widget _summaryCard(FinancialGoal goal, Map<String, dynamic>? rawProgress) {
     final pct = ((goal.progressPercent ?? 0) / 100).clamp(0.0, 1.0);
+    final nestedProgress = _asMap(rawProgress?['progress']);
+    final currentAmount = goal.currentAmount ??
+        _number(nestedProgress['currentAmount']);
     return _card(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -169,7 +172,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
         ]),
         if (goal.deadline != null) ...[
           const SizedBox(height: 4),
-          Text('Hạn: ${goal.deadline}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+          Text('Hạn: ${_formatDate(goal.deadline!)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
         ],
         const SizedBox(height: 12),
         ClipRRect(
@@ -177,8 +180,221 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
           child: LinearProgressIndicator(value: pct, minHeight: 8, backgroundColor: const Color(0xFFE5E7EB), valueColor: AlwaysStoppedAnimation<Color>(goal.statusColor)),
         ),
         const SizedBox(height: 6),
-        Text('${(pct * 100).round()}% · Mục tiêu ${_fmt(goal.targetAmount)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+        Text(
+          'Đã góp ${_fmt(currentAmount)} / ${_fmt(goal.targetAmount)} · ${(pct * 100).round()}%',
+          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+        ),
+        if (goal.canContribute) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.link,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () => _showContributeSheet(context, goal),
+              icon: const Icon(Icons.savings_rounded, size: 18),
+              label: Text(
+                'Góp tiền vào mục tiêu',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
       ]),
+    );
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) => value is Map
+      ? Map<String, dynamic>.from(value)
+      : <String, dynamic>{};
+
+  double _number(dynamic value) => value is num
+      ? value.toDouble()
+      : double.tryParse(value?.toString() ?? '') ?? 0;
+
+  Widget _progressCard(FinancialGoal goal, Map<String, dynamic>? raw) {
+    final root = raw ?? const <String, dynamic>{};
+    final progress = _asMap(root['progress']);
+    final values = progress.isEmpty ? root : progress;
+    final current = _number(values['currentAmount']);
+    final remaining = _number(values['remainingAmount']);
+    final percent = _number(values['progressPercent']);
+    final days = values['daysRemaining'];
+    final months = values['monthsRemaining'];
+    final recommended = _number(values['recommendedMonthlyContribution']);
+
+    Widget row(String label, String value, {Color? valueColor}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(children: [
+            Expanded(
+              child: Text(label,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  )),
+            ),
+            Text(value,
+                textAlign: TextAlign.right,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: valueColor ?? AppColors.textPrimary,
+                )),
+          ]),
+        );
+
+    return _card(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        row('Đã góp', _fmt(current), valueColor: AppColors.income),
+        row('Mục tiêu', _fmt(goal.targetAmount)),
+        row('Còn thiếu', _fmt(remaining)),
+        row('Tiến độ', '${percent.round()}%'),
+        if (goal.deadline != null) row('Hạn hoàn thành', _formatDate(goal.deadline!)),
+        if (days != null) row('Số ngày còn lại', '$days ngày'),
+        if (months != null) row('Số tháng còn lại', '$months tháng'),
+        if (!goal.isAchieved && recommended > 0)
+          row('Nên góp mỗi tháng', _fmt(recommended), valueColor: AppColors.link),
+        const Divider(height: 20),
+        row(
+          'Tình trạng',
+          goal.statusLabel,
+          valueColor: goal.statusColor,
+        ),
+      ]),
+    );
+  }
+
+  String _formatDate(String value) {
+    final date = DateTime.tryParse(value);
+    if (date == null) return value;
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  void _showContributeSheet(BuildContext context, FinancialGoal goal) {
+    final amountCtrl = TextEditingController();
+    bool submitting = false;
+    String? sheetError;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 32,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '💰 Góp tiền cho mục tiêu',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                goal.goalName,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _inputBox(
+                amountCtrl,
+                'Số tiền góp (₫)',
+                keyboardType: TextInputType.number,
+              ),
+              if (sheetError != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  sheetError!,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.danger,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.link,
+                    minimumSize: const Size.fromHeight(50),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: submitting
+                      ? null
+                      : () async {
+                          final amount = parseMoneyInput(amountCtrl.text);
+                          if (amount <= 0) {
+                            setSheet(() => sheetError =
+                                'Nhập số tiền góp lớn hơn 0.');
+                            return;
+                          }
+                          setSheet(() {
+                            submitting = true;
+                            sheetError = null;
+                          });
+                          try {
+                            await context
+                                .read<FinanceProvider>()
+                                .contributeToGoal(goal.id, amount);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            await _load();
+                          } catch (e) {
+                            setSheet(() {
+                              submitting = false;
+                              sheetError = e
+                                  .toString()
+                                  .replaceFirst('Exception: ', '');
+                            });
+                          }
+                        },
+                  child: submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          'Xác nhận góp tiền',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -217,7 +433,11 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
   }
 
   void _showEditAllocationSheet(BuildContext context, GoalAllocation a) {
-    final amountCtrl = TextEditingController(text: a.amount.round().toString());
+    final amountCtrl = TextEditingController(
+      text: ThousandsSeparatorInputFormatter.formatThousands(
+        a.amount.round().toString(),
+      ),
+    );
     bool submitting = false;
     String? sheetError;
     showModalBottomSheet(
@@ -242,8 +462,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: submitting ? null : () async {
-                  final amt = double.tryParse(amountCtrl.text.trim());
-                  if (amt == null || amt <= 0) {
+                  final amt = parseMoneyInput(amountCtrl.text);
+                  if (amt <= 0) {
                     setSheet(() => sheetError = 'Nhập số tiền hợp lệ');
                     return;
                   }
@@ -269,7 +489,11 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
 
   void _showEditGoalSheet(BuildContext context, FinancialGoal goal) {
     final nameCtrl = TextEditingController(text: goal.goalName);
-    final targetCtrl = TextEditingController(text: goal.targetAmount.round().toString());
+    final targetCtrl = TextEditingController(
+      text: ThousandsSeparatorInputFormatter.formatThousands(
+        goal.targetAmount.round().toString(),
+      ),
+    );
     bool submitting = false;
     String? sheetError;
     showModalBottomSheet(
@@ -296,8 +520,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: submitting ? null : () async {
-                  final target = double.tryParse(targetCtrl.text.trim());
-                  if (nameCtrl.text.trim().isEmpty || target == null || target <= 0) {
+                  final target = parseMoneyInput(targetCtrl.text);
+                  if (nameCtrl.text.trim().isEmpty || target <= 0) {
                     setSheet(() => sheetError = 'Nhập tên và số tiền hợp lệ');
                     return;
                   }
@@ -331,6 +555,9 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
         child: TextField(
           controller: ctrl,
           keyboardType: keyboardType,
+          inputFormatters: keyboardType == TextInputType.number
+              ? const [ThousandsSeparatorInputFormatter()]
+              : null,
           decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),

@@ -11,6 +11,7 @@ import '../../providers/album_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import 'face_suggestions_sheet.dart';
 
 class AlbumScreen extends StatefulWidget {
   const AlbumScreen({super.key});
@@ -27,6 +28,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AlbumProvider>().fetchMedia();
+      context.read<AlbumProvider>().fetchFeatureAccess();
       context.read<FamilyProvider>().fetchMembers();
       _startPolling();
     });
@@ -57,6 +59,11 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   Future<void> _pickAndUpload(ImageSource source, {required bool video}) async {
+    final album = context.read<AlbumProvider>();
+    if (video && !album.canUploadVideo) {
+      _snack(Exception('Gói hiện tại chưa hỗ trợ tải video lên album.'));
+      return;
+    }
     final picker = ImagePicker();
     final file = video
         ? await picker.pickVideo(source: source)
@@ -769,6 +776,26 @@ class _AlbumScreenState extends State<AlbumScreen> {
             _showTagSheet(media);
           },
         ),
+        if (!media.isVideo)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              context.read<AlbumProvider>().canUseFaceSuggestions
+                  ? Icons.face_retouching_natural_outlined
+                  : Icons.lock_outline_rounded,
+              color: AppColors.textSecondary,
+            ),
+            title: const Text('Gợi ý khuôn mặt AI'),
+            subtitle: Text(
+              context.read<AlbumProvider>().canUseFaceSuggestions
+                  ? 'Quét ảnh, xem và xử lý gợi ý tag'
+                  : 'Tính năng này cần gói có Face Suggestion',
+            ),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              _showFaceSuggestions(media);
+            },
+          ),
         if (isAdmin && media.canManualReview)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -966,6 +993,18 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showFaceSuggestions(AlbumMedia media) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => FaceSuggestionsSheet(mediaId: media.id),
     );
   }
 

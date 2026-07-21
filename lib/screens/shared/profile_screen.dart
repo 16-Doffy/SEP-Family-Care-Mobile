@@ -123,6 +123,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => context.push('/profile/edit'),
               ),
               _tile(
+                '📋',
+                'Tài chính tháng của tôi',
+                onTap: () => context.push('/profile/edit'),
+              ),
+              _tile(
                 '🔒',
                 'Bảo mật',
                 onTap: () => context.push('/profile/change-password'),
@@ -228,11 +233,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   '🖼️',
                   'Album gia đình',
                   onTap: () => context.push('/album'),
-                ),
-                _tile(
-                  '📋',
-                  'Tài chính tháng của tôi',
-                  onTap: () => context.push('/profile/edit'),
                 ),
                 _tile(
                   '🙋',
