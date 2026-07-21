@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/feature_access.dart';
 import '../services/api_client.dart';
+import '../theme/app_colors.dart';
 
 String? _str(dynamic v) => v?.toString();
 DateTime? _date(dynamic v) {
@@ -128,25 +129,25 @@ class FamilyCalendarEvent {
 
   Color get color {
     final text = '${title.toLowerCase()} ${description?.toLowerCase() ?? ''}';
-    if (text.contains('sinh nhật')) return const Color(0xFFF59E0B);
+    if (text.contains('sinh nhật')) return AppColors.accent500;
     if (text.contains('khám') || text.contains('sức khỏe')) {
-      return const Color(0xFFEF4444);
+      return AppColors.sos;
     }
     if (text.contains('du lịch') || text.contains('dã ngoại')) {
-      return const Color(0xFF0EA5E9);
+      return AppColors.calTravel;
     }
     if (text.contains('hạn') || text.contains('task')) {
-      return const Color(0xFF2563EB);
+      return AppColors.primary500;
     }
-    return const Color(0xFF7C3AED);
+    return AppColors.secondary500;
   }
 
   String get typeLabel {
     final c = color;
-    if (c == const Color(0xFFF59E0B)) return 'Sinh nhật';
-    if (c == const Color(0xFFEF4444)) return 'Sức khỏe';
-    if (c == const Color(0xFF0EA5E9)) return 'Du lịch';
-    if (c == const Color(0xFF2563EB)) return 'Task';
+    if (c == AppColors.accent500) return 'Sinh nhật';
+    if (c == AppColors.sos) return 'Sức khỏe';
+    if (c == AppColors.calTravel) return 'Du lịch';
+    if (c == AppColors.primary500) return 'Task';
     return 'Sự kiện';
   }
 }

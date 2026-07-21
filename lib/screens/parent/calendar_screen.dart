@@ -8,6 +8,16 @@ import '../../providers/calendar_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 
+const _calendarDivider = AppColors.progressTrack;
+const _calendarInputFill = AppColors.background;
+const _calendarInputBorder = AppColors.progressTrack;
+
+const _calendarTaskColor = AppColors.primary500;
+const _calendarEventColor = AppColors.shared;
+const _calendarTravelColor = AppColors.calTravel;
+const _calendarBirthdayColor = AppColors.accent500;
+const _calendarHealthColor = AppColors.sos;
+
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
@@ -108,6 +118,266 @@ class _CalendarScreenState extends State<CalendarScreen> {
       map.putIfAbsent(e.startTime.day, () => []).add(e);
     }
     return map;
+  }
+
+  String _responseLabel(String? status) => switch (status) {
+    'ACCEPTED' => 'Tham gia',
+    'MAYBE' => 'Có thể',
+    'DECLINED' => 'Từ chối',
+    _ => 'Chưa phản hồi',
+  };
+
+  Color _responseColor(String? status) => switch (status) {
+    'ACCEPTED' => AppColors.safe,
+    'MAYBE' => AppColors.accent500,
+    'DECLINED' => AppColors.danger,
+    _ => AppColors.textMuted,
+  };
+
+  IconData _responseIcon(String? status) => switch (status) {
+    'ACCEPTED' => Icons.check_circle_rounded,
+    'MAYBE' => Icons.help_rounded,
+    'DECLINED' => Icons.cancel_rounded,
+    _ => Icons.radio_button_unchecked_rounded,
+  };
+
+  Widget _responseChip(String? status, {bool compact = false}) {
+    final color = _responseColor(status);
+    final label = compact && (status == null || status.isEmpty)
+        ? 'Chưa'
+        : _responseLabel(status);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 7 : 10,
+        vertical: compact ? 3 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_responseIcon(status), size: compact ? 12 : 15, color: color),
+          SizedBox(width: compact ? 4 : 6),
+          Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: compact ? 10.5 : 12,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _respondToEvent(
+    FamilyCalendarEvent event,
+    String responseStatus,
+  ) async {
+    final provider = context.read<CalendarProvider>();
+    try {
+      await provider.respond(event.id, responseStatus);
+      await provider.fetchEvents(_focus);
+      _showMessage('Đã cập nhật phản hồi');
+    } catch (e) {
+      await _handleError(e);
+    }
+  }
+
+  void _showEventDetail(FamilyCalendarEvent event) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: event.color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.calendar_month_rounded,
+                      color: event.color,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          event.title,
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _typeChip(event),
+                            _responseChip(event.responseStatus),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _detailRow(
+                Icons.schedule_rounded,
+                '${event.startTime.day}/${event.startTime.month}/${event.startTime.year} · ${event.timeLabel}',
+              ),
+              if (event.location != null && event.location!.isNotEmpty)
+                _detailRow(Icons.place_outlined, event.location!),
+              if (event.description != null && event.description!.isNotEmpty)
+                _detailRow(Icons.notes_rounded, event.description!),
+              _detailRow(
+                event.reminderEnabled
+                    ? Icons.notifications_active_rounded
+                    : Icons.notifications_none_rounded,
+                event.reminderEnabled ? 'Đã bật nhắc lịch' : 'Chưa bật nhắc lịch',
+              ),
+              if (event.isRecurring)
+                _detailRow(Icons.repeat_rounded, 'Sự kiện lặp lại'),
+              const SizedBox(height: 18),
+              Text(
+                'Phản hồi của bạn',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _responseButton(
+                      label: 'Tham gia',
+                      icon: Icons.check_rounded,
+                      status: 'ACCEPTED',
+                      event: event,
+                      sheetContext: ctx,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _responseButton(
+                      label: 'Có thể',
+                      icon: Icons.help_outline_rounded,
+                      status: 'MAYBE',
+                      event: event,
+                      sheetContext: ctx,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _responseButton(
+                      label: 'Từ chối',
+                      icon: Icons.close_rounded,
+                      status: 'DECLINED',
+                      event: event,
+                      sheetContext: ctx,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.textMuted),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _responseButton({
+    required String label,
+    required IconData icon,
+    required String status,
+    required FamilyCalendarEvent event,
+    required BuildContext sheetContext,
+  }) {
+    final selected = event.responseStatus == status;
+    final color = _responseColor(status);
+    return OutlinedButton.icon(
+      onPressed: () async {
+        Navigator.pop(sheetContext);
+        await _respondToEvent(event, status);
+      },
+      icon: Icon(icon, size: 16),
+      label: Text(label, overflow: TextOverflow.ellipsis),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: selected ? Colors.white : color,
+        backgroundColor: selected ? color : AppColors.white,
+        side: BorderSide(color: color.withValues(alpha: selected ? 1 : 0.45)),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _typeChip(FamilyCalendarEvent event) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: event.color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        event.typeLabel,
+        style: GoogleFonts.inter(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: event.color,
+        ),
+      ),
+    );
   }
 
   Future<void> _showEventForm({FamilyCalendarEvent? event}) async {
@@ -500,11 +770,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _legend() {
     const items = [
-      ('Task', Color(0xFF2563EB)),
-      ('Sự kiện', Color(0xFF7C3AED)),
-      ('Du lịch', Color(0xFF0EA5E9)),
-      ('Sinh nhật', Color(0xFFF59E0B)),
-      ('Sức khỏe', Color(0xFFEF4444)),
+      ('Task', _calendarTaskColor),
+      ('Sự kiện', _calendarEventColor),
+      ('Du lịch', _calendarTravelColor),
+      ('Sinh nhật', _calendarBirthdayColor),
+      ('Sức khỏe', _calendarHealthColor),
     ];
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -574,7 +844,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   .toList(),
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFF3F4F6)),
+          const Divider(height: 1, color: _calendarDivider),
           Padding(
             padding: const EdgeInsets.all(8),
             child: GridView.builder(
@@ -692,8 +962,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _eventCard(FamilyCalendarEvent event) {
     final provider = context.read<CalendarProvider>();
     return InkWell(
-      // Member chạm vào không mở form sửa — chỉ Manager/Deputy.
-      onTap: _canManage ? () => _showEventForm(event: event) : null,
+      onTap: _canManage
+          ? () => _showEventForm(event: event)
+          : () => _showEventDetail(event),
       borderRadius: BorderRadius.circular(16),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
@@ -713,21 +984,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: event.color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  event.typeLabel,
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: event.color,
-                  ),
-                ),
-              ),
+              _typeChip(event),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -750,6 +1007,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         color: AppColors.textMuted,
                       ),
                     ),
+                    const SizedBox(height: 6),
+                    _responseChip(event.responseStatus, compact: true),
                   ],
                 ),
               ),
@@ -816,9 +1075,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         await provider.cancelEvent(event.id, _focus);
         _showMessage('Đã hủy sự kiện');
       } else {
-        await provider.respond(event.id, value);
-        await provider.fetchEvents(_focus);
-        _showMessage('Đã cập nhật phản hồi');
+        await _respondToEvent(event, value);
       }
     } catch (e) {
       await _handleError(e);
@@ -836,14 +1093,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       decoration: InputDecoration(
         hintText: hint,
         filled: true,
-        fillColor: const Color(0xFFF9FAFB),
+        fillColor: _calendarInputFill,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+          borderSide: const BorderSide(color: _calendarInputBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+          borderSide: const BorderSide(color: _calendarInputBorder),
         ),
       ),
     );
