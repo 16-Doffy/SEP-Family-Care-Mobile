@@ -211,7 +211,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
   Widget build(BuildContext context) {
     final album = context.watch<AlbumProvider>();
     // Current manual moderation contract is FAMILY_MANAGER only.
-    final isAdmin = context.watch<AuthProvider>().user?.role == UserRole.manager;
+    final isAdmin =
+        context.watch<AuthProvider>().user?.role == UserRole.manager;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -304,7 +305,13 @@ class _AlbumScreenState extends State<AlbumScreen> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Text('Đánh dấu ảnh/video hợp lệ trước khi cho phép gắn tag.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                    Text(
+                      'Đánh dấu ảnh/video hợp lệ trước khi cho phép gắn tag.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     if (snap.connectionState != ConnectionState.done)
                       const Padding(
@@ -348,49 +355,55 @@ class _AlbumScreenState extends State<AlbumScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(children: [
-                                    Text(
-                                      it['mediaType']?.toString() == 'VIDEO'
-                                          ? '🎬'
-                                          : '🖼️',
-                                      style: const TextStyle(fontSize: 18),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        status,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textPrimary,
+                                  Row(
+                                    children: [
+                                      Text(
+                                        it['mediaType']?.toString() == 'VIDEO'
+                                            ? '🎬'
+                                            : '🖼️',
+                                        style: const TextStyle(fontSize: 18),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          status,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.textPrimary,
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ]),
+                                    ],
+                                  ),
                                   if (needAction && mediaId.isNotEmpty)
                                     Padding(
-                                      padding:
-                                          const EdgeInsets.only(top: 6, left: 26),
-                                      child: Row(children: [
-                                        _queueAction(
-                                          label: '✓ An toàn',
-                                          color: AppColors.safe,
-                                          onTap: () async {
-                                            try {
-                                              await album.reviewModeration(
-                                                mediaId,
-                                                decision: 'MARK_SAFE',
-                                                reviewNote:
-                                                    'Đã kiểm tra thủ công từ hàng đợi',
-                                              );
-                                              setSheet(() {});
-                                            } catch (e) {
-                                              _snack(e);
-                                            }
-                                          },
-                                        ),
-                                        const SizedBox(width: 8),
-                                      ]),
+                                      padding: const EdgeInsets.only(
+                                        top: 6,
+                                        left: 26,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          _queueAction(
+                                            label: '✓ An toàn',
+                                            color: AppColors.safe,
+                                            onTap: () async {
+                                              try {
+                                                await album.reviewModeration(
+                                                  mediaId,
+                                                  decision: 'MARK_SAFE',
+                                                  reviewNote:
+                                                      'Đã kiểm tra thủ công từ hàng đợi',
+                                                );
+                                                setSheet(() {});
+                                              } catch (e) {
+                                                _snack(e);
+                                              }
+                                            },
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                      ),
                                     ),
                                 ],
                               ),
@@ -601,7 +614,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _mediaPreview(media),
+            _MediaThumb(media: media),
             if (media.isVideo)
               const Align(
                 alignment: Alignment.center,
@@ -637,28 +650,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Widget _mediaPreview(AlbumMedia media) {
     final url = media.displayUrl;
-    if (url.isEmpty) {
-      return Container(
-        color: const Color(0xFFE5E7EB),
-        alignment: Alignment.center,
-        child: Icon(
-          media.isVideo ? Icons.movie_outlined : Icons.image_outlined,
-          color: AppColors.textMuted,
-        ),
-      );
-    }
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => Container(
-        color: const Color(0xFFE5E7EB),
-        alignment: Alignment.center,
-        child: const Icon(
-          Icons.broken_image_outlined,
-          color: AppColors.textMuted,
-        ),
-      ),
-    );
+    if (url.isEmpty) return _thumbPlaceholder(isVideo: media.isVideo);
+    return _thumbImage(url);
   }
 
   Future<void> _openDetail(AlbumMedia initial, bool isAdmin) async {
@@ -753,17 +746,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
       children: [
         if (media.isSafe)
           ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(
-            Icons.edit_outlined,
-            color: AppColors.textSecondary,
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(
+              Icons.edit_outlined,
+              color: AppColors.textSecondary,
+            ),
+            title: const Text('Sửa caption / quyền xem'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              _showEditSheet(media);
+            },
           ),
-          title: const Text('Sửa caption / quyền xem'),
-          onTap: () {
-            Navigator.pop(sheetContext);
-            _showEditSheet(media);
-          },
-        ),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(
@@ -1084,9 +1077,14 @@ class _AlbumScreenState extends State<AlbumScreen> {
   Widget _tagChip(BuildContext sheetContext, AlbumMedia media, AlbumTag tag) {
     return InputChip(
       label: Text('@${tag.taggedMemberName}'),
-      labelStyle: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
+      labelStyle: GoogleFonts.inter(
+        fontSize: 11,
+        color: AppColors.textSecondary,
+      ),
       backgroundColor: const Color(0xFFF3F4F6),
-      deleteIcon: tag.canRemove ? const Icon(Icons.close_rounded, size: 16) : null,
+      deleteIcon: tag.canRemove
+          ? const Icon(Icons.close_rounded, size: 16)
+          : null,
       onDeleted: tag.canRemove
           ? () async {
               try {
@@ -1113,5 +1111,78 @@ class _AlbumScreenState extends State<AlbumScreen> {
   static String _fmtDate(DateTime? date) {
     if (date == null) return 'Không rõ ngày';
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+}
+
+// ── Thumbnail lưới album ────────────────────────────────────────────────────
+// Dùng chung visual cho cả ô lưới và fallback ở màn chi tiết.
+Widget _thumbBox(IconData icon) => Container(
+  color: const Color(0xFFE5E7EB),
+  alignment: Alignment.center,
+  child: Icon(icon, color: AppColors.textMuted),
+);
+
+Widget _thumbPlaceholder({required bool isVideo}) =>
+    _thumbBox(isVideo ? Icons.movie_outlined : Icons.image_outlined);
+
+Widget _thumbImage(String url) => Image.network(
+  url,
+  fit: BoxFit.cover,
+  errorBuilder: (_, _, _) => _thumbBox(Icons.broken_image_outlined),
+);
+
+/// Ô ảnh trong lưới. API list không trả signed URL nên nếu [media] thiếu URL,
+/// widget này gọi [AlbumProvider.resolveDisplayUrl] (chỉ GET detail để lấy URL)
+/// rồi hiện ảnh. Có URL sẵn thì vẽ thẳng, không gọi mạng.
+class _MediaThumb extends StatefulWidget {
+  const _MediaThumb({required this.media});
+  final AlbumMedia media;
+
+  @override
+  State<_MediaThumb> createState() => _MediaThumbState();
+}
+
+class _MediaThumbState extends State<_MediaThumb> {
+  Future<String?>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeResolve();
+  }
+
+  @override
+  void didUpdateWidget(_MediaThumb old) {
+    super.didUpdateWidget(old);
+    // GridView tái sử dụng widget khi cuộn → media có thể đổi sang item khác.
+    if (old.media.id != widget.media.id) _maybeResolve();
+  }
+
+  void _maybeResolve() {
+    _future = widget.media.displayUrl.isNotEmpty
+        ? null
+        : context.read<AlbumProvider>().resolveDisplayUrl(widget.media);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final direct = widget.media.displayUrl;
+    if (direct.isNotEmpty) return _thumbImage(direct);
+    if (_future == null) {
+      return _thumbPlaceholder(isVideo: widget.media.isVideo);
+    }
+    return FutureBuilder<String?>(
+      future: _future,
+      builder: (_, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return _thumbBox(Icons.image_outlined);
+        }
+        final url = snap.data;
+        if (url == null || url.isEmpty) {
+          return _thumbPlaceholder(isVideo: widget.media.isVideo);
+        }
+        return _thumbImage(url);
+      },
+    );
   }
 }

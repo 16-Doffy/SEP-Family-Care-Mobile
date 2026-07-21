@@ -99,6 +99,43 @@ class AlbumProvider extends ChangeNotifier {
     return detail;
   }
 
+  // URL đã nạp cho ô lưới → giữ để lần rebuild sau (cuộn qua rồi cuộn lại)
+  // không gọi lại API. Tách khỏi _items vì nhiều ô có thể đang chờ cùng lúc.
+  final Map<String, String> _resolvedUrls = {};
+  final Map<String, Future<String?>> _resolving = {};
+
+  /// Lấy URL hiển thị cho một ô lưới. API list KHÔNG trả signed URL (chỉ detail
+  /// mới có — xác minh 2026-07-21), nên ô thiếu URL phải gọi detail để lấy.
+  /// Chỉ GET media, KHÔNG kèm tags như fetchDetail cho nhẹ. De-dup lời gọi
+  /// trùng và cache kết quả.
+  Future<String?> resolveDisplayUrl(AlbumMedia media) {
+    if (media.displayUrl.isNotEmpty) return Future.value(media.displayUrl);
+    final cached = _resolvedUrls[media.id];
+    if (cached != null) return Future.value(cached);
+
+    return _resolving.putIfAbsent(media.id, () async {
+      try {
+        final data = await ApiClient.instance.get(
+          '/families/$_fid/albums/media/${media.id}',
+        );
+        if (data is! Map) return null;
+        final detail = AlbumMedia.fromJson(Map<String, dynamic>.from(data));
+        final url = detail.displayUrl;
+        if (url.isEmpty) return null;
+        _resolvedUrls[media.id] = url;
+        // Nhét URL vào _items để ô giữ ảnh qua các lần rebuild; không notify để
+        // tránh bão rebuild — FutureBuilder ở ô tự cập nhật khi future xong.
+        final idx = _items.indexWhere((m) => m.id == media.id);
+        if (idx >= 0) _items[idx] = _items[idx].merge(detail);
+        return url;
+      } catch (_) {
+        return null; // ô sẽ hiện icon lỗi, không làm sập lưới
+      } finally {
+        _resolving.remove(media.id);
+      }
+    });
+  }
+
   Future<void> uploadMedia({
     required String filePath,
     String? caption,
