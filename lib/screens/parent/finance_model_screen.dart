@@ -464,13 +464,24 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         // FIVE_JARS/EIGHTY_TWENTY: BE đã tự tạo jar mặc định kèm theo —
         // patch theo jarCode đã verify, không phụ thuộc thứ tự list.
         final uiJars = _model == FinanceModelType.fiveJars ? _fiveJars : _twoFunds;
+
+        // BE validate tổng % <= 100 sau MỖI lần PATCH. Nếu patch theo thứ tự
+        // list mà một lọ TĂNG trước khi lọ khác GIẢM, tổng trung gian vượt 100%
+        // → BE trả "không được vượt quá 100%" dù đích cuối đúng 100%.
+        // Cách sửa: gom các lọ cần đổi rồi patch GIẢM trước, TĂNG sau (sort theo
+        // delta tăng dần) → tổng chạy luôn <= 100 tại mọi bước.
+        final pending = <({String id, double pct, double delta})>[];
         for (final uiJar in uiJars) {
           final realJar = _jarByCode(created.jars, uiJar.jarCode);
           if (realJar == null) continue;
-          final wantPct = uiJar.percent;
-          if ((realJar.allocationPercentage - wantPct).abs() >= 0.5) {
-            await provider.updateJar(realJar.id, allocationPercentage: wantPct);
+          final delta = uiJar.percent - realJar.allocationPercentage;
+          if (delta.abs() >= 0.5) {
+            pending.add((id: realJar.id, pct: uiJar.percent, delta: delta));
           }
+        }
+        pending.sort((a, b) => a.delta.compareTo(b.delta));
+        for (final p in pending) {
+          await provider.updateJar(p.id, allocationPercentage: p.pct);
         }
       }
 
