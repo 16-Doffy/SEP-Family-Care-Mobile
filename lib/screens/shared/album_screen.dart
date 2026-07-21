@@ -1042,40 +1042,50 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   Widget _statusBadge(AlbumModerationStatus status) {
-    final (label, color, bg) = switch (status) {
+    // Ký hiệu thay chữ: ✔ xanh (safe) · ✕ đỏ (flagged) · ❗ vàng (review) ·
+    // — xám (pending). Màu pill giữ đúng nhóm màu; Tooltip giữ nghĩa cho
+    // người đọc màn hình / khi cần rõ.
+    final (symbol, tip, color, bg) = switch (status) {
       AlbumModerationStatus.safe => (
-        'SAFE',
+        '✔',
+        'An toàn',
         AppColors.safe,
         const Color(0xFFDCFCE7),
       ),
       AlbumModerationStatus.needReview => (
-        'REVIEW',
+        '❗',
+        'Cần duyệt',
         AppColors.accent500,
         const Color(0xFFFFF7ED),
       ),
       AlbumModerationStatus.flagged => (
-        'FLAGGED',
+        '✕',
+        'Bị gắn cờ',
         AppColors.danger,
         const Color(0xFFFEE2E2),
       ),
       AlbumModerationStatus.pending => (
-        'PENDING',
+        '—',
+        'Đang chờ xử lý',
         AppColors.textSecondary,
         const Color(0xFFF3F4F6),
       ),
     };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.inter(
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          color: color,
+    return Tooltip(
+      message: tip,
+      child: Container(
+        width: 22,
+        height: 22,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+        child: Text(
+          symbol,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: color,
+            height: 1,
+          ),
         ),
       ),
     );
