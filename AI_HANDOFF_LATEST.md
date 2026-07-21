@@ -162,6 +162,28 @@ Last updated: **2026-07-19**
 6. Tiếp tục làm việc với BE về checklist bảo mật nhiều Admin và hợp đồng
    Notifications realtime.
 
+### Audit API và flow FE — tiếp tục ở phiên sau
+
+- **Mục tiêu:** audit toàn diện Mobile Flutter theo Swagger production, SRS, UC
+  Flow Tracker và báo cáo đề tài; không chỉ kiểm tra tên endpoint mà phải đối
+  chiếu request/response DTO, role/permission, state transition và UI flow.
+- **Nguồn cần dùng:** Swagger live
+  `https://api.familycare-digital.com/api/docs` (OpenAPI:
+  `/api/docs-json`), cùng các tài liệu ngoài workspace:
+  - `D:\Desktop\BÁO-CÁO-NEW\SU26SE032_GSU26SE042_FAMILY_CARE_DIGITAL_FAMILY_MANAGEMENT_SO_HUYNX.docx`;
+  - `D:\Desktop\BÁO-CÁO-NEW\Report3_Software Requirement Specification.docx`;
+  - `D:\Desktop\BÁO-CÁO-NEW\SU26SE032_FamilyCare_UC_Flow_Tracker (2).xlsx`.
+  `FinalReport_Template (1).docx` là template tham khảo, không dùng làm nguồn
+  nghiệp vụ chính.
+- **Kết quả đã có trước khi tạm dừng:** Swagger production hiện có endpoint
+  location sharing chuẩn theo family (`GET /families/{familyId}/members/locations`,
+  `POST /families/{familyId}/locations`, `PATCH /families/{familyId}/members/me/location-sharing`),
+  trong khi `lib/providers/gps_provider.dart` vẫn gọi các path cũ `/location/*`.
+  Đây là lỗi FE cần sửa và test trong phiên audit kế tiếp; **chưa sửa/commit**.
+- **Cách bàn giao:** sửa các lỗi FE xác định được và chạy analyze/test; các
+  thiếu/sai contract hoặc lỗi runtime của BE phải lập danh sách gửi BE với
+  endpoint, payload/response thực tế, role bị ảnh hưởng và bước tái hiện.
+
 ## Snapshot 2026-07-18 — lịch sử
 
 ### Phạm vi hệ thống
