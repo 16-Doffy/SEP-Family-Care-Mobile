@@ -80,6 +80,58 @@ class FaceSuggestion {
   }
 }
 
+class FaceProfileStatus {
+  final String memberId;
+  final String status;
+  final bool exists;
+  final bool enabled;
+  final DateTime? enrolledAt;
+
+  const FaceProfileStatus({
+    required this.memberId,
+    required this.status,
+    required this.exists,
+    required this.enabled,
+    this.enrolledAt,
+  });
+
+  factory FaceProfileStatus.none(String memberId) => FaceProfileStatus(
+    memberId: memberId,
+    status: 'NOT_ENROLLED',
+    exists: false,
+    enabled: false,
+  );
+
+  factory FaceProfileStatus.fromJson(
+    Map<String, dynamic> j, {
+    required String memberId,
+  }) {
+    final raw = _str(j['status'] ?? j['state'] ?? j['profileStatus']);
+    final disabled =
+        j['isDisabled'] == true ||
+        j['enabled'] == false ||
+        raw.toUpperCase() == 'DISABLED';
+    final hasId = _str(
+      j['id'] ?? j['profileId'] ?? j['faceProfileId'],
+    ).isNotEmpty;
+    final exists =
+        hasId ||
+        j['exists'] == true ||
+        j['enrolled'] == true ||
+        raw.isNotEmpty && raw.toUpperCase() != 'NOT_ENROLLED';
+    return FaceProfileStatus(
+      memberId: memberId,
+      status: raw.isEmpty ? (exists ? 'ENROLLED' : 'NOT_ENROLLED') : raw,
+      exists: exists,
+      enabled: exists && !disabled,
+      enrolledAt: DateTime.tryParse(_str(j['enrolledAt'] ?? j['createdAt'])),
+    );
+  }
+
+  bool get isEnrolled => exists;
+  bool get isDisabled => exists && !enabled;
+}
+
 class AlbumFaceProvider extends ChangeNotifier {
   FeatureAccess? _featureAccess;
 
@@ -180,5 +232,83 @@ class AlbumFaceProvider extends ChangeNotifier {
       '/families/$fid/albums/media/$mediaId/face-suggestions/$suggestionId/reject',
       {},
     );
+  }
+
+  Future<FaceProfileStatus> fetchFaceProfile(String memberId) async {
+    final fid = _fid;
+    if (fid == null) return FaceProfileStatus.none(memberId);
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$fid/face-profiles/$memberId',
+      );
+      final map = data is Map
+          ? Map<String, dynamic>.from(data)
+          : const <String, dynamic>{};
+      return FaceProfileStatus.fromJson(map, memberId: memberId);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return FaceProfileStatus.none(memberId);
+      rethrow;
+    }
+  }
+
+  Future<FaceProfileStatus> enrollFaceProfile({
+    required String memberId,
+    required List<String> imagePaths,
+    required bool consentConfirmed,
+  }) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    if (imagePaths.length < 3 || imagePaths.length > 5) {
+      throw Exception('Vui lòng chọn từ 3 đến 5 ảnh khuôn mặt.');
+    }
+    if (!consentConfirmed) {
+      throw Exception('Cần xác nhận đồng ý trước khi đăng ký khuôn mặt.');
+    }
+    final data = await ApiClient.instance.uploadFiles(
+      path: '/families/$fid/face-profiles/$memberId/enroll',
+      filePaths: imagePaths,
+      fieldName: 'files',
+      fields: const {'consentConfirmed': 'true'},
+    );
+    notifyListeners();
+    return data.isEmpty
+        ? FaceProfileStatus(
+            memberId: memberId,
+            status: 'ENROLLED',
+            exists: true,
+            enabled: true,
+            enrolledAt: DateTime.now(),
+          )
+        : FaceProfileStatus.fromJson(data, memberId: memberId);
+  }
+
+  Future<void> enableFaceProfile(String memberId) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.patch(
+      '/families/$fid/face-profiles/$memberId/enable',
+      {},
+    );
+    notifyListeners();
+  }
+
+  Future<void> disableFaceProfile(String memberId) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.patch(
+      '/families/$fid/face-profiles/$memberId/disable',
+      {},
+    );
+    notifyListeners();
+  }
+
+  Future<void> deleteFaceProfile(String memberId) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.delete(
+      '/families/$fid/face-profiles/$memberId',
+      body: const {'confirmation': 'DELETE_FACE_PROFILE'},
+    );
+    notifyListeners();
   }
 }
