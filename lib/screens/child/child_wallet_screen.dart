@@ -776,9 +776,10 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
   }
 
   Widget _statusChip(String status) {
-    final (color, label) = switch (status) {
+    final (color, label) = switch (status.toUpperCase()) {
       'APPROVED' => (AppColors.success, 'Đã duyệt'),
       'REJECTED' => (AppColors.danger, 'Từ chối'),
+      'CANCELED' || 'CANCELLED' => (AppColors.textMuted, 'Đã hủy'),
       _ => (AppColors.accent500, 'Chờ duyệt'),
     };
     return Container(
