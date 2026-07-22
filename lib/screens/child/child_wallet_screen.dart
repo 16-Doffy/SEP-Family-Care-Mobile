@@ -3,10 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/support_request_provider.dart';
-import '../../providers/wallet_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
+import '../../widgets/money_input.dart';
 import '../../widgets/ring_chart.dart';
 
 class ChildWalletScreen extends StatefulWidget {
@@ -20,11 +20,21 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
   late AnimationController _ctrl;
   late Animation<double> _ring;
 
-  // Dữ liệu từ API monthly-finances/me
-  double? _allowance; // expectedPersonalExpense
+  // Dữ liệu từ API monthly-finances/me (model khai-báo-tháng của thành viên;
+  // KHÔNG có ví/số dư cá nhân — by design).
+  double? _income; // expectedIncome — thu nhập tháng
+  double? _allowance; // expectedPersonalExpense — chi tiêu dự đoán
+  double? _sharedContribution; // expectedSharedContribution — đóng góp quỹ
   double? _actualSpent; // actualPersonalExpense (nếu BE trả về)
   bool _loadingFinance = false;
   String? _financeError;
+
+  bool get _hasDeclared =>
+      _income != null || _allowance != null || _sharedContribution != null;
+
+  // Lịch sử 6 tháng — không có API "list nhiều tháng" nên query từng tháng.
+  List<_MonthPoint> _history = const [];
+  bool _loadingHistory = false;
 
   // AuthProvider listener — fix StatefulShellRoute pre-build
   AuthProvider? _authListener;
@@ -42,7 +52,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
       _authListener = context.read<AuthProvider>()..addListener(_onAuthChanged);
       if (context.read<AuthProvider>().hasFamily) {
         _fetchMonthlyFinance();
-        context.read<WalletProvider>().fetchWallets();
+        _fetchHistory();
       }
     });
   }
@@ -50,7 +60,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
   void _onAuthChanged() {
     if (mounted && context.read<AuthProvider>().hasFamily) {
       _fetchMonthlyFinance();
-      context.read<WalletProvider>().fetchWallets();
+      _fetchHistory();
     }
   }
 
@@ -76,7 +86,9 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
         '?month=${now.month}&year=${now.year}',
       );
 
+      final income = _parseNum(data, 'expectedIncome');
       final allowance = _parseNum(data, 'expectedPersonalExpense');
+      final contribution = _parseNum(data, 'expectedSharedContribution');
       final spent = _parseNum(data, 'actualPersonalExpense');
 
       if (mounted) {
@@ -84,7 +96,9 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
             ? (spent / allowance).clamp(0.0, 1.0)
             : 0.0;
         setState(() {
+          _income = income;
           _allowance = allowance;
+          _sharedContribution = contribution;
           _actualSpent = spent;
         });
         _ring = Tween<double>(
@@ -101,6 +115,152 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
       if (mounted) setState(() => _loadingFinance = false);
     }
   }
+
+  // Query monthly-finances/me cho 6 tháng gần nhất (không có API list).
+  Future<void> _fetchHistory() async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) return;
+    setState(() => _loadingHistory = true);
+    final now = DateTime.now();
+    final points = <_MonthPoint>[];
+    for (int i = 5; i >= 0; i--) {
+      final d = DateTime(now.year, now.month - i, 1);
+      try {
+        final data = await ApiClient.instance.get(
+          '/families/$fid/finance/monthly-finances/me'
+          '?month=${d.month}&year=${d.year}',
+        );
+        points.add(
+          _MonthPoint(
+            month: d.month,
+            income: _parseNum(data, 'expectedIncome') ?? 0,
+            expense: _parseNum(data, 'expectedPersonalExpense') ?? 0,
+            contribution: _parseNum(data, 'expectedSharedContribution') ?? 0,
+          ),
+        );
+      } catch (_) {
+        points.add(
+          _MonthPoint(month: d.month, income: 0, expense: 0, contribution: 0),
+        );
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _history = points;
+        _loadingHistory = false;
+      });
+    }
+  }
+
+  Widget _monthlyChart() {
+    if (_history.isEmpty) {
+      return SizedBox(
+        height: 110,
+        child: Center(
+          child: _loadingHistory
+              ? const CircularProgressIndicator(strokeWidth: 2)
+              : Text(
+                  'Chưa có dữ liệu',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: context.colors.textMuted,
+                  ),
+                ),
+        ),
+      );
+    }
+    double maxV = 1;
+    for (final p in _history) {
+      maxV = [
+        maxV,
+        p.income,
+        p.expense,
+        p.contribution,
+      ].reduce((a, b) => a > b ? a : b);
+    }
+    return Column(
+      children: [
+        SizedBox(
+          height: 108,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: _history
+                .map(
+                  (p) => Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            _chartBar(p.income / maxV, AppColors.calTravel),
+                            const SizedBox(width: 3),
+                            _chartBar(p.expense / maxV, AppColors.link),
+                            const SizedBox(width: 3),
+                            _chartBar(
+                              p.contribution / maxV,
+                              AppColors.accent500,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          'T${p.month}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: context.colors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 14,
+          runSpacing: 6,
+          children: [
+            _legend(AppColors.calTravel, 'Thu nhập'),
+            _legend(AppColors.link, 'Chi tiêu'),
+            _legend(AppColors.accent500, 'Đóng góp quỹ'),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _chartBar(double frac, Color color) => Container(
+    width: 8,
+    height: frac.clamp(0.0, 1.0) * 88,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+    ),
+  );
+
+  Widget _legend(Color color, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 9,
+        height: 9,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(
+        label,
+        style: GoogleFonts.inter(fontSize: 11, color: context.colors.textMuted),
+      ),
+    ],
+  );
 
   static double? _parseNum(dynamic data, String key) {
     if (data is! Map) return null;
@@ -122,17 +282,213 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     return buf.toString();
   }
 
+  // Một dòng trong thẻ "Tổng quan tháng" (trên nền gradient rose).
+  Widget _overviewRow(IconData icon, String label, double? value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: GoogleFonts.inter(fontSize: 12.5, color: Colors.white70),
+            ),
+          ],
+        ),
+        Text(
+          value != null ? '${_fmtNum(value)} ₫' : '—',
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _overviewDivider() =>
+      const Divider(height: 1, color: Colors.white24);
+
+  Widget _moneyField(
+    TextEditingController ctrl,
+    String label,
+    IconData icon,
+  ) => TextField(
+    controller: ctrl,
+    keyboardType: TextInputType.number,
+    inputFormatters: [ThousandsSeparatorInputFormatter()],
+    decoration: InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, size: 20),
+      suffixText: '₫',
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+  );
+
+  // Form khai báo/cập nhật tài chính tháng. Ràng buộc: chi tiêu dự đoán +
+  // đóng góp quỹ KHÔNG vượt thu nhập tháng (chốt theo team).
+  Future<void> _showDeclareSheet() async {
+    final incomeCtrl = TextEditingController(
+      text: _income != null ? _fmtNum(_income!) : '',
+    );
+    final expenseCtrl = TextEditingController(
+      text: _allowance != null ? _fmtNum(_allowance!) : '',
+    );
+    final contribCtrl = TextEditingController(
+      text: _sharedContribution != null ? _fmtNum(_sharedContribution!) : '',
+    );
+    String? error;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (sheetCtx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(sheetCtx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.edit_calendar_outlined, color: AppColors.link),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Tài chính tháng ${DateTime.now().month}/${DateTime.now().year}',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: context.colors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Chi tiêu dự đoán + đóng góp quỹ không được vượt thu nhập tháng.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: context.colors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _moneyField(incomeCtrl, 'Thu nhập tháng', Icons.arrow_upward_rounded),
+              const SizedBox(height: 12),
+              _moneyField(
+                expenseCtrl,
+                'Chi tiêu dự đoán',
+                Icons.arrow_downward_rounded,
+              ),
+              const SizedBox(height: 12),
+              _moneyField(
+                contribCtrl,
+                'Đóng góp quỹ chung (tùy chọn)',
+                Icons.savings_outlined,
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      size: 16,
+                      color: AppColors.sos,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        error!,
+                        style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.sos,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.link,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () async {
+                    final income = parseMoneyInput(incomeCtrl.text);
+                    final expense = parseMoneyInput(expenseCtrl.text);
+                    final contrib = parseMoneyInput(contribCtrl.text);
+                    if (income <= 0) {
+                      setSheet(() => error = 'Vui lòng nhập thu nhập tháng.');
+                      return;
+                    }
+                    if (expense + contrib > income) {
+                      setSheet(
+                        () => error =
+                            'Chi tiêu (${_fmtNum(expense)}) + đóng góp '
+                            '(${_fmtNum(contrib)}) vượt thu nhập '
+                            '(${_fmtNum(income)}) ₫.',
+                      );
+                      return;
+                    }
+                    try {
+                      await context.read<AuthProvider>().saveMonthlyFinance(
+                        expectedIncome: income,
+                        expectedExpense: expense,
+                        expectedSharedContribution: contrib > 0 ? contrib : null,
+                      );
+                      if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                      await _fetchMonthlyFinance();
+                    } catch (e) {
+                      setSheet(
+                        () => error = e.toString().replaceFirst(
+                          'Exception: ',
+                          '',
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(
+                    'Lưu',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _onRefresh() async {
-    await Future.wait([
-      _fetchMonthlyFinance(),
-      context.read<WalletProvider>().fetchWallets(),
-    ]);
+    await Future.wait([_fetchMonthlyFinance(), _fetchHistory()]);
   }
 
   @override
   Widget build(BuildContext context) {
     context.watch<AuthProvider>(); // rebuild khi auth thay đổi
-    final wallet = context.watch<WalletProvider>();
 
     final spent = _actualSpent ?? 0;
     final allowance = _allowance ?? 0;
@@ -153,8 +509,14 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               const SizedBox(height: 20),
               Row(
                 children: [
+                  Icon(
+                    Icons.account_balance_wallet_outlined,
+                    size: 24,
+                    color: context.colors.textPrimary,
+                  ),
+                  const SizedBox(width: 8),
                   Text(
-                    '💰 Sổ thu chi của tôi',
+                    'Tài chính của tôi',
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -193,94 +555,102 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Số dư hiện tại',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: Colors.white70,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    // Balance vẫn mock — chưa có API
-                    Text(
-                      '— ₫',
-                      style: GoogleFonts.inter(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Số dư thực chưa có API',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Colors.white38,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
                     Row(
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Đã tiêu tháng này',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.white54,
-                                ),
-                              ),
-                              Text(
-                                _actualSpent != null
-                                    ? '${_fmtNum(_actualSpent!)} ₫'
-                                    : '—',
-                                style: GoogleFonts.inter(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
+                        const Icon(
+                          Icons.pie_chart_outline_rounded,
+                          size: 16,
+                          color: Colors.white70,
                         ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Hạn mức tháng',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.white54,
-                                ),
-                              ),
-                              _loadingFinance
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Text(
-                                      hasData
-                                          ? '${_fmtNum(_allowance!)} ₫'
-                                          : 'Chưa khai báo',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                            ],
+                        const SizedBox(width: 6),
+                        Text(
+                          'Tổng quan tháng ${DateTime.now().month}/${DateTime.now().year}',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white70,
                           ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    _overviewRow(
+                      Icons.arrow_upward_rounded,
+                      'Thu nhập',
+                      _income,
+                    ),
+                    _overviewDivider(),
+                    _overviewRow(
+                      Icons.arrow_downward_rounded,
+                      'Chi tiêu dự đoán',
+                      _allowance,
+                    ),
+                    _overviewDivider(),
+                    _overviewRow(
+                      Icons.savings_outlined,
+                      'Đóng góp quỹ chung',
+                      _sharedContribution,
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.only(top: 12),
+                      decoration: const BoxDecoration(
+                        border: Border(top: BorderSide(color: Colors.white24)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Còn lại dự kiến',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            _hasDeclared
+                                ? '${_fmtNum((_income ?? 0) - (_allowance ?? 0) - (_sharedContribution ?? 0))} ₫'
+                                : 'Chưa khai báo',
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _showDeclareSheet,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.link,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  icon: Icon(
+                    _hasDeclared ? Icons.edit_outlined : Icons.add_rounded,
+                    color: Colors.white,
+                  ),
+                  label: Text(
+                    _hasDeclared
+                        ? 'Cập nhật tài chính tháng'
+                        : 'Khai báo tài chính tháng',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -289,15 +659,9 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.white,
+                  color: context.colors.surface,
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 20,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  border: Border.all(color: context.colors.divider),
                 ),
                 child: hasData
                     ? Row(
@@ -324,7 +688,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                     style: GoogleFonts.inter(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800,
-                                      color: AppColors.textPrimary,
+                                      color: context.colors.textPrimary,
                                     ),
                                   ),
                                 ],
@@ -338,12 +702,12 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                               children: [
                                 Text(
                                   isOver
-                                      ? 'Đã vượt hạn mức!'
-                                      : 'Đã tiêu ${(pct * 100).round()}% hạn mức',
+                                      ? 'Đã chi vượt dự đoán'
+                                      : 'Đã chi ${(pct * 100).round()}% dự đoán',
                                   style: GoogleFonts.inter(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
+                                    color: context.colors.textPrimary,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -352,7 +716,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                   ' · ${isOver ? 'Vượt ${_fmtNum(-remaining)} ₫' : 'Còn ${_fmtNum(remaining)} ₫'}',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
-                                    color: AppColors.textSecondary,
+                                    color: context.colors.textSecondary,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -362,28 +726,49 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: isOver
-                                        ? const Color(0xFFFEE2E2)
-                                        : isSafe
-                                        ? const Color(0xFFDCFCE7)
-                                        : const Color(0xFFFFF7ED),
+                                    color:
+                                        (isOver
+                                                ? AppColors.danger
+                                                : isSafe
+                                                ? AppColors.safe
+                                                : AppColors.accent500)
+                                            .withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
-                                  child: Text(
-                                    isOver
-                                        ? '🔴 Vượt ngưỡng an toàn'
-                                        : isSafe
-                                        ? '✅ Trong ngưỡng an toàn'
-                                        : '⚠️ Gần đến hạn mức',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: isOver
-                                          ? AppColors.danger
-                                          : isSafe
-                                          ? AppColors.safe
-                                          : AppColors.accent500,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isOver
+                                            ? Icons.error_outline_rounded
+                                            : isSafe
+                                            ? Icons.check_circle_outline_rounded
+                                            : Icons.warning_amber_rounded,
+                                        size: 13,
+                                        color: isOver
+                                            ? AppColors.danger
+                                            : isSafe
+                                            ? AppColors.safe
+                                            : AppColors.accent500,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        isOver
+                                            ? 'Vượt dự đoán'
+                                            : isSafe
+                                            ? 'Trong dự đoán'
+                                            : 'Gần chạm dự đoán',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: isOver
+                                              ? AppColors.danger
+                                              : isSafe
+                                              ? AppColors.safe
+                                              : AppColors.accent500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -407,7 +792,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     ),
                   ),
                   onPressed: () => _showRequestMoneyDialog(context),
-                  icon: const Text('💸', style: TextStyle(fontSize: 18)),
+                  icon: const Icon(
+                    Icons.volunteer_activism_outlined,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   label: Text(
                     'Xin tiền từ Trưởng/Phó nhóm',
                     style: GoogleFonts.inter(
@@ -425,11 +814,17 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
 
               const SizedBox(height: 24),
 
-              // ── Lịch sử (sổ tài chính chung gia đình) ─────────
+              // ── Lịch sử thu chi theo tháng (6 tháng gần nhất) ──
               Row(
                 children: [
+                  Icon(
+                    Icons.bar_chart_rounded,
+                    size: 18,
+                    color: context.colors.textPrimary,
+                  ),
+                  const SizedBox(width: 8),
                   Text(
-                    'Lịch sử',
+                    'Lịch sử thu chi theo tháng',
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
@@ -437,7 +832,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     ),
                   ),
                   const Spacer(),
-                  if (wallet.isLoading)
+                  if (_loadingHistory)
                     const SizedBox(
                       width: 14,
                       height: 14,
@@ -446,41 +841,36 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                 ],
               ),
               const SizedBox(height: 12),
-
-              if (!wallet.isLoading && wallet.transactions.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  // BE chặn member đọc sổ quỹ chung (403 — chỉ MANAGER/DEPUTY,
-                  // verified live) nên đừng hiện "chưa có giao dịch" gây hiểu lầm
-                  child: Text(
-                    context.watch<AuthProvider>().user?.isAdministrative ==
-                            false
-                        ? 'Sổ quỹ chung chỉ Trưởng/Phó nhóm xem được.\nLịch sử xin tiền của bạn nằm ở mục "Yêu cầu hỗ trợ" phía trên.'
-                        : 'Chưa có giao dịch nào',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: context.colors.textMuted,
-                      height: 1.4,
+              Container(
+                padding: const EdgeInsets.fromLTRB(14, 16, 14, 12),
+                decoration: BoxDecoration(
+                  color: context.colors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: context.colors.divider),
+                ),
+                child: _monthlyChart(),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: context.colors.textMuted,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Số liệu do bạn khai báo mỗi tháng. Quỹ chung chỉ Trưởng/Phó nhóm xem.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: context.colors.textMuted,
+                        height: 1.4,
+                      ),
                     ),
                   ),
-                )
-              else
-                ...wallet.transactions.map((e) => _LedgerCard(entry: e)),
-              if (wallet.hasMoreEntries)
-                Center(
-                  child: TextButton(
-                    onPressed: wallet.isLoadingMoreEntries
-                        ? null
-                        : () =>
-                              context.read<WalletProvider>().fetchMoreEntries(),
-                    child: wallet.isLoadingMoreEntries
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Tải thêm'),
-                  ),
-                ),
+                ],
+              ),
               const SizedBox(height: 40),
             ],
           ),
@@ -499,19 +889,20 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'Chưa khai báo hạn mức tháng',
+          'Chưa khai báo tài chính tháng',
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+            color: context.colors.textPrimary,
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          'Vào Hồ sơ → Tài chính tháng để khai báo\nhạn mức chi tiêu cá nhân.',
+          'Nhấn "Khai báo tài chính tháng" phía trên\n'
+          'để nhập thu nhập và chi tiêu dự đoán.',
           style: GoogleFonts.inter(
             fontSize: 12,
-            color: AppColors.textMuted,
+            color: context.colors.textMuted,
             height: 1.4,
           ),
           textAlign: TextAlign.center,
@@ -540,9 +931,22 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
           ),
-          title: Text(
-            '💸 Xin hỗ trợ chi tiêu',
-            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
+          title: Row(
+            children: [
+              const Icon(
+                Icons.volunteer_activism_outlined,
+                size: 20,
+                color: AppColors.link,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Xin hỗ trợ chi tiêu',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -738,7 +1142,11 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
                         shape: BoxShape.circle,
                       ),
                       alignment: Alignment.center,
-                      child: const Text('📨', style: TextStyle(fontSize: 20)),
+                      child: const Icon(
+                        Icons.mail_outline_rounded,
+                        size: 20,
+                        color: AppColors.link,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -806,102 +1214,17 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
   }
 }
 
-// ── Ledger entry card (GET /finance/ledger/entries) ───────────────────────────
+// ── Điểm dữ liệu 1 tháng cho biểu đồ lịch sử ──────────────────────────────────
 
-class _LedgerCard extends StatelessWidget {
-  final LedgerEntry entry;
-  const _LedgerCard({required this.entry});
-
-  static const _icons = {
-    'INCOME': '💸',
-    'EXPENSE': '🧾',
-    'TRANSFER_IN': '⬇️',
-    'TRANSFER_OUT': '⬆️',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final isPos = entry.signedAmount >= 0;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              _icons[entry.entryType] ?? '💰',
-              style: const TextStyle(fontSize: 22),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.description.isNotEmpty
-                      ? entry.description
-                      : (entry.categoryName ?? 'Giao dịch'),
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  _fmtDate(entry.entryDate),
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: AppColors.textMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${isPos ? '+' : '-'}${_fmtAbs(entry.signedAmount)} ₫',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: isPos ? AppColors.safe : AppColors.textPrimary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _fmtDate(String iso) {
-    final d = DateTime.tryParse(iso);
-    if (d == null) return iso;
-    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
-  }
-
-  static String _fmtAbs(double v) {
-    final s = v.abs().round().toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
+class _MonthPoint {
+  final int month;
+  final double income;
+  final double expense;
+  final double contribution;
+  const _MonthPoint({
+    required this.month,
+    required this.income,
+    required this.expense,
+    required this.contribution,
+  });
 }
