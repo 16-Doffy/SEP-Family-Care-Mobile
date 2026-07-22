@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 const _calendarTaskColor = AppColors.primary500;
 const _calendarEventColor = AppColors.shared;
@@ -40,6 +41,25 @@ class _CalendarScreenState extends State<CalendarScreen> {
   /// tham gia — BE cũng chặn tương ứng, gate ở FE để không hiện nút chết.
   bool get _canManage =>
       context.read<AuthProvider>().user?.canManageCalendar ?? false;
+  bool get _dark => Theme.of(context).brightness == Brightness.dark;
+  Color get _calendarBg => _dark ? _calendarDarkBg : context.colors.background;
+  Color get _calendarSurface =>
+      _dark ? _calendarDarkSurface : context.colors.surface;
+  Color get _calendarSurface2 =>
+      _dark ? _calendarDarkSurface2 : context.colors.inputFill;
+  Color get _calendarText => _dark ? Colors.white : context.colors.textPrimary;
+  Color get _calendarSecondary =>
+      _dark ? Colors.white70 : context.colors.textSecondary;
+  Color get _calendarMuted =>
+      _dark ? Colors.white54 : context.colors.textMuted;
+  Color get _calendarFaint =>
+      _dark ? Colors.white38 : context.colors.textMuted;
+  Color get _calendarBorder => _dark
+      ? Colors.white.withValues(alpha: 0.08)
+      : context.colors.divider;
+  Color _calendarDivider([double alpha = 0.12]) => _dark
+      ? Colors.white.withValues(alpha: alpha)
+      : context.colors.divider.withValues(alpha: 0.9);
 
   @override
   void initState() {
@@ -195,7 +215,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void _showEventDetail(FamilyCalendarEvent event) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: _calendarDarkSurface,
+      backgroundColor: _calendarSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -232,7 +252,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            color: _calendarText,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -274,7 +294,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: _calendarText,
                 ),
               ),
               const SizedBox(height: 10),
@@ -324,14 +344,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: Colors.white54),
+          Icon(icon, size: 18, color: _calendarMuted),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               text,
               style: GoogleFonts.inter(
                 fontSize: 13,
-                color: Colors.white70,
+                color: _calendarSecondary,
                 height: 1.35,
               ),
             ),
@@ -359,7 +379,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       label: Text(label, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
         foregroundColor: selected ? Colors.white : color,
-        backgroundColor: selected ? color : _calendarDarkSurface,
+        backgroundColor: selected ? color : _calendarSurface,
         side: BorderSide(color: color.withValues(alpha: selected ? 1 : 0.45)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -412,7 +432,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: _calendarDarkSurface,
+      backgroundColor: _calendarSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),

@@ -658,7 +658,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                                 ),
                                               ),
                                               Text(
-                                                tx.entryDate,
+                                                tx.displayEntryDate,
                                                 style: GoogleFonts.inter(
                                                   fontSize: 12,
                                                   color: AppColors.textMuted,

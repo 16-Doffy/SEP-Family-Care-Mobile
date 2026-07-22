@@ -64,6 +64,10 @@ class FinanceAlertProvider extends ChangeNotifier {
       _alerts = list
           .whereType<Map<String, dynamic>>()
           .map(FinanceAlert.fromJson)
+          // Màn này là hộp cảnh báo đang hoạt động. BE có thể trả cả lịch sử
+          // RESOLVED khi không truyền filter, nên không đưa các mục đã xử lý
+          // trở lại danh sách sau refresh/recompute.
+          .where((alert) => alert.status != 'RESOLVED')
           .toList();
     } catch (e) {
       _error = e.toString();

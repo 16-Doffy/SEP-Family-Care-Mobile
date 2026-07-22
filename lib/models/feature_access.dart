@@ -29,6 +29,12 @@ class FeatureAccess {
     aliases: const ['calendarRecurringEvents'],
   );
 
+  bool get albumFaceSuggestions =>
+      flag('album.faceSuggestions', aliases: const ['albumFaceSuggestions']);
+
+  bool get albumVideoUpload =>
+      flag('album.videoUpload', aliases: const ['albumVideoUpload']);
+
   bool get aiEnabled => flag('ai.enabled', aliases: const ['aiEnabled']);
   bool get advancedFinance =>
       flag('finance.advanced', aliases: const ['advancedFinance']);

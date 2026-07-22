@@ -105,6 +105,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       body: n.body,
       isSos: n.type == 'SOS',
       payload: '${n.referenceType ?? ''}|${n.referenceId ?? ''}',
+      badgeNumber: _notif?.unreadCount,
     );
     final messenger = ScaffoldMessenger.of(context);
     final role = context.read<AuthProvider>().user?.role;

@@ -11,9 +11,11 @@ import '../../providers/album_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
 import 'album_face_section.dart';
 import 'album_people_screen.dart';
+import 'face_suggestions_sheet.dart';
 
 typedef _AlbumStatusBadgeBuilder =
     Widget Function(AlbumModerationStatus status);
@@ -38,11 +40,26 @@ class _AlbumScreenState extends State<AlbumScreen> {
   _PhotoHomeTab _tab = _PhotoHomeTab.library;
   final Set<String> _pinnedIds = {};
 
+  bool get _dark => Theme.of(context).brightness == Brightness.dark;
+  Color get _photoBackground =>
+      _dark ? Colors.black : context.colors.background;
+  Color get _photoSurface => _dark ? const Color(0xFF1C1C1E) : AppColors.white;
+  Color get _photoChrome =>
+      _dark ? const Color(0xFF1F1F1F) : AppColors.white;
+  Color get _photoText => _dark ? Colors.white : AppColors.textPrimary;
+  Color get _photoSecondary =>
+      _dark ? Colors.white70 : AppColors.textSecondary;
+  Color get _photoMuted => _dark ? Colors.white54 : AppColors.textMuted;
+  Color get _photoBorder => _dark
+      ? Colors.white.withValues(alpha: 0.08)
+      : AppColors.progressTrack.withValues(alpha: 0.9);
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AlbumProvider>().fetchMedia();
+      context.read<AlbumProvider>().fetchFeatureAccess();
       context.read<FamilyProvider>().fetchMembers();
       _startPolling();
     });
@@ -73,6 +90,11 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   Future<void> _pickAndUpload(ImageSource source, {required bool video}) async {
+    final album = context.read<AlbumProvider>();
+    if (video && !album.canUploadVideo) {
+      _snack(Exception('Gói hiện tại chưa hỗ trợ tải video lên album.'));
+      return;
+    }
     final picker = ImagePicker();
     final file = video
         ? await picker.pickVideo(source: source)
@@ -236,10 +258,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
         context.watch<AuthProvider>().user?.role == UserRole.manager;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: _photoBackground,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        backgroundColor: _photoBackground,
+        foregroundColor: _photoText,
         elevation: 0,
         title: const SizedBox.shrink(),
         actions: [
@@ -473,8 +495,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
   Widget _filterMenu(AlbumProvider album) {
     return PopupMenuButton<String>(
       tooltip: 'Lọc ảnh',
-      color: AppColors.white,
-      icon: const Icon(Icons.tune_rounded),
+      color: _photoSurface,
+      icon: Icon(Icons.tune_rounded, color: _photoText),
       onSelected: (value) {
         switch (value) {
           case 'photo':
@@ -503,9 +525,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
     return Center(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFF1F1F1F).withValues(alpha: 0.92),
+          color: _photoChrome.withValues(alpha: _dark ? 0.92 : 0.96),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: _photoBorder),
         ),
         child: Padding(
           padding: const EdgeInsets.all(4),
@@ -545,7 +567,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
           color: selected
-              ? Colors.white.withValues(alpha: 0.16)
+              ? (_dark
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : AppColors.link.withValues(alpha: 0.10))
               : Colors.transparent,
           borderRadius: BorderRadius.circular(999),
         ),
@@ -555,7 +579,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             Icon(
               icon,
               size: 20,
-              color: selected ? AppColors.link : Colors.white,
+              color: selected ? AppColors.link : _photoText,
             ),
             const SizedBox(width: 7),
             Text(
@@ -563,7 +587,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               style: GoogleFonts.inter(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
-                color: selected ? AppColors.link : Colors.white,
+                color: selected ? AppColors.link : _photoText,
               ),
             ),
           ],
@@ -574,8 +598,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Widget _libraryBody(AlbumProvider album, bool isAdmin) {
     if (album.loading && album.items.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(color: Colors.white),
+      return Center(
+        child: CircularProgressIndicator(color: _photoText),
       );
     }
     if (album.error != null && album.items.isEmpty) {
@@ -586,7 +610,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           Icon(
             Icons.cloud_off_outlined,
             size: 42,
-            color: Colors.white.withValues(alpha: 0.7),
+            color: _photoSecondary,
           ),
           const SizedBox(height: 12),
           Center(
@@ -594,7 +618,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               'Không tải được ảnh',
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: _photoText,
               ),
             ),
           ),
@@ -604,7 +628,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             child: Text(
               album.error!,
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+              style: GoogleFonts.inter(fontSize: 12, color: _photoSecondary),
             ),
           ),
         ],
@@ -616,10 +640,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
         children: [
           _libraryHeader(album.items.length),
           const SizedBox(height: 130),
-          const Icon(
+          Icon(
             Icons.photo_library_outlined,
             size: 48,
-            color: Colors.white70,
+            color: _photoSecondary,
           ),
           const SizedBox(height: 12),
           Center(
@@ -627,7 +651,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               'Chưa có ảnh nào',
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w700,
-                color: Colors.white,
+                color: _photoText,
               ),
             ),
           ),
@@ -635,7 +659,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           Center(
             child: Text(
               'Tải ảnh/video gia đình lên để bắt đầu.',
-              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+              style: GoogleFonts.inter(fontSize: 12, color: _photoSecondary),
             ),
           ),
         ],
@@ -685,7 +709,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               fontSize: 36,
               height: 1,
               fontWeight: FontWeight.w900,
-              color: Colors.white,
+              color: _photoText,
             ),
           ),
           const SizedBox(height: 8),
@@ -696,7 +720,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: Colors.white.withValues(alpha: 0.82),
+              color: _photoSecondary,
             ),
           ),
         ],
@@ -715,7 +739,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             style: GoogleFonts.inter(
               fontSize: 15,
               fontWeight: FontWeight.w900,
-              color: Colors.white,
+              color: _photoText,
             ),
           ),
           const SizedBox(height: 3),
@@ -725,7 +749,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: Colors.white.withValues(alpha: 0.62),
+              color: _photoMuted,
             ),
           ),
         ],
@@ -735,10 +759,10 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Widget _loadMoreIndicator(AlbumProvider album) {
     album.fetchMedia(refresh: false);
-    return const Padding(
+    return Padding(
       padding: EdgeInsets.fromLTRB(0, 16, 0, 124),
       child: Center(
-        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+        child: CircularProgressIndicator(color: _photoText, strokeWidth: 2),
       ),
     );
   }
@@ -764,7 +788,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 fontSize: 36,
                 height: 1,
                 fontWeight: FontWeight.w900,
-                color: Colors.white,
+                color: _photoText,
               ),
             ),
           ),
@@ -897,14 +921,14 @@ class _AlbumScreenState extends State<AlbumScreen> {
                             style: GoogleFonts.inter(
                               fontSize: 22,
                               fontWeight: FontWeight.w900,
-                              color: Colors.white,
+                              color: _photoText,
                             ),
                           ),
                         ),
                         if (onOpen != null)
-                          const Icon(
+                          Icon(
                             Icons.chevron_right_rounded,
-                            color: Colors.white,
+                            color: _photoText,
                             size: 26,
                           ),
                       ],
@@ -921,7 +945,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.14),
+                      color: _dark
+                          ? Colors.white.withValues(alpha: 0.14)
+                          : AppColors.link.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -929,7 +955,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white70,
+                        color: _photoMuted,
                       ),
                     ),
                   ),
@@ -1037,9 +1063,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Widget _collectionCardFallback(IconData icon) {
     return Container(
-      color: const Color(0xFF3F3F46),
+      color: _dark ? const Color(0xFF3F3F46) : const Color(0xFFE5E7EB),
       alignment: Alignment.center,
-      child: Icon(icon, color: Colors.white54, size: 38),
+      child: Icon(icon, color: _photoMuted, size: 38),
     );
   }
 
@@ -1261,6 +1287,26 @@ class _AlbumScreenState extends State<AlbumScreen> {
             );
           },
         ),
+        if (!media.isVideo)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(
+              context.read<AlbumProvider>().canUseFaceSuggestions
+                  ? Icons.face_retouching_natural_outlined
+                  : Icons.lock_outline_rounded,
+              color: AppColors.textSecondary,
+            ),
+            title: const Text('Gợi ý khuôn mặt AI'),
+            subtitle: Text(
+              context.read<AlbumProvider>().canUseFaceSuggestions
+                  ? 'Quét ảnh, xem và xử lý gợi ý tag'
+                  : 'Tính năng này cần gói có Face Suggestion',
+            ),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              _showFaceSuggestions(media);
+            },
+          ),
         if (isAdmin && media.canManualReview)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -1481,6 +1527,18 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showFaceSuggestions(AlbumMedia media) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => FaceSuggestionsSheet(mediaId: media.id),
     );
   }
 
@@ -1721,7 +1779,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: context.colors.background,
       body: Stack(
         children: [
           PageView.builder(
@@ -1757,7 +1815,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                 tooltip: 'Đóng',
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.arrow_back_rounded),
-                color: Colors.white,
+                color: context.colors.textPrimary,
               ),
               Expanded(
                 child: Text(
@@ -1765,16 +1823,16 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    color: Colors.white,
+                    color: context.colors.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
               if (media.isVideo)
-                const Icon(
+                Icon(
                   Icons.play_circle_fill_rounded,
-                  color: Colors.white,
+                  color: context.colors.textPrimary,
                   size: 24,
                 ),
             ],
@@ -1793,8 +1851,8 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
         final media = _media;
         final loading = _loadingIds.contains(media.id);
         return DecoratedBox(
-          decoration: const BoxDecoration(
-            color: AppColors.white,
+          decoration: BoxDecoration(
+            color: context.colors.surface,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
           child: SafeArea(
@@ -1808,7 +1866,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD1D5DB),
+                      color: context.colors.divider,
                       borderRadius: BorderRadius.circular(999),
                     ),
                   ),
@@ -1825,7 +1883,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: context.colors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1833,7 +1891,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                   '${media.uploaderName} · ${_fmtDate(media.createdAt)} · ${_scopeLabel(media.visibilityScope)}',
                   style: GoogleFonts.inter(
                     fontSize: 12,
-                    color: AppColors.textMuted,
+                    color: context.colors.textMuted,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1867,9 +1925,9 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
       label: Text('@${tag.taggedMemberName}'),
       labelStyle: GoogleFonts.inter(
         fontSize: 11,
-        color: AppColors.textSecondary,
+        color: context.colors.textSecondary,
       ),
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: context.colors.inputFill,
       deleteIcon: tag.canRemove
           ? const Icon(Icons.close_rounded, size: 16)
           : null,
@@ -1949,8 +2007,8 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
       future: future,
       builder: (_, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.white),
+          return Center(
+            child: CircularProgressIndicator(color: context.colors.textPrimary),
           );
         }
         final url = snap.data;
@@ -1998,7 +2056,7 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
       child: Center(
         child: Icon(
           widget.media.isVideo ? Icons.movie_outlined : Icons.image_outlined,
-          color: Colors.white70,
+          color: context.colors.textSecondary,
           size: 52,
         ),
       ),

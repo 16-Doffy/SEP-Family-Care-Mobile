@@ -125,18 +125,36 @@ class _BudgetPlanReportTabState extends State<_BudgetPlanReportTab> {
 
   @override
   Widget build(BuildContext context) {
-    final plans = context.watch<FinanceProvider>().budgetPlans;
+    final allPlans = context.watch<FinanceProvider>().budgetPlans;
+    // Báo cáo của plan CLOSED vẫn có giá trị lịch sử. Plan CANCELED chưa từng
+    // là kế hoạch áp dụng hợp lệ nên không làm nhiễu dropdown báo cáo mặc định.
+    final plans = allPlans
+        .where((plan) => plan.status != 'CANCELED')
+        .toList()
+      ..sort((a, b) {
+        if (a.status == 'ACTIVE' && b.status != 'ACTIVE') return -1;
+        if (a.status != 'ACTIVE' && b.status == 'ACTIVE') return 1;
+        return b.periodStart.compareTo(a.periodStart);
+      });
     if (plans.isEmpty) {
       return Center(
         child: Text('Chưa có kế hoạch ngân sách nào',
             style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
       );
     }
-    _selectedPlanId ??= plans.first.id;
+    if (_selectedPlanId == null ||
+        !plans.any((plan) => plan.id == _selectedPlanId)) {
+      _selectedPlanId = plans.first.id;
+    }
 
     return ListView(children: [
       _card(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            'So sánh số tiền đã đặt kế hoạch với giao dịch thực tế.',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 12),
           Text('Chọn kế hoạch', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
@@ -145,7 +163,17 @@ class _BudgetPlanReportTabState extends State<_BudgetPlanReportTab> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             ),
-            items: plans.map((p) => DropdownMenuItem(value: p.id, child: Text(p.planName, overflow: TextOverflow.ellipsis))).toList(),
+            items: plans
+                .map(
+                  (plan) => DropdownMenuItem(
+                    value: plan.id,
+                    child: Text(
+                      '${plan.planName} · ${plan.statusLabel}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
             onChanged: (v) {
               if (v == null) return;
               setState(() => _selectedPlanId = v);
@@ -169,7 +197,7 @@ class _BudgetPlanReportTabState extends State<_BudgetPlanReportTab> {
       if (_error != null)
         _card(child: Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))),
       if (_report != null)
-        _card(child: JsonReportView(data: _report)),
+        _card(child: JsonReportView(data: _report, financeReportMode: true)),
     ]);
   }
 }
@@ -211,6 +239,12 @@ class _NonEssentialSpendingTabState extends State<_NonEssentialSpendingTab> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(children: [
+        _card(
+          child: Text(
+            'Cho biết trong tháng có bao nhiêu tiền được chi cho các danh mục đã đánh dấu “Không thiết yếu”.',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ),
         if (_error != null)
           _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
@@ -218,7 +252,7 @@ class _NonEssentialSpendingTabState extends State<_NonEssentialSpendingTab> {
             TextButton(onPressed: _load, child: const Text('Thử lại')),
           ]))
         else if (_report != null)
-          _card(child: JsonReportView(data: _report)),
+          _card(child: JsonReportView(data: _report, financeReportMode: true)),
       ]),
     );
   }
@@ -261,6 +295,12 @@ class _BudgetGoalReportTabState extends State<_BudgetGoalReportTab> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(children: [
+        _card(
+          child: Text(
+            'Theo dõi từng mục tiêu tiết kiệm: đã góp, còn thiếu, tiến độ và số tiền nên góp mỗi tháng để kịp hạn.',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ),
         if (_error != null)
           _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
@@ -268,7 +308,7 @@ class _BudgetGoalReportTabState extends State<_BudgetGoalReportTab> {
             TextButton(onPressed: _load, child: const Text('Thử lại')),
           ]))
         else if (_report != null)
-          _card(child: JsonReportView(data: _report)),
+          _card(child: JsonReportView(data: _report, financeReportMode: true)),
       ]),
     );
   }

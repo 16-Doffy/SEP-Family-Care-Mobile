@@ -114,6 +114,8 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET/PATCH .../moderation` (xem/duyệt tay: `ManualModerationReviewDto {decision: MARK_SAFE | KEEP_FLAGGED, reviewNote}` — cả 2 field bắt buộc) · `POST .../moderation/retry`
 - `GET /albums/moderation` — **hàng đợi kiểm duyệt toàn gia đình** (Manager/Deputy), item kèm `latestModeration {resultStatus, riskScore, summary}` (AI heuristic) + `fileAccess {url}` (signed URL hết hạn). Wire: `fetchModerationQueue` + sheet 🛡️ trên AppBar Album.
 - File URL là **signed URL có hạn** (`expiresInSeconds`) — không cache lâu.
+- **[MỚI 2026-07-21, wire FE] Face Profile:** `POST /face-profiles/{memberId}/enroll` là multipart field `files` (Swagger bắt buộc **3–5** ảnh) + `consentConfirmed=true`; `GET /face-profiles/{memberId}` lấy trạng thái; `PATCH .../disable|enable`; `DELETE ...` body `{confirmation: 'DELETE_FACE_PROFILE'}`. UI: Member Detail → Face Profile.
+- **[MỚI 2026-07-21, wire FE] Face Suggestion:** `POST /albums/media/{mediaId}/face-scan {force?}`; `GET .../face-suggestions`; `POST .../{suggestionId}/confirm|reject`. FE chỉ tạo tag sau confirm; manual tag độc lập. `album.faceSuggestions` được gate theo subscription khi BE trả featureAccess đầy đủ.
 
 ### Finance — Model & Jars
 - `GET /api/v1/families/{familyId}/finance/model-templates` — Mẫu có sẵn: `FIVE_JARS`, `EIGHTY_TWENTY`, `CUSTOM` (constant, không lưu DB). **[wire FE 2026-07-08]** nút ℹ️ trong `FinanceModelScreen` (info sheet, không đổi luồng chọn mô hình — UI đã hardcode đúng theo mẫu này từ trước).

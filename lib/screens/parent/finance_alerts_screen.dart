@@ -66,21 +66,36 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
                 ),
                 const SizedBox(width: 8),
               ],
-              GestureDetector(
-                onTap: () => _recompute(context, provider),
-                child: Container(
-                  width: 40, height: 40,
-                  decoration: BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)
-                      ]),
-                  child: const Icon(Icons.autorenew_rounded,
-                      size: 18, color: AppColors.textPrimary),
+              const SizedBox(width: 40),
+            ]),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: SizedBox(
+              width: double.infinity,
+              height: 42,
+              child: OutlinedButton.icon(
+                onPressed: provider.loading
+                    ? null
+                    : () => _recompute(context, provider),
+                icon: const Icon(Icons.autorenew_rounded, size: 18),
+                label: Text(
+                  'Tính lại cảnh báo từ dữ liệu hiện tại',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.link,
+                  side: const BorderSide(color: AppColors.link),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-            ]),
+            ),
           ),
 
           Expanded(
@@ -224,9 +239,59 @@ class _AlertCard extends StatelessWidget {
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     padding: const EdgeInsets.symmetric(vertical: 8)),
-                onPressed: () => provider.resolve(alert.id),
-                child: Text('Đã xử lý',
-                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                onPressed: () => _confirmResolve(context),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('Đánh dấu đã xử lý',
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                ),
+              ),
+            ),
+          ]),
+        ] else if (alert.status == 'ACKNOWLEDGED') ...[
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: Container(
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '✓ Đã xem',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+                onPressed: () => _confirmResolve(context),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'Đánh dấu đã xử lý',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               ),
             ),
           ]),
@@ -244,6 +309,40 @@ class _AlertCard extends StatelessWidget {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
       builder: (ctx) => _AlertDetailSheet(alertId: alert.id),
     );
+  }
+
+  Future<void> _confirmResolve(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          'Đánh dấu đã xử lý?',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Thao tác này không thay đổi khoản thu, khoản chi hoặc mục tiêu. '
+          'Nếu số liệu vẫn vượt ngưỡng, khi tính lại cảnh báo có thể xuất hiện lại.',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Quay lại'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Đánh dấu'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await provider.resolve(alert.id);
+    }
   }
 
   static Color _severityColor(String s) => switch (s) {
@@ -321,7 +420,10 @@ class _AlertDetailSheetState extends State<_AlertDetailSheet> {
         else if (_error != null)
           Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))
         else
-          JsonReportView(data: _detail ?? {}),
+          JsonReportView(
+            data: _detail ?? {},
+            financeReportMode: true,
+          ),
       ]),
     );
   }

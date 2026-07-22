@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
+import '../../widgets/money_input.dart';
 
 class FinancialGoalScreen extends StatefulWidget {
   const FinancialGoalScreen({super.key});
@@ -25,7 +26,7 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
     final s = v.round().toString();
     final buf = StringBuffer();
     for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
       buf.write(s[i]);
     }
     return '${buf.toString()} ₫';
@@ -118,7 +119,7 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
         ]),
         if (goal.deadline != null) ...[
           const SizedBox(height: 4),
-          Text('Hạn: ${goal.deadline}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+          Text('Hạn: ${_formatDate(goal.deadline!)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
         ],
         const SizedBox(height: 12),
         ClipRRect(
@@ -131,8 +132,11 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
           ),
         ),
         const SizedBox(height: 6),
-        Text('${(pct * 100).round()}% · Mục tiêu ${_fmt(goal.targetAmount)}', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-        if (goal.status == 'ACTIVE') ...[
+        Text(
+          'Đã góp ${_fmt(goal.displayCurrentAmount ?? 0)} / ${_fmt(goal.targetAmount)} · ${(pct * 100).round()}%',
+          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+        ),
+        if (goal.canContribute) ...[
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
@@ -174,6 +178,12 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
     );
   }
 
+  String _formatDate(String value) {
+    final date = DateTime.tryParse(value);
+    if (date == null) return value;
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
   void _showContributeSheet(BuildContext context, FinancialGoal goal) {
     final amountCtrl = TextEditingController();
     bool submitting = false;
@@ -205,8 +215,8 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: submitting ? null : () async {
-                  final amt = double.tryParse(amountCtrl.text.trim());
-                  if (amt == null || amt <= 0) {
+                  final amt = parseMoneyInput(amountCtrl.text);
+                  if (amt <= 0) {
                     setSheet(() => sheetError = 'Nhập số tiền hợp lệ');
                     return;
                   }
@@ -298,8 +308,8 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                 onPressed: submitting ? null : () async {
-                  final target = double.tryParse(targetCtrl.text.trim());
-                  if (nameCtrl.text.trim().isEmpty || target == null || target <= 0) {
+                  final target = parseMoneyInput(targetCtrl.text);
+                  if (nameCtrl.text.trim().isEmpty || target <= 0) {
                     setSheet(() => sheetError = 'Nhập tên và số tiền mục tiêu hợp lệ');
                     return;
                   }
@@ -309,7 +319,9 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
                       goalName: nameCtrl.text.trim(),
                       targetAmount: target,
                       deadline: deadline,
-                      monthlyContributionTarget: double.tryParse(monthlyCtrl.text.trim()),
+                      monthlyContributionTarget: monthlyCtrl.text.trim().isEmpty
+                          ? null
+                          : parseMoneyInput(monthlyCtrl.text),
                     );
                     if (ctx.mounted) Navigator.pop(ctx);
                   } catch (e) {
@@ -333,6 +345,9 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
         child: TextField(
           controller: ctrl,
           keyboardType: keyboardType,
+          inputFormatters: keyboardType == TextInputType.number
+              ? const [ThousandsSeparatorInputFormatter()]
+              : null,
           decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),

@@ -7,7 +7,7 @@ import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
-import '../../widgets/json_report_view.dart';
+import '../../widgets/money_input.dart';
 
 // UC — Kế hoạch đóng góp mục tiêu theo tháng (Financial Goals — lớp
 // contribution sâu). Workflow 3 bước: Manager/Deputy "Xác nhận kế hoạch"
@@ -30,7 +30,6 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
   String? _error;
   List<ContributionSuggestion> _suggestions = [];
   List<GoalContributionPlan> _plans = [];
-  Map<String, dynamic>? _shortage;
 
   @override
   void initState() {
@@ -48,13 +47,11 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
       final results = await Future.wait([
         provider.fetchContributionSuggestions(widget.goalId, _month, _year),
         provider.fetchContributionPlans(widget.goalId, _month, _year),
-        provider.fetchContributionShortage(widget.goalId, _month, _year),
       ]);
       if (mounted) {
         setState(() {
           _suggestions = results[0] as List<ContributionSuggestion>;
           _plans = results[1] as List<GoalContributionPlan>;
-          _shortage = results[2] as Map<String, dynamic>;
         });
       }
     } catch (e) {
@@ -76,13 +73,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
   }
 
   String _fmt(double v) {
-    final s = v.round().toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-      buf.write(s[i]);
-    }
-    return '${buf.toString()} ₫';
+    return '${ThousandsSeparatorInputFormatter.formatThousands(v.round().toString())} ₫';
   }
 
   @override
@@ -90,6 +81,10 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     final goal = context.watch<FinanceProvider>().goals
         .where((g) => g.id == widget.goalId).firstOrNull;
     final user = context.watch<AuthProvider>().user;
+    final currentMemberId = context.watch<FamilyProvider>().members
+        .where((member) => member.userId == user?.id)
+        .firstOrNull
+        ?.id;
     final canManage = user?.canManageFinance ?? false;
 
     return Scaffold(
@@ -180,13 +175,21 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                         ]),
                       )
                     else
-                      ..._plans.map((p) => _planCard(context, p, user?.id, canManage)),
+                      ..._plans.map(
+                        (p) => _planCard(
+                          context,
+                          p,
+                          user?.id,
+                          currentMemberId,
+                          canManage,
+                        ),
+                      ),
 
                     const SizedBox(height: 16),
 
                     // ── Thiếu hụt ──
                     _sectionLabel('Thiếu hụt tháng này'),
-                    _card(child: JsonReportView(data: _shortage ?? {})),
+                    _shortageCard(),
                   ],
                 ),
               ),
@@ -210,8 +213,78 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
         child: child,
       );
 
-  Widget _planCard(BuildContext context, GoalContributionPlan plan, String? currentUserId, bool canManage) {
-    final isMine = currentUserId != null && plan.memberId == currentUserId;
+  Widget _shortageCard() {
+    if (_plans.isEmpty) {
+      return _card(
+        child: Text(
+          'Chưa có kế hoạch để tính thiếu hụt tháng này.',
+          style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
+        ),
+      );
+    }
+
+    final planned = _plans.fold<double>(
+      0,
+      (total, plan) => total + plan.plannedAmount,
+    );
+    final actual = _plans.fold<double>(
+      0,
+      (total, plan) => total + (plan.actualAmount ?? 0),
+    );
+    final shortage = (planned - actual).clamp(0, double.infinity).toDouble();
+
+    Widget row(String label, double amount, Color color) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(children: [
+            Expanded(
+              child: Text(
+                label,
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+              ),
+            ),
+            Text(
+              _fmt(amount),
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ]),
+        );
+
+    return _card(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(
+          shortage > 0
+              ? 'Cần bổ sung để đủ kế hoạch tháng $_month/$_year'
+              : 'Đã đủ kế hoạch đóng góp tháng này',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        row('Kế hoạch', planned, AppColors.textPrimary),
+        row('Đã được ghi nhận', actual, AppColors.income),
+        row('Còn thiếu', shortage, shortage > 0 ? AppColors.danger : AppColors.success),
+      ]),
+    );
+  }
+
+  Widget _planCard(
+    BuildContext context,
+    GoalContributionPlan plan,
+    String? currentUserId,
+    String? currentMemberId,
+    bool canManage,
+  ) {
+    // Contribution-plan APIs identify a family member by membership record ID,
+    // while some older BE responses expose userId. Accept either shape so the
+    // correct member can submit their own plan.
+    final isMine = plan.memberId == currentMemberId ||
+        plan.memberId == currentUserId;
     return _card(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -294,7 +367,11 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
   }
 
   void _showSubmitSheet(BuildContext context, GoalContributionPlan plan) {
-    final amountCtrl = TextEditingController(text: plan.plannedAmount.round().toString());
+    final amountCtrl = TextEditingController(
+      text: ThousandsSeparatorInputFormatter.formatThousands(
+        plan.plannedAmount.round().toString(),
+      ),
+    );
     final noteCtrl = TextEditingController();
     bool submitting = false;
     String? sheetError;
@@ -326,8 +403,8 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 onPressed: submitting ? null : () async {
-                  final amt = double.tryParse(amountCtrl.text.trim());
-                  if (amt == null || amt <= 0) {
+                  final amt = parseMoneyInput(amountCtrl.text);
+                  if (amt <= 0) {
                     setSheet(() => sheetError = 'Nhập số tiền hợp lệ');
                     return;
                   }
@@ -356,11 +433,20 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
 
   void _showConfirmPlanSheet(BuildContext context) {
     final members = context.read<FamilyProvider>().members.where((m) => m.isActive).toList();
-    final amountCtrls = {for (final m in members) m.userId: TextEditingController()};
+    // `members[].memberId` in ConfirmGoalContributionPlanDto is the
+    // FamilyMember membership record ID, not the nested User ID. Sending
+    // userId makes BE fail with "Không tìm thấy thành viên đang hoạt động".
+    final amountCtrls = {for (final m in members) m.id: TextEditingController()};
     // Prefill từ gợi ý nếu có
     for (final s in _suggestions) {
-      if (amountCtrls.containsKey(s.memberId) && s.suggestedAmount > 0) {
-        amountCtrls[s.memberId]!.text = s.suggestedAmount.round().toString();
+      final member = members.where(
+        (m) => m.id == s.memberId || m.userId == s.memberId,
+      ).firstOrNull;
+      if (member != null && s.suggestedAmount > 0) {
+        amountCtrls[member.id]!.text =
+            ThousandsSeparatorInputFormatter.formatThousands(
+          s.suggestedAmount.round().toString(),
+        );
       }
     }
     DateTime dueDate = DateTime(_year, _month + 1, 0); // cuối tháng
@@ -387,7 +473,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(m.name, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                     const SizedBox(height: 6),
-                    _inputBox(amountCtrls[m.userId]!, 'Số tiền kế hoạch (₫)', keyboardType: TextInputType.number),
+                    _inputBox(amountCtrls[m.id]!, 'Số tiền kế hoạch (₫)', keyboardType: TextInputType.number),
                   ]),
                 )),
               Text('Hạn đóng góp', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
@@ -427,8 +513,10 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                   onPressed: submitting || members.isEmpty ? null : () async {
                     final entries = <({String memberId, double plannedAmount})>[];
                     for (final m in members) {
-                      final amt = double.tryParse(amountCtrls[m.userId]!.text.trim());
-                      if (amt != null && amt > 0) entries.add((memberId: m.userId, plannedAmount: amt));
+                      final amt = parseMoneyInput(amountCtrls[m.id]!.text);
+                      if (amt > 0) {
+                        entries.add((memberId: m.id, plannedAmount: amt));
+                      }
                     }
                     if (entries.isEmpty) {
                       setSheet(() => sheetError = 'Nhập ít nhất 1 số tiền kế hoạch');
@@ -465,6 +553,9 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
         child: TextField(
           controller: ctrl,
           keyboardType: keyboardType,
+          inputFormatters: keyboardType == TextInputType.number
+              ? const [ThousandsSeparatorInputFormatter()]
+              : null,
           decoration: InputDecoration(hintText: hint, border: InputBorder.none, hintStyle: GoogleFonts.inter(color: AppColors.textMuted)),
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
         ),

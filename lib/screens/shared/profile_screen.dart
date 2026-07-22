@@ -128,6 +128,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => context.push('/profile/edit'),
               ),
               _tile(
+                Icons.receipt_long_outlined,
+                'Tài chính tháng của tôi',
+                onTap: () => context.push('/profile/edit'),
+              ),
+              _tile(
                 Icons.lock_outline_rounded,
                 'Bảo mật',
                 onTap: () => context.push('/profile/change-password'),
@@ -238,11 +243,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Icons.photo_library_outlined,
                   'Ảnh gia đình',
                   onTap: () => context.push('/album'),
-                ),
-                _tile(
-                  Icons.receipt_long_outlined,
-                  'Tài chính tháng của tôi',
-                  onTap: () => context.push('/profile/edit'),
                 ),
                 _tile(
                   Icons.request_quote_outlined,

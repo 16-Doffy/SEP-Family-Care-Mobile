@@ -18,6 +18,7 @@ import 'providers/sos_provider.dart';
 import 'providers/family_provider.dart';
 import 'providers/finance_alert_provider.dart';
 import 'providers/finance_provider.dart';
+import 'providers/face_profile_provider.dart';
 import 'providers/invitation_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/support_request_provider.dart';
@@ -41,6 +42,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => FamilyProvider()),
         ChangeNotifierProvider(create: (_) => FinanceAlertProvider()),
         ChangeNotifierProvider(create: (_) => FinanceProvider()),
+        ChangeNotifierProvider(create: (_) => FaceProfileProvider()),
         ChangeNotifierProvider(create: (_) => InvitationProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => SupportRequestProvider()),

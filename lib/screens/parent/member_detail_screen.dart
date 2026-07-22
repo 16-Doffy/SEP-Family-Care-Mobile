@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
+import '../../providers/face_profile_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
@@ -37,10 +39,18 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final family = context.read<FamilyProvider>();
-      if (family.members.isEmpty) family.fetchMembers();
+      if (family.members.isEmpty) {
+        await family.fetchMembers();
+      }
+      if (!mounted) return;
       _fetchFinance();
+      final member = _findMember(family.members);
+      final me = context.read<AuthProvider>().user;
+      if (member != null && (me?.isAdministrative ?? false) && mounted) {
+        await context.read<FaceProfileProvider>().fetch(member.id);
+      }
     });
   }
 
@@ -141,6 +151,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           const SizedBox(height: 14),
                           if (me?.canManageFinance ?? false)
                             _financeCard(member),
+                          if (me?.isAdministrative ?? false) ...[
+                            const SizedBox(height: 14),
+                            _faceProfileCard(member),
+                          ],
                           const SizedBox(height: 14),
                           _blockedCard(),
                         ],
@@ -308,6 +322,310 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         ),
       ),
     );
+  }
+
+  Widget _faceProfileCard(FamilyMember member) {
+    final face = context.watch<FaceProfileProvider>();
+    final current = face.profile?.memberId == member.id ? face.profile : null;
+    final status = current?.status ?? FaceProfileStatus.notEnrolled;
+    final color = switch (status) {
+      FaceProfileStatus.ready => AppColors.success,
+      FaceProfileStatus.processing => AppColors.accent500,
+      FaceProfileStatus.disabled => AppColors.textMuted,
+      FaceProfileStatus.failed => AppColors.danger,
+      _ => AppColors.textSecondary,
+    };
+
+    return _sectionCard(
+      title: 'Face Profile',
+      icon: Icons.face_retouching_natural_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.circle, size: 10, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  current?.label ?? 'Chưa thiết lập',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ),
+              if (face.loading || face.busy)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            current?.message ??
+                'Chọn 3–5 ảnh rõ mặt và xác nhận đồng ý trước khi tạo hồ sơ sinh trắc học.',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              height: 1.4,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          if (face.error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              face.error!,
+              style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: face.busy
+                    ? null
+                    : () => _showEnrollFaceProfile(member),
+                icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+                label: Text(
+                  status == FaceProfileStatus.notEnrolled
+                      ? 'Thiết lập'
+                      : 'Cập nhật ảnh',
+                ),
+              ),
+              if (status == FaceProfileStatus.ready)
+                OutlinedButton.icon(
+                  onPressed: face.busy
+                      ? null
+                      : () => face.setEnabled(member.id, false),
+                  icon: const Icon(Icons.visibility_off_outlined, size: 18),
+                  label: const Text('Tắt'),
+                ),
+              if (status == FaceProfileStatus.disabled)
+                OutlinedButton.icon(
+                  onPressed: face.busy
+                      ? null
+                      : () => face.setEnabled(member.id, true),
+                  icon: const Icon(Icons.visibility_outlined, size: 18),
+                  label: const Text('Bật lại'),
+                ),
+              if (status != FaceProfileStatus.notEnrolled)
+                TextButton.icon(
+                  onPressed: face.busy
+                      ? null
+                      : () => _confirmDeleteFaceProfile(member),
+                  icon: const Icon(
+                    Icons.delete_outline_rounded,
+                    size: 18,
+                    color: AppColors.danger,
+                  ),
+                  label: const Text('Xóa dữ liệu'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEnrollFaceProfile(FamilyMember member) async {
+    final picker = ImagePicker();
+    var paths = <String>[];
+    var consent = false;
+    var submitting = false;
+    String? submitError;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            18,
+            20,
+            MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Thiết lập Face Profile',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Chọn từ 3 đến 5 ảnh chân dung rõ mặt của ${member.name}. Dữ liệu sinh trắc học chỉ dùng để gợi ý tag ảnh và có thể xóa bất cứ lúc nào.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: submitting
+                    ? null
+                    : () async {
+                        final files = await picker.pickMultiImage(
+                          imageQuality: 88,
+                        );
+                        if (!sheetContext.mounted) return;
+                        setSheet(
+                          () =>
+                              paths = files.take(5).map((e) => e.path).toList(),
+                        );
+                      },
+                icon: const Icon(Icons.photo_library_outlined),
+                label: Text(
+                  paths.isEmpty ? 'Chọn ảnh' : 'Đã chọn ${paths.length} ảnh',
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Yêu cầu: 3–5 ảnh. ${paths.length}/5 ảnh đã chọn.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: paths.length >= 3
+                      ? AppColors.success
+                      : AppColors.textMuted,
+                ),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: consent,
+                onChanged: submitting
+                    ? null
+                    : (v) => setSheet(() => consent = v ?? false),
+                title: Text(
+                  'Tôi xác nhận đã có sự đồng ý của thành viên.',
+                  style: GoogleFonts.inter(fontSize: 13),
+                ),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              const SizedBox(height: 8),
+              if (submitError != null) ...[
+                Text(
+                  submitError!,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppColors.danger,
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: !submitting && paths.length >= 3 && consent
+                      ? () async {
+                          setSheet(() {
+                            submitting = true;
+                            submitError = null;
+                          });
+                          try {
+                            await context.read<FaceProfileProvider>().enroll(
+                              member.id,
+                              paths,
+                            );
+                            if (!sheetContext.mounted) return;
+                            Navigator.pop(sheetContext);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Đã gửi ảnh để tạo Face Profile.',
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            debugPrint('Face profile enroll failed: $e');
+                            if (sheetContext.mounted) {
+                              setSheet(
+                                () => submitError = _faceProfileErrorMessage(e),
+                              );
+                            }
+                          } finally {
+                            if (sheetContext.mounted) {
+                              setSheet(() => submitting = false);
+                            }
+                          }
+                        }
+                      : null,
+                  child: submitting
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.white,
+                          ),
+                        )
+                      : const Text('Gửi tạo Face Profile'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _faceProfileErrorMessage(Object error) {
+    final message = error.toString();
+    if (message.toLowerCase().contains('face image is not enrollable')) {
+      return 'Không thể nhận diện khuôn mặt từ ảnh đã chọn. Hãy dùng 3–5 ảnh '
+          'chính diện, đủ sáng, chỉ có một khuôn mặt, không đeo khẩu trang/kính '
+          'râm và khuôn mặt không bị che.';
+    }
+    return message;
+  }
+
+  Future<void> _confirmDeleteFaceProfile(FamilyMember member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa Face Profile?'),
+        content: Text(
+          'Dữ liệu khuôn mặt của ${member.name} sẽ bị xóa và không thể khôi phục.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      try {
+        await context.read<FaceProfileProvider>().delete(member.id);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(e.toString())));
+        }
+      }
+    }
   }
 
   Widget _sectionCard({

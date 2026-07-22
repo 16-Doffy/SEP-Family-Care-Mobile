@@ -8,6 +8,7 @@ import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/money_input.dart';
 
 enum Occupation {
   employed('Đi làm', '💼'),
@@ -106,9 +107,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   // Lưu thu nhập/chi tiêu tháng → POST/PUT /finance/monthly-finances/me
   Future<void> _saveFinance() async {
-    final income = double.tryParse(_incomeCtrl.text.replaceAll(',', ''));
-    final expense = double.tryParse(_expenseCtrl.text.replaceAll(',', ''));
-    final shared = double.tryParse(_sharedCtrl.text.replaceAll(',', ''));
+    final income = _parseOptionalMoney(_incomeCtrl.text);
+    final expense = _parseOptionalMoney(_expenseCtrl.text);
+    final shared = _parseOptionalMoney(_sharedCtrl.text);
     if (income == null && expense == null && shared == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -316,12 +317,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _inputField(
                         ctrl: _incomeCtrl,
                         label: 'Thu nhập dự kiến / tháng (₫)',
-                        hint: 'VD: 10,000,000',
+                        hint: 'VD: 10.000.000',
                         icon: Icons.trending_up_rounded,
                         keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
+                        inputFormatters: const [ThousandsSeparatorInputFormatter()],
                       ),
                       _visibilitySwitch(
                         label: 'Chia sẻ thu nhập với Trưởng/Phó nhóm',
@@ -332,12 +331,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _inputField(
                         ctrl: _expenseCtrl,
                         label: 'Chi tiêu cá nhân dự kiến / tháng (₫)',
-                        hint: 'VD: 3,000,000',
+                        hint: 'VD: 3.000.000',
                         icon: Icons.trending_down_rounded,
                         keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
+                        inputFormatters: const [ThousandsSeparatorInputFormatter()],
                       ),
                       _visibilitySwitch(
                         label: 'Chia sẻ chi tiêu với Trưởng/Phó nhóm',
@@ -348,12 +345,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _inputField(
                         ctrl: _sharedCtrl,
                         label: 'Đóng góp chung dự kiến / tháng (₫)',
-                        hint: 'VD: 1,000,000',
+                        hint: 'VD: 1.000.000',
                         icon: Icons.savings_outlined,
                         keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
+                        inputFormatters: const [ThousandsSeparatorInputFormatter()],
                       ),
                     ],
                   ),
@@ -569,7 +564,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   String _formatInputMoney(double? value) {
     if (value == null) return '';
-    return value.round().toString();
+    return ThousandsSeparatorInputFormatter.formatThousands(
+      value.round().toString(),
+    );
+  }
+
+  double? _parseOptionalMoney(String text) {
+    final digits = text.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.isEmpty ? null : double.tryParse(digits);
   }
 
   Widget _inputField({

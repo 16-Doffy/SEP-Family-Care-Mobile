@@ -32,13 +32,13 @@ class AppSurfaceColors extends ThemeExtension<AppSurfaceColors> {
   );
 
   static const dark = AppSurfaceColors(
-    background: Color(0xFF0B1117),
-    surface: Color(0xFF111827),
-    textPrimary: Color(0xFFF9FAFB),
-    textSecondary: Color(0xFFD1D5DB),
-    textMuted: Color(0xFF9CA3AF),
-    divider: Color(0xFF374151),
-    inputFill: Color(0xFF1F2937),
+    background: Color(0xFF000000),
+    surface: Color(0xFF1C1C1E),
+    textPrimary: Color(0xFFFFFFFF),
+    textSecondary: Color(0xFFE5E7EB),
+    textMuted: Color(0xFF8E8E93),
+    divider: Color(0xFF38383A),
+    inputFill: Color(0xFF2C2C2E),
   );
 
   @override

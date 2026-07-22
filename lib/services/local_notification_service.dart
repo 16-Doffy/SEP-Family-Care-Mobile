@@ -71,6 +71,7 @@ class LocalNotificationService {
     required String body,
     bool isSos = false,
     String? payload,
+    int? badgeNumber,
   }) async {
     if (!_ready) await init();
     final channel = isSos ? _sosChannel : _generalChannel;
@@ -84,6 +85,9 @@ class LocalNotificationService {
         category: isSos
             ? AndroidNotificationCategory.alarm
             : AndroidNotificationCategory.message,
+        // Một số launcher (Samsung/Xiaomi...) dùng `number` để hiện badge số.
+        // Pixel Launcher chỉ hiện notification dot dù app có truyền giá trị.
+        number: badgeNumber,
         color: const Color(0xFFDC2626),
         styleInformation: BigTextStyleInformation(body),
       ),
