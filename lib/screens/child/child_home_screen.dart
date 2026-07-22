@@ -78,26 +78,14 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     super.dispose();
   }
 
-  String _fmtBalance(double v) {
-    final s = v.round().toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-      buf.write(s[i]);
-    }
-    return '${buf.toString()} ₫';
-  }
-
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     final taskState = context.watch<TaskProvider>();
-    final walletState = context.watch<WalletProvider>();
 
     final myTasks = taskState.myAssignments;
     final doneTasks = myTasks.where((t) => t.status == 'APPROVED').length;
     final pending = myTasks.where((t) => t.status != 'APPROVED').toList();
-    final balance = walletState.totalBalance;
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -324,16 +312,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                         iconSize: 22,
                                         radius: 10,
                                       ),
-                                      Text(
-                                        walletState.isLoading
-                                            ? '...'
-                                            : _fmtBalance(balance),
-                                        style: GoogleFonts.inter(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.link,
-                                        ),
-                                      ),
+                                       Text(
+                                         'Sổ chi tiêu\ncá nhân',
+                                         textAlign: TextAlign.center,
+                                         style: GoogleFonts.inter(
+                                           fontSize: 9.5,
+                                           height: 1.1,
+                                           fontWeight: FontWeight.w700,
+                                           color: AppColors.link,
+                                         ),
+                                       ),
                                     ],
                                   ),
                                 ),

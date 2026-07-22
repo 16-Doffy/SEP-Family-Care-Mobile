@@ -85,6 +85,7 @@ class JsonReportView extends StatelessWidget {
     'note': 'Ghi chú',
     'displayName': 'Người tạo',
     'alertType': 'Loại cảnh báo',
+    'type': 'Loại cảnh báo',
     'severity': 'Mức độ',
     'thresholdValue': 'Mốc cảnh báo',
     'actualValue': 'Giá trị thực tế',
@@ -160,8 +161,10 @@ class JsonReportView extends StatelessWidget {
     'ACKNOWLEDGED' => 'Đã xem',
     'RESOLVED' => 'Đã xử lý',
     'OVER_BUDGET' => 'Vượt ngân sách',
+    'SHORTAGE_RISK' => 'Nguy cơ thiếu hụt',
     'GOAL_AT_RISK' => 'Mục tiêu có nguy cơ không đạt',
     'NON_ESSENTIAL_TOO_HIGH' => 'Chi không thiết yếu quá cao',
+    'ACHIEVED' => 'Đã hoàn thành',
     _ => value,
   };
 
@@ -248,8 +251,19 @@ class JsonReportView extends StatelessWidget {
                 lowerKey == 'severity' ||
                 lowerKey == 'alerttype'
         ? _fmtStatus(raw)
-        : raw;
+        : _sanitizeText(raw);
     return _valueRow(key, display);
+  }
+
+  static String _sanitizeText(String value) {
+    // Report messages sometimes embed internal UUIDs (for example a budget
+    // line id). They are not meaningful to a family user and make the report
+    // hard to read.
+    final cleaned = value.replaceAll(
+      RegExp(r'\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b'),
+      '',
+    );
+    return cleaned.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
   }
 
   Widget _valueRow(String key, String display) {

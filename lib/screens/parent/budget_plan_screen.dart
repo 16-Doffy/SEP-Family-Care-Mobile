@@ -205,7 +205,8 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
     final expenseCategories = context
         .read<FinanceProvider>()
         .categories
-        .where((category) => category.categoryType == 'EXPENSE')
+        .where((category) =>
+            category.categoryType == 'EXPENSE' && category.isActive)
         .toList();
     String? firstLineCategoryId =
         expenseCategories.isEmpty ? null : expenseCategories.first.id;
@@ -395,6 +396,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                             .where(
                               (category) =>
                                   category.categoryType == 'EXPENSE' &&
+                                      category.isActive &&
                                   category.name == newCategoryCtrl.text.trim(),
                             )
                             .toList();

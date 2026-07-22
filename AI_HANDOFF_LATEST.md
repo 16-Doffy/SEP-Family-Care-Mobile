@@ -2,6 +2,36 @@
 
 Last updated: **2026-07-22**
 
+## 🚀 Snapshot mới nhất 2026-07-22 (Finance, Member UI Redesign & Multi-Admin Sync)
+
+### 📌 Trạng thái Git / Branch Sync
+- **Nhánh local:** `NDuy` và `main` đã được merge Fast-forward đồng bộ 100% tại commit `936006a`.
+- **Remote:** Cả `origin/NDuy` và `origin/main` đều đã được push và đang ở commit `936006a`.
+- **Kiểm thử:** **81/81 unit test PASS 100%**, `flutter analyze` clean (**0 error**).
+
+### 🛠️ Chi tiết Fixes & Cập nhật Finance (Mobile)
+1. **Lỗi Tạo Danh Mục (Category Creation 502 Error):**
+   - Đã bổ sung `essentialType` mặc định (`ESSENTIAL`) cho danh mục Khoản Chi và giao diện form chọn loại thiết yếu -> Loại bỏ hoàn toàn lỗi Server 502 Bad Gateway.
+2. **Lỗi `entryDate không đúng định dạng` & Chọn danh mục Thu/Chi:**
+   - Chuẩn hóa định dạng `entryDate` sang chuỗi ISO UTC `YYYY-MM-DDTHH:mm:ssZ` (bỏ 6 chữ số thập phân microsecond).
+   - Cập nhật popup Thu/Chi dùng `watch<FinanceProvider>()` -> Mới tạo danh mục xong là dropdown tự động cập nhật ngay.
+3. **Phân bổ vào Mục tiêu (Goal Allocation):**
+   - Bổ sung bộ lọc bắt lỗi khi sửa số tiền phân bổ mục tiêu: hiển thị thông báo tiếng Việt rõ ràng thay vì câu văng lỗi kỹ thuật.
+4. **Phân quyền & Redesign UI Trang chủ / Sổ chi tiêu Member:**
+   - **Phân quyền:** Member KHÔNG có quyền xem tổng quỹ gia đình (BE trả 403, chỉ Manager/Deputy được xem).
+   - **Trang chủ Member (`child_home_screen.dart`):** Đã sửa ô lối tắt 💰 hiển thị tổng quỹ chung `51,171,111 đ` thành nhãn tính năng **"Tài chính"** (đồng bộ với AI, Album, Lịch).
+   - **Sổ chi tiêu Member (`child_wallet_screen.dart`):** Loại bỏ thẻ mock `Số dư hiện tại: — đ (chưa có API)` -> Thay bằng thẻ **"Còn lại có thể tiêu"** (tính từ Hạn mức cá nhân - Đã chi tiêu) vô cùng minh bạch và chuyên nghiệp.
+5. **Yêu cầu hỗ trợ (Support Requests):**
+   - Sửa `_statusChip` hiển thị chính xác trạng thái `CANCELED` / `CANCELLED` thành nhãn màu xám **"Đã hủy"** trên cả màn danh sách chi tiết lẫn thẻ preview ngoài màn chính.
+6. **Khai báo Tài chính theo tháng (Monthly Finance):**
+   - Tự động fallback giữa `POST` và `PUT` khi đã tồn tại bản ghi khai báo tháng trước đó.
+
+### 🌐 Trạng thái Web Admin Multi-Admin Rules (`d:\Desktop\sep`)
+- Gỡ bỏ hoàn toàn Modal "Đổi vai trò" (Edit Role) và không truyền `userType` trong PATCH `/admin/users/:id` (được BE kiểm soát qua script/seed).
+- Tự động `disabled` nút Khóa/Mở khóa đối với chính Admin đang đăng nhập (`u.id === user?.id`) và các tài khoản `SYSTEM_ADMIN` khác (`u.userType === 'SYSTEM_ADMIN'`).
+
+---
+
 ## Snapshot hiện tại 2026-07-22 — Finance + Face Profile QA (đọc phần này trước)
 
 ### Git / commit handoff

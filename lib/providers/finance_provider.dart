@@ -81,12 +81,16 @@ class FinanceCategory {
   final String name;
   final String categoryType; // INCOME | EXPENSE
   final String? essentialType;
+  final String status;
+  final bool isActive;
 
   const FinanceCategory({
     required this.id,
     required this.name,
     required this.categoryType,
     this.essentialType,
+    required this.status,
+    required this.isActive,
   });
 
   factory FinanceCategory.fromJson(Map<String, dynamic> j) => FinanceCategory(
@@ -94,6 +98,12 @@ class FinanceCategory {
     name: j['name']?.toString() ?? '',
     categoryType: j['categoryType']?.toString() ?? 'EXPENSE',
     essentialType: j['essentialType']?.toString(),
+    status: j['status']?.toString().toUpperCase() ??
+        ((j['isActive'] == false) ? 'INACTIVE' : 'ACTIVE'),
+    isActive: j['isActive'] is bool
+        ? j['isActive'] as bool
+        : !const {'INACTIVE', 'DISABLED', 'DELETED', 'VOIDED'}
+            .contains(j['status']?.toString().toUpperCase()),
   );
 }
 
@@ -255,7 +265,8 @@ class FinancialGoal {
 
   /// List endpoint đôi khi chỉ trả `progressPercent`, còn endpoint chi tiết mới
   /// có `currentAmount`. Dùng số suy ra để UI không hiển thị sai 0 ₫ / mục tiêu.
-  double? get displayCurrentAmount => currentAmount ??
+  double? get displayCurrentAmount =>
+      currentAmount ??
       (progressPercent == null
           ? null
           : targetAmount * (progressPercent!.clamp(0, 100) / 100));
@@ -361,6 +372,7 @@ class GoalContributionPlan {
   final double? actualAmount;
   final String status;
   final String? note;
+  final String? dueDate;
   final Map<String, dynamic> raw;
 
   const GoalContributionPlan({
@@ -371,6 +383,7 @@ class GoalContributionPlan {
     this.actualAmount,
     required this.status,
     this.note,
+    this.dueDate,
     required this.raw,
   });
 
@@ -380,6 +393,7 @@ class GoalContributionPlan {
     final value = status.toUpperCase();
     return value == 'PENDING' || value == 'PLANNED';
   }
+
   bool get isSubmitted => status.toUpperCase() == 'SUBMITTED';
   bool get isApproved => status.toUpperCase() == 'APPROVED';
   bool get isPaid => status.toUpperCase() == 'PAID';
@@ -430,6 +444,7 @@ class GoalContributionPlan {
       ),
       status: j['status']?.toString() ?? 'PENDING',
       note: j['note']?.toString(),
+      dueDate: j['dueDate']?.toString(),
       raw: j,
     );
   }
@@ -718,14 +733,42 @@ class FinanceProvider extends ChangeNotifier {
     required String categoryType,
     String? essentialType,
   }) async {
-    final res = await ApiClient.instance.post('/families/$_fid/finance/categories', {
-      'name': name,
-      'categoryType': categoryType,
-      'essentialType': ?essentialType,
-    });
+    final res = await ApiClient.instance.post(
+      '/families/$_fid/finance/categories',
+      {
+        'name': name,
+        'categoryType': categoryType,
+        if (categoryType == 'EXPENSE')
+          'essentialType': essentialType ?? 'ESSENTIAL',
+      },
+    );
     await _fetchCategories();
     notifyListeners();
     return res.isEmpty ? null : FinanceCategory.fromJson(res);
+  }
+
+  /// PATCH /families/{familyId}/finance/categories/{categoryId}
+  Future<void> updateCategory(
+    String categoryId, {
+    required String name,
+    String? essentialType,
+  }) async {
+    await ApiClient.instance.patch(
+      '/families/$_fid/finance/categories/$categoryId',
+      {'name': name, 'essentialType': ?essentialType},
+    );
+    await _fetchCategories();
+    notifyListeners();
+  }
+
+  /// DELETE /families/{familyId}/finance/categories/{categoryId}.
+  /// BE ngưng dùng danh mục nhưng giữ dữ liệu ledger/budget đã có.
+  Future<void> deactivateCategory(String categoryId) async {
+    await ApiClient.instance.delete(
+      '/families/$_fid/finance/categories/$categoryId',
+    );
+    await _fetchCategories();
+    notifyListeners();
   }
 
   // ── Mutations: Budget Plan ────────────────────────────────────────────────
@@ -789,16 +832,14 @@ class FinanceProvider extends ChangeNotifier {
     double? thresholdPercent,
     String? essentialType,
   }) async {
-    await ApiClient.instance.post(
-      '/families/$_fid/finance/budget-plans/$planId/lines',
-      {
-        'categoryId': categoryId,
-        'plannedAmount': plannedAmount,
-        'thresholdAmount': ?thresholdAmount,
-        'thresholdPercent': ?thresholdPercent,
-        'essentialType': ?essentialType,
-      },
-    );
+    await ApiClient.instance
+        .post('/families/$_fid/finance/budget-plans/$planId/lines', {
+          'categoryId': categoryId,
+          'plannedAmount': plannedAmount,
+          'thresholdAmount': ?thresholdAmount,
+          'thresholdPercent': ?thresholdPercent,
+          'essentialType': ?essentialType,
+        });
     notifyListeners();
   }
 
@@ -916,11 +957,18 @@ class FinanceProvider extends ChangeNotifier {
   // GET /families/{familyId}/finance/financial-goals/{goalId} — chi tiết 1
   // goal riêng (list `_fetchGoals` dùng `includeProgress=true` nên đã đủ cho
   // hầu hết UI; gọi thêm để có field không xuất hiện ở list, nếu có).
-  Future<FinancialGoal> fetchGoalDetail(String goalId) async {
+  Future<(FinancialGoal goal, Map<String, dynamic> progress)>
+  fetchGoalDetailWithProgress(String goalId) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId',
     );
-    return FinancialGoal.fromJson(data);
+    final root = data is Map<String, dynamic>
+        ? data
+        : Map<String, dynamic>.from(data as Map);
+    final progress = root['progress'] is Map
+        ? Map<String, dynamic>.from(root['progress'] as Map)
+        : <String, dynamic>{};
+    return (FinancialGoal.fromJson(root), progress);
   }
 
   // PATCH /families/{familyId}/finance/financial-goals/{goalId}
@@ -942,16 +990,6 @@ class FinanceProvider extends ChangeNotifier {
         });
     await _fetchGoals();
     notifyListeners();
-  }
-
-  // GET /families/{familyId}/finance/financial-goals/{goalId}/progress — báo
-  // cáo tiến độ chi tiết hơn field `progressPercent` ở list. BE không
-  // document schema → raw Map, hiển thị qua JsonReportView.
-  Future<Map<String, dynamic>> fetchGoalProgress(String goalId) async {
-    final data = await ApiClient.instance.get(
-      '/families/$_fid/finance/financial-goals/$goalId/progress',
-    );
-    return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   // GET /families/{familyId}/finance/financial-goals/{goalId}/allocations —
@@ -1021,15 +1059,29 @@ class FinanceProvider extends ChangeNotifier {
       'note': ?note,
     };
     if (monthlyFinance != null) {
-      await ApiClient.instance.put(
-        '/families/$_fid/finance/monthly-finances/me',
-        body,
-      );
+      try {
+        await ApiClient.instance.put(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      } catch (_) {
+        await ApiClient.instance.post(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      }
     } else {
-      await ApiClient.instance.post(
-        '/families/$_fid/finance/monthly-finances/me',
-        body,
-      );
+      try {
+        await ApiClient.instance.post(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      } catch (_) {
+        await ApiClient.instance.put(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      }
     }
     await _fetchMonthlyFinance();
     notifyListeners();
@@ -1130,9 +1182,9 @@ class FinanceProvider extends ChangeNotifier {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-plans${_qs({'month': month, 'year': year})}',
     );
-    return _contributionPlanList(data)
-        .map(GoalContributionPlan.fromJson)
-        .toList();
+    return _contributionPlanList(
+      data,
+    ).map(GoalContributionPlan.fromJson).toList();
   }
 
   // POST .../financial-goals/{goalId}/contribution-plans/{planId}/submit — thành viên xác nhận đã đóng góp

@@ -367,7 +367,78 @@ class _RequestCard extends StatelessWidget {
             ),
           ]),
         ],
+
+        if (!isManager && request.isPending) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.danger),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 8)),
+              onPressed: () => _cancelDialog(context),
+              icon: const Icon(Icons.cancel_outlined, size: 16, color: AppColors.danger),
+              label: Text('Hủy yêu cầu',
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700,
+                      color: AppColors.danger)),
+            ),
+          ),
+        ],
       ]),
+      ),
+    );
+  }
+
+  void _cancelDialog(BuildContext context) {
+    bool submitting = false;
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('Hủy yêu cầu hỗ trợ',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+          content: Text(
+            'Yêu cầu ${_fmtAmount(request.amount)} ₫ sẽ không còn chờ phê duyệt.',
+            style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: submitting ? null : () => Navigator.of(dialogContext).pop(),
+              child: const Text('Quay lại'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.danger,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              onPressed: submitting ? null : () async {
+                setDialogState(() => submitting = true);
+                try {
+                  await provider.cancel(request.id);
+                  if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Đã hủy yêu cầu hỗ trợ'),
+                        backgroundColor: AppColors.success));
+                  }
+                } catch (e) {
+                  setDialogState(() => submitting = false);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Không thể hủy yêu cầu: $e'),
+                        backgroundColor: AppColors.danger));
+                  }
+                }
+              },
+              child: submitting
+                  ? const SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text('Xác nhận hủy',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: Colors.white)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -451,15 +522,17 @@ class _RequestCard extends StatelessWidget {
     );
   }
 
-  static Color _statusColor(String s) => switch (s) {
+  static Color _statusColor(String s) => switch (s.toUpperCase()) {
         'APPROVED' => AppColors.success,
         'REJECTED' => AppColors.danger,
+        'CANCELED' || 'CANCELLED' => AppColors.textMuted,
         _          => const Color(0xFFF59E0B),
       };
 
-  static String _statusLabel(String s) => switch (s) {
+  static String _statusLabel(String s) => switch (s.toUpperCase()) {
         'APPROVED' => 'Đã duyệt',
         'REJECTED' => 'Từ chối',
+        'CANCELED' || 'CANCELLED' => 'Đã hủy',
         _          => 'Chờ duyệt',
       };
 
