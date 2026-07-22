@@ -15,7 +15,6 @@ import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
 import 'album_face_section.dart';
 import 'album_people_screen.dart';
-import 'face_suggestions_sheet.dart';
 
 typedef _AlbumStatusBadgeBuilder =
     Widget Function(AlbumModerationStatus status);
@@ -1271,26 +1270,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
             );
           },
         ),
-        if (!media.isVideo)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Icon(
-              context.read<AlbumProvider>().canUseFaceSuggestions
-                  ? Icons.face_retouching_natural_outlined
-                  : Icons.lock_outline_rounded,
-              color: AppColors.textSecondary,
-            ),
-            title: const Text('Gợi ý khuôn mặt AI'),
-            subtitle: Text(
-              context.read<AlbumProvider>().canUseFaceSuggestions
-                  ? 'Quét ảnh, xem và xử lý gợi ý tag'
-                  : 'Tính năng này cần gói có Face Suggestion',
-            ),
-            onTap: () {
-              Navigator.pop(sheetContext);
-              _showFaceSuggestions(media);
-            },
-          ),
         if (isAdmin && media.canManualReview)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -1511,18 +1490,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  void _showFaceSuggestions(AlbumMedia media) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => FaceSuggestionsSheet(mediaId: media.id),
     );
   }
 

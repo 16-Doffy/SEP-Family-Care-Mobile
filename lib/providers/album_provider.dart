@@ -4,65 +4,6 @@ import '../models/album_media.dart';
 import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
-enum FaceSuggestionStatus { pending, confirmed, rejected, unknown }
-
-class FaceSuggestion {
-  final String id;
-  final String memberId;
-  final String memberName;
-  final double? confidence;
-  final FaceSuggestionStatus status;
-  final Map<String, dynamic> raw;
-
-  const FaceSuggestion({
-    required this.id,
-    required this.memberId,
-    required this.memberName,
-    this.confidence,
-    required this.status,
-    this.raw = const {},
-  });
-
-  factory FaceSuggestion.fromJson(Map<String, dynamic> json) {
-    final member = json['suggestedMember'] is Map
-        ? Map<String, dynamic>.from(json['suggestedMember'] as Map)
-        : json['member'] is Map
-        ? Map<String, dynamic>.from(json['member'] as Map)
-        : const <String, dynamic>{};
-    final user = member['user'] is Map
-        ? Map<String, dynamic>.from(member['user'] as Map)
-        : const <String, dynamic>{};
-    final value = (json['status'] ?? json['suggestionStatus'] ?? 'PENDING')
-        .toString()
-        .toUpperCase();
-    final rawConfidence =
-        json['confidence'] ?? json['score'] ?? json['similarity'];
-    final confidence = rawConfidence is num
-        ? rawConfidence.toDouble()
-        : double.tryParse((rawConfidence ?? '').toString());
-    return FaceSuggestion(
-      id: (json['suggestionId'] ?? json['id']).toString(),
-      memberId:
-          (json['suggestedMemberId'] ?? json['memberId'] ?? member['id'] ?? '')
-              .toString(),
-      memberName:
-          (member['displayName'] ??
-                  user['fullName'] ??
-                  json['suggestedMemberName'] ??
-                  'Thành viên')
-              .toString(),
-      confidence: confidence,
-      status: switch (value) {
-        'PENDING' || 'NEW' => FaceSuggestionStatus.pending,
-        'CONFIRMED' || 'ACCEPTED' => FaceSuggestionStatus.confirmed,
-        'REJECTED' || 'DECLINED' => FaceSuggestionStatus.rejected,
-        _ => FaceSuggestionStatus.unknown,
-      },
-      raw: json,
-    );
-  }
-}
-
 class AlbumProvider extends ChangeNotifier {
   final List<AlbumMedia> _items = [];
   bool _loading = false;
@@ -90,8 +31,6 @@ class AlbumProvider extends ChangeNotifier {
   bool get hasPendingItems => _items.any((m) => m.isPending);
   bool get faceAccessUnknown =>
       _featureAccess == null || _featureAccess!.isUnknown;
-  bool get canUseFaceSuggestions =>
-      faceAccessUnknown || _featureAccess!.albumFaceSuggestions;
   bool get canUploadVideo =>
       faceAccessUnknown || _featureAccess!.albumVideoUpload;
 
@@ -254,44 +193,6 @@ class AlbumProvider extends ChangeNotifier {
       _uploading = false;
       notifyListeners();
     }
-  }
-
-  Future<Map<String, dynamic>> requestFaceScan(
-    String mediaId, {
-    bool force = false,
-  }) async {
-    if (!canUseFaceSuggestions) {
-      throw Exception('Gói hiện tại chưa hỗ trợ gợi ý khuôn mặt.');
-    }
-    return ApiClient.instance.post(
-      '/families/$_fid/albums/media/$mediaId/face-scan',
-      {'force': force},
-    );
-  }
-
-  Future<List<FaceSuggestion>> fetchFaceSuggestions(String mediaId) async {
-    final data = await ApiClient.instance.get(
-      '/families/$_fid/albums/media/$mediaId/face-suggestions',
-    );
-    return _list(data).map(FaceSuggestion.fromJson).toList();
-  }
-
-  Future<void> confirmFaceSuggestion(
-    String mediaId,
-    String suggestionId,
-  ) async {
-    await ApiClient.instance.post(
-      '/families/$_fid/albums/media/$mediaId/face-suggestions/$suggestionId/confirm',
-      {},
-    );
-    await fetchDetail(mediaId); // BE tạo manual tag sau khi confirm.
-  }
-
-  Future<void> rejectFaceSuggestion(String mediaId, String suggestionId) async {
-    await ApiClient.instance.post(
-      '/families/$_fid/albums/media/$mediaId/face-suggestions/$suggestionId/reject',
-      {},
-    );
   }
 
   Future<void> updateMedia(
