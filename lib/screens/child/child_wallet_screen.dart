@@ -24,13 +24,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
   // KHÔNG có ví/số dư cá nhân — by design).
   double? _income; // expectedIncome — thu nhập tháng
   double? _allowance; // expectedPersonalExpense — chi tiêu dự đoán
-  double? _sharedContribution; // expectedSharedContribution — đóng góp quỹ
   double? _actualSpent; // actualPersonalExpense (nếu BE trả về)
   bool _loadingFinance = false;
   String? _financeError;
 
-  bool get _hasDeclared =>
-      _income != null || _allowance != null || _sharedContribution != null;
+  bool get _hasDeclared => _income != null || _allowance != null;
 
   // Lịch sử 6 tháng — không có API "list nhiều tháng" nên query từng tháng.
   List<_MonthPoint> _history = const [];
@@ -88,7 +86,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
 
       final income = _parseNum(data, 'expectedIncome');
       final allowance = _parseNum(data, 'expectedPersonalExpense');
-      final contribution = _parseNum(data, 'expectedSharedContribution');
       final spent = _parseNum(data, 'actualPersonalExpense');
 
       if (mounted) {
@@ -98,7 +95,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
         setState(() {
           _income = income;
           _allowance = allowance;
-          _sharedContribution = contribution;
           _actualSpent = spent;
         });
         _ring = Tween<double>(
@@ -135,12 +131,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
             month: d.month,
             income: _parseNum(data, 'expectedIncome') ?? 0,
             expense: _parseNum(data, 'expectedPersonalExpense') ?? 0,
-            contribution: _parseNum(data, 'expectedSharedContribution') ?? 0,
           ),
         );
       } catch (_) {
         points.add(
-          _MonthPoint(month: d.month, income: 0, expense: 0, contribution: 0),
+          _MonthPoint(month: d.month, income: 0, expense: 0),
         );
       }
     }
@@ -175,7 +170,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
         maxV,
         p.income,
         p.expense,
-        p.contribution,
       ].reduce((a, b) => a > b ? a : b);
     }
     return Column(
@@ -195,13 +189,8 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             _chartBar(p.income / maxV, AppColors.calTravel),
-                            const SizedBox(width: 3),
+                            const SizedBox(width: 4),
                             _chartBar(p.expense / maxV, AppColors.link),
-                            const SizedBox(width: 3),
-                            _chartBar(
-                              p.contribution / maxV,
-                              AppColors.accent500,
-                            ),
                           ],
                         ),
                         const SizedBox(height: 5),
@@ -227,7 +216,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
           children: [
             _legend(AppColors.calTravel, 'Thu nhập'),
             _legend(AppColors.link, 'Chi tiêu'),
-            _legend(AppColors.accent500, 'Đóng góp quỹ'),
           ],
         ),
       ],
@@ -338,9 +326,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     final expenseCtrl = TextEditingController(
       text: _allowance != null ? _fmtNum(_allowance!) : '',
     );
-    final contribCtrl = TextEditingController(
-      text: _sharedContribution != null ? _fmtNum(_sharedContribution!) : '',
-    );
     String? error;
     await showModalBottomSheet<void>(
       context: context,
@@ -377,7 +362,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                'Chi tiêu dự đoán + đóng góp quỹ không được vượt thu nhập tháng.',
+                'Chi tiêu dự đoán không được vượt thu nhập tháng.',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: context.colors.textMuted,
@@ -390,12 +375,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                 expenseCtrl,
                 'Chi tiêu dự đoán',
                 Icons.arrow_downward_rounded,
-              ),
-              const SizedBox(height: 12),
-              _moneyField(
-                contribCtrl,
-                'Đóng góp quỹ chung (tùy chọn)',
-                Icons.savings_outlined,
               ),
               if (error != null) ...[
                 const SizedBox(height: 12),
@@ -434,17 +413,15 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                   onPressed: () async {
                     final income = parseMoneyInput(incomeCtrl.text);
                     final expense = parseMoneyInput(expenseCtrl.text);
-                    final contrib = parseMoneyInput(contribCtrl.text);
                     if (income <= 0) {
                       setSheet(() => error = 'Vui lòng nhập thu nhập tháng.');
                       return;
                     }
-                    if (expense + contrib > income) {
+                    if (expense > income) {
                       setSheet(
                         () => error =
-                            'Chi tiêu (${_fmtNum(expense)}) + đóng góp '
-                            '(${_fmtNum(contrib)}) vượt thu nhập '
-                            '(${_fmtNum(income)}) ₫.',
+                            'Chi tiêu dự đoán (${_fmtNum(expense)}) không được '
+                            'vượt thu nhập (${_fmtNum(income)}) ₫.',
                       );
                       return;
                     }
@@ -452,7 +429,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                       await context.read<AuthProvider>().saveMonthlyFinance(
                         expectedIncome: income,
                         expectedExpense: expense,
-                        expectedSharedContribution: contrib > 0 ? contrib : null,
                       );
                       if (sheetCtx.mounted) Navigator.pop(sheetCtx);
                       await _fetchMonthlyFinance();
@@ -585,12 +561,6 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                       'Chi tiêu dự đoán',
                       _allowance,
                     ),
-                    _overviewDivider(),
-                    _overviewRow(
-                      Icons.savings_outlined,
-                      'Đóng góp quỹ chung',
-                      _sharedContribution,
-                    ),
                     const SizedBox(height: 12),
                     Container(
                       padding: const EdgeInsets.only(top: 12),
@@ -611,7 +581,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                           ),
                           Text(
                             _hasDeclared
-                                ? '${_fmtNum((_income ?? 0) - (_allowance ?? 0) - (_sharedContribution ?? 0))} ₫'
+                                ? '${_fmtNum((_income ?? 0) - (_allowance ?? 0))} ₫'
                                 : 'Chưa khai báo',
                             style: GoogleFonts.inter(
                               fontSize: 20,
@@ -1220,11 +1190,9 @@ class _MonthPoint {
   final int month;
   final double income;
   final double expense;
-  final double contribution;
   const _MonthPoint({
     required this.month,
     required this.income,
     required this.expense,
-    required this.contribution,
   });
 }
