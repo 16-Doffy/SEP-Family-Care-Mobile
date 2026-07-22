@@ -81,12 +81,16 @@ class FinanceCategory {
   final String name;
   final String categoryType; // INCOME | EXPENSE
   final String? essentialType;
+  final String status;
+  final bool isActive;
 
   const FinanceCategory({
     required this.id,
     required this.name,
     required this.categoryType,
     this.essentialType,
+    required this.status,
+    required this.isActive,
   });
 
   factory FinanceCategory.fromJson(Map<String, dynamic> j) => FinanceCategory(
@@ -94,6 +98,12 @@ class FinanceCategory {
     name: j['name']?.toString() ?? '',
     categoryType: j['categoryType']?.toString() ?? 'EXPENSE',
     essentialType: j['essentialType']?.toString(),
+    status: j['status']?.toString().toUpperCase() ??
+        ((j['isActive'] == false) ? 'INACTIVE' : 'ACTIVE'),
+    isActive: j['isActive'] is bool
+        ? j['isActive'] as bool
+        : !const {'INACTIVE', 'DISABLED', 'DELETED', 'VOIDED'}
+            .contains(j['status']?.toString().toUpperCase()),
   );
 }
 

@@ -224,7 +224,8 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
     final categories = context
         .read<FinanceProvider>()
         .categories
-        .where((category) => category.categoryType == 'EXPENSE')
+        .where((category) =>
+            category.categoryType == 'EXPENSE' && category.isActive)
         .toList();
     String? categoryId = categories.isNotEmpty ? categories.first.id : null;
     final amountCtrl = TextEditingController();

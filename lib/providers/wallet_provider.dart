@@ -45,6 +45,7 @@ class LedgerEntry {
   final String? categoryName;
   final String? categoryId;
   final String? sourceType;
+  final String status;
 
   const LedgerEntry({
     required this.id,
@@ -56,6 +57,7 @@ class LedgerEntry {
     this.categoryName,
     this.categoryId,
     this.sourceType,
+    this.status = 'POSTED',
   });
 
   // amount từ BE LUÔN dương (đã verify) — dấu +/- phải tự tính theo entryType.
@@ -85,6 +87,7 @@ class LedgerEntry {
       categoryName: cat?['name']?.toString(),
       categoryId: json['categoryId']?.toString() ?? cat?['id']?.toString(),
       sourceType: json['sourceType']?.toString(),
+      status: json['status']?.toString().toUpperCase() ?? 'POSTED',
     );
   }
 
@@ -278,6 +281,9 @@ class WalletProvider extends ChangeNotifier {
       final parsed = list
           .whereType<Map>()
           .map((e) => LedgerEntry.fromJson(Map<String, dynamic>.from(e)))
+          // DELETE is a soft delete on BE. Never render or re-count a VOIDED
+          // entry even if the list endpoint returns it for audit history.
+          .where((entry) => entry.status != 'VOIDED')
           .toList();
       if (refresh) {
         _entries = parsed;
@@ -340,7 +346,7 @@ class WalletProvider extends ChangeNotifier {
           'entryType': isIncome ? 'INCOME' : 'EXPENSE',
           'amount': amount.abs(),
           'description': description,
-          'entryDate': DateTime.now().toIso8601String(),
+          'entryDate': DateTime.now().toUtc().toIso8601String(),
           if (note != null && note.isNotEmpty) 'note': note,
           'categoryId': ?categoryId,
           'sourceType': ?sourceType,

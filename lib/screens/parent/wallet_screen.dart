@@ -637,7 +637,8 @@ class _WalletScreenState extends State<WalletScreen> {
     final categories = context
         .read<FinanceProvider>()
         .categories
-        .where((category) => category.categoryType == entry.entryType)
+        .where((category) =>
+            category.categoryType == entry.entryType && category.isActive)
         .toList();
     String? categoryId = entry.categoryId;
     if (categoryId == null ||
@@ -777,6 +778,11 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       builder: (sheetContext) {
         final categories = sheetContext.watch<FinanceProvider>().categories;
+        final orderedCategories = [...categories]
+          ..sort((a, b) {
+            if (a.isActive != b.isActive) return a.isActive ? -1 : 1;
+            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          });
         return SafeArea(
           child: SizedBox(
             height: MediaQuery.of(sheetContext).size.height * .72,
@@ -813,14 +819,14 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                   const SizedBox(height: 12),
                   Expanded(
-                    child: categories.isEmpty
+                    child: orderedCategories.isEmpty
                         ? const Center(child: Text('Chưa có danh mục nào'))
                         : ListView.separated(
-                            itemCount: categories.length,
+                            itemCount: orderedCategories.length,
                             separatorBuilder: (_, _) =>
                                 const Divider(height: 1),
                             itemBuilder: (_, index) {
-                              final category = categories[index];
+                              final category = orderedCategories[index];
                               final isIncome =
                                   category.categoryType == 'INCOME';
                               final essentialLabel =
@@ -845,10 +851,10 @@ class _WalletScreenState extends State<WalletScreen> {
                                 title: Text(category.name),
                                 subtitle: Text(
                                   isIncome
-                                      ? 'Khoản thu'
-                                      : category.essentialType == null
-                                      ? 'Khoản chi'
-                                      : 'Khoản chi · $essentialLabel',
+                                  ? 'Khoản thu · ${category.isActive ? 'Đang hoạt động' : 'Đã ngưng dùng'}'
+                                  : category.essentialType == null
+                                  ? 'Khoản chi · ${category.isActive ? 'Đang hoạt động' : 'Đã ngưng dùng'}'
+                                  : 'Khoản chi · $essentialLabel · ${category.isActive ? 'Đang hoạt động' : 'Đã ngưng dùng'}',
                                 ),
                                 trailing: PopupMenuButton<String>(
                                   onSelected: (action) async {
@@ -1188,7 +1194,8 @@ class _WalletScreenState extends State<WalletScreen> {
         .categories
         .where(
           (category) =>
-              category.categoryType == (isIncome ? 'INCOME' : 'EXPENSE'),
+              category.categoryType == (isIncome ? 'INCOME' : 'EXPENSE') &&
+                  category.isActive,
         )
         .toList();
     String? categoryId = categories.isNotEmpty ? categories.first.id : null;
