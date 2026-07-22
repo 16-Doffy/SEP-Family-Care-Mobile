@@ -13,8 +13,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// chỉnh riêng từng channel).
 class LocalNotificationService {
   LocalNotificationService._();
-  static final LocalNotificationService instance =
-      LocalNotificationService._();
+  static final LocalNotificationService instance = LocalNotificationService._();
 
   static const _sosChannel = AndroidNotificationChannel(
     'sos_alerts',
@@ -26,7 +25,7 @@ class LocalNotificationService {
   static const _generalChannel = AndroidNotificationChannel(
     'general_notifications',
     'Thông báo chung',
-    description: 'Nhiệm vụ, tài chính, album, yêu cầu tham gia, chat…',
+    description: 'Nhiệm vụ, tài chính, ảnh, yêu cầu tham gia, chat…',
     importance: Importance.high,
   );
 
@@ -51,8 +50,10 @@ class LocalNotificationService {
       },
     );
 
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (android != null) {
       // Tạo channel trước — nếu không Android báo "app does not send
       // notifications" và mục cài đặt thông báo trống trơn.
@@ -80,8 +81,9 @@ class LocalNotificationService {
         channelDescription: channel.description,
         importance: isSos ? Importance.max : Importance.high,
         priority: isSos ? Priority.max : Priority.high,
-        category:
-            isSos ? AndroidNotificationCategory.alarm : AndroidNotificationCategory.message,
+        category: isSos
+            ? AndroidNotificationCategory.alarm
+            : AndroidNotificationCategory.message,
         color: const Color(0xFFDC2626),
         styleInformation: BigTextStyleInformation(body),
       ),

@@ -368,7 +368,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                         style: TextStyle(fontSize: 18),
                                       ),
                                       Text(
-                                        'Album',
+                                        'Ảnh',
                                         style: GoogleFonts.inter(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,

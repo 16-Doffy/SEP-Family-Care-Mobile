@@ -9,7 +9,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
 import 'album_screen.dart' show AlbumMediaThumb;
 
-/// "Mọi người" — chia album theo từng thành viên (tham khảo Google Photos).
+/// "Thành viên" — chia ảnh theo từng thành viên (tham khảo Google Photos).
 ///
 /// Lưới avatar thành viên; chạm một người → xem tất cả ảnh có gắn thẻ người đó
 /// (BE filter `taggedMemberId`). Thẻ được tạo khi xác nhận gợi ý khuôn mặt hoặc
@@ -93,11 +93,29 @@ class _AlbumPeopleScreenState extends State<AlbumPeopleScreen> {
         backgroundColor: AppColors.white,
         elevation: 0,
         title: Text(
-          'Mọi người',
+          'Thành viên',
           style: GoogleFonts.inter(
             fontSize: 18,
             fontWeight: FontWeight.w700,
             color: AppColors.textPrimary,
+          ),
+        ),
+        // Mô tả trung thực: khớp theo hồ sơ khuôn mặt thành viên đã đăng ký,
+        // KHÔNG phải cluster mặt lạ như Google Photos.
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(30),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Text(
+                'Ảnh được nhận diện theo thành viên gia đình',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
           ),
         ),
       ),

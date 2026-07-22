@@ -44,7 +44,7 @@ extension TabOptionX on TabOption {
     TabOption.map => 'Bản đồ',
     TabOption.tasks => 'Nhiệm vụ',
     TabOption.wallet => role == UserRole.member ? 'Tài chính' : 'Sổ thu chi',
-    TabOption.album => 'Album',
+    TabOption.album => 'Ảnh',
   };
 
   String descriptionFor(UserRole role) => switch (this) {

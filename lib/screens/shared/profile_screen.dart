@@ -205,11 +205,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   'Bản đồ gia đình',
                   onTap: () => context.push('/map'),
                 ),
-                // Manager đã có tab Album ở bottom nav — chỉ Deputy cần lối này
+                // Manager đã có tab Ảnh ở bottom nav — chỉ Deputy cần lối này
                 if (user?.role == UserRole.deputy)
                   _tile(
                     '🖼️',
-                    'Album gia đình',
+                    'Ảnh gia đình',
                     onTap: () => context.push('/album'),
                   ),
                 if (user?.role == UserRole.deputy)
@@ -226,7 +226,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 _tile(
                   '🖼️',
-                  'Album gia đình',
+                  'Ảnh gia đình',
                   onTap: () => context.push('/album'),
                 ),
                 _tile(

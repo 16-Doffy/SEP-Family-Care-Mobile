@@ -11,6 +11,7 @@ import '../../providers/album_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/avatar_widget.dart';
 import 'album_face_section.dart';
 import 'album_people_screen.dart';
 
@@ -23,6 +24,8 @@ typedef _AlbumActionListBuilder =
       VoidCallback onChanged,
     );
 
+enum _PhotoHomeTab { library, collections }
+
 class AlbumScreen extends StatefulWidget {
   const AlbumScreen({super.key});
 
@@ -32,6 +35,8 @@ class AlbumScreen extends StatefulWidget {
 
 class _AlbumScreenState extends State<AlbumScreen> {
   Timer? _pollTimer;
+  _PhotoHomeTab _tab = _PhotoHomeTab.library;
+  final Set<String> _pinnedIds = {};
 
   @override
   void initState() {
@@ -99,7 +104,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Tải media lên album',
+                'Tải ảnh/video lên',
                 style: GoogleFonts.inter(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -221,64 +226,49 @@ class _AlbumScreenState extends State<AlbumScreen> {
   @override
   Widget build(BuildContext context) {
     final album = context.watch<AlbumProvider>();
+    final members = context
+        .watch<FamilyProvider>()
+        .members
+        .where((m) => m.isActive)
+        .toList();
     // Current manual moderation contract is FAMILY_MANAGER only.
     final isAdmin =
         context.watch<AuthProvider>().user?.role == UserRole.manager;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: AppColors.white,
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
         elevation: 0,
-        title: Text(
-          'Album',
-          style: GoogleFonts.inter(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-          ),
-        ),
+        title: const SizedBox.shrink(),
         actions: [
-          // "Mọi người" — chia album theo thành viên (kiểu Google Photos).
-          IconButton(
-            tooltip: 'Mọi người',
-            icon: const Icon(
-              Icons.people_alt_outlined,
-              color: AppColors.textSecondary,
-            ),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AlbumPeopleScreen()),
-            ),
-          ),
           // Hàng đợi kiểm duyệt thủ công của Manager/Deputy.
           if (isAdmin)
             IconButton(
               tooltip: 'Hàng đợi kiểm duyệt',
-              icon: const Icon(
-                Icons.shield_outlined,
-                color: AppColors.textSecondary,
-              ),
+              icon: const Icon(Icons.shield_outlined),
               onPressed: _showModerationQueueSheet,
             ),
+          _filterMenu(album),
           IconButton(
             tooltip: 'Làm mới',
-            icon: const Icon(
-              Icons.refresh_rounded,
-              color: AppColors.textSecondary,
-            ),
+            icon: const Icon(Icons.refresh_rounded),
             onPressed: () => album.fetchMedia(refresh: true),
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _filters(album),
-          Expanded(
+          Positioned.fill(
             child: RefreshIndicator(
               onRefresh: () => album.fetchMedia(refresh: true),
-              child: _body(album, isAdmin),
+              child: _tab == _PhotoHomeTab.library
+                  ? _libraryBody(album, isAdmin)
+                  : _collectionsBody(album, members, isAdmin),
             ),
           ),
+          Positioned(left: 0, right: 0, bottom: 18, child: _photoTabs()),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -469,43 +459,100 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  Widget _filters(AlbumProvider album) {
-    return Container(
+  Widget _filterMenu(AlbumProvider album) {
+    return PopupMenuButton<String>(
+      tooltip: 'Lọc ảnh',
       color: AppColors.white,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      icon: const Icon(Icons.tune_rounded),
+      onSelected: (value) {
+        switch (value) {
+          case 'photo':
+            album.fetchMedia(refresh: true, mediaType: AlbumMediaType.photo);
+          case 'video':
+            album.fetchMedia(refresh: true, mediaType: AlbumMediaType.video);
+          case 'review':
+            album.fetchMedia(
+              refresh: true,
+              moderationStatus: AlbumModerationStatus.needReview,
+            );
+          default:
+            album.fetchMedia(refresh: true);
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(value: 'all', child: Text('Tất cả')),
+        const PopupMenuItem(value: 'photo', child: Text('Ảnh')),
+        const PopupMenuItem(value: 'video', child: Text('Video')),
+        const PopupMenuItem(value: 'review', child: Text('Cần duyệt')),
+      ],
+    );
+  }
+
+  Widget _photoTabs() {
+    return Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1F1F1F).withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _photoTabButton(
+                icon: Icons.photo_library_rounded,
+                label: 'Thư viện',
+                selected: _tab == _PhotoHomeTab.library,
+                onTap: () => setState(() => _tab = _PhotoHomeTab.library),
+              ),
+              _photoTabButton(
+                icon: Icons.collections_bookmark_rounded,
+                label: 'Bộ sưu tập',
+                selected: _tab == _PhotoHomeTab.collections,
+                onTap: () => setState(() => _tab = _PhotoHomeTab.collections),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _photoTabButton({
+    required IconData icon,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected
+              ? Colors.white.withValues(alpha: 0.16)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            _chip(
-              label: 'Tất cả',
-              selected:
-                  album.mediaType == null && album.moderationStatus == null,
-              onTap: () => album.fetchMedia(refresh: true),
+            Icon(
+              icon,
+              size: 20,
+              color: selected ? AppColors.link : Colors.white,
             ),
-            _chip(
-              label: 'Ảnh',
-              selected: album.mediaType == AlbumMediaType.photo,
-              onTap: () => album.fetchMedia(
-                refresh: true,
-                mediaType: AlbumMediaType.photo,
-              ),
-            ),
-            _chip(
-              label: 'Video',
-              selected: album.mediaType == AlbumMediaType.video,
-              onTap: () => album.fetchMedia(
-                refresh: true,
-                mediaType: AlbumMediaType.video,
-              ),
-            ),
-            _chip(
-              label: 'Cần duyệt',
-              selected:
-                  album.moderationStatus == AlbumModerationStatus.needReview,
-              onTap: () => album.fetchMedia(
-                refresh: true,
-                moderationStatus: AlbumModerationStatus.needReview,
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: selected ? AppColors.link : Colors.white,
               ),
             ),
           ],
@@ -514,50 +561,29 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  Widget _chip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        selectedColor: AppColors.primary50,
-        labelStyle: GoogleFonts.inter(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: selected ? AppColors.primary600 : AppColors.textSecondary,
-        ),
-        side: BorderSide(
-          color: selected ? AppColors.primary500 : const Color(0xFFE5E7EB),
-        ),
-        onSelected: (_) => onTap(),
-      ),
-    );
-  }
-
-  Widget _body(AlbumProvider album, bool isAdmin) {
+  Widget _libraryBody(AlbumProvider album, bool isAdmin) {
     if (album.loading && album.items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     }
     if (album.error != null && album.items.isEmpty) {
       return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const SizedBox(height: 120),
           Icon(
             Icons.cloud_off_outlined,
             size: 42,
-            color: AppColors.textMuted.withValues(alpha: 0.8),
+            color: Colors.white.withValues(alpha: 0.7),
           ),
           const SizedBox(height: 12),
           Center(
             child: Text(
-              'Không tải được album',
+              'Không tải được ảnh',
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: Colors.white,
               ),
             ),
           ),
@@ -567,10 +593,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             child: Text(
               album.error!,
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppColors.textMuted,
-              ),
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
             ),
           ),
         ],
@@ -578,20 +601,22 @@ class _AlbumScreenState extends State<AlbumScreen> {
     }
     if (album.items.isEmpty) {
       return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         children: [
+          _libraryHeader(album.items.length),
           const SizedBox(height: 130),
           const Icon(
             Icons.photo_library_outlined,
             size: 48,
-            color: AppColors.textMuted,
+            color: Colors.white70,
           ),
           const SizedBox(height: 12),
           Center(
             child: Text(
-              'Chưa có media nào',
+              'Chưa có ảnh nào',
               style: GoogleFonts.inter(
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: Colors.white,
               ),
             ),
           ),
@@ -599,34 +624,502 @@ class _AlbumScreenState extends State<AlbumScreen> {
           Center(
             child: Text(
               'Tải ảnh/video gia đình lên để bắt đầu.',
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: AppColors.textMuted,
-              ),
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
             ),
           ),
         ],
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 6,
-        mainAxisSpacing: 6,
-      ),
-      itemCount: album.items.length + (album.hasMore ? 1 : 0),
-      itemBuilder: (_, i) {
-        if (i >= album.items.length) {
-          album.fetchMedia(refresh: false);
-          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-        }
-        final media = album.items[i];
-        return _tile(media, isAdmin);
-      },
+    final groups = _dayGroups(album.items);
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(child: _libraryHeader(album.items.length)),
+        for (final group in groups) ...[
+          SliverToBoxAdapter(child: _dayHeader(group.date)),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 22),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 0.72,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => _tile(group.items[i], isAdmin),
+                childCount: group.items.length,
+              ),
+            ),
+          ),
+        ],
+        if (album.hasMore)
+          SliverToBoxAdapter(child: _loadMoreIndicator(album))
+        else
+          const SliverToBoxAdapter(child: SizedBox(height: 112)),
+      ],
     );
   }
+
+  Widget _libraryHeader(int count) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Ảnh',
+            style: GoogleFonts.inter(
+              fontSize: 36,
+              height: 1,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            // "Đã tải" vì đây là số item FE đã fetch (phân trang), KHÔNG phải
+            // total toàn thư viện. Total thật cần BE trả trong list response.
+            'Đã tải $count mục',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.white.withValues(alpha: 0.82),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dayHeader(DateTime? date) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        children: [
+          Text(
+            _dateLabel(date),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            _daySubtitle(date),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.62),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _loadMoreIndicator(AlbumProvider album) {
+    album.fetchMedia(refresh: false);
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(0, 16, 0, 124),
+      child: Center(
+        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+      ),
+    );
+  }
+
+  Widget _collectionsBody(
+    AlbumProvider album,
+    List<FamilyMember> members,
+    bool isAdmin,
+  ) {
+    final pinned = album.items
+        .where((media) => _pinnedIds.contains(media.id))
+        .toList();
+    final videos = album.items.where((media) => media.isVideo).toList();
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 18),
+            child: Text(
+              'Bộ sưu tập',
+              style: GoogleFonts.inter(
+                fontSize: 36,
+                height: 1,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _collectionSection(
+            title: 'Đã ghim',
+            note: 'bản xem trước',
+            children: pinned.isEmpty
+                ? [
+                    _collectionPlaceholderCard(
+                      title: 'Chưa có ảnh ghim',
+                      subtitle: 'Ghim ảnh yêu thích từ màn xem ảnh',
+                      icon: Icons.push_pin_outlined,
+                    ),
+                  ]
+                : pinned
+                      .take(8)
+                      .map(
+                        (media) => _collectionMediaCard(
+                          media: media,
+                          title: media.caption?.isNotEmpty == true
+                              ? media.caption!
+                              : 'Ảnh đã ghim',
+                          subtitle: _fmtDate(media.createdAt),
+                          onTap: () => _openDetail(media, isAdmin),
+                        ),
+                      )
+                      .toList(),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _collectionSection(
+            // Nút "Tạo album" tạm ẩn: album con cần BE collection endpoint mới
+            // lưu/gán ảnh thật được. Chỉ giữ 2 card hệ thống Tất cả ảnh / Video.
+            title: 'Album',
+            children: [
+              _collectionMediaCard(
+                media: album.items.isEmpty ? null : album.items.first,
+                title: 'Tất cả ảnh',
+                subtitle: '${album.items.length} mục',
+                icon: Icons.photo_library_outlined,
+                onTap: () {
+                  // Reset filter về tất cả — nếu trước đó bấm "Video" thì
+                  // _mediaType đang là VIDEO, không reset sẽ chỉ hiện video.
+                  album.fetchMedia(refresh: true);
+                  setState(() => _tab = _PhotoHomeTab.library);
+                },
+              ),
+              _collectionMediaCard(
+                media: videos.isEmpty ? null : videos.first,
+                title: 'Video',
+                subtitle: '${videos.length} mục',
+                icon: Icons.video_library_outlined,
+                onTap: () {
+                  album.fetchMedia(
+                    refresh: true,
+                    mediaType: AlbumMediaType.video,
+                  );
+                  setState(() => _tab = _PhotoHomeTab.library);
+                },
+              ),
+            ],
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _collectionSection(
+            title: 'Thành viên',
+            onOpen: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AlbumPeopleScreen()),
+            ),
+            children: members.isEmpty
+                ? [
+                    _collectionPlaceholderCard(
+                      title: 'Chưa có thành viên',
+                      subtitle: 'Thêm thành viên để phân loại ảnh',
+                      icon: Icons.people_alt_outlined,
+                    ),
+                  ]
+                : members
+                      .take(8)
+                      .map(
+                        (member) => _memberCollectionCard(
+                          member,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => AlbumMemberPhotosScreen(
+                                memberId: member.id,
+                                memberName: member.name,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 124)),
+      ],
+    );
+  }
+
+  Widget _collectionSection({
+    required String title,
+    required List<Widget> children,
+    VoidCallback? onOpen,
+    Widget? trailing,
+    String? note,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 26),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 18, 10),
+            child: Row(
+              children: [
+                Flexible(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: onOpen,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            title,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        if (onOpen != null)
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.white,
+                            size: 26,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Nhãn cho mục chưa persist qua BE (vd Đã ghim chỉ sống trong
+                // phiên app) — nói rõ đây là bản xem trước, tránh hiểu nhầm.
+                if (note != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      note,
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                ?trailing,
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 144,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              scrollDirection: Axis.horizontal,
+              itemCount: children.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (_, i) => children[i],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _collectionMediaCard({
+    required AlbumMedia? media,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    IconData icon = Icons.image_outlined,
+  }) {
+    return _collectionCardFrame(
+      onTap: onTap,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (media == null)
+            _collectionCardFallback(icon)
+          else
+            AlbumMediaThumb(media: media),
+          _collectionCardScrim(),
+          _collectionCardText(title: title, subtitle: subtitle),
+        ],
+      ),
+    );
+  }
+
+  Widget _collectionPlaceholderCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    return _collectionCardFrame(
+      onTap: () {},
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _collectionCardFallback(icon),
+          _collectionCardText(title: title, subtitle: subtitle),
+        ],
+      ),
+    );
+  }
+
+  Widget _memberCollectionCard(
+    FamilyMember member, {
+    required VoidCallback onTap,
+  }) {
+    return _collectionCardFrame(
+      onTap: onTap,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(color: Color(member.avatarColor)),
+          Center(
+            child: AvatarWidget(
+              initial: member.avatarInitials,
+              color: Color(member.avatarColor),
+              size: 78,
+            ),
+          ),
+          _collectionCardScrim(),
+          _collectionCardText(
+            title: member.name.isEmpty ? 'Thành viên' : member.name,
+            subtitle: member.roleLabel,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _collectionCardFrame({
+    required Widget child,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: 144,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: ClipRRect(borderRadius: BorderRadius.circular(18), child: child),
+      ),
+    );
+  }
+
+  Widget _collectionCardFallback(IconData icon) {
+    return Container(
+      color: const Color(0xFF3F3F46),
+      alignment: Alignment.center,
+      child: Icon(icon, color: Colors.white54, size: 38),
+    );
+  }
+
+  Widget _collectionCardScrim() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.68)],
+        ),
+      ),
+    );
+  }
+
+  Widget _collectionCardText({
+    required String title,
+    required String subtitle,
+  }) {
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: 12,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.76),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<_MediaDayGroup> _dayGroups(List<AlbumMedia> items) {
+    final groups = <String, _MediaDayGroup>{};
+    for (final media in items) {
+      final date = media.createdAt;
+      final key = date == null
+          ? 'unknown'
+          : '${date.year}-${date.month}-${date.day}';
+      groups
+          .putIfAbsent(
+            key,
+            () => _MediaDayGroup(
+              date == null ? null : DateTime(date.year, date.month, date.day),
+            ),
+          )
+          .items
+          .add(media);
+    }
+    final sorted = groups.values.toList();
+    sorted.sort((a, b) {
+      if (a.date == null && b.date == null) return 0;
+      if (a.date == null) return 1;
+      if (b.date == null) return -1;
+      return b.date!.compareTo(a.date!);
+    });
+    return sorted;
+  }
+
+  String _dateLabel(DateTime? date) {
+    if (date == null) return 'Không rõ ngày';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  String _daySubtitle(DateTime? date) {
+    if (date == null) return 'Ảnh chưa có ngày chụp';
+    return 'Ảnh ngày ${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+  }
+
+  String _fmtDate(DateTime? date) => _dateLabel(date);
 
   Widget _tile(AlbumMedia media, bool isAdmin) {
     return GestureDetector(
@@ -703,8 +1196,27 @@ class _AlbumScreenState extends State<AlbumScreen> {
     VoidCallback? onChanged,
   }) {
     final deleted = media.deletedAt != null;
+    final pinned = _pinnedIds.contains(media.id);
     return Column(
       children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            pinned ? Icons.push_pin : Icons.push_pin_outlined,
+            color: pinned ? AppColors.link : AppColors.textSecondary,
+          ),
+          title: Text(pinned ? 'Bỏ ghim' : 'Ghim ảnh'),
+          onTap: () {
+            setState(() {
+              if (pinned) {
+                _pinnedIds.remove(media.id);
+              } else {
+                _pinnedIds.add(media.id);
+              }
+            });
+            onChanged?.call();
+          },
+        ),
         if (media.isSafe)
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -1088,6 +1600,13 @@ class _AlbumScreenState extends State<AlbumScreen> {
       AlbumVisibilityScope.managerOnly => 'Chỉ Trưởng/Phó nhóm',
     };
   }
+}
+
+class _MediaDayGroup {
+  _MediaDayGroup(this.date);
+
+  final DateTime? date;
+  final List<AlbumMedia> items = [];
 }
 
 class _AlbumDetailViewer extends StatefulWidget {
