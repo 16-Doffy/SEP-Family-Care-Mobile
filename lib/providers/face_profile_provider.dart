@@ -57,6 +57,13 @@ class FaceProfile {
     FaceProfileStatus.disabled => 'Đã tắt',
     FaceProfileStatus.unknown => 'Không rõ trạng thái',
   };
+
+  // Compat cho lưới Thành viên (Ảnh): suy ra enroll/enabled từ status.
+  bool get isEnrolled =>
+      status != FaceProfileStatus.notEnrolled &&
+      status != FaceProfileStatus.unknown;
+  bool get enabled => status == FaceProfileStatus.ready;
+  bool get isDisabled => status == FaceProfileStatus.disabled;
 }
 
 class FaceProfileProvider extends ChangeNotifier {
@@ -98,6 +105,28 @@ class FaceProfileProvider extends ChangeNotifier {
     } finally {
       loading = false;
       notifyListeners();
+    }
+  }
+
+  /// Tải trạng thái hồ sơ khuôn mặt của 1 thành viên mà KHÔNG đụng state chung
+  /// (`profile`). Dùng cho lưới Thành viên cần nhiều hồ sơ song song.
+  Future<FaceProfile> load(String memberId) async {
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$_fid/face-profiles/$memberId',
+      );
+      return FaceProfile.fromJson(
+        memberId,
+        data is Map ? Map<String, dynamic>.from(data) : const {},
+      );
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) {
+        return FaceProfile(
+          memberId: memberId,
+          status: FaceProfileStatus.notEnrolled,
+        );
+      }
+      rethrow;
     }
   }
 

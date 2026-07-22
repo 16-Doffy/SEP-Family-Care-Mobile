@@ -6,8 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/album_media.dart';
-import '../../providers/album_face_provider.dart';
 import '../../providers/album_provider.dart';
+import '../../providers/face_profile_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -28,7 +28,7 @@ class AlbumPeopleScreen extends StatefulWidget {
 
 class _AlbumPeopleScreenState extends State<AlbumPeopleScreen> {
   final Map<String, Future<List<AlbumMedia>>> _photoFutures = {};
-  final Map<String, Future<FaceProfileStatus>> _profileFutures = {};
+  final Map<String, Future<FaceProfile>> _profileFutures = {};
   Future<List<_AlbumMemberPreview>>? _previewFuture;
   String? _previewKey;
 
@@ -47,10 +47,10 @@ class _AlbumPeopleScreenState extends State<AlbumPeopleScreen> {
     );
   }
 
-  Future<FaceProfileStatus> _profileFor(String memberId) {
+  Future<FaceProfile> _profileFor(String memberId) {
     return _profileFutures.putIfAbsent(
       memberId,
-      () => context.read<AlbumFaceProvider>().fetchFaceProfile(memberId),
+      () => context.read<FaceProfileProvider>().load(memberId),
     );
   }
 
@@ -72,7 +72,10 @@ class _AlbumPeopleScreenState extends State<AlbumPeopleScreen> {
         Future.wait(
           members.map((member) async {
             var photos = const <AlbumMedia>[];
-            var profile = FaceProfileStatus.none(member.id);
+            var profile = FaceProfile(
+              memberId: member.id,
+              status: FaceProfileStatus.notEnrolled,
+            );
             try {
               photos = await _photosFor(member.id);
             } catch (_) {}
@@ -331,7 +334,7 @@ class _AlbumMemberPreview {
 
   final FamilyMember member;
   final List<AlbumMedia> photos;
-  final FaceProfileStatus profile;
+  final FaceProfile profile;
 
   String get name => member.name.isEmpty ? 'Thành viên' : member.name;
 }
@@ -349,7 +352,7 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
   final ImagePicker _picker = ImagePicker();
   final List<XFile> _images = [];
 
-  FaceProfileStatus? _profile;
+  FaceProfile? _profile;
   bool _loading = true;
   bool _saving = false;
   bool _consent = false;
@@ -367,7 +370,7 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
       _error = null;
     });
     try {
-      final profile = await context.read<AlbumFaceProvider>().fetchFaceProfile(
+      final profile = await context.read<FaceProfileProvider>().load(
         widget.member.id,
       );
       if (!mounted) return;
@@ -440,11 +443,12 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
       _error = null;
     });
     try {
-      final profile = await context.read<AlbumFaceProvider>().enrollFaceProfile(
-        memberId: widget.member.id,
-        imagePaths: _images.map((e) => e.path).toList(),
-        consentConfirmed: _consent,
+      final faceProvider = context.read<FaceProfileProvider>();
+      await faceProvider.enroll(
+        widget.member.id,
+        _images.map((e) => e.path).toList(),
       );
+      final profile = await faceProvider.load(widget.member.id);
       if (!mounted) return;
       setState(() {
         _profile = profile;
@@ -467,12 +471,8 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     if (profile == null || !profile.isEnrolled) return;
     setState(() => _saving = true);
     try {
-      final face = context.read<AlbumFaceProvider>();
-      if (profile.enabled) {
-        await face.disableFaceProfile(widget.member.id);
-      } else {
-        await face.enableFaceProfile(widget.member.id);
-      }
+      final face = context.read<FaceProfileProvider>();
+      await face.setEnabled(widget.member.id, !profile.enabled);
       await _load();
     } catch (e) {
       if (!mounted) return;
@@ -506,12 +506,13 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     if (ok != true || !mounted) return;
     setState(() => _saving = true);
     try {
-      await context.read<AlbumFaceProvider>().deleteFaceProfile(
-        widget.member.id,
-      );
+      await context.read<FaceProfileProvider>().delete(widget.member.id);
       if (!mounted) return;
       setState(() {
-        _profile = FaceProfileStatus.none(widget.member.id);
+        _profile = FaceProfile(
+          memberId: widget.member.id,
+          status: FaceProfileStatus.notEnrolled,
+        );
         _saving = false;
       });
       _showMessage('Đã xóa hồ sơ khuôn mặt.');
@@ -524,7 +525,7 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     }
   }
 
-  String _statusText(FaceProfileStatus profile) {
+  String _statusText(FaceProfile profile) {
     if (!profile.isEnrolled) return 'Chưa đăng ký khuôn mặt';
     if (profile.enabled) return 'Đã đăng ký và đang bật';
     return 'Đã đăng ký nhưng đang tắt';
@@ -536,7 +537,12 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     final memberName = widget.member.name.isEmpty
         ? 'Thành viên'
         : widget.member.name;
-    final profile = _profile ?? FaceProfileStatus.none(widget.member.id);
+    final profile =
+        _profile ??
+        FaceProfile(
+          memberId: widget.member.id,
+          status: FaceProfileStatus.notEnrolled,
+        );
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -614,7 +620,7 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     );
   }
 
-  Widget _profileHeader(FaceProfileStatus profile, String memberName) {
+  Widget _profileHeader(FaceProfile profile, String memberName) {
     final colors = context.colors;
     return Container(
       padding: const EdgeInsets.all(16),
