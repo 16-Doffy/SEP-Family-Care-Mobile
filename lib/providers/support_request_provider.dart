@@ -97,7 +97,7 @@ class SupportRequestProvider extends ChangeNotifier {
     final body = <String, dynamic>{
       'decision': decision,
       if (decisionNote != null && decisionNote.isNotEmpty) 'decisionNote': decisionNote,
-      'occurredAt': DateTime.now().toIso8601String(),
+      'occurredAt': ApiClient.localIsoMs(),
     };
     await ApiClient.instance.patch(
       '/families/$fid/finance/support-requests/$requestId/review',

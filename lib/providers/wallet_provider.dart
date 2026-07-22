@@ -125,17 +125,6 @@ class OverviewData {
   });
 }
 
-// BE yêu cầu entryDate dạng ISO mili-giây + 'Z' (vd 2026-06-10T08:30:00.000Z).
-// `DateTime.now().toIso8601String()` (local) KHÔNG có 'Z' và có thể kèm
-// microseconds (6 số) → BE báo "entryDate không đúng định dạng". Giữ NGUYÊN giờ
-// địa phương (BE append Z, app hiển thị lại như local — xem displayEntryDate).
-String _entryDateNow() {
-  final d = DateTime.now();
-  String p(int n, [int w = 2]) => n.toString().padLeft(w, '0');
-  return '${d.year}-${p(d.month)}-${p(d.day)}'
-      'T${p(d.hour)}:${p(d.minute)}:${p(d.second)}.${p(d.millisecond, 3)}Z';
-}
-
 class WalletProvider extends ChangeNotifier {
   OverviewData? _familyOverview;
   List<LedgerEntry> _entries = [];
@@ -348,7 +337,7 @@ class WalletProvider extends ChangeNotifier {
           'entryType': isIncome ? 'INCOME' : 'EXPENSE',
           'amount': amount.abs(),
           'description': description,
-          'entryDate': _entryDateNow(),
+          'entryDate': ApiClient.localIsoMs(),
           if (note != null && note.isNotEmpty) 'note': note,
           'categoryId': ?categoryId,
           'sourceType': ?sourceType,
