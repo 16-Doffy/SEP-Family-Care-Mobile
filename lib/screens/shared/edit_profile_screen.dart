@@ -186,14 +186,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                     ),
                   ),
-                  const Expanded(
+                  Expanded(
                     child: Center(
                       child: Text(
                         'Chỉnh sửa hồ sơ',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: context.colors.textPrimary,
                         ),
                       ),
                     ),
@@ -235,7 +235,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textMuted,
+                            color: context.colors.textMuted,
                           ),
                         ),
                       ],
@@ -428,7 +428,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       style: GoogleFonts.inter(
         fontSize: 12,
         fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
+        color: context.colors.textMuted,
       ),
     ),
   );
@@ -437,7 +437,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     padding: const EdgeInsets.only(top: 6),
     child: Text(
       text,
-      style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+      style: GoogleFonts.inter(fontSize: 11, color: context.colors.textMuted),
     ),
   );
 

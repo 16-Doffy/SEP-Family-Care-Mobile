@@ -11,7 +11,7 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/invitation_provider.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_surface_colors.dart';
+import '../../theme/app_theme.dart';
 
 /// Public preview + authenticated join-request flow using an 8-character code.
 ///
@@ -84,7 +84,10 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   // Mở scanner toàn màn — quét QR mã mời là tự điền, "quét là nhận".
   Future<void> _scanQr() async {
     final scanned = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const _QrScanScreen(), fullscreenDialog: true),
+      MaterialPageRoute(
+        builder: (_) => const _QrScanScreen(),
+        fullscreenDialog: true,
+      ),
     );
     if (scanned != null && scanned.isNotEmpty) _applyCode(scanned);
   }
@@ -104,9 +107,9 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
       _preview = null;
     });
     try {
-      final data = await context
-          .read<InvitationProvider>()
-          .previewInviteCode(_codeCtrl.text.trim().toUpperCase());
+      final data = await context.read<InvitationProvider>().previewInviteCode(
+        _codeCtrl.text.trim().toUpperCase(),
+      );
       if (mounted) setState(() => _preview = data);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -129,9 +132,9 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     });
     try {
       await context.read<InvitationProvider>().requestJoinByCode(
-            code,
-            message: _messageCtrl.text,
-          );
+        code,
+        message: _messageCtrl.text,
+      );
       if (mounted) {
         setState(() => _showMyRequests = true);
         await _loadMyRequests();
@@ -150,8 +153,9 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     try {
       await invitationProvider.fetchMyJoinRequests();
       if (!mounted) return;
-      final approved = invitationProvider.myJoinRequests
-          .any((request) => request.status.toUpperCase() == 'APPROVED');
+      final approved = invitationProvider.myJoinRequests.any(
+        (request) => request.status.toUpperCase() == 'APPROVED',
+      );
       if (approved) {
         await auth.refreshFamilyContext();
         if (!mounted) return;
@@ -171,7 +175,10 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
 
   void _startPolling() {
     _poller?.cancel();
-    _poller = Timer.periodic(const Duration(seconds: 12), (_) => _loadMyRequests());
+    _poller = Timer.periodic(
+      const Duration(seconds: 12),
+      (_) => _loadMyRequests(),
+    );
   }
 
   Future<void> _cancel(JoinRequest request) async {
@@ -192,98 +199,164 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     final family = _preview?['family'] is Map
         ? Map<String, dynamic>.from(_preview!['family'] as Map)
         : <String, dynamic>{};
-    return Scaffold(
-      backgroundColor: context.colors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.white,
-        title: Text('Tham gia gia đình', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-      ),
-      body: _showMyRequests
-          ? _myRequests(provider)
-          : ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                const Icon(Icons.group_add_rounded, size: 64, color: AppColors.primary500),
-                const SizedBox(height: 16),
-                Text('Nhập mã mời 8 ký tự', textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 8),
-                Text('Bạn không cần xác thực email để gửi yêu cầu tham gia.',
+    return Theme(
+      data: AppTheme.light,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          backgroundColor: AppColors.white,
+          title: Text(
+            'Tham gia gia đình',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+        ),
+        body: _showMyRequests
+            ? _myRequests(provider)
+            : ListView(
+                padding: const EdgeInsets.all(24),
+                children: [
+                  const Icon(
+                    Icons.group_add_rounded,
+                    size: 64,
+                    color: AppColors.primary500,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Nhập mã mời 8 ký tự',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
-                const SizedBox(height: 24),
-                TextField(
-                  controller: _codeCtrl,
-                  maxLength: 8,
-                  textCapitalization: TextCapitalization.characters,
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]'))],
-                  style: GoogleFonts.robotoMono(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: 4),
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(labelText: 'Mã mời', counterText: ''),
-                  onChanged: (_) {
-                    setState(() {
-                      _error = null;
-                      _preview = null;
-                    });
-                    if (_hasFullCode) _previewCode();
-                  },
-                ),
-                if (_error != null) Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(_error!, textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger)),
-                ),
-                // Quét QR / Dán mã — "quét là nhận, không phải gõ tay".
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _loading ? null : _scanQr,
-                      icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
-                      label: const Text('Quét mã QR'),
+                    style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _loading ? null : _pasteFromClipboard,
-                      icon: const Icon(Icons.content_paste_rounded, size: 20),
-                      label: const Text('Dán mã'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Bạn không cần xác thực email để gửi yêu cầu tham gia.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textMuted,
                     ),
                   ),
-                ]),
-                if (family.isNotEmpty) ...[
-                  const SizedBox(height: 18),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(16)),
-                    child: Row(children: [
-                      const Icon(Icons.home_rounded, color: AppColors.safe),
-                      const SizedBox(width: 12),
-                      Expanded(child: Text('Bạn sắp gửi yêu cầu vào ${family['name'] ?? 'gia đình này'}',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w700))),
-                    ]),
-                  ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 24),
                   TextField(
-                    controller: _messageCtrl,
-                    maxLength: 500,
-                    maxLines: 3,
-                    decoration: const InputDecoration(labelText: 'Lời nhắn (không bắt buộc)'),
+                    controller: _codeCtrl,
+                    maxLength: 8,
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
+                    ],
+                    style: GoogleFonts.robotoMono(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 4,
+                    ),
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(
+                      labelText: 'Mã mời',
+                      counterText: '',
+                    ),
+                    onChanged: (_) {
+                      setState(() {
+                        _error = null;
+                        _preview = null;
+                      });
+                      if (_hasFullCode) _previewCode();
+                    },
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ),
+                  // Quét QR / Dán mã — "quét là nhận, không phải gõ tay".
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _loading ? null : _scanQr,
+                          icon: const Icon(
+                            Icons.qr_code_scanner_rounded,
+                            size: 20,
+                          ),
+                          label: const Text('Quét mã QR'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _loading ? null : _pasteFromClipboard,
+                          icon: const Icon(
+                            Icons.content_paste_rounded,
+                            size: 20,
+                          ),
+                          label: const Text('Dán mã'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (family.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.home_rounded, color: AppColors.safe),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Bạn sắp gửi yêu cầu vào ${family['name'] ?? 'gia đình này'}',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _messageCtrl,
+                      maxLength: 500,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Lời nhắn (không bắt buộc)',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _loading || !_hasFullCode
+                          ? null
+                          : (_preview == null ? _previewCode : _submit),
+                      child: _loading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text(
+                              _preview == null
+                                  ? 'Kiểm tra mã'
+                                  : auth.isLoggedIn
+                                  ? 'Gửi yêu cầu tham gia'
+                                  : 'Đăng nhập để gửi yêu cầu',
+                            ),
+                    ),
                   ),
                 ],
-                const SizedBox(height: 20),
-                SizedBox(
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _loading || !_hasFullCode ? null : (_preview == null ? _previewCode : _submit),
-                    child: _loading ? const CircularProgressIndicator(color: Colors.white) : Text(
-                      _preview == null ? 'Kiểm tra mã' : auth.isLoggedIn ? 'Gửi yêu cầu tham gia' : 'Đăng nhập để gửi yêu cầu',
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+      ),
     );
   }
 
@@ -293,21 +366,42 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Yêu cầu của tôi', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800)),
+          Text(
+            'Yêu cầu của tôi',
+            style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 6),
-          Text('Tự động kiểm tra trạng thái mỗi 12 giây.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+          Text(
+            'Tự động kiểm tra trạng thái mỗi 12 giây.',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
           const SizedBox(height: 16),
           if (provider.myJoinRequests.isEmpty)
-            const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Chưa có yêu cầu nào')))
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: Text('Chưa có yêu cầu nào')),
+            )
           else
-            ...provider.myJoinRequests.map((request) => Card(
-              child: ListTile(
-                title: Text(request.familyName ?? 'Gia đình', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-                subtitle: Text('${request.statusLabel}${request.message == null ? '' : '\n${request.message}'}'),
-                isThreeLine: request.message != null,
-                trailing: request.isPending ? TextButton(onPressed: _loading ? null : () => _cancel(request), child: const Text('Hủy')) : null,
+            ...provider.myJoinRequests.map(
+              (request) => Card(
+                child: ListTile(
+                  title: Text(
+                    request.familyName ?? 'Gia đình',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    '${request.statusLabel}${request.message == null ? '' : '\n${request.message}'}',
+                  ),
+                  isThreeLine: request.message != null,
+                  trailing: request.isPending
+                      ? TextButton(
+                          onPressed: _loading ? null : () => _cancel(request),
+                          child: const Text('Hủy'),
+                        )
+                      : null,
+                ),
               ),
-            )),
+            ),
         ],
       ),
     );
@@ -337,7 +431,9 @@ class _QrScanScreenState extends State<_QrScanScreen> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_handled) return;
-    final raw = capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
+    final raw = capture.barcodes.isNotEmpty
+        ? capture.barcodes.first.rawValue
+        : null;
     if (raw == null || raw.trim().isEmpty) return;
     _handled = true;
     Navigator.of(context).pop(raw);
@@ -350,7 +446,10 @@ class _QrScanScreenState extends State<_QrScanScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text('Quét mã QR mời', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        title: Text(
+          'Quét mã QR mời',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+        ),
         actions: [
           IconButton(
             onPressed: () => _controller.toggleTorch(),
@@ -373,8 +472,10 @@ class _QrScanScreenState extends State<_QrScanScreen> {
           ),
           Positioned(
             bottom: 48,
-            child: Text('Đưa mã QR mời vào khung',
-                style: GoogleFonts.inter(color: Colors.white, fontSize: 14)),
+            child: Text(
+              'Đưa mã QR mời vào khung',
+              style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+            ),
           ),
         ],
       ),

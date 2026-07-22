@@ -245,14 +245,14 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 28,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
+                            color: context.colors.textPrimary,
                           ),
                         ),
                         Text(
                           'điểm',
                           style: GoogleFonts.inter(
                             fontSize: 12,
-                            color: AppColors.textMuted,
+                            color: context.colors.textMuted,
                           ),
                         ),
                       ],
@@ -276,7 +276,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                               style: GoogleFonts.inter(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
+                                color: context.colors.textPrimary,
                               ),
                             ),
                           ],
@@ -286,14 +286,14 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                           '$_displayXp / $_xpToNext điểm',
                           style: GoogleFonts.inter(
                             fontSize: 13,
-                            color: AppColors.textSecondary,
+                            color: context.colors.textSecondary,
                           ),
                         ),
                         Text(
                           'Còn ${_xpToNext - _xp} điểm để lên Cấp ${_level + 1}',
                           style: GoogleFonts.inter(
                             fontSize: 11,
-                            color: AppColors.textMuted,
+                            color: context.colors.textMuted,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -316,7 +316,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                   child: Column(
                                     children: [
                                       const AppFeatureIcon(
-                                        icon: Icons.account_balance_wallet_outlined,
+                                        icon: Icons
+                                            .account_balance_wallet_outlined,
                                         color: AppColors.link,
                                         backgroundColor: Colors.transparent,
                                         size: 26,
@@ -462,7 +463,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                         style: GoogleFonts.inter(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: context.colors.textPrimary,
                         ),
                       ),
                       if (taskState.loading)
@@ -476,7 +477,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                           '${pending.length} còn lại',
                           style: GoogleFonts.inter(
                             fontSize: 12,
-                            color: AppColors.textMuted,
+                            color: context.colors.textMuted,
                           ),
                         ),
                     ],

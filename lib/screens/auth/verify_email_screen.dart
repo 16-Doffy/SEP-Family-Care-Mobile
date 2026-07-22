@@ -8,7 +8,7 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
-import '../../theme/app_surface_colors.dart';
+import '../../theme/app_theme.dart';
 
 // UC-ONBOARD — Xác thực email bằng OTP 6 số, chèn giữa Register và
 // FamilySetupScreen (POST /families trả 403 nếu account chưa verify, xem
@@ -167,135 +167,142 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   @override
   Widget build(BuildContext context) {
     final email = context.watch<AuthProvider>().user?.email ?? '';
-    return Scaffold(
-      backgroundColor: context.colors.background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              const Icon(Icons.mark_email_unread_rounded, size: 64, color: AppColors.primary500),
-              const SizedBox(height: 20),
-              Text(
-                'Xác thực email',
-                style: GoogleFonts.inter(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+    return Theme(
+      data: AppTheme.light,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              children: [
+                const SizedBox(height: 24),
+                const Icon(
+                  Icons.mark_email_unread_rounded,
+                  size: 64,
+                  color: AppColors.primary500,
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                email.isEmpty
-                    ? 'Nhập mã OTP 6 số vừa được gửi tới email của bạn'
-                    : 'Nhập mã OTP 6 số vừa được gửi tới\n$email',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: AppColors.textMuted,
-                  height: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 40),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  _digitCount,
-                  (i) => Padding(
-                    padding: EdgeInsets.only(
-                      right: i < _digitCount - 1 ? 10 : 0,
-                    ),
-                    child: _digitBox(i),
+                const SizedBox(height: 20),
+                Text(
+                  'Xác thực email',
+                  style: GoogleFonts.inter(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-              ),
-
-              if (_error != null) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 Text(
-                  _error!,
+                  email.isEmpty
+                      ? 'Nhập mã OTP 6 số vừa được gửi tới email của bạn'
+                      : 'Nhập mã OTP 6 số vừa được gửi tới\n$email',
                   style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: AppColors.danger,
+                    fontSize: 14,
+                    color: AppColors.textMuted,
+                    height: 1.5,
                   ),
                   textAlign: TextAlign.center,
                 ),
-              ],
+                const SizedBox(height: 40),
 
-              const SizedBox(height: 32),
-
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.link,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    _digitCount,
+                    (i) => Padding(
+                      padding: EdgeInsets.only(
+                        right: i < _digitCount - 1 ? 10 : 0,
+                      ),
+                      child: _digitBox(i),
                     ),
-                    elevation: 0,
                   ),
-                  onPressed: (_verifying || _code.length != _digitCount)
-                      ? null
-                      : _verify,
-                  child: _verifying
-                      ? const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                ),
+
+                if (_error != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    _error!,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.danger,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+
+                const SizedBox(height: 32),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.link,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      elevation: 0,
+                    ),
+                    onPressed: (_verifying || _code.length != _digitCount)
+                        ? null
+                        : _verify,
+                    child: _verifying
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            'Xác thực',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                TextButton(
+                  onPressed: (_resending || _cooldown > 0) ? null : _resend,
+                  child: _resending
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(
-                          'Xác thực',
+                          _cooldown > 0
+                              ? 'Gửi lại mã sau ${_cooldown}s'
+                              : 'Gửi lại mã OTP',
                           style: GoogleFonts.inter(
-                            fontSize: 16,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            color: _cooldown > 0
+                                ? AppColors.textMuted
+                                : AppColors.link,
                           ),
                         ),
                 ),
-              ),
-              const SizedBox(height: 20),
 
-              TextButton(
-                onPressed: (_resending || _cooldown > 0) ? null : _resend,
-                child: _resending
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(
-                        _cooldown > 0
-                            ? 'Gửi lại mã sau ${_cooldown}s'
-                            : 'Gửi lại mã OTP',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: _cooldown > 0
-                              ? AppColors.textMuted
-                              : AppColors.link,
-                        ),
-                      ),
-              ),
-
-              const SizedBox(height: 24),
-              TextButton(
-                onPressed: () async {
-                  await context.read<AuthProvider>().logout();
-                  if (mounted) context.go('/login');
-                },
-                child: Text(
-                  'Đăng xuất',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: AppColors.textMuted,
+                const SizedBox(height: 24),
+                TextButton(
+                  onPressed: () async {
+                    await context.read<AuthProvider>().logout();
+                    if (mounted) context.go('/login');
+                  },
+                  child: Text(
+                    'Đăng xuất',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

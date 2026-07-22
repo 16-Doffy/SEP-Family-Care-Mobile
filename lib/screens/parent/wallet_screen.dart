@@ -69,14 +69,14 @@ class _WalletScreenState extends State<WalletScreen> {
               child: Row(
                 children: [
                   _backBtn(context),
-                  const Expanded(
+                  Expanded(
                     child: Center(
                       child: Text(
                         'Sổ thu chi gia đình',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: context.colors.textPrimary,
                         ),
                       ),
                     ),
@@ -841,10 +841,10 @@ class _WalletScreenState extends State<WalletScreen> {
                     amountCtrl.text.replaceAll(',', ''),
                   );
                   if (amount == null || amount <= 0) return;
-                   final desc = descCtrl.text.trim().isNotEmpty
-                       ? descCtrl.text.trim()
-                       : (isIncome ? 'Thu nhập' : 'Chi tiêu');
-                   try {
+                  final desc = descCtrl.text.trim().isNotEmpty
+                      ? descCtrl.text.trim()
+                      : (isIncome ? 'Thu nhập' : 'Chi tiêu');
+                  try {
                     if (editing) {
                       await context.read<WalletProvider>().updateEntry(
                         entry.id,

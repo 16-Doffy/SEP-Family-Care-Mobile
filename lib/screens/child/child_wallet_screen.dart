@@ -158,7 +158,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                   const Spacer(),
@@ -433,7 +433,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                   const Spacer(),
@@ -459,7 +459,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                         : 'Chưa có giao dịch nào',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: AppColors.textMuted,
+                      color: context.colors.textMuted,
                       height: 1.4,
                     ),
                   ),
@@ -492,7 +492,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
   Widget _noAllowanceCard() {
     return Column(
       children: [
-        const Icon(Icons.receipt_long_rounded, size: 32, color: AppColors.primary500),
+        const Icon(
+          Icons.receipt_long_rounded,
+          size: 32,
+          color: AppColors.primary500,
+        ),
         const SizedBox(height: 8),
         Text(
           'Chưa khai báo hạn mức tháng',

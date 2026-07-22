@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
@@ -21,6 +22,7 @@ import 'providers/invitation_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/support_request_provider.dart';
 import 'providers/theme_mode_controller.dart';
+import 'theme/app_surface_colors.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 
@@ -71,12 +73,34 @@ class _FamilyCareAppState extends State<FamilyCareApp> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = context.watch<ThemeModeController>().themeMode;
+    final platformBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    final isDark =
+        themeMode == ThemeMode.dark ||
+        (themeMode == ThemeMode.system &&
+            platformBrightness == Brightness.dark);
+    final surfaces = isDark ? AppSurfaceColors.dark : AppSurfaceColors.light;
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: surfaces.background,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+        systemNavigationBarColor: surfaces.surface,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarIconBrightness: isDark
+            ? Brightness.light
+            : Brightness.dark,
+        systemStatusBarContrastEnforced: false,
+        systemNavigationBarContrastEnforced: false,
+      ),
+    );
     return MaterialApp.router(
       title: 'FamilyCare',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: context.watch<ThemeModeController>().themeMode,
+      themeMode: themeMode,
       routerConfig: _router,
     );
   }
