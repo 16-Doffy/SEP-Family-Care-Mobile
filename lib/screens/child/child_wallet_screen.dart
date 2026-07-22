@@ -194,28 +194,33 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Số dư hiện tại',
+                      hasData ? 'Còn lại có thể tiêu' : 'Hạn mức chi tiêu cá nhân',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: Colors.white70,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    // Balance vẫn mock — chưa có API
                     Text(
-                      '— ₫',
+                      hasData
+                          ? '${_fmtNum(remaining > 0 ? remaining : 0)} ₫'
+                          : 'Chưa khai báo ₫',
                       style: GoogleFonts.inter(
-                        fontSize: 32,
+                        fontSize: 30,
                         fontWeight: FontWeight.w800,
                         color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Số dư thực chưa có API',
+                      hasData
+                          ? (isOver
+                              ? '⚠️ Đã vượt hạn mức ${_fmtNum(-remaining)} ₫'
+                              : 'Hạn mức chi tiêu tháng này')
+                          : 'Vào Hồ sơ → Tài chính tháng để khai báo',
                       style: GoogleFonts.inter(
                         fontSize: 11,
-                        color: Colors.white38,
+                        color: Colors.white70,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -233,9 +238,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                 ),
                               ),
                               Text(
-                                _actualSpent != null
-                                    ? '${_fmtNum(_actualSpent!)} ₫'
-                                    : '—',
+                                '${_fmtNum(spent)} ₫',
                                 style: GoogleFonts.inter(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
