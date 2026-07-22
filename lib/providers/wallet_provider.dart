@@ -43,6 +43,7 @@ class LedgerEntry {
   final String? note;
   final String entryDate;
   final String? categoryName;
+  final String? categoryId;
   final String? sourceType;
 
   const LedgerEntry({
@@ -53,6 +54,7 @@ class LedgerEntry {
     this.note,
     required this.entryDate,
     this.categoryName,
+    this.categoryId,
     this.sourceType,
   });
 
@@ -81,6 +83,7 @@ class LedgerEntry {
       entryDate:
           json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
       categoryName: cat?['name']?.toString(),
+      categoryId: json['categoryId']?.toString() ?? cat?['id']?.toString(),
       sourceType: json['sourceType']?.toString(),
     );
   }
@@ -343,6 +346,47 @@ class WalletProvider extends ChangeNotifier {
           'sourceType': ?sourceType,
           'sourceId': ?sourceId,
         });
+    await fetchWallets();
+  }
+
+  /// GET /families/{familyId}/finance/ledger/entries/{entryId}
+  ///
+  /// Danh sách chỉ có dữ liệu rút gọn; lấy chi tiết trước khi mở thao tác
+  /// chỉnh sửa/hủy để không làm mất note hoặc các trường BE bổ sung.
+  Future<LedgerEntry> fetchEntryDetail(String entryId) async {
+    final data = await ApiClient.instance.get(
+      ApiClient.instance.familyPath('/finance/ledger/entries/$entryId'),
+    );
+    if (data is! Map) throw Exception('Không đọc được chi tiết giao dịch');
+    return LedgerEntry.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  /// PATCH /families/{familyId}/finance/ledger/entries/{entryId}
+  Future<void> updateEntry(
+    String entryId, {
+    required double amount,
+    required String description,
+    String? categoryId,
+    String? note,
+  }) async {
+    await ApiClient.instance.patch(
+      ApiClient.instance.familyPath('/finance/ledger/entries/$entryId'),
+      {
+        'amount': amount.abs(),
+        'description': description,
+        'categoryId': ?categoryId,
+        'note': ?note,
+      },
+    );
+    await fetchWallets();
+  }
+
+  /// DELETE /families/{familyId}/finance/ledger/entries/{entryId}
+  /// BE thực hiện soft-delete và chuyển trạng thái giao dịch thành VOIDED.
+  Future<void> voidEntry(String entryId) async {
+    await ApiClient.instance.delete(
+      ApiClient.instance.familyPath('/finance/ledger/entries/$entryId'),
+    );
     await fetchWallets();
   }
 
