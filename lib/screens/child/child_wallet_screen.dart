@@ -181,7 +181,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     return Column(
       children: [
         SizedBox(
-          height: 108,
+          height: 118,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: _history
