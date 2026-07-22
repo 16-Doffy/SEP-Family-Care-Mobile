@@ -23,15 +23,18 @@ class SupportRequest {
   factory SupportRequest.fromJson(Map<String, dynamic> json) {
     final requester = json['requester'] as Map? ?? json['user'] as Map? ?? {};
     return SupportRequest(
-      id:            json['id']?.toString() ?? '',
-      requesterName: requester['fullName']?.toString()
-                     ?? requester['name']?.toString()
-                     ?? 'Thành viên',
-      amount:        (json['amount'] as num?)?.toDouble() ?? 0,
-      purpose:       json['purpose']?.toString() ?? '',
-      status:        json['status']?.toString() ?? 'PENDING',
-      createdAt:     DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      decisionNote:  json['decisionNote']?.toString(),
+      id: json['id']?.toString() ?? '',
+      requesterName:
+          requester['fullName']?.toString() ??
+          requester['name']?.toString() ??
+          'Thành viên',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      purpose: json['purpose']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'PENDING',
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      decisionNote: json['decisionNote']?.toString(),
     );
   }
 
@@ -58,7 +61,9 @@ class SupportRequestProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get(
         '/families/$fid/finance/support-requests',
       );
-      final list = data is List ? data : (data['items'] as List? ?? data['data'] as List? ?? []);
+      final list = data is List
+          ? data
+          : (data['items'] as List? ?? data['data'] as List? ?? []);
       _requests = list
           .whereType<Map<String, dynamic>>()
           .map(SupportRequest.fromJson)
@@ -81,9 +86,12 @@ class SupportRequestProvider extends ChangeNotifier {
     final body = <String, dynamic>{
       'amount': amount,
       'purpose': purpose,
-      if (categoryId != null) 'categoryId': categoryId,
+      'categoryId': ?categoryId,
     };
-    await ApiClient.instance.post('/families/$fid/finance/support-requests', body);
+    await ApiClient.instance.post(
+      '/families/$fid/finance/support-requests',
+      body,
+    );
     await fetchRequests();
   }
 
@@ -96,7 +104,8 @@ class SupportRequestProvider extends ChangeNotifier {
     if (fid == null) return;
     final body = <String, dynamic>{
       'decision': decision,
-      if (decisionNote != null && decisionNote.isNotEmpty) 'decisionNote': decisionNote,
+      if (decisionNote != null && decisionNote.isNotEmpty)
+        'decisionNote': decisionNote,
       'occurredAt': DateTime.now().toIso8601String(),
     };
     await ApiClient.instance.patch(
@@ -112,21 +121,19 @@ class SupportRequestProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> fetchRequestDetail(String requestId) async {
     final fid = ApiClient.instance.familyId;
     if (fid == null) throw Exception('Chưa có gia đình');
-    final data = await ApiClient.instance.get('/families/$fid/finance/support-requests/$requestId');
+    final data = await ApiClient.instance.get(
+      '/families/$fid/finance/support-requests/$requestId',
+    );
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   Future<void> cancel(String requestId) async {
     final fid = ApiClient.instance.familyId;
-    if (fid == null) return;
-    try {
-      await ApiClient.instance.patch(
-        '/families/$fid/finance/support-requests/$requestId/cancel',
-        {},
-      );
-      await fetchRequests();
-    } catch (e) {
-      debugPrint('SupportRequestProvider: cancel failed: $e');
-    }
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.patch(
+      '/families/$fid/finance/support-requests/$requestId/cancel',
+      {},
+    );
+    await fetchRequests();
   }
 }
