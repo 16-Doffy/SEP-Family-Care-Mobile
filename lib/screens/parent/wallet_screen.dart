@@ -1189,16 +1189,7 @@ class _WalletScreenState extends State<WalletScreen> {
   void _showRecordSheet(BuildContext context, {required bool isIncome}) {
     final amountCtrl = TextEditingController();
     final descCtrl = TextEditingController();
-    final categories = context
-        .read<FinanceProvider>()
-        .categories
-        .where(
-          (category) =>
-              category.categoryType == (isIncome ? 'INCOME' : 'EXPENSE') &&
-                  category.isActive,
-        )
-        .toList();
-    String? categoryId = categories.isNotEmpty ? categories.first.id : null;
+    String? categoryId;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1207,7 +1198,20 @@ class _WalletScreenState extends State<WalletScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
+        builder: (ctx, setSheet) {
+          final categories = ctx
+              .watch<FinanceProvider>()
+              .categories
+              .where(
+                (category) =>
+                    category.categoryType == (isIncome ? 'INCOME' : 'EXPENSE') &&
+                        category.isActive,
+              )
+              .toList();
+          if (categoryId == null || !categories.any((c) => c.id == categoryId)) {
+            categoryId = categories.isNotEmpty ? categories.first.id : null;
+          }
+          return Padding(
           padding: EdgeInsets.fromLTRB(
             28,
             28,
@@ -1339,7 +1343,8 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
             ],
           ),
-        ),
+        );
+      },
       ),
     );
   }

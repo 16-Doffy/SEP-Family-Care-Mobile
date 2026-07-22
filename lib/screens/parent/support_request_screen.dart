@@ -521,15 +521,17 @@ class _RequestCard extends StatelessWidget {
     );
   }
 
-  static Color _statusColor(String s) => switch (s) {
+  static Color _statusColor(String s) => switch (s.toUpperCase()) {
         'APPROVED' => AppColors.success,
         'REJECTED' => AppColors.danger,
+        'CANCELED' || 'CANCELLED' => AppColors.textMuted,
         _          => const Color(0xFFF59E0B),
       };
 
-  static String _statusLabel(String s) => switch (s) {
+  static String _statusLabel(String s) => switch (s.toUpperCase()) {
         'APPROVED' => 'Đã duyệt',
         'REJECTED' => 'Từ chối',
+        'CANCELED' || 'CANCELLED' => 'Đã hủy',
         _          => 'Chờ duyệt',
       };
 

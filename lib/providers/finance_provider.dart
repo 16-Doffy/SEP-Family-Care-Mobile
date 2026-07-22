@@ -738,7 +738,8 @@ class FinanceProvider extends ChangeNotifier {
       {
         'name': name,
         'categoryType': categoryType,
-        'essentialType': ?essentialType,
+        if (categoryType == 'EXPENSE')
+          'essentialType': essentialType ?? 'ESSENTIAL',
       },
     );
     await _fetchCategories();
@@ -1058,15 +1059,29 @@ class FinanceProvider extends ChangeNotifier {
       'note': ?note,
     };
     if (monthlyFinance != null) {
-      await ApiClient.instance.put(
-        '/families/$_fid/finance/monthly-finances/me',
-        body,
-      );
+      try {
+        await ApiClient.instance.put(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      } catch (_) {
+        await ApiClient.instance.post(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      }
     } else {
-      await ApiClient.instance.post(
-        '/families/$_fid/finance/monthly-finances/me',
-        body,
-      );
+      try {
+        await ApiClient.instance.post(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      } catch (_) {
+        await ApiClient.instance.put(
+          '/families/$_fid/finance/monthly-finances/me',
+          body,
+        );
+      }
     }
     await _fetchMonthlyFinance();
     notifyListeners();

@@ -403,7 +403,7 @@ class WalletProvider extends ChangeNotifier {
           'entryType': isIncome ? 'INCOME' : 'EXPENSE',
           'amount': amount.abs(),
           'description': description,
-          'entryDate': DateTime.now().toUtc().toIso8601String(),
+          'entryDate': '${DateTime.now().toUtc().toIso8601String().split('.').first}Z',
           if (note != null && note.isNotEmpty) 'note': note,
           'categoryId': ?categoryId,
           'sourceType': ?sourceType,
