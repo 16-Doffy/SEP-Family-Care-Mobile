@@ -305,14 +305,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                         '💰',
                                         style: TextStyle(fontSize: 18),
                                       ),
-                                      Text(
-                                        'Tài chính',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.link,
-                                        ),
-                                      ),
+                                       Text(
+                                         'Sổ chi tiêu\ncá nhân',
+                                         textAlign: TextAlign.center,
+                                         style: GoogleFonts.inter(
+                                           fontSize: 9.5,
+                                           height: 1.1,
+                                           fontWeight: FontWeight.w700,
+                                           color: AppColors.link,
+                                         ),
+                                       ),
                                     ],
                                   ),
                                 ),
