@@ -144,6 +144,10 @@ class WalletProvider extends ChangeNotifier {
 
   // Report data from /finance/reports/overview
   Map<String, dynamic>? _report;
+  Map<String, dynamic>? _financeSummary;
+  Map<String, dynamic>? _cashFlowSummary;
+  Map<String, dynamic>? _categorySpendingSummary;
+  Map<String, dynamic>? _memberContributionSummary;
   int _entriesPage = 1;
   final int _entriesLimit = 20;
   int? _entriesTotalPages;
@@ -161,6 +165,10 @@ class WalletProvider extends ChangeNotifier {
   double get monthlyExpense =>
       _monthlyExpense > 0 ? _monthlyExpense : _calcExpense;
   Map<String, dynamic>? get report => _report;
+  Map<String, dynamic>? get financeSummary => _financeSummary;
+  Map<String, dynamic>? get cashFlowSummary => _cashFlowSummary;
+  Map<String, dynamic>? get categorySpendingSummary => _categorySpendingSummary;
+  Map<String, dynamic>? get memberContributionSummary => _memberContributionSummary;
   bool get isLoadingMoreEntries => _loadingMoreEntries;
   bool get hasMoreEntries => _entriesTotalPages == null
       ? _entries.length >= _entriesLimit
@@ -187,6 +195,7 @@ class WalletProvider extends ChangeNotifier {
     try {
       await Future.wait([
         _fetchOverview(),
+        _fetchDashboardSummaries(),
         _fetchEntries(refresh: true),
         _fetchJars(),
         _fetchReport(),
@@ -201,7 +210,32 @@ class WalletProvider extends ChangeNotifier {
 
   Future<void> _fetchOverview() async {
     final now = DateTime.now();
-    final data = await ApiClient.instance.get(
+    final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
+    final end = '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+    dynamic data;
+    try {
+      // New documented Finance home contract.
+      data = await ApiClient.instance.get(
+        '${ApiClient.instance.familyPath('/finance/summary')}?periodStart=$start&periodEnd=$end&includeAlerts=true&includeGoals=true&includeBreakdown=true',
+      );
+      if (data is Map && data['budget'] is Map) {
+        _financeSummary = Map<String, dynamic>.from(data);
+        final budget = data['budget'] as Map;
+        _familyOverview = OverviewData(
+          id: ApiClient.instance.familyId ?? '',
+          name: 'Quỹ gia đình',
+          type: 'JOINT',
+          balance: JarData._d(budget['actualBalance']),
+          ownerName: '',
+        );
+        _monthlyIncome = JarData._d(budget['actualIncome']);
+        _monthlyExpense = JarData._d(budget['actualExpense']);
+        return;
+      }
+    } catch (_) {
+      // Keep compatibility with the existing overview endpoint below.
+    }
+    data = await ApiClient.instance.get(
       '${ApiClient.instance.familyPath('/finance/overview')}?month=${now.month}&year=${now.year}',
     );
     if (data is Map) {
@@ -220,6 +254,29 @@ class WalletProvider extends ChangeNotifier {
         data['totalExpense'] ?? data['monthlyExpense'] ?? data['expense'] ?? 0,
       );
     }
+  }
+
+  Future<void> _fetchDashboardSummaries() async {
+    final now = DateTime.now();
+    final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
+    final end = '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+    final base = ApiClient.instance.familyPath('/finance');
+    Future<Map<String, dynamic>?> read(String path) async {
+      try {
+        final data = await ApiClient.instance.get('$base/$path?periodStart=$start&periodEnd=$end');
+        return data is Map ? Map<String, dynamic>.from(data) : null;
+      } catch (_) {
+        return null;
+      }
+    }
+    final results = await Future.wait([
+      read('cash-flow-summary'),
+      read('category-spending-summary'),
+      read('member-contribution-summary'),
+    ]);
+    _cashFlowSummary = results[0];
+    _categorySpendingSummary = results[1];
+    _memberContributionSummary = results[2];
   }
 
   Future<void> _fetchReport() async {
