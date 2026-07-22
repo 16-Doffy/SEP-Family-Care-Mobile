@@ -494,10 +494,14 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                           } catch (e) {
                             setSheet(() {
                               submitting = false;
-                              sheetError = e.toString().replaceFirst(
+                              final message = e.toString().replaceFirst(
                                 'Exception: ',
                                 '',
                               );
+                              sheetError = message.contains(
+                                      'vượt quá số tiền còn có thể phân bổ')
+                                  ? 'Khoản góp này gắn với giao dịch nguồn. Số tiền sửa không thể vượt quá số tiền còn lại của giao dịch đó; hãy tạo khoản góp mới nếu muốn góp thêm.'
+                                  : message;
                             });
                           }
                         },
