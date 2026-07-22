@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
 import 'providers/album_provider.dart';
+import 'providers/ai_chatbot_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/calendar_provider.dart';
 import 'providers/tab_config_provider.dart';
@@ -19,6 +20,7 @@ import 'providers/finance_provider.dart';
 import 'providers/invitation_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/support_request_provider.dart';
+import 'providers/theme_mode_controller.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 
@@ -28,6 +30,7 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => AlbumProvider()),
+        ChangeNotifierProvider(create: (_) => AiChatbotProvider()),
         ChangeNotifierProvider(create: (_) => MoneyProvider()),
         ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(create: (_) => TaskProvider()),
@@ -39,6 +42,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => InvitationProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         ChangeNotifierProvider(create: (_) => SupportRequestProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeModeController()..load()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => CalendarProvider()),
         ChangeNotifierProvider(create: (_) => TabConfigProvider()),
@@ -71,6 +75,8 @@ class _FamilyCareAppState extends State<FamilyCareApp> {
       title: 'FamilyCare',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: context.watch<ThemeModeController>().themeMode,
       routerConfig: _router,
     );
   }
