@@ -95,7 +95,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     final myTasks = taskState.myAssignments;
     final doneTasks = myTasks.where((t) => t.status == 'APPROVED').length;
     final pending = myTasks.where((t) => t.status != 'APPROVED').toList();
-    final balance = walletState.totalBalance;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -307,9 +306,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                         style: TextStyle(fontSize: 18),
                                       ),
                                       Text(
-                                        walletState.isLoading
-                                            ? '...'
-                                            : _fmtBalance(balance),
+                                        'Tài chính',
                                         style: GoogleFonts.inter(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
