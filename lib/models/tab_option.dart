@@ -43,7 +43,7 @@ extension TabOptionX on TabOption {
     TabOption.calendar => 'Lịch',
     TabOption.map => 'Bản đồ',
     TabOption.tasks => 'Nhiệm vụ',
-    TabOption.wallet => role == UserRole.member ? 'Tài chính' : 'Sổ thu chi',
+    TabOption.wallet => role == UserRole.member ? 'Sổ chi tiêu' : 'Sổ thu chi',
     TabOption.album => 'Album',
   };
 
