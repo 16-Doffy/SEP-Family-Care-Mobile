@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/json_report_view.dart';
 
 // Quản lý phần thưởng phía Manager/Deputy — trước đây hoàn toàn vắng mặt
@@ -54,7 +55,7 @@ class _RewardManagementScreenState extends State<RewardManagementScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           Padding(

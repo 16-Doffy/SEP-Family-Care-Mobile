@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/invitation_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
 // UC20 — Xem danh sách thành viên gia đình
@@ -42,7 +43,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
     final provider = context.watch<FamilyProvider>();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(
           children: [

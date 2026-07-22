@@ -11,6 +11,7 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/invitation_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Public preview + authenticated join-request flow using an 8-character code.
 ///
@@ -192,7 +193,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
         ? Map<String, dynamic>.from(_preview!['family'] as Map)
         : <String, dynamic>{};
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         title: Text('Tham gia gia đình', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),

@@ -3,25 +3,30 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
 
-/// Empty state chuẩn: emoji minh họa trong vòng tròn pastel + tiêu đề +
+/// Empty state chuẩn: icon minh họa trong vòng tròn pastel brand + tiêu đề +
 /// mô tả + nút hành động gợi ý (tùy chọn).
+///
+/// Dùng Material [IconData] (không emoji) để đồng bộ với hệ icon toàn app.
+/// Mặc định tông brand hồng; truyền [iconColor] khi cần accent (vd SOS đỏ).
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
-    required this.emoji,
+    required this.icon,
     required this.title,
     this.subtitle,
     this.actionLabel,
     this.onAction,
     this.compact = false,
+    this.iconColor = AppColors.primary500,
   });
 
-  final String emoji;
+  final IconData icon;
   final String title;
   final String? subtitle;
   final String? actionLabel;
   final VoidCallback? onAction;
   final bool compact;
+  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -34,12 +39,12 @@ class EmptyState extends StatelessWidget {
             Container(
               width: compact ? 72 : 96,
               height: compact ? 72 : 96,
-              decoration: const BoxDecoration(
-                color: AppColors.primary50,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: Text(emoji, style: TextStyle(fontSize: compact ? 32 : 44)),
+              child: Icon(icon, size: compact ? 32 : 40, color: iconColor),
             ),
             const SizedBox(height: 16),
             Text(title,

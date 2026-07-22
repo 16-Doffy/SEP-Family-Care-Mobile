@@ -314,7 +314,11 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
                 ),
                 child: Row(
                   children: [
-                    const Text('🚨', style: TextStyle(fontSize: 18)),
+                    const Icon(
+                      Icons.sos_rounded,
+                      size: 22,
+                      color: Colors.white,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -470,7 +474,11 @@ class _SOSNavItem extends StatelessWidget {
                     color: AppColors.sos,
                   ),
                   alignment: Alignment.center,
-                  child: const Text('🚨', style: TextStyle(fontSize: 18)),
+                  child: const Icon(
+                    Icons.sos_rounded,
+                    size: 22,
+                    color: Colors.white,
+                  ),
                 ),
                 if (hasAlert)
                   Positioned(

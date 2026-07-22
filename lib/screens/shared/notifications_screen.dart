@@ -6,6 +6,8 @@ import '../../navigation/notification_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
+import '../../widgets/app_feature_icon.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -59,7 +61,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final notifs = provider.notifications;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           Padding(
@@ -69,11 +71,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 onTap: () => context.pop(),
                 child: Container(
                   width: 40, height: 40,
-                  decoration: BoxDecoration(color: AppColors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)]),
-                  child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
+                  decoration: BoxDecoration(color: context.colors.surface, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 20)]),
+                  child: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: context.colors.textPrimary),
                 ),
               ),
-              const Expanded(child: Center(child: Text('Thông báo', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)))),
+              Expanded(child: Center(child: Text('Thông báo', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: context.colors.textPrimary)))),
               if (provider.unreadCount > 0)
                 GestureDetector(
                   onTap: () => provider.markAllRead(),
@@ -103,9 +105,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             Expanded(
               child: Center(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('🔔', style: TextStyle(fontSize: 40)),
+                  const AppFeatureIcon(
+                    icon: Icons.notifications_none_rounded,
+                    color: AppColors.primary500,
+                    size: 64,
+                    iconSize: 32,
+                    radius: 20,
+                  ),
                   const SizedBox(height: 8),
-                  Text('Chưa có thông báo nào', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                  Text('Chưa có thông báo nào', style: GoogleFonts.inter(fontSize: 14, color: context.colors.textMuted)),
                 ]),
               ),
             )
@@ -132,28 +140,46 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: n.isRead ? AppColors.white : n.accentColor.withValues(alpha: 0.08),
+          color: n.isRead ? context.colors.surface : n.accentColor.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 2))],
         ),
         child: Row(children: [
-          Text(n.emoji, style: const TextStyle(fontSize: 28)),
+          AppFeatureIcon(
+            icon: _notificationIcon(n.type),
+            color: n.accentColor,
+            backgroundColor: n.accentColor.withValues(alpha: 0.12),
+            size: 44,
+            iconSize: 22,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Expanded(child: Text(n.title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary))),
+                Expanded(child: Text(n.title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: context.colors.textPrimary))),
                 if (!n.isRead)
                   Container(width: 8, height: 8, decoration: BoxDecoration(color: n.accentColor, shape: BoxShape.circle)),
               ]),
               const SizedBox(height: 2),
-              Text(n.body, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+              Text(n.body, style: GoogleFonts.inter(fontSize: 12, color: context.colors.textSecondary)),
             ]),
           ),
           const SizedBox(width: 8),
-          Text(_fmtTime(n.createdAt), style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
+          Text(_fmtTime(n.createdAt), style: GoogleFonts.inter(fontSize: 11, color: context.colors.textMuted)),
         ]),
       ),
     );
   }
+
+  IconData _notificationIcon(String type) => switch (type) {
+    'SOS' => Icons.sos_rounded,
+    'TASK' => Icons.task_alt_rounded,
+    'FINANCE' => Icons.account_balance_wallet_outlined,
+    'INVITATION' || 'JOIN_REQUEST' => Icons.mail_outline_rounded,
+    'MEMBER' || 'MEMBER_LEFT' => Icons.person_outline_rounded,
+    'ALBUM_TAG' => Icons.photo_library_outlined,
+    'CALENDAR' => Icons.calendar_month_outlined,
+    'CHAT' => Icons.chat_bubble_outline_rounded,
+    _ => Icons.notifications_none_rounded,
+  };
 }

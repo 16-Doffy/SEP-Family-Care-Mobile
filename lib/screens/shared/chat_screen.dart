@@ -7,6 +7,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
+import '../../widgets/app_feature_icon.dart';
 import '../../widgets/avatar_widget.dart';
 import 'chat_shared_content_screen.dart';
 
@@ -112,7 +114,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final attachment = await chat.uploadAttachment(img.path);
       if (attachment == null || attachment.fileUrl.isEmpty) {
-        throw Exception('Upload ảnh thất bại');
+        throw Exception('Tải ảnh lên thất bại');
       }
       final caption = _inputCtrl.text.trim();
       _inputCtrl.clear();
@@ -308,8 +310,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     final selected = conv.id == c.conversationId;
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
-                      leading: Text(conv.type == 'PRIVATE' ? '💬' : (conv.isDefault ? '👨‍👩‍👧' : '👥'),
-                          style: const TextStyle(fontSize: 22)),
+                      leading: _conversationIcon(
+                        type: conv.type,
+                        isDefault: conv.isDefault,
+                      ),
                       title: Text(conv.displayName(_myUserId),
                           style: GoogleFonts.inter(
                               fontSize: 14,
@@ -331,7 +335,13 @@ class _ChatScreenState extends State<ChatScreen> {
               const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.group_add_outlined, color: AppColors.primary500),
+                leading: const AppFeatureIcon(
+                  icon: Icons.group_add_outlined,
+                  color: AppColors.primary500,
+                  size: 38,
+                  iconSize: 20,
+                  radius: 12,
+                ),
                 title: Text('Tạo nhóm mới', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -340,7 +350,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.primary500),
+                leading: const AppFeatureIcon(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  color: AppColors.primary500,
+                  size: 38,
+                  iconSize: 20,
+                  radius: 12,
+                ),
                 title: Text('Nhắn riêng', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -381,7 +397,7 @@ class _ChatScreenState extends State<ChatScreen> {
         builder: (ctx, setS) => Padding(
           padding: EdgeInsets.fromLTRB(20, 18, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Tạo nhóm chat', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text('Tạo nhóm trò chuyện', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
             TextField(
               controller: nameCtrl,
@@ -618,8 +634,18 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('📌 Tin đã ghim (${pinned.length})',
-                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+            Row(children: [
+              const AppFeatureIcon(
+                icon: Icons.push_pin_outlined,
+                color: AppColors.primary500,
+                size: 34,
+                iconSize: 18,
+                radius: 10,
+              ),
+              const SizedBox(width: 8),
+              Text('Tin đã ghim (${pinned.length})',
+                  style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700)),
+            ]),
             const SizedBox(height: 8),
             if (pinned.isEmpty)
               Padding(
@@ -661,15 +687,19 @@ class _ChatScreenState extends State<ChatScreen> {
     final title = chat.active?.displayName(myUserId) ?? 'Gia đình';
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         elevation: 0,
         title: GestureDetector(
           onTap: _showConversationsSheet,
           child: Row(children: [
-            Text(chat.active?.type == 'PRIVATE' ? '💬' : '👨‍👩‍👧',
-                style: const TextStyle(fontSize: 20)),
+            _conversationIcon(
+              type: chat.active?.type ?? 'GROUP',
+              isDefault: chat.active?.isDefault ?? true,
+              size: 34,
+              iconSize: 18,
+            ),
             const SizedBox(width: 8),
             Flexible(
               child: Text(title,
@@ -790,6 +820,26 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  Widget _conversationIcon({
+    required String type,
+    required bool isDefault,
+    double size = 40,
+    double iconSize = 21,
+  }) {
+    final isPrivate = type == 'PRIVATE';
+    return AppFeatureIcon(
+      icon: isPrivate
+          ? Icons.chat_bubble_outline_rounded
+          : isDefault
+              ? Icons.family_restroom_rounded
+              : Icons.groups_2_outlined,
+      color: isPrivate ? AppColors.primary500 : AppColors.link,
+      size: size,
+      iconSize: iconSize,
+      radius: 12,
+    );
+  }
+
   Widget _buildBody(ChatProvider chat, String myUserId) {
     if (chat.loading && chat.messages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -808,7 +858,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if (chat.messages.isEmpty) {
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('💬', style: TextStyle(fontSize: 44)),
+          const AppFeatureIcon(
+            icon: Icons.chat_bubble_outline_rounded,
+            color: AppColors.primary500,
+            size: 64,
+            iconSize: 32,
+            radius: 20,
+          ),
           const SizedBox(height: 10),
           Text('Chưa có tin nhắn nào',
               style: GoogleFonts.inter(

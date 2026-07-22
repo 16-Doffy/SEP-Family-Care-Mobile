@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Cài đặt SOS của gia đình — 4 công tắc khớp UpdateSosSettingsDto.
 ///
@@ -49,7 +50,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
     final canEdit = context.watch<AuthProvider>().user?.canResolveSos ?? false;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         elevation: 0,

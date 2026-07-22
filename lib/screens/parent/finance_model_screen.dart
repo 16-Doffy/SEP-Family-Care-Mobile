@@ -4,6 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart' as fp;
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
+import '../../widgets/app_feature_icon.dart';
 import '../../widgets/json_report_view.dart';
 
 // UC-FIN-01 — Chọn mô hình tài chính gia đình (5 Jars / 80-20 / Custom)
@@ -24,7 +26,7 @@ enum FinanceModelType { fiveJars, eightTwenty, custom }
 
 class FinanceJarUi {
   final String name;
-  final String emoji;
+  final IconData icon;
   final Color color;
   double percent;
   // jarCode/jarId khi map với jar thật của BE (đã tồn tại từ model active
@@ -33,7 +35,7 @@ class FinanceJarUi {
 
   FinanceJarUi({
     required this.name,
-    required this.emoji,
+    required this.icon,
     required this.color,
     required this.percent,
     this.jarCode,
@@ -55,16 +57,16 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
   // Giá trị mặc định KHỚP với BE thật (verify qua API, không phải số bịa).
   final List<FinanceJarUi> _fiveJars = [
-    FinanceJarUi(name: 'Nhu cầu thiết yếu', emoji: '🏠', color: const Color(0xFF2563EB), percent: 50, jarCode: 'NECESSITIES'),
-    FinanceJarUi(name: 'Tiết kiệm dài hạn', emoji: '🐖', color: const Color(0xFF16A34A), percent: 20, jarCode: 'SAVINGS'),
-    FinanceJarUi(name: 'Giáo dục',          emoji: '📚', color: const Color(0xFFF59E0B), percent: 10, jarCode: 'EDUCATION'),
-    FinanceJarUi(name: 'Vui chơi',          emoji: '🎉', color: const Color(0xFFEC4899), percent: 10, jarCode: 'ENJOYMENT'),
-    FinanceJarUi(name: 'Cho đi / Biếu tặng', emoji: '🎁', color: const Color(0xFF7C3AED), percent: 10, jarCode: 'GIVING'),
+    FinanceJarUi(name: 'Nhu cầu thiết yếu', icon: Icons.home_work_outlined, color: const Color(0xFF2563EB), percent: 50, jarCode: 'NECESSITIES'),
+    FinanceJarUi(name: 'Tiết kiệm dài hạn', icon: Icons.savings_outlined, color: const Color(0xFF16A34A), percent: 20, jarCode: 'SAVINGS'),
+    FinanceJarUi(name: 'Giáo dục',          icon: Icons.school_outlined, color: const Color(0xFFF59E0B), percent: 10, jarCode: 'EDUCATION'),
+    FinanceJarUi(name: 'Vui chơi',          icon: Icons.celebration_outlined, color: const Color(0xFFEC4899), percent: 10, jarCode: 'ENJOYMENT'),
+    FinanceJarUi(name: 'Cho đi / Biếu tặng', icon: Icons.volunteer_activism_outlined, color: const Color(0xFF7C3AED), percent: 10, jarCode: 'GIVING'),
   ];
 
   final List<FinanceJarUi> _twoFunds = [
-    FinanceJarUi(name: 'Chi tiêu',  emoji: '💳', color: const Color(0xFFF97316), percent: 80, jarCode: 'SPENDING'),
-    FinanceJarUi(name: 'Tiết kiệm', emoji: '💰', color: const Color(0xFF16A34A), percent: 20, jarCode: 'SAVINGS'),
+    FinanceJarUi(name: 'Chi tiêu',  icon: Icons.credit_card_rounded, color: const Color(0xFFF97316), percent: 80, jarCode: 'SPENDING'),
+    FinanceJarUi(name: 'Tiết kiệm', icon: Icons.savings_outlined, color: const Color(0xFF16A34A), percent: 20, jarCode: 'SAVINGS'),
   ];
 
   final List<FinanceJarUi> _customJars = [];
@@ -131,7 +133,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
           final colors = [const Color(0xFF2563EB), const Color(0xFF16A34A), const Color(0xFFF59E0B), const Color(0xFFEC4899), const Color(0xFF7C3AED)];
           for (var i = 0; i < realJars.length; i++) {
             final j = realJars[i];
-            _customJars.add(FinanceJarUi(name: j.name, emoji: '💼', color: colors[i % colors.length], percent: j.allocationPercentage, jarCode: j.jarCode));
+            _customJars.add(FinanceJarUi(name: j.name, icon: Icons.account_balance_wallet_outlined, color: colors[i % colors.length], percent: j.allocationPercentage, jarCode: j.jarCode));
           }
       }
       _loadingCurrent = false;
@@ -157,7 +159,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           Padding(
@@ -191,7 +193,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(12)),
                     child: Row(children: [
-                      const Text('✅', style: TextStyle(fontSize: 16)),
+                      const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF16A34A)),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text('Đang áp dụng: $_currentModelTypeLabel',
@@ -208,21 +210,21 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
                 _modelCard(
                   model: FinanceModelType.fiveJars,
-                  emoji: '🫙',
-                  title: 'Quy tắc 5 Lọ (5 Jars)',
+                  icon: Icons.account_balance_wallet_outlined,
+                  title: 'Quy tắc 5 lọ',
                   subtitle: '50% nhu cầu · 20% tiết kiệm · 10% giáo dục · 10% vui chơi · 10% cho đi',
                 ),
                 const SizedBox(height: 10),
                 _modelCard(
                   model: FinanceModelType.eightTwenty,
-                  emoji: '✂️',
+                  icon: Icons.call_split_rounded,
                   title: 'Quy tắc 80/20',
                   subtitle: '80% chi tiêu · 20% tiết kiệm',
                 ),
                 const SizedBox(height: 10),
                 _modelCard(
                   model: FinanceModelType.custom,
-                  emoji: '⚙️',
+                  icon: Icons.tune_rounded,
                   title: 'Tuỳ chỉnh',
                   subtitle: 'Tự thiết lập các khoản & tỷ lệ phân bổ',
                 ),
@@ -282,7 +284,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
   Widget _modelCard({
     required FinanceModelType model,
-    required String emoji,
+    required IconData icon,
     required String title,
     required String subtitle,
   }) {
@@ -298,7 +300,15 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
           border: Border.all(color: sel ? AppColors.link : const Color(0xFFE5E7EB), width: sel ? 2 : 1),
         ),
         child: Row(children: [
-          Text(emoji, style: const TextStyle(fontSize: 28)),
+          AppFeatureIcon(
+            icon: icon,
+            color: sel ? AppColors.link : AppColors.textMuted,
+            backgroundColor: sel
+                ? AppColors.link.withValues(alpha: 0.12)
+                : const Color(0xFFF3F4F6),
+            size: 48,
+            iconSize: 24,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -324,7 +334,14 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(jar.emoji, style: const TextStyle(fontSize: 20)),
+          AppFeatureIcon(
+            icon: jar.icon,
+            color: jar.color,
+            backgroundColor: jar.color.withValues(alpha: 0.12),
+            size: 34,
+            iconSize: 18,
+            radius: 10,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(jar.name, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
@@ -397,7 +414,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               if (name.isEmpty || pct <= 0) return;
               final colors = [const Color(0xFF2563EB), const Color(0xFF16A34A), const Color(0xFFF59E0B), const Color(0xFFEC4899), const Color(0xFF7C3AED)];
               setState(() {
-                _customJars.add(FinanceJarUi(name: name, emoji: '💼', color: colors[_customJars.length % colors.length], percent: pct));
+                _customJars.add(FinanceJarUi(name: name, icon: Icons.account_balance_wallet_outlined, color: colors[_customJars.length % colors.length], percent: pct));
                 _customNameCtrl.clear();
                 _customPercentCtrl.clear();
               });
@@ -489,7 +506,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
       if (mounted) {
         messenger.showSnackBar(const SnackBar(
-          content: Text('Đã lưu và áp dụng mô hình tài chính ✅'),
+          content: Text('Đã lưu và áp dụng mô hình tài chính'),
           backgroundColor: AppColors.success,
         ));
         context.pop();

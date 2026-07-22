@@ -7,6 +7,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../providers/invitation_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Manager-only screen for the current reusable family invite-code flow.
 ///
@@ -96,7 +97,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         title: Text('Mã mời gia đình', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),

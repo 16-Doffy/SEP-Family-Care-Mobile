@@ -116,7 +116,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 maxLines: 3,
                 maxLength: 1000,
                 decoration: InputDecoration(
-                  labelText: 'Caption',
+                  labelText: 'Mô tả',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -151,7 +151,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                     Icons.cloud_upload_outlined,
                     color: Colors.white,
                   ),
-                  label: const Text('Upload'),
+                  label: const Text('Tải lên'),
                   onPressed: () async {
                     Navigator.pop(ctx);
                     try {
@@ -345,7 +345,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                       Padding(
                         padding: const EdgeInsets.all(16),
                         child: Text(
-                          'Không có media nào chờ kiểm duyệt 🎉',
+                          'Không có ảnh/video nào chờ kiểm duyệt',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             color: AppColors.textMuted,
@@ -378,7 +378,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          status,
+                                          _moderationQueueStatusLabel(status),
                                           style: GoogleFonts.inter(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w700,
@@ -457,6 +457,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
         ),
       ),
     );
+  }
+
+  String _moderationQueueStatusLabel(String status) {
+    return switch (status.toUpperCase()) {
+      'SAFE' => 'An toàn',
+      'NEED_REVIEW' => 'Cần duyệt',
+      'FLAGGED' => 'Bị gắn cờ',
+      'PENDING' => 'Đang chờ',
+      'PROCESSING' => 'Đang xử lý',
+      _ => status.isEmpty ? 'Không rõ trạng thái' : status,
+    };
   }
 
   Widget _filterMenu(AlbumProvider album) {
@@ -1224,7 +1235,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
               Icons.edit_outlined,
               color: AppColors.textSecondary,
             ),
-            title: const Text('Sửa caption / quyền xem'),
+            title: const Text('Sửa mô tả / quyền xem'),
             onTap: () {
               if (closeBeforeAction) Navigator.pop(sheetContext);
               _showEditSheet(
@@ -1240,7 +1251,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             Icons.sell_outlined,
             color: AppColors.textSecondary,
           ),
-          title: const Text('Tag thành viên'),
+          title: const Text('Gắn thẻ thành viên'),
           onTap: () {
             if (closeBeforeAction) Navigator.pop(sheetContext);
             _showTagSheet(
@@ -1254,7 +1265,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.verified_outlined, color: AppColors.safe),
-            title: const Text('Manual review'),
+            title: const Text('Duyệt thủ công'),
             onTap: () {
               if (closeBeforeAction) Navigator.pop(sheetContext);
               _showReviewSheet(
@@ -1354,7 +1365,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 controller: captionCtrl,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  labelText: 'Caption',
+                  labelText: 'Mô tả',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -1431,7 +1442,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Tag thành viên',
+                'Gắn thẻ thành viên',
                 style: GoogleFonts.inter(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -1501,13 +1512,13 @@ class _AlbumScreenState extends State<AlbumScreen> {
               const ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.verified_outlined, color: AppColors.safe),
-                title: Text('Đánh dấu an toàn (SAFE)'),
+                title: Text('Đánh dấu an toàn'),
               ),
               TextField(
                 controller: noteCtrl,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  labelText: 'Ghi chú review',
+                  labelText: 'Ghi chú duyệt',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -1518,7 +1529,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton(
-                  child: const Text('Lưu review'),
+                  child: const Text('Lưu duyệt'),
                   onPressed: () async {
                     Navigator.pop(ctx);
                     try {
@@ -1810,7 +1821,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                 Text(
                   media.caption?.isNotEmpty == true
                       ? media.caption!
-                      : 'Chưa có caption',
+                      : 'Chưa có mô tả',
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,

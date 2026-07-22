@@ -9,7 +9,9 @@ import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/ai_chatbot_icon.dart';
+import '../../widgets/app_feature_icon.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/family_status_card.dart';
 
@@ -90,7 +92,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         .fold(0.0, (s, t) => s + t.amount.abs());
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: Stack(
         children: [
           Positioned(
@@ -139,7 +141,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Xin chào, ${user?.name ?? "Trưởng nhóm"} 👋',
+                              'Xin chào, ${user?.name ?? "Trưởng nhóm"}',
                               style: GoogleFonts.inter(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
@@ -309,33 +311,33 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   Row(
                     children: [
                       _quickCard(
-                        '📋',
-                        'Tasks',
+                        Icons.task_alt_rounded,
+                        'Nhiệm vụ',
                         () => context.go('/$seg/tasks'),
                       ),
                       const SizedBox(width: 12),
                       _quickCard(
-                        '👨‍👩‍👧',
+                        Icons.groups_2_outlined,
                         'Thành viên',
                         () => context.push('/manager/members'),
                       ),
                       const SizedBox(width: 12),
                       _quickCard(
-                        '🫙',
+                        Icons.savings_outlined,
                         'Ngân sách',
                         () => context.push('/manager/finance-model'),
                       ),
                       const SizedBox(width: 12),
                       if (user?.canInviteMembers ?? false) ...[
                         _quickCard(
-                          '👥',
+                          Icons.person_add_alt_rounded,
                           'Mời',
                           () => context.push('/manager/invite'),
                         ),
                         const SizedBox(width: 12),
                       ],
                       _quickCard(
-                        '🗺️',
+                        Icons.map_outlined,
                         'Bản đồ',
                         () => context.go('/$seg/map'),
                       ),
@@ -362,7 +364,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'Tasks',
+                                      'Nhiệm vụ',
                                       style: GoogleFonts.inter(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
@@ -543,7 +545,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                   ),
                                 ),
                                 Text(
-                                  'Hỏi về chi tiêu, tasks hay mẹo tiết kiệm…',
+                                  'Hỏi về chi tiêu, nhiệm vụ hay mẹo tiết kiệm…',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
                                     color: AppColors.textMuted,
@@ -631,11 +633,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                             color: Color(0xFFF3F4F6),
                                           ),
                                           alignment: Alignment.center,
-                                          child: Text(
-                                            tx.signedAmount > 0 ? '💵' : '💸',
-                                            style: const TextStyle(
-                                              fontSize: 18,
-                                            ),
+                                          child: Icon(
+                                            tx.signedAmount > 0
+                                                ? Icons.trending_up_rounded
+                                                : Icons.trending_down_rounded,
+                                            size: 20,
+                                            color: tx.signedAmount > 0
+                                                ? AppColors.success
+                                                : AppColors.danger,
                                           ),
                                         ),
                                         const SizedBox(width: 12),
@@ -689,7 +694,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     );
   }
 
-  Widget _quickCard(String icon, String label, VoidCallback onTap) {
+  Widget _quickCard(IconData icon, String label, VoidCallback onTap) {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
@@ -709,7 +714,14 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(icon, style: const TextStyle(fontSize: 22)),
+              AppFeatureIcon(
+                icon: icon,
+                color: AppColors.link,
+                backgroundColor: AppColors.link.withValues(alpha: 0.08),
+                size: 38,
+                iconSize: 20,
+                radius: 12,
+              ),
               const SizedBox(height: 4),
               Text(
                 label,

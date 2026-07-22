@@ -7,6 +7,7 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/tab_config_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Tùy chỉnh thanh điều hướng — người dùng chọn mục cho 3 vị trí trống.
 ///
@@ -23,7 +24,7 @@ class TabSettingsScreen extends StatelessWidget {
     final tabs = config.tabsFor(role);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
         title: Text(
           'Thanh điều hướng',
@@ -112,7 +113,11 @@ class _Preview extends StatelessWidget {
                         color: AppColors.sos,
                       ),
                       alignment: Alignment.center,
-                      child: const Text('🚨', style: TextStyle(fontSize: 15)),
+                      child: const Icon(
+                        Icons.sos_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      ),
                     )
                   else
                     Icon(

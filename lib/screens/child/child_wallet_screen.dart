@@ -6,6 +6,7 @@ import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/ring_chart.dart';
 
 class ChildWalletScreen extends StatefulWidget {
@@ -142,7 +143,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     final hasData = _allowance != null && _allowance! > 0;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -491,7 +492,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
   Widget _noAllowanceCard() {
     return Column(
       children: [
-        const Text('📋', style: TextStyle(fontSize: 32)),
+        const Icon(Icons.receipt_long_rounded, size: 32, color: AppColors.primary500),
         const SizedBox(height: 8),
         Text(
           'Chưa khai báo hạn mức tháng',

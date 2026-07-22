@@ -801,7 +801,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Widget _legend() {
     const items = [
-      ('Task', _calendarTaskColor),
+      ('Nhiệm vụ', _calendarTaskColor),
       ('Sự kiện', _calendarEventColor),
       ('Du lịch', _calendarTravelColor),
       ('Sinh nhật', _calendarBirthdayColor),
@@ -1413,20 +1413,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
         _modeItem(
           _CalendarViewMode.compact,
           Icons.view_week_outlined,
-          'Compact',
+          'Gọn',
         ),
         _modeItem(
           _CalendarViewMode.stacked,
           Icons.view_stream_outlined,
-          'Stacked',
+          'Xếp chồng',
         ),
         _modeItem(
           _CalendarViewMode.details,
           Icons.view_agenda_outlined,
-          'Details',
+          'Chi tiết',
         ),
         const PopupMenuDivider(),
-        _modeItem(_CalendarViewMode.list, Icons.list_alt_rounded, 'List'),
+        _modeItem(_CalendarViewMode.list, Icons.list_alt_rounded, 'Danh sách'),
       ],
     );
   }

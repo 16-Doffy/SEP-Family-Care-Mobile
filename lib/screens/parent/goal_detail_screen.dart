@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/json_report_view.dart';
 
 // GET .../financial-goals/{id}, PATCH, GET .../progress, GET/PATCH/DELETE
@@ -66,7 +67,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
   Widget build(BuildContext context) {
     final goal = _goal;
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           Padding(

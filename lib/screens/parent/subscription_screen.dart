@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../models/feature_access.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 // UC01 — Quản lý gói đăng ký (3 tiers: Free / Family / Premium)
 // Theo FAMILY_CARE_SYSTEM.md Section 6
@@ -39,13 +40,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       storage: '1 GB',
       db: 'Shared DB + RLS',
       features: [
-        '✅ Task & Wallet cơ bản',
+        '✅ Nhiệm vụ & sổ thu chi cơ bản',
         '✅ Chat nhóm',
         '✅ Thông báo',
-        '❌ Calendar',
+        '❌ Lịch',
         '❌ Ảnh gia đình',
         '❌ Theo dõi vị trí',
-        '❌ AI Chatbot',
+        '❌ Trợ lý AI',
         '❌ Đồng hồ thông minh',
       ],
     ),
@@ -62,13 +63,13 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       storage: '5 GB',
       db: 'Shared DB + RLS',
       features: [
-        '✅ Task & Wallet cơ bản',
+        '✅ Nhiệm vụ & sổ thu chi cơ bản',
         '✅ Chat nhóm',
         '✅ Thông báo',
-        '✅ Calendar + màu sự kiện',
+        '✅ Lịch + màu sự kiện',
         '✅ Ảnh gia đình',
         '✅ Theo dõi vị trí GPS',
-        '❌ AI Chatbot',
+        '❌ Trợ lý AI',
         '❌ Đồng hồ thông minh',
       ],
     ),
@@ -86,7 +87,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       db: 'Docker riêng / gia đình',
       features: [
         '✅ Tất cả tính năng Family',
-        '✅ AI Chatbot & dự báo tài chính',
+        '✅ Trợ lý AI & dự báo tài chính',
         '✅ Đồng hồ thông minh (SOS)',
         '✅ Docker container độc lập',
         '✅ Ưu tiên hỗ trợ kỹ thuật',
@@ -150,15 +151,15 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           final feat = FeatureAccess.fromJson(p['featureAccess']);
           // BE mới dùng key lồng như calendar.enabled; helper vẫn hỗ trợ key phẳng cũ.
           final features = <String>[
-            '✅ Task & Wallet cơ bản',
+        '✅ Nhiệm vụ & sổ thu chi cơ bản',
             '✅ Chat nhóm & Thông báo',
-            if (feat.calendarEnabled) '✅ Calendar',
+            if (feat.calendarEnabled) '✅ Lịch',
             if (feat.calendarReminders) '✅ Nhắc lịch',
             if (feat.calendarRecurringEvents) '✅ Sự kiện lặp lại',
             if (feat.aiEnabled) '✅ Tính năng AI',
             if (feat.advancedFinance) '✅ Tài chính nâng cao',
             if (feat.advancedReports) '✅ Báo cáo nâng cao',
-            if (feat.aiChatbot) '✅ AI Chatbot',
+            if (feat.aiChatbot) '✅ Trợ lý AI',
             if (feat.sos) '✅ SOS khẩn cấp',
             if (feat.unlimitedStorage) '✅ Lưu trữ không giới hạn',
             if (feat.maxFamilies != null && feat.maxFamilies != false)
@@ -307,7 +308,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -372,7 +373,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Text('📋', style: TextStyle(fontSize: 20)),
+                        const Icon(Icons.description_outlined, size: 20, color: AppColors.link),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(

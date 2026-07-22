@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_alert_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/json_report_view.dart';
 
 class FinanceAlertsScreen extends StatefulWidget {
@@ -26,7 +27,7 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
     final provider = context.watch<FinanceAlertProvider>();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           // ── Header ────────────────────────────────────────────
@@ -124,7 +125,7 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
 
   Widget _emptyView() => Center(
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      const Text('✅', style: TextStyle(fontSize: 48)),
+      const Icon(Icons.check_circle_rounded, size: 48, color: AppColors.safe),
       const SizedBox(height: 16),
       Text('Không có cảnh báo nào',
           style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600,

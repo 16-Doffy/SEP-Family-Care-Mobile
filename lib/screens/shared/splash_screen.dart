@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 // Hiển thị trong lúc AuthProvider.tryRestoreSession() đang khôi phục
 // session đã lưu (đọc token từ secure storage + gọi /auth/me).
@@ -9,7 +10,7 @@ class SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: context.colors.background,
       body: Center(
         child: CircularProgressIndicator(color: AppColors.link),
       ),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 // UC gap #5 — Manager/Deputy xem tài chính tháng của thành viên
 // (BE ship 2026-07-13: GET .../finance/monthly-summary/members/{memberId}).
@@ -103,7 +104,7 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
     final now = DateTime.now();
     final atCurrentMonth = _year == now.year && _month == now.month;
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           // ── Header ──────────────────────────────────────────────

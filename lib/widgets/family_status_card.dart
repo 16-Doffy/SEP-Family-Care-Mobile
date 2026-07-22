@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/sos_provider.dart';
 import '../theme/app_colors.dart';
+import 'app_feature_icon.dart';
 
 /// Block "Trạng thái gia đình" ở Trang chủ — nhìn nhanh ai đang có SOS active.
 ///
@@ -42,7 +43,18 @@ class FamilyStatusCard extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(safe ? '🛡️' : '🚨', style: const TextStyle(fontSize: 18)),
+          AppFeatureIcon(
+            icon: safe
+                ? Icons.health_and_safety_outlined
+                : Icons.sos_rounded,
+            color: safe ? AppColors.safe : AppColors.sos,
+            backgroundColor: safe
+                ? AppColors.safe.withValues(alpha: 0.12)
+                : AppColors.sos.withValues(alpha: 0.12),
+            size: 34,
+            iconSize: 18,
+            radius: 10,
+          ),
           const SizedBox(width: 8),
           Text('Trạng thái gia đình',
               style: GoogleFonts.inter(

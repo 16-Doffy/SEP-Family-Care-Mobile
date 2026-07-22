@@ -8,6 +8,7 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 // UC-ONBOARD — Xác thực email bằng OTP 6 số, chèn giữa Register và
 // FamilySetupScreen (POST /families trả 403 nếu account chưa verify, xem
@@ -167,14 +168,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   Widget build(BuildContext context) {
     final email = context.watch<AuthProvider>().user?.email ?? '';
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
             children: [
               const SizedBox(height: 24),
-              const Text('📧', style: TextStyle(fontSize: 64)),
+              const Icon(Icons.mark_email_unread_rounded, size: 64, color: AppColors.primary500),
               const SizedBox(height: 20),
               Text(
                 'Xác thực email',

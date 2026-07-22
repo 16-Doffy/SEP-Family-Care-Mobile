@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Onboarding entry point. Joining now always uses the dedicated invite-code
 /// route, so this screen has no retired invitation-token API calls.
@@ -48,7 +49,7 @@ class _FamilySetupScreenState extends State<FamilySetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(24),

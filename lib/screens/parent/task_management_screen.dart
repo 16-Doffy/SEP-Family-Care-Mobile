@@ -6,6 +6,7 @@ import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
 class TaskManagementScreen extends StatefulWidget {
@@ -51,7 +52,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         .length;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           Padding(
@@ -65,7 +66,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.textPrimary),
                 ),
               ),
-              const Expanded(child: Center(child: Text('Quản lý Tasks', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)))),
+              const Expanded(child: Center(child: Text('Quản lý nhiệm vụ', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)))),
               GestureDetector(
                 onTap: () => context.push('/manager/reward-management'),
                 child: Stack(clipBehavior: Clip.none, children: [
@@ -267,7 +268,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       await context.read<TaskProvider>().cancelTask(task.id);
                       if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
                     },
-                    child: Text('Hủy task', style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger)),
+                    child: Text('Hủy nhiệm vụ', style: GoogleFonts.inter(fontSize: 13, color: AppColors.danger)),
                   ),
                 const SizedBox(height: 12),
                 Text('Phân công (${assignments.length})', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
@@ -305,11 +306,11 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
           padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
           child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('✏️ Sửa task', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Sửa nhiệm vụ', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
               const SizedBox(height: 16),
-              Text('Tên task', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              Text('Tên nhiệm vụ', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 6),
-              _inputBox(titleCtrl, 'Tên task'),
+              _inputBox(titleCtrl, 'Tên nhiệm vụ'),
               const SizedBox(height: 12),
               Text('Mô tả', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
               const SizedBox(height: 6),
@@ -334,7 +335,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.link, minimumSize: const Size.fromHeight(54), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                 onPressed: submitting ? null : () async {
                   if (titleCtrl.text.trim().isEmpty) {
-                    setSheet(() => sheetError = 'Nhập tên task');
+                    setSheet(() => sheetError = 'Nhập tên nhiệm vụ');
                     return;
                   }
                   setSheet(() { submitting = true; sheetError = null; });
@@ -521,7 +522,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         // nhắc Manager sang màn Quản lý thưởng (icon 💳).
                         if ((a.rewardSetting ?? a.task?.rewardSetting) != null) {
                           sheetMessenger.showSnackBar(SnackBar(
-                            content: const Text('Đã duyệt ✅ — vào 💳 Quản lý thưởng (góc phải màn Tasks) để trả thưởng'),
+                            content: const Text('Đã duyệt — vào Quản lý thưởng ở góc phải màn Nhiệm vụ để trả thưởng'),
                             backgroundColor: AppColors.success,
                             duration: const Duration(seconds: 4),
                           ));
@@ -799,7 +800,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
             SwitchListTile(
               value: autoSettle,
               onChanged: (v) => setSheet(() => autoSettle = v),
-              title: Text('Tự tạo thanh toán khi duyệt task', style: GoogleFonts.inter(fontSize: 13)),
+              title: Text('Tự tạo thanh toán khi duyệt nhiệm vụ', style: GoogleFonts.inter(fontSize: 13)),
               contentPadding: EdgeInsets.zero,
             ),
             if (sheetError != null) ...[
@@ -896,7 +897,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
             padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('📋 Tạo task mới', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                Text('Tạo nhiệm vụ mới', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                 const SizedBox(height: 16),
                 Row(children: [
                   _typeToggle(label: '⚡ Tự phát', selected: taskType == 'AD_HOC', onTap: () => setSheet(() => taskType = 'AD_HOC')),
@@ -904,7 +905,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   _typeToggle(label: '🔁 Định kỳ', selected: taskType == 'RECURRING', onTap: () => setSheet(() => taskType = 'RECURRING')),
                 ]),
                 const SizedBox(height: 14),
-                Text('Tên task', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                Text('Tên nhiệm vụ', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                 const SizedBox(height: 6),
                 _inputBox(titleCtrl, 'VD: Dọn phòng khách, Đưa con đi học...'),
                 const SizedBox(height: 12),
@@ -999,7 +1000,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   },
                   child: submitting
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : Text('Tạo task', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
+                      : Text('Tạo nhiệm vụ', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
                 ),
               ]),
             ),

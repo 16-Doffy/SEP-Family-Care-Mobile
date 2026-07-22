@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 class ChildTasksScreen extends StatefulWidget {
   const ChildTasksScreen({super.key});
@@ -174,7 +175,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     final total = all.length;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => Future.wait([
@@ -390,7 +391,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(color: const Color(0xFFFEE2E2), borderRadius: BorderRadius.circular(10)),
               child: Row(children: [
-                const Text('❌', style: TextStyle(fontSize: 14)),
+                const Icon(Icons.cancel_rounded, size: 16, color: AppColors.sos),
                 const SizedBox(width: 8),
                 Expanded(child: Text('Ba/Mẹ đã từ chối. Hãy thực hiện lại và nộp mới.', style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF991B1B)))),
                 GestureDetector(
@@ -541,7 +542,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                 width: 56, height: 56,
                 decoration: BoxDecoration(color: const Color(0xFFFFF7ED), borderRadius: BorderRadius.circular(28)),
                 alignment: Alignment.center,
-                child: const Text('🚫', style: TextStyle(fontSize: 28)),
+                child: const Icon(Icons.do_not_disturb_on_rounded, size: 28, color: AppColors.accent500),
               ),
               const SizedBox(height: 12),
               Text('Báo cáo không thể thực hiện', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),

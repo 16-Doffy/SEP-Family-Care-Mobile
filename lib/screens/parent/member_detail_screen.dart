@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
 
 class MemberDetailScreen extends StatefulWidget {
@@ -80,7 +81,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final member = _findMember(family.members);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(
           children: [

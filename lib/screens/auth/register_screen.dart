@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -103,7 +104,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
@@ -184,7 +185,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Text('👑', style: TextStyle(fontSize: 16)),
+                          const Icon(Icons.workspace_premium_rounded, size: 18, color: AppColors.link),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(

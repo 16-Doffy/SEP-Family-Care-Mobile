@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Quản lý thiết bị đeo (đồng hồ/định vị) đã ghép với gia đình.
 ///
@@ -60,7 +61,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
         context.watch<AuthProvider>().user?.canResolveSos ?? false;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         elevation: 0,

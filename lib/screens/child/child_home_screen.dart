@@ -8,7 +8,9 @@ import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/ai_chatbot_icon.dart';
+import '../../widgets/app_feature_icon.dart';
 import '../../widgets/family_status_card.dart';
 import '../../widgets/ring_chart.dart';
 
@@ -98,7 +100,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     final balance = walletState.totalBalance;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: RefreshIndicator(
         onRefresh: () => Future.wait([
           context.read<TaskProvider>().fetchMyAssignments(),
@@ -125,7 +127,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Chào ${user?.name ?? "bạn"}! 🔥',
+                            'Chào ${user?.name ?? "bạn"}!',
                             style: GoogleFonts.inter(
                               fontSize: 24,
                               fontWeight: FontWeight.w700,
@@ -155,9 +157,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                 color: Colors.white.withValues(alpha: 0.15),
                               ),
                               alignment: Alignment.center,
-                              child: const Text(
-                                '🔔',
-                                style: TextStyle(fontSize: 20),
+                              child: const Icon(
+                                Icons.notifications_none_rounded,
+                                size: 22,
+                                color: Colors.white,
                               ),
                             ),
                             if (context
@@ -246,7 +249,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                           ),
                         ),
                         Text(
-                          'XP',
+                          'điểm',
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             color: AppColors.textMuted,
@@ -260,24 +263,34 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '⭐ Cấp $_level',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              size: 18,
+                              color: AppColors.accent500,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Cấp $_level',
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '$_displayXp / $_xpToNext XP',
+                          '$_displayXp / $_xpToNext điểm',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             color: AppColors.textSecondary,
                           ),
                         ),
                         Text(
-                          'Còn ${_xpToNext - _xp} XP → Cấp ${_level + 1}',
+                          'Còn ${_xpToNext - _xp} điểm để lên Cấp ${_level + 1}',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             color: AppColors.textMuted,
@@ -297,14 +310,18 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                     vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFEFF6FF),
+                                    color: AppColors.primary50,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Column(
                                     children: [
-                                      const Text(
-                                        '💰',
-                                        style: TextStyle(fontSize: 18),
+                                      const AppFeatureIcon(
+                                        icon: Icons.account_balance_wallet_outlined,
+                                        color: AppColors.link,
+                                        backgroundColor: Colors.transparent,
+                                        size: 26,
+                                        iconSize: 22,
+                                        radius: 10,
                                       ),
                                       Text(
                                         walletState.isLoading
@@ -337,7 +354,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                     children: [
                                       const AiChatbotIcon(size: 24),
                                       Text(
-                                        'AI',
+                                        'Trợ lý',
                                         style: GoogleFonts.inter(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
@@ -358,21 +375,25 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                     vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF3E8FF),
+                                    color: AppColors.primary50,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Column(
                                     children: [
-                                      const Text(
-                                        '🖼️',
-                                        style: TextStyle(fontSize: 18),
+                                      const AppFeatureIcon(
+                                        icon: Icons.photo_library_outlined,
+                                        color: AppColors.link,
+                                        backgroundColor: Colors.transparent,
+                                        size: 26,
+                                        iconSize: 22,
+                                        radius: 10,
                                       ),
                                       Text(
                                         'Ảnh',
                                         style: GoogleFonts.inter(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
-                                          color: const Color(0xFF7C3AED),
+                                          color: AppColors.link,
                                         ),
                                       ),
                                     ],
@@ -392,21 +413,25 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                                     vertical: 8,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFDBEAFE),
+                                    color: AppColors.primary50,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Column(
                                     children: [
-                                      const Text(
-                                        '📅',
-                                        style: TextStyle(fontSize: 18),
+                                      const AppFeatureIcon(
+                                        icon: Icons.calendar_month_outlined,
+                                        color: AppColors.link,
+                                        backgroundColor: Colors.transparent,
+                                        size: 26,
+                                        iconSize: 22,
+                                        radius: 10,
                                       ),
                                       Text(
                                         'Lịch',
                                         style: GoogleFonts.inter(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
-                                          color: const Color(0xFF2563EB),
+                                          color: AppColors.link,
                                         ),
                                       ),
                                     ],
@@ -423,7 +448,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
               ),
             ),
 
-            // ── Tasks section ────────────────────────────────────────
+            // ── Nhiệm vụ hôm nay ─────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
@@ -433,7 +458,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Tasks hôm nay',
+                        'Nhiệm vụ hôm nay',
                         style: GoogleFonts.inter(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
@@ -479,10 +504,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                       child: Center(
                         child: Column(
                           children: [
-                            const Text('📋', style: TextStyle(fontSize: 32)),
+                            const AppFeatureIcon(
+                              icon: Icons.task_alt_rounded,
+                              color: AppColors.link,
+                              size: 48,
+                              iconSize: 26,
+                            ),
                             const SizedBox(height: 8),
                             Text(
-                              'Chưa có task nào được giao',
+                              'Chưa có nhiệm vụ nào được giao',
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 color: AppColors.textMuted,
@@ -499,7 +529,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                     const SizedBox(height: 8),
                     Center(
                       child: Text(
-                        '✅ Đã hoàn thành $doneTasks task',
+                        'Đã hoàn thành $doneTasks nhiệm vụ',
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           color: AppColors.success,
@@ -562,19 +592,19 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                     if ((task.rewardSetting ?? task.task?.rewardSetting) !=
                         null)
                       _chip(
-                        '💰 ${(task.rewardSetting ?? task.task!.rewardSetting!).label}',
+                        'Thưởng: ${(task.rewardSetting ?? task.task!.rewardSetting!).label}',
                         const Color(0xFFDCFCE7),
                         const Color(0xFF16A34A),
                       ),
                     if (task.task?.schedule != null)
                       _chip(
-                        '🕐 ${task.task!.schedule!.label}',
+                        'Lịch: ${task.task!.schedule!.label}',
                         const Color(0xFFEFF6FF),
                         AppColors.link,
                       ),
                     if (task.status == 'SUBMITTED')
                       _chip(
-                        '⏳ Chờ duyệt',
+                        'Chờ duyệt',
                         const Color(0xFFFEF3C7),
                         const Color(0xFFD97706),
                       ),
@@ -592,9 +622,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                 color: Color(0xFFDCFCE7),
               ),
               alignment: Alignment.center,
-              child: const Text(
-                '✓',
-                style: TextStyle(color: AppColors.success, fontSize: 20),
+              child: const Icon(
+                Icons.check_rounded,
+                color: AppColors.success,
+                size: 22,
               ),
             )
           else

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Đích deep link Stripe trả về sau thanh toán (BE đặt trong env checkout):
 ///   thành công: familycare://app/payment-success
@@ -16,7 +17,7 @@ class PaymentResultScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Center(
           child: Padding(
@@ -32,7 +33,11 @@ class PaymentResultScreen extends StatelessWidget {
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
-                  child: Text(success ? '🎉' : '😥', style: const TextStyle(fontSize: 44)),
+                  child: Icon(
+                    success ? Icons.check_circle_rounded : Icons.error_rounded,
+                    size: 48,
+                    color: success ? AppColors.safe : AppColors.sos,
+                  ),
                 ),
                 const SizedBox(height: 20),
                 Text(

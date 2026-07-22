@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/chat_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Xem lại ảnh / file / liên kết đã gửi trong hội thoại.
 ///
@@ -42,7 +43,7 @@ class ChatSharedContentScreen extends StatelessWidget {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: context.colors.background,
         appBar: AppBar(
           backgroundColor: AppColors.white,
           elevation: 0,

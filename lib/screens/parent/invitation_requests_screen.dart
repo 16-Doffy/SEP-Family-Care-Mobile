@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/invitation_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Manager inbox for pending requests sent by the reusable family invite code.
 class InvitationRequestsScreen extends StatefulWidget {
@@ -108,7 +109,7 @@ class _InvitationRequestsScreenState extends State<InvitationRequestsScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<InvitationProvider>();
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         title: Text('Yêu cầu tham gia', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),

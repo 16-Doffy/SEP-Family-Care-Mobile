@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 class BudgetPlanScreen extends StatefulWidget {
   const BudgetPlanScreen({super.key});
@@ -43,7 +44,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
     final plans = provider.budgetPlans;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           Padding(
@@ -81,7 +82,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
             Expanded(
               child: Center(
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Text('🫙', style: TextStyle(fontSize: 40)),
+                  const Icon(Icons.savings_rounded, size: 40, color: AppColors.primary500),
                   const SizedBox(height: 8),
                   Text('Chưa có kế hoạch ngân sách', style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
                 ]),

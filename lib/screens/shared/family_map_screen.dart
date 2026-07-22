@@ -14,6 +14,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 class FamilyMapScreen extends StatefulWidget {
   final double? initialLat;
@@ -318,7 +319,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     final hasAnySos = pins.any((p) => p.isSos);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: Stack(children: [
         // ── Map ────────────────────────────────────────────────────────────
         FlutterMap(

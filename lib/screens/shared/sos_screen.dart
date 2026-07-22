@@ -955,7 +955,7 @@ class _SOSScreenState extends State<SOSScreen>
                           context.push('/map?lat=$_localLat&lng=$_localLng');
                         },
                         icon: const Icon(Icons.map_rounded, color: Colors.white, size: 18),
-                        label: Text('Xem bản đồ lớn in-app',
+                        label: Text('Xem bản đồ lớn trong ứng dụng',
                             style: GoogleFonts.inter(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -1416,7 +1416,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
             child: ExpansionTile(
               tilePadding: EdgeInsets.zero,
               childrenPadding: const EdgeInsets.only(top: 4, bottom: 8),
-              title: Text('Dữ liệu kỹ thuật (schema [VERIFY])',
+              title: Text('Dữ liệu kỹ thuật (cấu trúc cần kiểm chứng)',
                   style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
               children: [JsonReportView(data: d)],
             ),

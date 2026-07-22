@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/json_report_view.dart';
 
 class SupportRequestScreen extends StatefulWidget {
@@ -29,7 +30,7 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
     final isManager = auth.user?.isAdministrative ?? false;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           // ── Header ─────────────────────────────────────────────
@@ -145,7 +146,7 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
 
   Widget _emptyView(bool isManager) => Center(
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      const Text('📋', style: TextStyle(fontSize: 48)),
+      const Icon(Icons.request_quote_rounded, size: 48, color: AppColors.primary500),
       const SizedBox(height: 16),
       Text('Chưa có yêu cầu nào',
           style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600,

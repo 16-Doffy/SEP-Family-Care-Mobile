@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/json_report_view.dart';
 
 // UC — Kế hoạch đóng góp mục tiêu theo tháng (Financial Goals — lớp
@@ -92,7 +93,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     final canManage = user?.canManageFinance ?? false;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(children: [
           Padding(
