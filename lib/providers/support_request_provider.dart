@@ -108,7 +108,7 @@ class SupportRequestProvider extends ChangeNotifier {
         'decisionNote': decisionNote,
       // Dart local DateTime.toIso8601String has no UTC offset. BE validates
       // this field as an ISO timestamp with timezone, so always send UTC.
-      'occurredAt': DateTime.now().toUtc().toIso8601String(),
+      'occurredAt': ApiClient.localIsoMs(),
     };
     await ApiClient.instance.patch(
       '/families/$fid/finance/support-requests/$requestId/review',
