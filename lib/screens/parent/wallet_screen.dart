@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import '../../models/money_request.dart';
-import '../../providers/money_provider.dart';
 import '../../providers/finance_provider.dart';
+import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/avatar_widget.dart';
 import '../../widgets/ring_chart.dart';
 import '../../widgets/waffle_chart.dart';
 import '../../widgets/money_input.dart';
@@ -29,7 +27,7 @@ class _WalletScreenState extends State<WalletScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<WalletProvider>().fetchWallets();
-      context.read<MoneyProvider>().fetchRequests();
+      context.read<SupportRequestProvider>().fetchRequests();
       context.read<FinanceProvider>().fetchAll();
     });
   }
@@ -37,7 +35,9 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   Widget build(BuildContext context) {
     final walletState = context.watch<WalletProvider>();
-    final pendingRequests = context.watch<MoneyProvider>().pendingRequests;
+    final pendingRequests = context
+        .watch<SupportRequestProvider>()
+        .pendingCount;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -97,11 +97,7 @@ class _WalletScreenState extends State<WalletScreen> {
                             children: [
                               _tabItem(0, 'Tổng quan'),
                               _tabItem(1, 'Lịch sử'),
-                              _tabItem(
-                                2,
-                                'Yêu cầu',
-                                badge: pendingRequests.length,
-                              ),
+                              _tabItem(2, 'Yêu cầu', badge: pendingRequests),
                             ],
                           ),
                         ),
@@ -1033,7 +1029,10 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   List<Widget> _buildRequests(BuildContext context) {
-    final pending = context.watch<MoneyProvider>().pendingRequests;
+    final provider = context.watch<SupportRequestProvider>();
+    final pending = provider.requests
+        .where((request) => request.isPending)
+        .toList();
     if (pending.isEmpty) {
       return [
         const SizedBox(height: 40),
@@ -1063,10 +1062,18 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
             child: Row(
               children: [
-                AvatarWidget(
-                  initial: req.senderAvatarInitial,
-                  color: Color(req.senderAvatarColor),
-                  size: 44,
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: AppColors.link.withValues(alpha: .14),
+                  child: Text(
+                    req.requesterName.isEmpty
+                        ? '?'
+                        : req.requesterName.substring(0, 1).toUpperCase(),
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.link,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1074,7 +1081,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${req.senderName} · ${_fmt(req.amount.round())}',
+                        '${req.requesterName} · ${_fmt(req.amount.round())}',
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -1082,7 +1089,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         ),
                       ),
                       Text(
-                        req.reason,
+                        req.purpose,
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           color: AppColors.textMuted,
@@ -1094,19 +1101,25 @@ class _WalletScreenState extends State<WalletScreen> {
                 Row(
                   children: [
                     GestureDetector(
-                      onTap: () {
-                        context.read<MoneyProvider>().updateStatus(
-                          req.id,
-                          MoneyRequestStatus.approved,
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Đã duyệt ${_fmt(req.amount.round())} cho ${req.senderName} ✅',
+                      onTap: () async {
+                        try {
+                          await provider.review(
+                            requestId: req.id,
+                            decision: 'APPROVE',
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Đã duyệt ${_fmt(req.amount.round())} cho ${req.requesterName} ✅',
+                              ),
+                              backgroundColor: AppColors.safe,
                             ),
-                            backgroundColor: AppColors.safe,
-                          ),
-                        );
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          _showFinanceError(context, e);
+                        }
                       },
                       child: Container(
                         width: 36,
@@ -1124,19 +1137,25 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: () {
-                        context.read<MoneyProvider>().updateStatus(
-                          req.id,
-                          MoneyRequestStatus.rejected,
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Đã từ chối yêu cầu của ${req.senderName} ❌',
+                      onTap: () async {
+                        try {
+                          await provider.review(
+                            requestId: req.id,
+                            decision: 'REJECT',
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Đã từ chối yêu cầu của ${req.requesterName} ❌',
+                              ),
+                              backgroundColor: AppColors.danger,
                             ),
-                            backgroundColor: AppColors.danger,
-                          ),
-                        );
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          _showFinanceError(context, e);
+                        }
                       },
                       child: Container(
                         width: 36,
