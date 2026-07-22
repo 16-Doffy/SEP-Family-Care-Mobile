@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -153,7 +154,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               Row(
                 children: [
                   Text(
-                    '💰 Sổ thu chi của tôi',
+                    '💰 Sổ chi tiêu cá nhân',
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -709,10 +710,13 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
         ...myReqs
             .take(3)
             .map(
-              (req) => Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
+              (req) => InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => context.push('/finance/support-requests'),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
                   color: AppColors.white,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
@@ -723,8 +727,8 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
                     ),
                   ],
                 ),
-                child: Row(
-                  children: [
+                  child: Row(
+                    children: [
                     Container(
                       width: 44,
                       height: 44,
@@ -759,7 +763,8 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
                       ),
                     ),
                     _statusChip(req.status),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

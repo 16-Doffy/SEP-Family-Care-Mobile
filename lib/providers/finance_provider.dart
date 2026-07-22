@@ -372,6 +372,7 @@ class GoalContributionPlan {
   final double? actualAmount;
   final String status;
   final String? note;
+  final String? dueDate;
   final Map<String, dynamic> raw;
 
   const GoalContributionPlan({
@@ -382,6 +383,7 @@ class GoalContributionPlan {
     this.actualAmount,
     required this.status,
     this.note,
+    this.dueDate,
     required this.raw,
   });
 
@@ -442,6 +444,7 @@ class GoalContributionPlan {
       ),
       status: j['status']?.toString() ?? 'PENDING',
       note: j['note']?.toString(),
+      dueDate: j['dueDate']?.toString(),
       raw: j,
     );
   }

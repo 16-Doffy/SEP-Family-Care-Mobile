@@ -174,15 +174,31 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                         ]),
                       )
                     else
-                      ..._plans.map(
-                        (p) => _planCard(
-                          context,
-                          p,
-                          user?.id,
-                          currentMemberId,
-                          canManage,
+                      ...[
+                        ..._plans.map(
+                          (p) => _planCard(
+                            context,
+                            p,
+                            user?.id,
+                            currentMemberId,
+                            canManage,
+                          ),
                         ),
-                      ),
+                        if (canManage)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: 42,
+                              child: OutlinedButton.icon(
+                                onPressed: () => _showConfirmPlanSheet(context),
+                                icon: const Icon(Icons.edit_calendar_outlined, size: 18),
+                                label: Text('Chỉnh sửa kế hoạch tháng này',
+                                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                          ),
+                      ],
 
                     const SizedBox(height: 16),
 
@@ -435,7 +451,18 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     // `members[].memberId` in ConfirmGoalContributionPlanDto is the
     // FamilyMember membership record ID, not the nested User ID. Sending
     // userId makes BE fail with "Không tìm thấy thành viên đang hoạt động".
-    final amountCtrls = {for (final m in members) m.id: TextEditingController()};
+    final existingByMember = <String, GoalContributionPlan>{
+      for (final plan in _plans) plan.memberId: plan,
+    };
+    final amountCtrls = {
+      for (final m in members)
+        m.id: TextEditingController(
+          text: existingByMember[m.id] == null
+              ? ''
+              : ThousandsSeparatorInputFormatter.formatThousands(
+                  existingByMember[m.id]!.plannedAmount.round().toString()),
+        ),
+    };
     // Prefill từ gợi ý nếu có
     for (final s in _suggestions) {
       final member = members.where(
@@ -448,7 +475,8 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
         );
       }
     }
-    DateTime dueDate = DateTime(_year, _month + 1, 0); // cuối tháng
+    DateTime dueDate = DateTime.tryParse(_plans.firstOrNull?.dueDate ?? '') ??
+        DateTime(_year, _month + 1, 0); // cuối tháng
     bool submitting = false;
     String? sheetError;
 
@@ -513,12 +541,10 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                     final entries = <({String memberId, double plannedAmount})>[];
                     for (final m in members) {
                       final amt = parseMoneyInput(amountCtrls[m.id]!.text);
-                      if (amt > 0) {
-                        entries.add((memberId: m.id, plannedAmount: amt));
-                      }
+                      entries.add((memberId: m.id, plannedAmount: amt));
                     }
-                    if (entries.isEmpty) {
-                      setSheet(() => sheetError = 'Nhập ít nhất 1 số tiền kế hoạch');
+                    if (!entries.any((entry) => entry.plannedAmount > 0)) {
+                      setSheet(() => sheetError = 'Nhập ít nhất 1 số tiền kế hoạch lớn hơn 0');
                       return;
                     }
                     setSheet(() { submitting = true; sheetError = null; });
