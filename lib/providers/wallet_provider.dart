@@ -333,6 +333,58 @@ class WalletProvider extends ChangeNotifier {
   }
 
   // Compat alias cho HomeDashboard (dùng deposit flow)
+  Future<void> updateEntry(
+    String entryId, {
+    required double amount,
+    required String description,
+    required bool isIncome,
+    String? categoryId,
+    String? note,
+    String? entryDate,
+  }) async {
+    if (entryId.isEmpty) throw Exception('Không tìm thấy ID giao dịch');
+    try {
+      await ApiClient.instance.patch(
+        ApiClient.instance.familyPath('/finance/ledger/entries/$entryId'),
+        {
+          'entryType': isIncome ? 'INCOME' : 'EXPENSE',
+          'amount': amount.abs(),
+          'description': description,
+          // Giữ NGUYÊN ngày gốc (ISO từ BE) khi sửa; tránh BE ghi đè về hôm nay
+          // khiến giao dịch cũ bị nhảy ngày.
+          if (entryDate != null && entryDate.isNotEmpty) 'entryDate': entryDate,
+          if (note != null && note.isNotEmpty) 'note': note,
+          'categoryId': ?categoryId,
+        },
+      );
+      await fetchWallets();
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) {
+        throw Exception(
+          'Backend chưa bật endpoint sửa giao dịch. Vui lòng xác nhận /finance/ledger/entries/{entryId}.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> deleteEntry(String entryId) async {
+    if (entryId.isEmpty) throw Exception('Không tìm thấy ID giao dịch');
+    try {
+      await ApiClient.instance.delete(
+        ApiClient.instance.familyPath('/finance/ledger/entries/$entryId'),
+      );
+      await fetchWallets();
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) {
+        throw Exception(
+          'Backend chưa bật endpoint xóa giao dịch. Vui lòng xác nhận /finance/ledger/entries/{entryId}.',
+        );
+      }
+      rethrow;
+    }
+  }
+
   Future<void> deposit(double amount, {String description = 'Nạp tiền'}) =>
       recordEntry(amount: amount, description: description, isIncome: true);
 }

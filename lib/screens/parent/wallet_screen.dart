@@ -7,6 +7,7 @@ import '../../models/money_request.dart';
 import '../../providers/money_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
 import '../../widgets/ring_chart.dart';
 import '../../widgets/waffle_chart.dart';
@@ -59,7 +60,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final pendingRequests = context.watch<MoneyProvider>().pendingRequests;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -405,55 +406,66 @@ class _WalletScreenState extends State<WalletScreen> {
             ...state.transactions.map((tx) {
               final signed = tx.signedAmount;
               final isPos = signed >= 0;
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFFF3F4F6),
+              return GestureDetector(
+                onTap: () => _showEntryActions(context, tx),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFF3F4F6),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          isPos ? '💵' : '💸',
+                          style: const TextStyle(fontSize: 18),
+                        ),
                       ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        isPos ? '💵' : '💸',
-                        style: const TextStyle(fontSize: 18),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            tx.description,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tx.description.isNotEmpty
+                                  ? tx.description
+                                  : (tx.categoryName ?? 'Giao dịch'),
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
-                          ),
-                          Text(
-                            tx.entryDate,
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
+                            Text(
+                              tx.entryDate,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${isPos ? '+' : ''}${_fmt(signed.abs().round())}',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: isPos ? AppColors.success : AppColors.danger,
+                      Text(
+                        '${isPos ? '+' : ''}${_fmt(signed.abs().round())}',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: isPos ? AppColors.success : AppColors.danger,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: AppColors.textMuted,
+                      ),
+                    ],
+                  ),
                 ),
               );
             }),
@@ -608,13 +620,136 @@ class _WalletScreenState extends State<WalletScreen> {
         .toList();
   }
 
-  void _showRecordSheet(BuildContext context, {required bool isIncome}) {
-    final amountCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
+  void _showEntryActions(BuildContext context, LedgerEntry entry) {
+    final isIncome = entry.signedAmount >= 0;
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: context.colors.surface,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                entry.description.isNotEmpty
+                    ? entry.description
+                    : (entry.categoryName ?? 'Giao dịch'),
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: context.colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${isIncome ? '+' : '-'}${_fmt(entry.signedAmount.abs().round())} · ${entry.entryType}',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: isIncome ? AppColors.success : AppColors.danger,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (entry.note != null && entry.note!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  entry.note!,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: context.colors.textSecondary,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.edit_outlined, color: AppColors.link),
+                title: const Text('Sửa giao dịch'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _showRecordSheet(context, isIncome: isIncome, entry: entry);
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: AppColors.danger,
+                ),
+                title: const Text('Xóa giao dịch'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _confirmDeleteEntry(context, entry);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteEntry(
+    BuildContext context,
+    LedgerEntry entry,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa giao dịch?'),
+        content: Text(
+          'Giao dịch "${entry.description.isNotEmpty ? entry.description : 'không có mô tả'}" sẽ bị xóa khỏi sổ thu chi.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await context.read<WalletProvider>().deleteEntry(entry.id);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã xóa giao dịch'),
+          backgroundColor: AppColors.safe,
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
+  void _showRecordSheet(
+    BuildContext context, {
+    required bool isIncome,
+    LedgerEntry? entry,
+  }) {
+    final editing = entry != null;
+    final amountCtrl = TextEditingController(
+      text: editing ? _fmtInput(entry.amount) : '',
+    );
+    final descCtrl = TextEditingController(text: entry?.description ?? '');
+    final noteCtrl = TextEditingController(text: entry?.note ?? '');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.white,
+      backgroundColor: context.colors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -637,11 +772,13 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  isIncome ? 'Ghi nhận Thu' : 'Ghi nhận Chi',
+                  editing
+                      ? 'Sửa giao dịch'
+                      : (isIncome ? 'Ghi nhận Thu' : 'Ghi nhận Chi'),
                   style: GoogleFonts.inter(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: context.colors.textPrimary,
                   ),
                 ),
               ],
@@ -674,6 +811,18 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 2,
+              decoration: InputDecoration(
+                labelText: 'Ghi chú',
+                hintText: 'Thông tin thêm cho giao dịch',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -692,15 +841,27 @@ class _WalletScreenState extends State<WalletScreen> {
                     amountCtrl.text.replaceAll(',', ''),
                   );
                   if (amount == null || amount <= 0) return;
-                  final desc = descCtrl.text.trim().isNotEmpty
-                      ? descCtrl.text.trim()
-                      : (isIncome ? 'Thu nhập' : 'Chi tiêu');
-                  try {
-                    await context.read<WalletProvider>().recordEntry(
-                      amount: amount,
-                      description: desc,
-                      isIncome: isIncome,
-                    );
+                   final desc = descCtrl.text.trim().isNotEmpty
+                       ? descCtrl.text.trim()
+                       : (isIncome ? 'Thu nhập' : 'Chi tiêu');
+                   try {
+                    if (editing) {
+                      await context.read<WalletProvider>().updateEntry(
+                        entry.id,
+                        amount: amount,
+                        description: desc,
+                        isIncome: isIncome,
+                        note: noteCtrl.text.trim(),
+                        entryDate: entry.entryDate,
+                      );
+                    } else {
+                      await context.read<WalletProvider>().recordEntry(
+                        amount: amount,
+                        description: desc,
+                        isIncome: isIncome,
+                        note: noteCtrl.text.trim(),
+                      );
+                    }
                     if (ctx.mounted) Navigator.pop(ctx);
                   } catch (e) {
                     if (ctx.mounted) {
@@ -714,7 +875,9 @@ class _WalletScreenState extends State<WalletScreen> {
                   }
                 },
                 child: Text(
-                  isIncome ? 'Lưu khoản Thu' : 'Lưu khoản Chi',
+                  editing
+                      ? 'Lưu thay đổi'
+                      : (isIncome ? 'Lưu khoản Thu' : 'Lưu khoản Chi'),
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -728,6 +891,11 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
     );
   }
+
+  String _fmtInput(num value) => value.round().toString().replaceAllMapped(
+    RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+    (m) => '${m[1]},',
+  );
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
