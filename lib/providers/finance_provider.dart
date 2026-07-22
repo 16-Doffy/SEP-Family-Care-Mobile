@@ -943,11 +943,18 @@ class FinanceProvider extends ChangeNotifier {
   // GET /families/{familyId}/finance/financial-goals/{goalId} — chi tiết 1
   // goal riêng (list `_fetchGoals` dùng `includeProgress=true` nên đã đủ cho
   // hầu hết UI; gọi thêm để có field không xuất hiện ở list, nếu có).
-  Future<FinancialGoal> fetchGoalDetail(String goalId) async {
+  Future<(FinancialGoal goal, Map<String, dynamic> progress)>
+  fetchGoalDetailWithProgress(String goalId) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId',
     );
-    return FinancialGoal.fromJson(data);
+    final root = data is Map<String, dynamic>
+        ? data
+        : Map<String, dynamic>.from(data as Map);
+    final progress = root['progress'] is Map
+        ? Map<String, dynamic>.from(root['progress'] as Map)
+        : <String, dynamic>{};
+    return (FinancialGoal.fromJson(root), progress);
   }
 
   // PATCH /families/{familyId}/finance/financial-goals/{goalId}
@@ -969,16 +976,6 @@ class FinanceProvider extends ChangeNotifier {
         });
     await _fetchGoals();
     notifyListeners();
-  }
-
-  // GET /families/{familyId}/finance/financial-goals/{goalId}/progress — báo
-  // cáo tiến độ chi tiết hơn field `progressPercent` ở list. BE không
-  // document schema → raw Map, hiển thị qua JsonReportView.
-  Future<Map<String, dynamic>> fetchGoalProgress(String goalId) async {
-    final data = await ApiClient.instance.get(
-      '/families/$_fid/finance/financial-goals/$goalId/progress',
-    );
-    return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
   // GET /families/{familyId}/finance/financial-goals/{goalId}/allocations —
