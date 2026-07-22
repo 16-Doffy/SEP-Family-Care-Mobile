@@ -89,6 +89,18 @@ class ApiClient {
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> postWithTimeout(
+    String path,
+    Map<String, dynamic> body, {
+    required Duration timeout,
+  }) async {
+    final r = await _send(
+      () => http.post(_uri(path), headers: _headers(), body: jsonEncode(body)),
+      timeout: timeout,
+    );
+    return r is Map<String, dynamic> ? r : <String, dynamic>{};
+  }
+
   /// PATCH — trả Map hoặc {}
   Future<Map<String, dynamic>> patch(
     String path,
@@ -155,6 +167,35 @@ class ApiClient {
     return r is Map<String, dynamic> ? r : <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> uploadFiles({
+    required String path,
+    required List<String> filePaths,
+    String fieldName = 'files',
+    Map<String, String>? queryParams,
+    Map<String, String>? fields,
+  }) async {
+    Future<http.Response> doUpload() async {
+      final uri = _uri(path).replace(queryParameters: queryParams);
+      final request = http.MultipartRequest('POST', uri);
+      if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+      if (fields != null && fields.isNotEmpty) request.fields.addAll(fields);
+      for (final filePath in filePaths) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            fieldName,
+            filePath,
+            contentType: MediaType.parse(_guessMimeType(filePath)),
+          ),
+        );
+      }
+      final streamed = await request.send();
+      return http.Response.fromStream(streamed);
+    }
+
+    final r = await _send(doUpload);
+    return r is Map<String, dynamic> ? r : <String, dynamic>{};
+  }
+
   static String _guessMimeType(String path) {
     final ext = path.split('.').last.toLowerCase();
     return switch (ext) {
@@ -175,9 +216,10 @@ class ApiClient {
 
   Future<http.Response> _withTimeout(
     Future<http.Response> Function() fn,
+    Duration timeout,
   ) async {
     try {
-      return await fn().timeout(_kRequestTimeout);
+      return await fn().timeout(timeout);
     } on TimeoutException {
       throw Exception(
         'Kết nối đến server quá lâu, vui lòng kiểm tra mạng và thử lại.',
@@ -194,14 +236,17 @@ class ApiClient {
     if (_token != null) 'Authorization': 'Bearer $_token',
   };
 
-  Future<dynamic> _send(Future<http.Response> Function() fn) async {
-    var response = await _withTimeout(fn);
+  Future<dynamic> _send(
+    Future<http.Response> Function() fn, {
+    Duration timeout = _kRequestTimeout,
+  }) async {
+    var response = await _withTimeout(fn, timeout);
 
     // ── Auto-refresh on 401 (với lock tránh race condition) ───────────────
     if (response.statusCode == 401 && _refreshToken != null) {
       final refreshed = await _lockedRefresh();
       if (refreshed) {
-        response = await _withTimeout(fn); // retry với token mới
+        response = await _withTimeout(fn, timeout); // retry với token mới
       } else {
         onSessionExpired?.call();
         throw Exception('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
