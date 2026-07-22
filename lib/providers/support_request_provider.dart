@@ -129,15 +129,11 @@ class SupportRequestProvider extends ChangeNotifier {
 
   Future<void> cancel(String requestId) async {
     final fid = ApiClient.instance.familyId;
-    if (fid == null) return;
-    try {
-      await ApiClient.instance.patch(
-        '/families/$fid/finance/support-requests/$requestId/cancel',
-        {},
-      );
-      await fetchRequests();
-    } catch (e) {
-      debugPrint('SupportRequestProvider: cancel failed: $e');
-    }
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.patch(
+      '/families/$fid/finance/support-requests/$requestId/cancel',
+      {},
+    );
+    await fetchRequests();
   }
 }
