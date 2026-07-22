@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 
@@ -41,6 +42,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _phoneCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _loading = false;
+  bool _googleLoading = false;
   bool _obscure = true;
 
   @override
@@ -89,6 +91,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _googleLoading = true);
+    try {
+      await context.read<AuthProvider>().signInWithGoogle();
+      // Thành công → router redirect tự điều hướng. Hủy chọn tài khoản → im lặng.
+    } catch (e) {
+      if (mounted) _showError(_googleErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
+  String _googleErrorMessage(Object e) {
+    if (e is ApiException) {
+      return switch (e.statusCode) {
+        503 => 'Đăng nhập Google chưa được bật trên máy chủ.',
+        401 => 'Phiên Google không hợp lệ hoặc đã hết hạn, vui lòng thử lại.',
+        403 => 'Tài khoản đang bị khóa.',
+        _ => e.message,
+      };
+    }
+    return e.toString().replaceFirst('Exception: ', '');
   }
 
   void _showError(String msg) {
@@ -239,6 +265,67 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     color: Colors.white,
                                   ),
                                 ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Divider(color: Color(0xFFE5E7EB)),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'hoặc',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ),
+                          const Expanded(
+                            child: Divider(color: Color(0xFFE5E7EB)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 54,
+                        child: OutlinedButton.icon(
+                          onPressed: (_loading || _googleLoading)
+                              ? null
+                              : _signInWithGoogle,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textPrimary,
+                            side: const BorderSide(
+                              color: Color(0xFFE5E7EB),
+                              width: 1.5,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          icon: _googleLoading
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.g_mobiledata_rounded,
+                                  size: 30,
+                                  color: Color(0xFF4285F4),
+                                ),
+                          label: Text(
+                            'Đăng ký bằng Google',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),

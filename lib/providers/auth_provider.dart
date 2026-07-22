@@ -1,5 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
 import '../services/api_client.dart';
 import '../services/push_service.dart';
@@ -75,6 +77,31 @@ class AuthProvider extends ChangeNotifier {
       'password': password,
     });
     await _applySession(data);
+  }
+
+  // POST /auth/firebase — đăng nhập bằng Google qua Firebase ID token.
+  // Trả về `true` nếu đăng nhập thành công, `false` nếu user tự hủy chọn tài
+  // khoản (để UI không hiện lỗi). Ném lỗi cho các trường hợp thật (401/403/503).
+  Future<bool> signInWithGoogle() async {
+    final googleUser = await GoogleSignIn().signIn();
+    if (googleUser == null) return false; // user hủy hộp chọn tài khoản
+    final gAuth = await googleUser.authentication;
+    final credential = GoogleAuthProvider.credential(
+      idToken: gAuth.idToken,
+      accessToken: gAuth.accessToken,
+    );
+    final userCred = await FirebaseAuth.instance.signInWithCredential(
+      credential,
+    );
+    final firebaseIdToken = await userCred.user?.getIdToken();
+    if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+      throw Exception('Không lấy được token Google, vui lòng thử lại.');
+    }
+    final data = await ApiClient.instance.post('/auth/firebase', {
+      'idToken': firebaseIdToken,
+    });
+    await _applySession(data);
+    return true;
   }
 
   // POST /auth/register — app yêu cầu đủ { email, password, fullName, phone }
@@ -425,6 +452,14 @@ class AuthProvider extends ChangeNotifier {
     // Hủy FCM token TRƯỚC khi xóa session (cần access token để gọi DELETE) —
     // nếu không, máy dùng chung sẽ nhận push của tài khoản cũ.
     await PushService.instance.unregister();
+    // Đăng xuất Google + Firebase (best-effort) để lần sau hiện lại hộp chọn
+    // tài khoản; lỗi ở đây KHÔNG được chặn logout.
+    try {
+      await GoogleSignIn().signOut();
+      await FirebaseAuth.instance.signOut();
+    } catch (e) {
+      debugPrint('AuthProvider: Google/Firebase signOut failed: $e');
+    }
     // Xóa session ngay lập tức — không đợi server response
     _user = null;
     _pendingEmailVerification = false;
