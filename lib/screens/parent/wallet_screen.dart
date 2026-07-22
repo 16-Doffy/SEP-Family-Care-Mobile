@@ -392,52 +392,52 @@ class _WalletScreenState extends State<WalletScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Row(
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFFF3F4F6),
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFF3F4F6),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          isPos ? '💵' : '💸',
+                          style: const TextStyle(fontSize: 18),
+                        ),
                       ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        isPos ? '💵' : '💸',
-                        style: const TextStyle(fontSize: 18),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            tx.description,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tx.description,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
-                          ),
-                          Text(
-                            tx.displayEntryDate,
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
+                            Text(
+                              tx.displayEntryDate,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    Text(
-                      '${isPos ? '+' : ''}${_fmt(signed.abs().round())}',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: isPos ? AppColors.success : AppColors.danger,
+                      Text(
+                        '${isPos ? '+' : ''}${_fmt(signed.abs().round())}',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: isPos ? AppColors.success : AppColors.danger,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
                   ),
                 ),
               );
@@ -466,8 +466,10 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Future<void> _openLedgerEntry(BuildContext context, LedgerEntry entry) async {
     try {
-      final detail = await context.read<WalletProvider>().fetchEntryDetail(entry.id);
-      if (!mounted) return;
+      final detail = await context.read<WalletProvider>().fetchEntryDetail(
+        entry.id,
+      );
+      if (!context.mounted) return;
       await showModalBottomSheet<void>(
         context: context,
         backgroundColor: AppColors.white,
@@ -475,7 +477,8 @@ class _WalletScreenState extends State<WalletScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         builder: (sheetContext) {
-          final editable = detail.entryType == 'INCOME' || detail.entryType == 'EXPENSE';
+          final editable =
+              detail.entryType == 'INCOME' || detail.entryType == 'EXPENSE';
           final signed = detail.signedAmount;
           return SafeArea(
             child: Padding(
@@ -493,11 +496,23 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  _ledgerDetailRow('Loại', signed >= 0 ? 'Khoản thu' : 'Khoản chi'),
-                  _ledgerDetailRow('Số tiền', '${_fmt(detail.amount.round())} đ'),
-                  _ledgerDetailRow('Danh mục', detail.categoryName ?? 'Chưa phân loại'),
+                  _ledgerDetailRow(
+                    'Loại',
+                    signed >= 0 ? 'Khoản thu' : 'Khoản chi',
+                  ),
+                  _ledgerDetailRow(
+                    'Số tiền',
+                    '${_fmt(detail.amount.round())} đ',
+                  ),
+                  _ledgerDetailRow(
+                    'Danh mục',
+                    detail.categoryName ?? 'Chưa phân loại',
+                  ),
                   _ledgerDetailRow('Thời gian', detail.displayEntryDate),
-                  _ledgerDetailRow('Mô tả', detail.description.isEmpty ? '—' : detail.description),
+                  _ledgerDetailRow(
+                    'Mô tả',
+                    detail.description.isEmpty ? '—' : detail.description,
+                  ),
                   if ((detail.note ?? '').isNotEmpty)
                     _ledgerDetailRow('Ghi chú', detail.note!),
                   if (editable) ...[
@@ -517,15 +532,23 @@ class _WalletScreenState extends State<WalletScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.danger,
+                            ),
                             onPressed: () async {
                               final approved = await _confirmVoidEntry(context);
-                              if (!approved || !mounted) return;
+                              if (!approved || !context.mounted) return;
                               try {
-                                await context.read<WalletProvider>().voidEntry(detail.id);
-                                if (sheetContext.mounted) Navigator.pop(sheetContext);
+                                await context.read<WalletProvider>().voidEntry(
+                                  detail.id,
+                                );
+                                if (sheetContext.mounted) {
+                                  Navigator.pop(sheetContext);
+                                }
                               } catch (e) {
-                                if (mounted) _showFinanceError(context, e);
+                                if (context.mounted) {
+                                  _showFinanceError(context, e);
+                                }
                               }
                             },
                             icon: const Icon(Icons.delete_outline),
@@ -539,7 +562,10 @@ class _WalletScreenState extends State<WalletScreen> {
                       padding: const EdgeInsets.only(top: 12),
                       child: Text(
                         'Giao dịch được tạo từ flow hệ thống nên không sửa trực tiếp ở sổ thu chi.',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
                       ),
                     ),
                 ],
@@ -549,40 +575,52 @@ class _WalletScreenState extends State<WalletScreen> {
         },
       );
     } catch (e) {
-      if (mounted) _showFinanceError(context, e);
+      if (context.mounted) {
+        _showFinanceError(context, e);
+      }
     }
   }
 
   Widget _ledgerDetailRow(String label, String value) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 92,
-              child: Text(label, style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
-            ),
-            Expanded(
-              child: Text(
-                value,
-                textAlign: TextAlign.right,
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
         ),
-      );
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Future<bool> _confirmVoidEntry(BuildContext context) async {
     return await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Hủy giao dịch?'),
-            content: const Text('Giao dịch sẽ bị hủy và không còn được tính vào số liệu tài chính.'),
+            content: const Text(
+              'Giao dịch sẽ bị hủy và không còn được tính vào số liệu tài chính.',
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Không')),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Không'),
+              ),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.danger,
+                ),
                 onPressed: () => Navigator.pop(dialogContext, true),
                 child: const Text('Hủy giao dịch'),
               ),
@@ -606,7 +644,8 @@ class _WalletScreenState extends State<WalletScreen> {
         .where((category) => category.categoryType == entry.entryType)
         .toList();
     String? categoryId = entry.categoryId;
-    if (categoryId == null || !categories.any((category) => category.id == categoryId)) {
+    if (categoryId == null ||
+        !categories.any((category) => category.id == categoryId)) {
       categoryId = categories.isNotEmpty ? categories.first.id : null;
     }
     showModalBottomSheet<void>(
@@ -618,37 +657,67 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(sheetContext).viewInsets.bottom + 28),
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            MediaQuery.of(sheetContext).viewInsets.bottom + 28,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Chỉnh sửa giao dịch', style: GoogleFonts.inter(fontSize: 19, fontWeight: FontWeight.w700)),
+              Text(
+                'Chỉnh sửa giao dịch',
+                style: GoogleFonts.inter(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 18),
               TextField(
                 controller: amountCtrl,
                 keyboardType: TextInputType.number,
                 inputFormatters: [ThousandsSeparatorInputFormatter()],
-                decoration: const InputDecoration(labelText: 'Số tiền (đ)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Số tiền (đ)',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               if (categories.isNotEmpty) ...[
                 DropdownButtonFormField<String>(
                   initialValue: categoryId,
-                  decoration: const InputDecoration(labelText: 'Danh mục', border: OutlineInputBorder()),
-                  items: categories.map((category) => DropdownMenuItem(value: category.id, child: Text(category.name))).toList(),
+                  decoration: const InputDecoration(
+                    labelText: 'Danh mục',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: categories
+                      .map(
+                        (category) => DropdownMenuItem(
+                          value: category.id,
+                          child: Text(category.name),
+                        ),
+                      )
+                      .toList(),
                   onChanged: (value) => setSheetState(() => categoryId = value),
                 ),
                 const SizedBox(height: 12),
               ],
               TextField(
                 controller: descriptionCtrl,
-                decoration: const InputDecoration(labelText: 'Mô tả', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Mô tả',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: noteCtrl,
-                decoration: const InputDecoration(labelText: 'Ghi chú (tùy chọn)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Ghi chú (tùy chọn)',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 18),
               SizedBox(
@@ -658,20 +727,29 @@ class _WalletScreenState extends State<WalletScreen> {
                     final amount = parseMoneyInput(amountCtrl.text);
                     final description = descriptionCtrl.text.trim();
                     if (amount <= 0 || description.isEmpty) {
-                      _showFinanceError(sheetContext, 'Nhập số tiền lớn hơn 0 và mô tả giao dịch.');
+                      _showFinanceError(
+                        sheetContext,
+                        'Nhập số tiền lớn hơn 0 và mô tả giao dịch.',
+                      );
                       return;
                     }
                     try {
                       await context.read<WalletProvider>().updateEntry(
-                            entry.id,
-                            amount: amount,
-                            description: description,
-                            categoryId: categoryId,
-                            note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
-                          );
-                      if (sheetContext.mounted) Navigator.pop(sheetContext);
+                        entry.id,
+                        amount: amount,
+                        description: description,
+                        categoryId: categoryId,
+                        note: noteCtrl.text.trim().isEmpty
+                            ? null
+                            : noteCtrl.text.trim(),
+                      );
+                      if (sheetContext.mounted) {
+                        Navigator.pop(sheetContext);
+                      }
                     } catch (e) {
-                      if (sheetContext.mounted) _showFinanceError(sheetContext, e);
+                      if (sheetContext.mounted) {
+                        _showFinanceError(sheetContext, e);
+                      }
                     }
                   },
                   child: const Text('Lưu thay đổi'),
@@ -686,7 +764,271 @@ class _WalletScreenState extends State<WalletScreen> {
 
   void _showFinanceError(BuildContext context, Object error) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(error.toString()), backgroundColor: AppColors.danger),
+      SnackBar(
+        content: Text(error.toString()),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+  }
+
+  void _showCategoryManagerSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        final categories = sheetContext.watch<FinanceProvider>().categories;
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * .72,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Danh mục thu chi',
+                        style: GoogleFonts.inter(
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        tooltip: 'Tạo danh mục',
+                        onPressed: () =>
+                            _showCreateCategoryDialog(sheetContext),
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Ngưng dùng chỉ ẩn danh mục khỏi các form mới; lịch sử giao dịch và ngân sách vẫn được giữ.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: categories.isEmpty
+                        ? const Center(child: Text('Chưa có danh mục nào'))
+                        : ListView.separated(
+                            itemCount: categories.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (_, index) {
+                              final category = categories[index];
+                              final isIncome =
+                                  category.categoryType == 'INCOME';
+                              final essentialLabel =
+                                  category.essentialType == 'ESSENTIAL'
+                                  ? 'Thiết yếu'
+                                  : 'Không thiết yếu';
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  backgroundColor: isIncome
+                                      ? const Color(0xFFDCFCE7)
+                                      : const Color(0xFFFEE2E2),
+                                  child: Icon(
+                                    isIncome
+                                        ? Icons.arrow_downward
+                                        : Icons.arrow_upward,
+                                    color: isIncome
+                                        ? AppColors.success
+                                        : AppColors.danger,
+                                  ),
+                                ),
+                                title: Text(category.name),
+                                subtitle: Text(
+                                  isIncome
+                                      ? 'Khoản thu'
+                                      : category.essentialType == null
+                                      ? 'Khoản chi'
+                                      : 'Khoản chi · $essentialLabel',
+                                ),
+                                trailing: PopupMenuButton<String>(
+                                  onSelected: (action) async {
+                                    if (action == 'edit') {
+                                      _showEditCategoryDialog(
+                                        sheetContext,
+                                        category,
+                                      );
+                                      return;
+                                    }
+                                    final approved =
+                                        await _confirmDeactivateCategory(
+                                          sheetContext,
+                                          category.name,
+                                        );
+                                    if (!approved || !sheetContext.mounted) {
+                                      return;
+                                    }
+                                    try {
+                                      await sheetContext
+                                          .read<FinanceProvider>()
+                                          .deactivateCategory(category.id);
+                                    } catch (e) {
+                                      if (sheetContext.mounted) {
+                                        _showFinanceError(sheetContext, e);
+                                      }
+                                    }
+                                  },
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'edit',
+                                      child: Text('Đổi tên'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'deactivate',
+                                      child: Text('Ngưng dùng'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<bool> _confirmDeactivateCategory(
+    BuildContext context,
+    String name,
+  ) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Ngưng dùng danh mục?'),
+            content: Text(
+              'Danh mục “$name” sẽ không thể chọn cho giao dịch hoặc kế hoạch mới.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Không'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.danger,
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Ngưng dùng'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  void _showEditCategoryDialog(BuildContext context, FinanceCategory category) {
+    final nameCtrl = TextEditingController(text: category.name);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Đổi tên danh mục'),
+        content: TextField(
+          controller: nameCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Tên danh mục'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              try {
+                await context.read<FinanceProvider>().updateCategory(
+                  category.id,
+                  name: name,
+                  essentialType: category.essentialType,
+                );
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+              } catch (e) {
+                if (dialogContext.mounted) _showFinanceError(dialogContext, e);
+              }
+            },
+            child: const Text('Lưu'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateCategoryDialog(BuildContext context) {
+    final nameCtrl = TextEditingController();
+    var categoryType = 'EXPENSE';
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          title: const Text('Tạo danh mục'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Tên danh mục'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: categoryType,
+                decoration: const InputDecoration(labelText: 'Loại'),
+                items: const [
+                  DropdownMenuItem(value: 'EXPENSE', child: Text('Khoản chi')),
+                  DropdownMenuItem(value: 'INCOME', child: Text('Khoản thu')),
+                ],
+                onChanged: (value) =>
+                    setDialogState(() => categoryType = value ?? 'EXPENSE'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                if (name.isEmpty) return;
+                try {
+                  await context.read<FinanceProvider>().createCategory(
+                    name: name,
+                    categoryType: categoryType,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+                } catch (e) {
+                  if (dialogContext.mounted) {
+                    _showFinanceError(dialogContext, e);
+                  }
+                }
+              },
+              child: const Text('Tạo danh mục'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -825,8 +1167,10 @@ class _WalletScreenState extends State<WalletScreen> {
     final categories = context
         .read<FinanceProvider>()
         .categories
-        .where((category) =>
-            category.categoryType == (isIncome ? 'INCOME' : 'EXPENSE'))
+        .where(
+          (category) =>
+              category.categoryType == (isIncome ? 'INCOME' : 'EXPENSE'),
+        )
         .toList();
     String? categoryId = categories.isNotEmpty ? categories.first.id : null;
     showModalBottomSheet(
@@ -839,129 +1183,135 @@ class _WalletScreenState extends State<WalletScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.fromLTRB(
-          28,
-          28,
-          28,
-          MediaQuery.of(ctx).viewInsets.bottom + 40,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  isIncome ? '📥' : '📤',
-                  style: const TextStyle(fontSize: 24),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  isIncome ? 'Ghi nhận Thu' : 'Ghi nhận Chi',
-                  style: GoogleFonts.inter(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+            28,
+            28,
+            28,
+            MediaQuery.of(ctx).viewInsets.bottom + 40,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    isIncome ? '📥' : '📤',
+                    style: const TextStyle(fontSize: 24),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: amountCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [
-                ThousandsSeparatorInputFormatter(),
-              ],
-              decoration: InputDecoration(
-                labelText: 'Số tiền (₫)',
-                hintText: 'VD: 500.000',
-                suffixText: '₫',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                  const SizedBox(width: 10),
+                  Text(
+                    isIncome ? 'Ghi nhận Thu' : 'Ghi nhận Chi',
+                    style: GoogleFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 12),
-            if (categories.isNotEmpty) ...[
-              DropdownButtonFormField<String>(
-                initialValue: categoryId,
+              const SizedBox(height: 20),
+              TextField(
+                controller: amountCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [ThousandsSeparatorInputFormatter()],
                 decoration: InputDecoration(
-                  labelText: 'Danh mục',
+                  labelText: 'Số tiền (₫)',
+                  hintText: 'VD: 500.000',
+                  suffixText: '₫',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                items: categories
-                    .map(
-                      (category) => DropdownMenuItem(
-                        value: category.id,
-                        child: Text(category.name),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) => setSheet(() => categoryId = value),
               ),
               const SizedBox(height: 12),
-            ],
-            TextField(
-              controller: descCtrl,
-              decoration: InputDecoration(
-                labelText: 'Mô tả',
-                hintText: isIncome ? 'VD: Lương tháng 6' : 'VD: Tiền chợ',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
+              if (categories.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: categoryId,
+                  decoration: InputDecoration(
+                    labelText: 'Danh mục',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  items: categories
+                      .map(
+                        (category) => DropdownMenuItem(
+                          value: category.id,
+                          child: Text(category.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) => setSheet(() => categoryId = value),
+                ),
+                const SizedBox(height: 12),
+              ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _showCategoryManagerSheet(context),
+                  icon: const Icon(Icons.category_outlined, size: 18),
+                  label: const Text('Quản lý danh mục'),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isIncome
-                      ? AppColors.success
-                      : AppColors.danger,
-                  shape: RoundedRectangleBorder(
+              TextField(
+                controller: descCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Mô tả',
+                  hintText: isIncome ? 'VD: Lương tháng 6' : 'VD: Tiền chợ',
+                  border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                onPressed: () async {
-                  final amount = parseMoneyInput(amountCtrl.text);
-                  if (amount <= 0) return;
-                  final desc = descCtrl.text.trim().isNotEmpty
-                      ? descCtrl.text.trim()
-                      : (isIncome ? 'Thu nhập' : 'Chi tiêu');
-                  try {
-                    await context.read<WalletProvider>().recordEntry(
-                      amount: amount,
-                      description: desc,
-                      isIncome: isIncome,
-                      categoryId: categoryId,
-                    );
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  } catch (e) {
-                    if (ctx.mounted) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(
-                        SnackBar(
-                          content: Text(e.toString()),
-                          backgroundColor: AppColors.danger,
-                        ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isIncome
+                        ? AppColors.success
+                        : AppColors.danger,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () async {
+                    final amount = parseMoneyInput(amountCtrl.text);
+                    if (amount <= 0) return;
+                    final desc = descCtrl.text.trim().isNotEmpty
+                        ? descCtrl.text.trim()
+                        : (isIncome ? 'Thu nhập' : 'Chi tiêu');
+                    try {
+                      await context.read<WalletProvider>().recordEntry(
+                        amount: amount,
+                        description: desc,
+                        isIncome: isIncome,
+                        categoryId: categoryId,
                       );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text(e.toString()),
+                            backgroundColor: AppColors.danger,
+                          ),
+                        );
+                      }
                     }
-                  }
-                },
-                child: Text(
-                  isIncome ? 'Lưu khoản Thu' : 'Lưu khoản Chi',
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                  },
+                  child: Text(
+                    isIncome ? 'Lưu khoản Thu' : 'Lưu khoản Chi',
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
           ),
         ),
       ),

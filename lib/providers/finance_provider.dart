@@ -255,7 +255,8 @@ class FinancialGoal {
 
   /// List endpoint đôi khi chỉ trả `progressPercent`, còn endpoint chi tiết mới
   /// có `currentAmount`. Dùng số suy ra để UI không hiển thị sai 0 ₫ / mục tiêu.
-  double? get displayCurrentAmount => currentAmount ??
+  double? get displayCurrentAmount =>
+      currentAmount ??
       (progressPercent == null
           ? null
           : targetAmount * (progressPercent!.clamp(0, 100) / 100));
@@ -380,6 +381,7 @@ class GoalContributionPlan {
     final value = status.toUpperCase();
     return value == 'PENDING' || value == 'PLANNED';
   }
+
   bool get isSubmitted => status.toUpperCase() == 'SUBMITTED';
   bool get isApproved => status.toUpperCase() == 'APPROVED';
   bool get isPaid => status.toUpperCase() == 'PAID';
@@ -718,14 +720,41 @@ class FinanceProvider extends ChangeNotifier {
     required String categoryType,
     String? essentialType,
   }) async {
-    final res = await ApiClient.instance.post('/families/$_fid/finance/categories', {
-      'name': name,
-      'categoryType': categoryType,
-      'essentialType': ?essentialType,
-    });
+    final res = await ApiClient.instance.post(
+      '/families/$_fid/finance/categories',
+      {
+        'name': name,
+        'categoryType': categoryType,
+        'essentialType': ?essentialType,
+      },
+    );
     await _fetchCategories();
     notifyListeners();
     return res.isEmpty ? null : FinanceCategory.fromJson(res);
+  }
+
+  /// PATCH /families/{familyId}/finance/categories/{categoryId}
+  Future<void> updateCategory(
+    String categoryId, {
+    required String name,
+    String? essentialType,
+  }) async {
+    await ApiClient.instance.patch(
+      '/families/$_fid/finance/categories/$categoryId',
+      {'name': name, 'essentialType': ?essentialType},
+    );
+    await _fetchCategories();
+    notifyListeners();
+  }
+
+  /// DELETE /families/{familyId}/finance/categories/{categoryId}.
+  /// BE ngưng dùng danh mục nhưng giữ dữ liệu ledger/budget đã có.
+  Future<void> deactivateCategory(String categoryId) async {
+    await ApiClient.instance.delete(
+      '/families/$_fid/finance/categories/$categoryId',
+    );
+    await _fetchCategories();
+    notifyListeners();
   }
 
   // ── Mutations: Budget Plan ────────────────────────────────────────────────
@@ -789,16 +818,14 @@ class FinanceProvider extends ChangeNotifier {
     double? thresholdPercent,
     String? essentialType,
   }) async {
-    await ApiClient.instance.post(
-      '/families/$_fid/finance/budget-plans/$planId/lines',
-      {
-        'categoryId': categoryId,
-        'plannedAmount': plannedAmount,
-        'thresholdAmount': ?thresholdAmount,
-        'thresholdPercent': ?thresholdPercent,
-        'essentialType': ?essentialType,
-      },
-    );
+    await ApiClient.instance
+        .post('/families/$_fid/finance/budget-plans/$planId/lines', {
+          'categoryId': categoryId,
+          'plannedAmount': plannedAmount,
+          'thresholdAmount': ?thresholdAmount,
+          'thresholdPercent': ?thresholdPercent,
+          'essentialType': ?essentialType,
+        });
     notifyListeners();
   }
 
@@ -1130,9 +1157,9 @@ class FinanceProvider extends ChangeNotifier {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-plans${_qs({'month': month, 'year': year})}',
     );
-    return _contributionPlanList(data)
-        .map(GoalContributionPlan.fromJson)
-        .toList();
+    return _contributionPlanList(
+      data,
+    ).map(GoalContributionPlan.fromJson).toList();
   }
 
   // POST .../financial-goals/{goalId}/contribution-plans/{planId}/submit — thành viên xác nhận đã đóng góp
