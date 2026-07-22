@@ -8,15 +8,17 @@ import '../../providers/calendar_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 
-const _calendarDivider = AppColors.progressTrack;
-const _calendarInputFill = AppColors.background;
-const _calendarInputBorder = AppColors.progressTrack;
-
 const _calendarTaskColor = AppColors.primary500;
 const _calendarEventColor = AppColors.shared;
 const _calendarTravelColor = AppColors.calTravel;
 const _calendarBirthdayColor = AppColors.accent500;
 const _calendarHealthColor = AppColors.sos;
+const _calendarDarkBg = Colors.black;
+const _calendarDarkSurface = Color(0xFF1C1C1E);
+const _calendarDarkSurface2 = Color(0xFF2C2C2E);
+const _calendarIosRed = Color(0xFFFF3B4A);
+
+enum _CalendarViewMode { compact, stacked, details, list }
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -29,6 +31,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   late DateTime _focus;
   int? _selected;
   bool _showLegend = false;
+  _CalendarViewMode _viewMode = _CalendarViewMode.details;
 
   int get _daysInMonth => DateUtils.getDaysInMonth(_focus.year, _focus.month);
   int get _firstWeekday => DateTime(_focus.year, _focus.month, 1).weekday % 7;
@@ -192,7 +195,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void _showEventDetail(FamilyCalendarEvent event) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.white,
+      backgroundColor: _calendarDarkSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -229,7 +232,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
+                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 6),
@@ -259,7 +262,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 event.reminderEnabled
                     ? Icons.notifications_active_rounded
                     : Icons.notifications_none_rounded,
-                event.reminderEnabled ? 'Đã bật nhắc lịch' : 'Chưa bật nhắc lịch',
+                event.reminderEnabled
+                    ? 'Đã bật nhắc lịch'
+                    : 'Chưa bật nhắc lịch',
               ),
               if (event.isRecurring)
                 _detailRow(Icons.repeat_rounded, 'Sự kiện lặp lại'),
@@ -269,7 +274,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: Colors.white,
                 ),
               ),
               const SizedBox(height: 10),
@@ -319,14 +324,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: AppColors.textMuted),
+          Icon(icon, size: 18, color: Colors.white54),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               text,
               style: GoogleFonts.inter(
                 fontSize: 13,
-                color: AppColors.textSecondary,
+                color: Colors.white70,
                 height: 1.35,
               ),
             ),
@@ -354,7 +359,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       label: Text(label, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
         foregroundColor: selected ? Colors.white : color,
-        backgroundColor: selected ? color : AppColors.white,
+        backgroundColor: selected ? color : _calendarDarkSurface,
         side: BorderSide(color: color.withValues(alpha: selected ? 1 : 0.45)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -407,7 +412,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.white,
+      backgroundColor: _calendarDarkSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -464,193 +469,211 @@ class _CalendarScreenState extends State<CalendarScreen> {
             });
           }
 
-          return Padding(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              20,
-              20,
-              MediaQuery.of(ctx).viewInsets.bottom + 24,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    event == null ? 'Thêm sự kiện' : 'Cập nhật sự kiện',
-                    style: GoogleFonts.inter(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _field(titleCtrl, 'Tên sự kiện'),
-                  const SizedBox(height: 12),
-                  _field(locationCtrl, 'Địa điểm'),
-                  const SizedBox(height: 12),
-                  _field(descCtrl, 'Ghi chú', maxLines: 2),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _pickerButton(
-                          icon: Icons.calendar_today_rounded,
-                          label: '${start.day}/${start.month}/${start.year}',
-                          onTap: pickDate,
+          Future<void> save() async {
+            final title = titleCtrl.text.trim();
+            if (title.isEmpty) {
+              _showMessage('Vui lòng nhập tên sự kiện', isError: true);
+              return;
+            }
+            try {
+              if (event == null) {
+                await provider.createEvent(
+                  title: title,
+                  location: locationCtrl.text,
+                  description: descCtrl.text,
+                  startTime: start,
+                  endTime: end,
+                  reminderEnabled: reminder,
+                  isRecurring: recurring,
+                  participantMemberIds: selectedMembers.toList(),
+                );
+              } else {
+                await provider.updateEvent(
+                  event.id,
+                  title: title,
+                  location: locationCtrl.text,
+                  description: descCtrl.text,
+                  startTime: start,
+                  endTime: end,
+                  reminderEnabled: reminder,
+                  isRecurring: recurring,
+                  participantMemberIds: selectedMembers.toList(),
+                  month: DateTime(start.year, start.month),
+                );
+              }
+              if (!mounted || !ctx.mounted) return;
+              Navigator.pop(ctx);
+              setState(() {
+                _focus = DateTime(start.year, start.month);
+                _selected = start.day;
+              });
+              _showMessage('Đã lưu sự kiện');
+            } catch (e) {
+              await _handleError(e);
+            }
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                18,
+                20,
+                MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _sheetCircleButton(
+                          icon: Icons.close_rounded,
+                          onTap: () => Navigator.pop(ctx),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _pickerButton(
-                          icon: Icons.schedule_rounded,
-                          label: _timeLabel(start),
-                          onTap: () => pickTime(forEnd: false),
+                        Expanded(
+                          child: Text(
+                            event == null ? 'Mới' : 'Sửa',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _pickerButton(
-                          icon: Icons.timelapse_rounded,
-                          label: end == null ? '--:--' : _timeLabel(end!),
-                          onTap: () => pickTime(forEnd: true),
+                        _sheetCircleButton(
+                          icon: Icons.check_rounded,
+                          filled: true,
+                          onTap: save,
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Nhắc lịch'),
-                    subtitle: provider.canUseReminders
-                        ? null
-                        : const Text('Cần quyền calendar.reminders'),
-                    value: reminder,
-                    onChanged: provider.canUseReminders
-                        ? (v) => setSheet(() => reminder = v)
-                        : null,
-                  ),
-                  if (members.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Người tham gia',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      selectedMembers.isEmpty
-                          ? 'Chưa chọn — mặc định cả gia đình'
-                          : 'Đã chọn ${selectedMembers.length} thành viên',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: AppColors.textMuted,
+                    const SizedBox(height: 16),
+                    _segmentedHeader(),
+                    const SizedBox(height: 24),
+                    _formGroup([
+                      _field(titleCtrl, 'Tiêu đề'),
+                      _groupDivider(),
+                      _field(locationCtrl, 'Vị trí hoặc cuộc gọi video'),
+                    ]),
+                    const SizedBox(height: 18),
+                    _formGroup([
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: _sheetLabel('Cả ngày'),
+                        value: false,
+                        onChanged: (_) {},
+                        activeThumbColor: _calendarIosRed,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: members.map((m) {
-                        final picked = selectedMembers.contains(m.id);
-                        return FilterChip(
-                          label: Text(m.name.isEmpty ? m.email : m.name),
-                          selected: picked,
-                          onSelected: (v) => setSheet(() {
-                            if (v) {
-                              selectedMembers.add(m.id);
-                            } else {
-                              selectedMembers.remove(m.id);
-                            }
-                          }),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Lặp lại'),
-                    subtitle: provider.canUseRecurring
-                        ? null
-                        : const Text('Cần quyền calendar.recurringEvents'),
-                    value: recurring,
-                    onChanged: provider.canUseRecurring
-                        ? (v) => setSheet(() => recurring = v)
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.link,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
+                      _groupDivider(),
+                      _sheetPickerRow(
+                        label: 'Bắt đầu',
+                        children: [
+                          _pickerButton(
+                            icon: Icons.calendar_today_rounded,
+                            label: '${start.day}/${start.month}/${start.year}',
+                            onTap: pickDate,
+                          ),
+                          _pickerButton(
+                            icon: Icons.schedule_rounded,
+                            label: _timeLabel(start),
+                            onTap: () => pickTime(forEnd: false),
+                          ),
+                        ],
                       ),
-                      onPressed: () async {
-                        final title = titleCtrl.text.trim();
-                        if (title.isEmpty) {
-                          _showMessage(
-                            'Vui lòng nhập tên sự kiện',
-                            isError: true,
-                          );
-                          return;
-                        }
-                        try {
-                          if (event == null) {
-                            await provider.createEvent(
-                              title: title,
-                              location: locationCtrl.text,
-                              description: descCtrl.text,
-                              startTime: start,
-                              endTime: end,
-                              reminderEnabled: reminder,
-                              isRecurring: recurring,
-                              participantMemberIds: selectedMembers.toList(),
-                            );
-                          } else {
-                            await provider.updateEvent(
-                              event.id,
-                              title: title,
-                              location: locationCtrl.text,
-                              description: descCtrl.text,
-                              startTime: start,
-                              endTime: end,
-                              reminderEnabled: reminder,
-                              isRecurring: recurring,
-                              participantMemberIds: selectedMembers.toList(),
-                              month: DateTime(start.year, start.month),
-                            );
-                          }
-                          if (!mounted || !ctx.mounted) return;
-                          Navigator.pop(ctx);
-                          setState(() {
-                            _focus = DateTime(start.year, start.month);
-                            _selected = start.day;
-                          });
-                          _showMessage('Đã lưu sự kiện');
-                        } catch (e) {
-                          await _handleError(e);
-                        }
-                      },
-                      child: Text(
-                        'Lưu',
+                      _groupDivider(),
+                      _sheetPickerRow(
+                        label: 'Kết thúc',
+                        children: [
+                          _pickerButton(
+                            icon: Icons.timelapse_rounded,
+                            label: end == null ? '--:--' : _timeLabel(end!),
+                            onTap: () => pickTime(forEnd: true),
+                          ),
+                        ],
+                      ),
+                    ]),
+                    const SizedBox(height: 18),
+                    _formGroup([
+                      _sheetPickerRow(
+                        label: 'Lặp lại',
+                        mutedValue: provider.canUseRecurring
+                            ? 'Không'
+                            : 'Cần gói',
+                        children: [
+                          Switch(
+                            value: recurring,
+                            onChanged: provider.canUseRecurring
+                                ? (v) => setSheet(() => recurring = v)
+                                : null,
+                            activeThumbColor: _calendarIosRed,
+                          ),
+                        ],
+                      ),
+                    ]),
+                    if (members.isNotEmpty) ...[
+                      const SizedBox(height: 18),
+                      _sheetLabel('Người tham gia'),
+                      const SizedBox(height: 6),
+                      Text(
+                        selectedMembers.isEmpty
+                            ? 'Chưa chọn — mặc định cả gia đình'
+                            : 'Đã chọn ${selectedMembers.length} thành viên',
                         style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          fontSize: 11,
+                          color: Colors.white54,
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: members.map((m) {
+                          final picked = selectedMembers.contains(m.id);
+                          return FilterChip(
+                            label: Text(m.name.isEmpty ? m.email : m.name),
+                            selected: picked,
+                            selectedColor: _calendarIosRed.withValues(
+                              alpha: 0.22,
+                            ),
+                            backgroundColor: _calendarDarkSurface2,
+                            labelStyle: GoogleFonts.inter(color: Colors.white),
+                            onSelected: (v) => setSheet(() {
+                              if (v) {
+                                selectedMembers.add(m.id);
+                              } else {
+                                selectedMembers.remove(m.id);
+                              }
+                            }),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    const SizedBox(height: 18),
+                    _formGroup([
+                      _field(descCtrl, 'Ghi chú', maxLines: 3),
+                      _groupDivider(),
+                      _sheetPickerRow(
+                        label: 'Cảnh báo',
+                        mutedValue: provider.canUseReminders
+                            ? 'Không'
+                            : 'Cần gói',
+                        children: [
+                          Switch(
+                            value: reminder,
+                            onChanged: provider.canUseReminders
+                                ? (v) => setSheet(() => reminder = v)
+                                : null,
+                            activeThumbColor: _calendarIosRed,
+                          ),
+                        ],
+                      ),
+                    ]),
+                  ],
+                ),
               ),
             ),
           );
@@ -666,103 +689,111 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final eventsByDay = _eventsByDay(provider.events);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: _calendarDarkBg,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _header(),
-            if (_showLegend) _legend(),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _reload,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                  children: [
-                    const SizedBox(height: 10),
-                    _calendarGrid(today, eventsByDay),
+            RefreshIndicator(
+              onRefresh: _reload,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 112),
+                children: [
+                  _header(),
+                  if (_showLegend) _legend(),
+                  _calendarGrid(today, eventsByDay),
+                  if (_viewMode == _CalendarViewMode.list ||
+                      _selected != null) ...[
                     const SizedBox(height: 16),
-                    _sectionTitle(),
-                    if (provider.loading)
-                      const Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (provider.error != null)
-                      _empty(provider.error!, isError: true)
-                    else
-                      ..._eventList(eventsByDay),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: _sectionTitle(),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: provider.loading
+                          ? const Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                          : provider.error != null
+                          ? _empty(provider.error!, isError: true)
+                          : Column(children: _eventList(eventsByDay)),
+                    ),
                   ],
-                ),
+                ],
               ),
+            ),
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 18,
+              child: _bottomControls(),
             ),
           ],
         ),
       ),
-      // Member không có quyền tạo → ẩn hẳn FAB thay vì để bấm rồi ăn 403.
-      floatingActionButton: !_canManage
-          ? null
-          : FloatingActionButton(
-              heroTag: 'calendar_fab',
-              onPressed: () => _showEventForm(),
-              backgroundColor: provider.canCreateEvents
-                  ? AppColors.link
-                  : AppColors.textMuted,
-              child: const Icon(Icons.add_rounded, color: Colors.white),
-            ),
     );
   }
 
-  // Tách 2 dòng: trước đây tiêu đề + "Chú thích" + điều hướng tháng nằm chung
-  // một Row, trong đó Flexible(tiêu đề) và Spacer() cùng chia phần dư nên tiêu
-  // đề bị ép còn "L…" trên máy thật (quan sát 2026-07-20).
   Widget _header() => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+    padding: const EdgeInsets.fromLTRB(28, 10, 28, 18),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Icon(Icons.calendar_month_rounded, color: AppColors.link),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Lịch gia đình',
-                style: GoogleFonts.inter(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-                overflow: TextOverflow.ellipsis,
-              ),
+            _capsuleButton(
+              icon: Icons.chevron_left_rounded,
+              label: '${_focus.year}',
+              onTap: () => _moveMonth(-1),
             ),
-            TextButton(
-              onPressed: () => setState(() => _showLegend = !_showLegend),
-              child: const Text('Chú thích'),
+            const Spacer(),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: _calendarDarkSurface.withValues(alpha: 0.92),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _modeMenuButton(),
+                  _roundToolbarButton(
+                    tooltip: 'Tìm kiếm',
+                    icon: Icons.search_rounded,
+                    onTap: () => _showMessage('Tìm kiếm lịch sẽ được bổ sung'),
+                  ),
+                  if (_canManage)
+                    _roundToolbarButton(
+                      tooltip: 'Tạo sự kiện',
+                      icon: Icons.add_rounded,
+                      onTap: () => _showEventForm(),
+                    ),
+                ],
+              ),
             ),
           ],
         ),
-        Row(
-          children: [
-            IconButton(
-              onPressed: () => _moveMonth(-1),
-              icon: const Icon(Icons.chevron_left_rounded),
+        const SizedBox(height: 26),
+        GestureDetector(
+          onHorizontalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            if (velocity < -120) _moveMonth(1);
+            if (velocity > 120) _moveMonth(-1);
+          },
+          child: Text(
+            _monthName(_focus.month),
+            style: GoogleFonts.inter(
+              fontSize: 42,
+              height: 1,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
             ),
-            Expanded(
-              child: Text(
-                'Tháng ${_focus.month}/${_focus.year}',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            IconButton(
-              onPressed: () => _moveMonth(1),
-              icon: const Icon(Icons.chevron_right_rounded),
-            ),
-          ],
+          ),
         ),
       ],
     ),
@@ -777,7 +808,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ('Sức khỏe', _calendarHealthColor),
     ];
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      margin: const EdgeInsets.fromLTRB(28, 0, 28, 14),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: _surfaceDecoration(),
       child: Wrap(
@@ -802,7 +833,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary,
+                      color: Colors.white70,
                     ),
                   ),
                 ],
@@ -817,112 +848,175 @@ class _CalendarScreenState extends State<CalendarScreen> {
     DateTime today,
     Map<int, List<FamilyCalendarEvent>> eventsByDay,
   ) {
-    return Container(
-      decoration: _surfaceDecoration(),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Row(
-              children: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
-                  .map(
-                    (d) => Expanded(
-                      child: Center(
-                        child: Text(
-                          d,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: d == 'CN'
-                                ? AppColors.sos
-                                : AppColors.textMuted,
-                          ),
+    final totalCells = _firstWeekday + _daysInMonth;
+    final rows = (totalCells / 7).ceil();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            children: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+                .map(
+                  (d) => Expanded(
+                    child: Center(
+                      child: Text(
+                        d,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white.withValues(alpha: 0.62),
                         ),
                       ),
                     ),
-                  )
-                  .toList(),
-            ),
-          ),
-          const Divider(height: 1, color: _calendarDivider),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                childAspectRatio: 1,
-              ),
-              itemCount: _firstWeekday + _daysInMonth,
-              itemBuilder: (_, i) {
-                if (i < _firstWeekday) return const SizedBox();
-                final day = i - _firstWeekday + 1;
-                final isToday =
-                    today.year == _focus.year &&
-                    today.month == _focus.month &&
-                    today.day == day;
-                final isSelected = _selected == day;
-                final dayEvents = eventsByDay[day] ?? const [];
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    _selected = _selected == day ? null : day;
-                  }),
-                  child: Container(
-                    margin: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isSelected
-                          ? AppColors.link
-                          : isToday
-                          ? AppColors.link.withValues(alpha: 0.1)
-                          : null,
-                    ),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Text(
-                          '$day',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: isToday || isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w400,
-                            color: isSelected
-                                ? Colors.white
-                                : isToday
-                                ? AppColors.link
-                                : AppColors.textPrimary,
-                          ),
-                        ),
-                        if (dayEvents.isNotEmpty)
-                          Positioned(
-                            bottom: 3,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: dayEvents.take(3).map((e) {
-                                return Container(
-                                  width: 4,
-                                  height: 4,
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: isSelected ? Colors.white : e.color,
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                      ],
-                    ),
                   ),
-                );
-              },
-            ),
+                )
+                .toList(),
           ),
-        ],
+        ),
+        const SizedBox(height: 2),
+        for (var row = 0; row < rows; row++)
+          _calendarWeek(row, today, eventsByDay),
+      ],
+    );
+  }
+
+  Widget _calendarWeek(
+    int row,
+    DateTime today,
+    Map<int, List<FamilyCalendarEvent>> eventsByDay,
+  ) {
+    return Container(
+      height: _viewMode == _CalendarViewMode.compact ? 72 : 118,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+      ),
+      child: Row(
+        children: List.generate(7, (col) {
+          final cell = row * 7 + col;
+          if (cell < _firstWeekday) return const Expanded(child: SizedBox());
+          final day = cell - _firstWeekday + 1;
+          if (day > _daysInMonth) return const Expanded(child: SizedBox());
+          return Expanded(
+            child: _dayCell(day, today, eventsByDay[day] ?? const []),
+          );
+        }),
+      ),
+    );
+  }
+
+  Widget _dayCell(int day, DateTime today, List<FamilyCalendarEvent> events) {
+    final isToday =
+        today.year == _focus.year &&
+        today.month == _focus.month &&
+        today.day == day;
+    final isSelected = _selected == day;
+    final dayColor = isSelected || isToday
+        ? Colors.white
+        : day < today.day &&
+              today.year == _focus.year &&
+              today.month == _focus.month
+        ? Colors.white38
+        : Colors.white;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _selected = _selected == day ? null : day),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected || isToday ? _calendarIosRed : null,
+              ),
+              child: Text(
+                '$day',
+                style: GoogleFonts.inter(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: dayColor,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Expanded(
+              child: _dayEvents(events, selected: isSelected || isToday),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dayEvents(
+    List<FamilyCalendarEvent> events, {
+    required bool selected,
+  }) {
+    if (events.isEmpty) return const SizedBox.shrink();
+    if (_viewMode == _CalendarViewMode.compact) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: events.take(3).map((e) {
+          return Container(
+            width: 5,
+            height: 5,
+            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+            decoration: BoxDecoration(color: e.color, shape: BoxShape.circle),
+          );
+        }).toList(),
+      );
+    }
+    final max = _viewMode == _CalendarViewMode.stacked ? 2 : 3;
+    return Column(
+      children: events.take(max).map((event) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 3),
+          child: _eventPill(event, dimmed: selected),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _eventPill(FamilyCalendarEvent event, {bool dimmed = false}) {
+    return GestureDetector(
+      onTap: () =>
+          _canManage ? _showEventForm(event: event) : _showEventDetail(event),
+      child: Container(
+        height: 19,
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: BoxDecoration(
+          color: event.color.withValues(alpha: dimmed ? 0.42 : 0.34),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.remove_circle_outline_rounded,
+              size: 10,
+              color: event.color,
+            ),
+            const SizedBox(width: 3),
+            Expanded(
+              child: Text(
+                event.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: event.color,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -932,11 +1026,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
     child: Text(
       _selected != null
           ? 'Ngày $_selected tháng ${_focus.month}'
-          : 'Sự kiện tháng ${_focus.month}',
+          : 'Danh sách sự kiện',
       style: GoogleFonts.inter(
-        fontSize: 13,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textMuted,
+        fontSize: 15,
+        fontWeight: FontWeight.w800,
+        color: Colors.white,
       ),
     ),
   );
@@ -969,12 +1063,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: AppColors.white,
+          color: _calendarDarkSurface,
           borderRadius: BorderRadius.circular(16),
           border: Border(left: BorderSide(color: event.color, width: 4)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: Colors.black.withValues(alpha: 0.18),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -995,7 +1089,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -1004,7 +1098,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       '${event.location == null ? '' : ' · ${event.location}'}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        color: AppColors.textMuted,
+                        color: Colors.white60,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -1033,30 +1127,30 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   event.reminderEnabled
                       ? Icons.notifications_active_rounded
                       : Icons.notifications_none_rounded,
-                  color: event.reminderEnabled
-                      ? event.color
-                      : AppColors.textMuted,
+                  color: event.reminderEnabled ? event.color : Colors.white54,
                 ),
               ),
               PopupMenuButton<String>(
+                color: _calendarDarkSurface2,
+                iconColor: Colors.white70,
                 onSelected: (value) => _handleMenu(event, value),
                 // Phản hồi tham gia: mọi role (đây là lý do Member cần màn này).
                 // Hủy sự kiện: chỉ Manager/Deputy.
                 itemBuilder: (_) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'ACCEPTED',
-                    child: Text('Tham gia'),
+                    child: _popupText('Tham gia'),
                   ),
-                  const PopupMenuItem(value: 'MAYBE', child: Text('Có thể')),
-                  const PopupMenuItem(
+                  PopupMenuItem(value: 'MAYBE', child: _popupText('Có thể')),
+                  PopupMenuItem(
                     value: 'DECLINED',
-                    child: Text('Từ chối'),
+                    child: _popupText('Từ chối'),
                   ),
                   if (_canManage) ...[
                     const PopupMenuDivider(),
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'cancel',
-                      child: Text('Hủy sự kiện'),
+                      child: _popupText('Hủy sự kiện'),
                     ),
                   ],
                 ],
@@ -1082,6 +1176,124 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  Text _popupText(String text) {
+    return Text(
+      text,
+      style: GoogleFonts.inter(
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+
+  Widget _sheetCircleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    bool filled = false,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        width: 54,
+        height: 54,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: filled
+              ? const Color(0xFF5E5E66)
+              : _calendarDarkSurface2.withValues(alpha: 0.92),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Icon(icon, color: Colors.white, size: 31),
+      ),
+    );
+  }
+
+  Widget _segmentedHeader() {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF34343A),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _segmentLabel('Sự kiện', selected: true)),
+          Expanded(child: _segmentLabel('Nhắc việc')),
+        ],
+      ),
+    );
+  }
+
+  Widget _segmentLabel(String label, {bool selected = false}) {
+    return Container(
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFF77777F) : Colors.transparent,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _formGroup(List<Widget> children) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        color: _calendarDarkSurface2,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _groupDivider() {
+    return Divider(height: 1, color: Colors.white.withValues(alpha: 0.11));
+  }
+
+  Text _sheetLabel(String label) {
+    return Text(
+      label,
+      style: GoogleFonts.inter(
+        fontSize: 16,
+        fontWeight: FontWeight.w700,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  Widget _sheetPickerRow({
+    required String label,
+    String? mutedValue,
+    required List<Widget> children,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          _sheetLabel(label),
+          const Spacer(),
+          if (mutedValue != null)
+            Text(
+              mutedValue,
+              style: GoogleFonts.inter(fontSize: 15, color: Colors.white54),
+            ),
+          const SizedBox(width: 8),
+          ...children,
+        ],
+      ),
+    );
+  }
+
   Widget _field(
     TextEditingController controller,
     String hint, {
@@ -1090,18 +1302,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return TextField(
       controller: controller,
       maxLines: maxLines,
+      style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
       decoration: InputDecoration(
         hintText: hint,
-        filled: true,
-        fillColor: _calendarInputFill,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _calendarInputBorder),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: _calendarInputBorder),
-        ),
+        hintStyle: GoogleFonts.inter(color: Colors.white38),
+        filled: false,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
       ),
     );
   }
@@ -1113,11 +1321,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }) {
     return OutlinedButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: 16),
+      icon: Icon(icon, size: 14),
       label: Text(label, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        foregroundColor: Colors.white,
+        backgroundColor: const Color(0xFF47474D),
+        side: BorderSide.none,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
     );
   }
@@ -1130,23 +1341,199 @@ class _CalendarScreenState extends State<CalendarScreen> {
         textAlign: TextAlign.center,
         style: GoogleFonts.inter(
           fontSize: 14,
-          color: isError ? AppColors.danger : AppColors.textMuted,
+          color: isError ? AppColors.danger : Colors.white54,
         ),
       ),
     ),
   );
 
   BoxDecoration _surfaceDecoration() => BoxDecoration(
-    color: AppColors.white,
-    borderRadius: BorderRadius.circular(20),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.06),
-        blurRadius: 20,
-        offset: const Offset(0, 4),
-      ),
-    ],
+    color: _calendarDarkSurface.withValues(alpha: 0.92),
+    borderRadius: BorderRadius.circular(22),
+    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
   );
+
+  Widget _capsuleButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 10, 16, 10),
+        decoration: BoxDecoration(
+          color: _calendarDarkSurface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 24),
+            const SizedBox(width: 2),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _roundToolbarButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onTap,
+      icon: Icon(icon, color: Colors.white, size: 28),
+    );
+  }
+
+  Widget _modeMenuButton() {
+    return PopupMenuButton<_CalendarViewMode>(
+      tooltip: 'Kiểu hiển thị',
+      color: _calendarDarkSurface,
+      icon: const Icon(
+        Icons.view_agenda_outlined,
+        color: Colors.white,
+        size: 27,
+      ),
+      onSelected: (mode) => setState(() => _viewMode = mode),
+      itemBuilder: (_) => [
+        _modeItem(
+          _CalendarViewMode.compact,
+          Icons.view_week_outlined,
+          'Compact',
+        ),
+        _modeItem(
+          _CalendarViewMode.stacked,
+          Icons.view_stream_outlined,
+          'Stacked',
+        ),
+        _modeItem(
+          _CalendarViewMode.details,
+          Icons.view_agenda_outlined,
+          'Details',
+        ),
+        const PopupMenuDivider(),
+        _modeItem(_CalendarViewMode.list, Icons.list_alt_rounded, 'List'),
+      ],
+    );
+  }
+
+  PopupMenuEntry<_CalendarViewMode> _modeItem(
+    _CalendarViewMode mode,
+    IconData icon,
+    String label,
+  ) {
+    final selected = _viewMode == mode;
+    return PopupMenuItem<_CalendarViewMode>(
+      value: mode,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            child: selected
+                ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
+                : null,
+          ),
+          Icon(icon, color: Colors.white70, size: 21),
+          const SizedBox(width: 14),
+          Text(
+            label,
+            style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bottomControls() {
+    return Row(
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: () {
+            final now = DateTime.now();
+            setState(() {
+              _focus = DateTime(now.year, now.month);
+              _selected = now.day;
+            });
+            _reload();
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            decoration: BoxDecoration(
+              color: _calendarDarkSurface.withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Text(
+              'Hôm nay',
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+        const Spacer(),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: _calendarDarkSurface.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Chú thích',
+                onPressed: () => setState(() => _showLegend = !_showLegend),
+                icon: const Icon(
+                  Icons.calendar_month_rounded,
+                  color: Colors.white,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Tháng sau',
+                onPressed: () => _moveMonth(1),
+                icon: const Icon(Icons.inbox_outlined, color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _monthName(int month) {
+    const names = [
+      'Tháng 1',
+      'Tháng 2',
+      'Tháng 3',
+      'Tháng 4',
+      'Tháng 5',
+      'Tháng 6',
+      'Tháng 7',
+      'Tháng 8',
+      'Tháng 9',
+      'Tháng 10',
+      'Tháng 11',
+      'Tháng 12',
+    ];
+    return names[month - 1];
+  }
 
   void _showMessage(String message, {bool isError = false}) {
     if (!mounted) return;

@@ -68,14 +68,14 @@ void main() {
   // được tạo/sửa/hủy — BE cũng chặn tương ứng.
   testWidgets('Member KHÔNG thấy nút tạo sự kiện', (tester) async {
     await _pump(tester, UserRole.member);
-    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.byTooltip('Tạo sự kiện'), findsNothing);
   });
 
   testWidgets('Manager và Deputy vẫn thấy nút tạo sự kiện', (tester) async {
     for (final role in [UserRole.manager, UserRole.deputy]) {
       await _pump(tester, role);
       expect(
-        find.byType(FloatingActionButton),
+        find.byTooltip('Tạo sự kiện'),
         findsOneWidget,
         reason: '$role phải tạo được sự kiện',
       );
@@ -110,7 +110,7 @@ void main() {
 
   testWidgets('Member chạm vào sự kiện KHÔNG mở form sửa', (tester) async {
     await _pump(tester, UserRole.member);
-    await tester.tap(find.text('Họp gia đình'));
+    await tester.tap(find.text('Họp gia đình').last);
     await tester.pumpAndSettle();
 
     // Form sửa là bottom sheet có tiêu đề 'Cập nhật sự kiện'.
