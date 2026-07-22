@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../providers/album_face_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 /// Section "Người trong ảnh" trong màn chi tiết ảnh album.
 ///
@@ -176,7 +177,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: context.colors.inputFill,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -195,7 +196,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 style: GoogleFonts.inter(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: context.colors.textPrimary,
                 ),
               ),
             ],
@@ -225,7 +226,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 'Chưa có gợi ý nào. Bạn vẫn có thể gắn thẻ thủ công.',
                 style: GoogleFonts.inter(
                   fontSize: 12,
-                  color: AppColors.textMuted,
+                  color: context.colors.textMuted,
                 ),
               ),
             ],
@@ -310,7 +311,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                     'Độ tin cậy $conf',
                     style: GoogleFonts.inter(
                       fontSize: 11,
-                      color: AppColors.textMuted,
+                      color: context.colors.textMuted,
                     ),
                   ),
               ],

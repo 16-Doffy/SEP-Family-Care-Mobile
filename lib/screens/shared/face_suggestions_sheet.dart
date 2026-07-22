@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/album_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 
 class FaceSuggestionsSheet extends StatefulWidget {
   final String mediaId;
@@ -26,11 +27,13 @@ class _FaceSuggestionsSheetState extends State<FaceSuggestionsSheet> {
   }
 
   void _reload() {
-    setState(
-      () => _future = context.read<AlbumProvider>().fetchFaceSuggestions(
+    // Dùng block body, KHÔNG arrow: `() => _future = fetch()` trả về Future
+    // (giá trị phép gán) khiến setState báo "callback returned a Future".
+    setState(() {
+      _future = context.read<AlbumProvider>().fetchFaceSuggestions(
         widget.mediaId,
-      ),
-    );
+      );
+    });
   }
 
   Future<void> _scan() async {
@@ -102,6 +105,7 @@ class _FaceSuggestionsSheetState extends State<FaceSuggestionsSheet> {
                     style: GoogleFonts.inter(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                 ),
@@ -117,7 +121,7 @@ class _FaceSuggestionsSheetState extends State<FaceSuggestionsSheet> {
                   : 'Gói hiện tại chưa có quyền Face Suggestion.',
               style: GoogleFonts.inter(
                 fontSize: 12,
-                color: AppColors.textSecondary,
+                color: context.colors.textSecondary,
               ),
             ),
             const SizedBox(height: 12),
@@ -156,7 +160,9 @@ class _FaceSuggestionsSheetState extends State<FaceSuggestionsSheet> {
                         child: Text(
                           'Chưa có gợi ý. Hãy quét ảnh sau khi Face Profile đã sẵn sàng.',
                           textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(color: AppColors.textMuted),
+                          style: GoogleFonts.inter(
+                            color: context.colors.textMuted,
+                          ),
                         ),
                       ),
                     );
