@@ -50,13 +50,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Color get _calendarText => _dark ? Colors.white : context.colors.textPrimary;
   Color get _calendarSecondary =>
       _dark ? Colors.white70 : context.colors.textSecondary;
-  Color get _calendarMuted =>
-      _dark ? Colors.white54 : context.colors.textMuted;
-  Color get _calendarFaint =>
-      _dark ? Colors.white38 : context.colors.textMuted;
-  Color get _calendarBorder => _dark
-      ? Colors.white.withValues(alpha: 0.08)
-      : context.colors.divider;
+  Color get _calendarMuted => _dark ? Colors.white54 : context.colors.textMuted;
+  Color get _calendarFaint => _dark ? Colors.white38 : context.colors.textMuted;
+  Color get _calendarBorder =>
+      _dark ? Colors.white.withValues(alpha: 0.08) : context.colors.divider;
   Color _calendarDivider([double alpha = 0.12]) => _dark
       ? Colors.white.withValues(alpha: alpha)
       : context.colors.divider.withValues(alpha: 0.9);
@@ -559,7 +556,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             style: GoogleFonts.inter(
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
-                              color: Colors.white,
+                              color: _calendarText,
                             ),
                           ),
                         ),
@@ -643,7 +640,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             : 'Đã chọn ${selectedMembers.length} thành viên',
                         style: GoogleFonts.inter(
                           fontSize: 11,
-                          color: Colors.white54,
+                          color: _calendarMuted,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -658,8 +655,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             selectedColor: _calendarIosRed.withValues(
                               alpha: 0.22,
                             ),
-                            backgroundColor: _calendarDarkSurface2,
-                            labelStyle: GoogleFonts.inter(color: Colors.white),
+                            backgroundColor: _calendarSurface2,
+                            labelStyle: GoogleFonts.inter(color: _calendarText),
                             onSelected: (v) => setSheet(() {
                               if (v) {
                                 selectedMembers.add(m.id);
@@ -709,7 +706,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final eventsByDay = _eventsByDay(provider.events);
 
     return Scaffold(
-      backgroundColor: _calendarDarkBg,
+      backgroundColor: _calendarBg,
       body: SafeArea(
         child: Stack(
           children: [
@@ -731,11 +728,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: provider.loading
-                          ? const Padding(
-                              padding: EdgeInsets.all(32),
+                          ? Padding(
+                              padding: const EdgeInsets.all(32),
                               child: Center(
                                 child: CircularProgressIndicator(
-                                  color: Colors.white,
+                                  color: _calendarText,
                                 ),
                               ),
                             )
@@ -774,9 +771,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
             const Spacer(),
             DecoratedBox(
               decoration: BoxDecoration(
-                color: _calendarDarkSurface.withValues(alpha: 0.92),
+                color: _calendarSurface.withValues(alpha: _dark ? 0.92 : 0.96),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                border: Border.all(color: _calendarBorder),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -811,7 +808,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               fontSize: 42,
               height: 1,
               fontWeight: FontWeight.w900,
-              color: Colors.white,
+              color: _calendarText,
             ),
           ),
         ),
@@ -853,7 +850,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white70,
+                      color: _calendarSecondary,
                     ),
                   ),
                 ],
@@ -884,7 +881,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white.withValues(alpha: 0.62),
+                          color: _calendarMuted,
                         ),
                       ),
                     ),
@@ -909,9 +906,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       height: _viewMode == _CalendarViewMode.compact ? 72 : 118,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-        ),
+        border: Border(top: BorderSide(color: _calendarDivider())),
       ),
       child: Row(
         children: List.generate(7, (col) {
@@ -938,8 +933,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         : day < today.day &&
               today.year == _focus.year &&
               today.month == _focus.month
-        ? Colors.white38
-        : Colors.white;
+        ? _calendarFaint
+        : _calendarText;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => setState(() => _selected = _selected == day ? null : day),
@@ -1050,7 +1045,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       style: GoogleFonts.inter(
         fontSize: 15,
         fontWeight: FontWeight.w800,
-        color: Colors.white,
+        color: _calendarText,
       ),
     ),
   );
@@ -1083,12 +1078,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         decoration: BoxDecoration(
-          color: _calendarDarkSurface,
+          color: _calendarSurface,
           borderRadius: BorderRadius.circular(16),
           border: Border(left: BorderSide(color: event.color, width: 4)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
+              color: Colors.black.withValues(alpha: _dark ? 0.18 : 0.06),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),
@@ -1109,7 +1104,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: _calendarText,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -1118,7 +1113,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       '${event.location == null ? '' : ' · ${event.location}'}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        color: Colors.white60,
+                        color: _calendarSecondary,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -1147,12 +1142,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   event.reminderEnabled
                       ? Icons.notifications_active_rounded
                       : Icons.notifications_none_rounded,
-                  color: event.reminderEnabled ? event.color : Colors.white54,
+                  color: event.reminderEnabled ? event.color : _calendarMuted,
                 ),
               ),
               PopupMenuButton<String>(
-                color: _calendarDarkSurface2,
-                iconColor: Colors.white70,
+                color: _calendarSurface2,
+                iconColor: _calendarSecondary,
                 onSelected: (value) => _handleMenu(event, value),
                 // Phản hồi tham gia: mọi role (đây là lý do Member cần màn này).
                 // Hủy sự kiện: chỉ Manager/Deputy.
@@ -1200,7 +1195,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Text(
       text,
       style: GoogleFonts.inter(
-        color: Colors.white,
+        color: _calendarText,
         fontWeight: FontWeight.w600,
       ),
     );
@@ -1220,12 +1215,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: filled
-              ? const Color(0xFF5E5E66)
-              : _calendarDarkSurface2.withValues(alpha: 0.92),
+              ? (_dark ? const Color(0xFF5E5E66) : AppColors.link)
+              : _calendarSurface2.withValues(alpha: _dark ? 0.92 : 1),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: _calendarBorder),
         ),
-        child: Icon(icon, color: Colors.white, size: 31),
+        child: Icon(
+          icon,
+          color: filled ? Colors.white : _calendarText,
+          size: 31,
+        ),
       ),
     );
   }
@@ -1235,7 +1234,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       height: 46,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFF34343A),
+        color: _calendarSurface2,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
@@ -1251,7 +1250,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Container(
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFF77777F) : Colors.transparent,
+        color: selected
+            ? (_dark ? const Color(0xFF77777F) : AppColors.white)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(15),
       ),
       child: Text(
@@ -1259,7 +1260,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         style: GoogleFonts.inter(
           fontSize: 15,
           fontWeight: FontWeight.w800,
-          color: Colors.white,
+          color: _calendarText,
         ),
       ),
     );
@@ -1269,7 +1270,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
-        color: _calendarDarkSurface2,
+        color: _calendarSurface2,
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(children: children),
@@ -1277,7 +1278,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _groupDivider() {
-    return Divider(height: 1, color: Colors.white.withValues(alpha: 0.11));
+    return Divider(height: 1, color: _calendarDivider(0.11));
   }
 
   Text _sheetLabel(String label) {
@@ -1286,7 +1287,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       style: GoogleFonts.inter(
         fontSize: 16,
         fontWeight: FontWeight.w700,
-        color: Colors.white,
+        color: _calendarText,
       ),
     );
   }
@@ -1305,7 +1306,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           if (mutedValue != null)
             Text(
               mutedValue,
-              style: GoogleFonts.inter(fontSize: 15, color: Colors.white54),
+              style: GoogleFonts.inter(fontSize: 15, color: _calendarMuted),
             ),
           const SizedBox(width: 8),
           ...children,
@@ -1322,10 +1323,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return TextField(
       controller: controller,
       maxLines: maxLines,
-      style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
+      style: GoogleFonts.inter(color: _calendarText, fontSize: 16),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: GoogleFonts.inter(color: Colors.white38),
+        hintStyle: GoogleFonts.inter(color: _calendarFaint),
         filled: false,
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
@@ -1344,8 +1345,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
       icon: Icon(icon, size: 14),
       label: Text(label, overflow: TextOverflow.ellipsis),
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.white,
-        backgroundColor: const Color(0xFF47474D),
+        foregroundColor: _calendarText,
+        backgroundColor: _dark ? const Color(0xFF47474D) : AppColors.white,
         side: BorderSide.none,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
@@ -1361,16 +1362,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
         textAlign: TextAlign.center,
         style: GoogleFonts.inter(
           fontSize: 14,
-          color: isError ? AppColors.danger : Colors.white54,
+          color: isError ? AppColors.danger : _calendarMuted,
         ),
       ),
     ),
   );
 
   BoxDecoration _surfaceDecoration() => BoxDecoration(
-    color: _calendarDarkSurface.withValues(alpha: 0.92),
+    color: _calendarSurface.withValues(alpha: _dark ? 0.92 : 0.96),
     borderRadius: BorderRadius.circular(22),
-    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+    border: Border.all(color: _calendarBorder),
   );
 
   Widget _capsuleButton({
@@ -1384,19 +1385,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Container(
         padding: const EdgeInsets.fromLTRB(10, 10, 16, 10),
         decoration: BoxDecoration(
-          color: _calendarDarkSurface,
+          color: _calendarSurface,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: _calendarBorder),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: Colors.white, size: 24),
+            Icon(icon, color: _calendarText, size: 24),
             const SizedBox(width: 2),
             Text(
               label,
               style: GoogleFonts.inter(
-                color: Colors.white,
+                color: _calendarText,
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
               ),
@@ -1415,26 +1416,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return IconButton(
       tooltip: tooltip,
       onPressed: onTap,
-      icon: Icon(icon, color: Colors.white, size: 28),
+      icon: Icon(icon, color: _calendarText, size: 28),
     );
   }
 
   Widget _modeMenuButton() {
     return PopupMenuButton<_CalendarViewMode>(
       tooltip: 'Kiểu hiển thị',
-      color: _calendarDarkSurface,
-      icon: const Icon(
-        Icons.view_agenda_outlined,
-        color: Colors.white,
-        size: 27,
-      ),
+      color: _calendarSurface,
+      icon: Icon(Icons.view_agenda_outlined, color: _calendarText, size: 27),
       onSelected: (mode) => setState(() => _viewMode = mode),
       itemBuilder: (_) => [
-        _modeItem(
-          _CalendarViewMode.compact,
-          Icons.view_week_outlined,
-          'Gọn',
-        ),
+        _modeItem(_CalendarViewMode.compact, Icons.view_week_outlined, 'Gọn'),
         _modeItem(
           _CalendarViewMode.stacked,
           Icons.view_stream_outlined,
@@ -1464,14 +1457,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
           SizedBox(
             width: 24,
             child: selected
-                ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
+                ? Icon(Icons.check_rounded, color: _calendarText, size: 18)
                 : null,
           ),
-          Icon(icon, color: Colors.white70, size: 21),
+          Icon(icon, color: _calendarSecondary, size: 21),
           const SizedBox(width: 14),
           Text(
             label,
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
+            style: GoogleFonts.inter(color: _calendarText, fontSize: 16),
           ),
         ],
       ),
@@ -1494,14 +1487,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             decoration: BoxDecoration(
-              color: _calendarDarkSurface.withValues(alpha: 0.94),
+              color: _calendarSurface.withValues(alpha: _dark ? 0.94 : 0.96),
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              border: Border.all(color: _calendarBorder),
             ),
             child: Text(
               'Hôm nay',
               style: GoogleFonts.inter(
-                color: Colors.white,
+                color: _calendarText,
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
               ),
@@ -1511,24 +1504,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
         const Spacer(),
         DecoratedBox(
           decoration: BoxDecoration(
-            color: _calendarDarkSurface.withValues(alpha: 0.94),
+            color: _calendarSurface.withValues(alpha: _dark ? 0.94 : 0.96),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            border: Border.all(color: _calendarBorder),
           ),
           child: Row(
             children: [
               IconButton(
                 tooltip: 'Chú thích',
                 onPressed: () => setState(() => _showLegend = !_showLegend),
-                icon: const Icon(
-                  Icons.calendar_month_rounded,
-                  color: Colors.white,
-                ),
+                icon: Icon(Icons.calendar_month_rounded, color: _calendarText),
               ),
               IconButton(
                 tooltip: 'Tháng sau',
                 onPressed: () => _moveMonth(1),
-                icon: const Icon(Icons.inbox_outlined, color: Colors.white),
+                icon: Icon(Icons.inbox_outlined, color: _calendarText),
               ),
             ],
           ),

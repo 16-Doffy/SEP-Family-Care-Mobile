@@ -44,11 +44,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
   Color get _photoBackground =>
       _dark ? Colors.black : context.colors.background;
   Color get _photoSurface => _dark ? const Color(0xFF1C1C1E) : AppColors.white;
-  Color get _photoChrome =>
-      _dark ? const Color(0xFF1F1F1F) : AppColors.white;
+  Color get _photoChrome => _dark ? const Color(0xFF1F1F1F) : AppColors.white;
   Color get _photoText => _dark ? Colors.white : AppColors.textPrimary;
-  Color get _photoSecondary =>
-      _dark ? Colors.white70 : AppColors.textSecondary;
+  Color get _photoSecondary => _dark ? Colors.white70 : AppColors.textSecondary;
   Color get _photoMuted => _dark ? Colors.white54 : AppColors.textMuted;
   Color get _photoBorder => _dark
       ? Colors.white.withValues(alpha: 0.08)
@@ -576,11 +574,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 20,
-              color: selected ? AppColors.link : _photoText,
-            ),
+            Icon(icon, size: 20, color: selected ? AppColors.link : _photoText),
             const SizedBox(width: 7),
             Text(
               label,
@@ -598,20 +592,14 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Widget _libraryBody(AlbumProvider album, bool isAdmin) {
     if (album.loading && album.items.isEmpty) {
-      return Center(
-        child: CircularProgressIndicator(color: _photoText),
-      );
+      return Center(child: CircularProgressIndicator(color: _photoText));
     }
     if (album.error != null && album.items.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
           const SizedBox(height: 120),
-          Icon(
-            Icons.cloud_off_outlined,
-            size: 42,
-            color: _photoSecondary,
-          ),
+          Icon(Icons.cloud_off_outlined, size: 42, color: _photoSecondary),
           const SizedBox(height: 12),
           Center(
             child: Text(
@@ -640,11 +628,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         children: [
           _libraryHeader(album.items.length),
           const SizedBox(height: 130),
-          Icon(
-            Icons.photo_library_outlined,
-            size: 48,
-            color: _photoSecondary,
-          ),
+          Icon(Icons.photo_library_outlined, size: 48, color: _photoSecondary),
           const SizedBox(height: 12),
           Center(
             child: Text(
