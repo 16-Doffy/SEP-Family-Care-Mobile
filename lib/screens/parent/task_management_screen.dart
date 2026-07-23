@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_client.dart';
@@ -424,7 +425,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         ]),
         Builder(
           builder: (ctx) {
-            final myMemberId = context.read<FamilyProvider>().currentMember?.id;
+            final user = context.read<AuthProvider>().user;
+            final myMemberId = context
+                .read<FamilyProvider>()
+                .members
+                .where((m) => m.userId == user?.id || m.id == user?.id)
+                .firstOrNull
+                ?.id;
             final isMine = a.assignedToMemberId == myMemberId;
             if (!isMine) return const SizedBox();
 

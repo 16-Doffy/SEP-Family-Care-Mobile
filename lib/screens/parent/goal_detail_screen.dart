@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -602,14 +603,16 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                   now.month,
                                   now.year,
                                 );
+                                final user = context
+                                    .read<AuthProvider>()
+                                    .user;
                                 final myMemberId = context
                                     .read<FamilyProvider>()
-                                    .currentMember
+                                    .members
+                                    .where((m) => m.userId == user?.id || m.id == user?.id)
+                                    .firstOrNull
                                     ?.id;
-                                final myUserId = context
-                                    .read<AuthProvider>()
-                                    .user
-                                    ?.id;
+                                final myUserId = user?.id;
                                 final myPlan = plans
                                     .where(
                                       (p) =>
