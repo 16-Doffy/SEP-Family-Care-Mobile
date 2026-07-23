@@ -11,28 +11,28 @@ import '../../widgets/avatar_widget.dart';
 import '../../widgets/money_input.dart';
 
 enum Occupation {
-  employed('Đi làm', '💼'),
-  student('Học sinh / Sinh viên', '📚'),
-  retired('Hưu trí', '🏖️'),
-  homemaker('Nội trợ', '🏠'),
-  other('Khác', '✨');
+  employed('Đi làm', Icons.work_outline_rounded),
+  student('Học sinh / Sinh viên', Icons.school_outlined),
+  retired('Hưu trí', Icons.beach_access_outlined),
+  homemaker('Nội trợ', Icons.home_outlined),
+  other('Khác', Icons.person_outline_rounded);
 
   final String label;
-  final String emoji;
-  const Occupation(this.label, this.emoji);
+  final IconData icon;
+  const Occupation(this.label, this.icon);
 }
 
 enum FamilyRelation {
-  spouse('Vợ / Chồng', '💑'),
-  child('Con cái', '👧'),
-  parent('Cha / Mẹ', '👨‍👩‍👧'),
-  grandparent('Ông / Bà', '👴'),
-  sibling('Anh / Chị / Em', '👫'),
-  other('Khác', '👤');
+  spouse('Vợ / Chồng', Icons.favorite_border_rounded),
+  child('Con cái', Icons.child_care_rounded),
+  parent('Cha / Mẹ', Icons.family_restroom_rounded),
+  grandparent('Ông / Bà', Icons.elderly_rounded),
+  sibling('Anh / Chị / Em', Icons.diversity_3_outlined),
+  other('Khác', Icons.person_outline_rounded);
 
   final String label;
-  final String emoji;
-  const FamilyRelation(this.label, this.emoji);
+  final IconData icon;
+  const FamilyRelation(this.label, this.icon);
 }
 
 class EditProfileScreen extends StatefulWidget {
@@ -132,7 +132,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         messenger.showSnackBar(
           const SnackBar(
-            content: Text('Đã lưu tài chính tháng ✅'),
+            content: Text('Đã lưu tài chính tháng'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -320,7 +320,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         hint: 'VD: 10.000.000',
                         icon: Icons.trending_up_rounded,
                         keyboardType: TextInputType.number,
-                        inputFormatters: const [ThousandsSeparatorInputFormatter()],
+                        inputFormatters: const [
+                          ThousandsSeparatorInputFormatter(),
+                        ],
                       ),
                       _visibilitySwitch(
                         label: 'Chia sẻ thu nhập với Trưởng/Phó nhóm',
@@ -334,7 +336,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         hint: 'VD: 3.000.000',
                         icon: Icons.trending_down_rounded,
                         keyboardType: TextInputType.number,
-                        inputFormatters: const [ThousandsSeparatorInputFormatter()],
+                        inputFormatters: const [
+                          ThousandsSeparatorInputFormatter(),
+                        ],
                       ),
                       _visibilitySwitch(
                         label: 'Chia sẻ chi tiêu với Trưởng/Phó nhóm',
@@ -348,7 +352,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         hint: 'VD: 1.000.000',
                         icon: Icons.savings_outlined,
                         keyboardType: TextInputType.number,
-                        inputFormatters: const [ThousandsSeparatorInputFormatter()],
+                        inputFormatters: const [
+                          ThousandsSeparatorInputFormatter(),
+                        ],
                       ),
                     ],
                   ),

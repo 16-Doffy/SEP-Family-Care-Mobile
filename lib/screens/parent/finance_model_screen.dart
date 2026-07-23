@@ -6,7 +6,6 @@ import '../../providers/finance_provider.dart' as fp;
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/app_feature_icon.dart';
-import '../../widgets/json_report_view.dart';
 
 // UC-FIN-01 — Chọn mô hình tài chính gia đình (5 Jars / 80-20 / Custom)
 // UC-FIN-02 — Cấu hình các khoản (Jars / Funds)
@@ -58,27 +57,69 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
   // Giá trị mặc định KHỚP với BE thật (verify qua API, không phải số bịa).
   final List<FinanceJarUi> _fiveJars = [
-    FinanceJarUi(name: 'Nhu cầu thiết yếu', icon: Icons.home_work_outlined, color: const Color(0xFF2563EB), percent: 50, jarCode: 'NECESSITIES'),
-    FinanceJarUi(name: 'Tiết kiệm dài hạn', icon: Icons.savings_outlined, color: const Color(0xFF16A34A), percent: 20, jarCode: 'SAVINGS'),
-    FinanceJarUi(name: 'Giáo dục',          icon: Icons.school_outlined, color: const Color(0xFFF59E0B), percent: 10, jarCode: 'EDUCATION'),
-    FinanceJarUi(name: 'Vui chơi',          icon: Icons.celebration_outlined, color: const Color(0xFFEC4899), percent: 10, jarCode: 'ENJOYMENT'),
-    FinanceJarUi(name: 'Cho đi / Biếu tặng', icon: Icons.volunteer_activism_outlined, color: const Color(0xFF7C3AED), percent: 10, jarCode: 'GIVING'),
+    FinanceJarUi(
+      name: 'Nhu cầu thiết yếu',
+      icon: Icons.home_work_outlined,
+      color: const Color(0xFF2563EB),
+      percent: 50,
+      jarCode: 'NECESSITIES',
+    ),
+    FinanceJarUi(
+      name: 'Tiết kiệm dài hạn',
+      icon: Icons.savings_outlined,
+      color: const Color(0xFF16A34A),
+      percent: 20,
+      jarCode: 'SAVINGS',
+    ),
+    FinanceJarUi(
+      name: 'Giáo dục',
+      icon: Icons.school_outlined,
+      color: const Color(0xFFF59E0B),
+      percent: 10,
+      jarCode: 'EDUCATION',
+    ),
+    FinanceJarUi(
+      name: 'Vui chơi',
+      icon: Icons.celebration_outlined,
+      color: const Color(0xFFEC4899),
+      percent: 10,
+      jarCode: 'ENJOYMENT',
+    ),
+    FinanceJarUi(
+      name: 'Cho đi / Biếu tặng',
+      icon: Icons.volunteer_activism_outlined,
+      color: const Color(0xFF7C3AED),
+      percent: 10,
+      jarCode: 'GIVING',
+    ),
   ];
 
   final List<FinanceJarUi> _twoFunds = [
-    FinanceJarUi(name: 'Chi tiêu',  icon: Icons.credit_card_rounded, color: const Color(0xFFF97316), percent: 80, jarCode: 'SPENDING'),
-    FinanceJarUi(name: 'Tiết kiệm', icon: Icons.savings_outlined, color: const Color(0xFF16A34A), percent: 20, jarCode: 'SAVINGS'),
+    FinanceJarUi(
+      name: 'Chi tiêu',
+      icon: Icons.credit_card_rounded,
+      color: const Color(0xFFF97316),
+      percent: 80,
+      jarCode: 'SPENDING',
+    ),
+    FinanceJarUi(
+      name: 'Tiết kiệm',
+      icon: Icons.savings_outlined,
+      color: const Color(0xFF16A34A),
+      percent: 20,
+      jarCode: 'SAVINGS',
+    ),
   ];
 
   final List<FinanceJarUi> _customJars = [];
-  final _customNameCtrl   = TextEditingController();
+  final _customNameCtrl = TextEditingController();
   final _customPercentCtrl = TextEditingController();
 
   List<FinanceJarUi> get _activeJars => switch (_model) {
-        FinanceModelType.fiveJars    => _fiveJars,
-        FinanceModelType.eightTwenty => _twoFunds,
-        FinanceModelType.custom      => _customJars,
-      };
+    FinanceModelType.fiveJars => _fiveJars,
+    FinanceModelType.eightTwenty => _twoFunds,
+    FinanceModelType.custom => _customJars,
+  };
 
   double get _totalPercent => _activeJars.fold(0, (s, j) => s + j.percent);
 
@@ -116,12 +157,14 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     // GET /finance/models (list) chỉ trả _count.jars, KHÔNG có jars đầy đủ
     // — phải lấy từ provider.jars (GET /finance/jars riêng) lọc theo
     // financeModelId để có % thật của từng lọ.
-    final realJars = provider.jars.where((j) => j.financeModelId == active.id).toList();
+    final realJars = provider.jars
+        .where((j) => j.financeModelId == active.id)
+        .toList();
     setState(() {
       _currentModelTypeLabel = switch (active.modelType) {
-        'FIVE_JARS'     => 'Quy tắc 5 Lọ',
+        'FIVE_JARS' => 'Quy tắc 5 Lọ',
         'EIGHTY_TWENTY' => 'Quy tắc 80/20',
-        _               => active.name,
+        _ => active.name,
       };
       switch (active.modelType) {
         case 'FIVE_JARS':
@@ -135,10 +178,24 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         default:
           _model = FinanceModelType.custom;
           _customJars.clear();
-          final colors = [const Color(0xFF2563EB), const Color(0xFF16A34A), const Color(0xFFF59E0B), const Color(0xFFEC4899), const Color(0xFF7C3AED)];
+          final colors = [
+            const Color(0xFF2563EB),
+            const Color(0xFF16A34A),
+            const Color(0xFFF59E0B),
+            const Color(0xFFEC4899),
+            const Color(0xFF7C3AED),
+          ];
           for (var i = 0; i < realJars.length; i++) {
             final j = realJars[i];
-            _customJars.add(FinanceJarUi(name: j.name, icon: Icons.account_balance_wallet_outlined, color: colors[i % colors.length], percent: j.allocationPercentage, jarCode: j.jarCode));
+            _customJars.add(
+              FinanceJarUi(
+                name: j.name,
+                icon: Icons.account_balance_wallet_outlined,
+                color: colors[i % colors.length],
+                percent: j.allocationPercentage,
+                jarCode: j.jarCode,
+              ),
+            );
           }
       }
       _loadingCurrent = false;
@@ -166,123 +223,203 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     return Scaffold(
       backgroundColor: context.colors.background,
       body: SafeArea(
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Row(children: [
-              GestureDetector(
-                onTap: () => context.pop(),
-                child: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.textPrimary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text('Mô hình tài chính',
-                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-              ),
-              if (_loadingCurrent)
-                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-              else
-                GestureDetector(
-                  onTap: () => _showTemplatesInfo(context),
-                  child: const Icon(Icons.info_outline_rounded, size: 20, color: AppColors.textMuted),
-                ),
-            ]),
-          ),
-
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              children: [
-                if (_currentModelTypeLabel != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: const Color(0xFFDCFCE7), borderRadius: BorderRadius.circular(12)),
-                    child: Row(children: [
-                      const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF16A34A)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text('Đang áp dụng: $_currentModelTypeLabel',
-                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF166534))),
-                      ),
-                    ]),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => context.pop(),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                ],
-
-                Text('Chọn mô hình phân bổ thu nhập',
-                    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
-                const SizedBox(height: 12),
-
-                _modelCard(
-                  model: FinanceModelType.fiveJars,
-                  icon: Icons.account_balance_wallet_outlined,
-                  title: 'Quy tắc 5 lọ',
-                  subtitle: '50% nhu cầu · 20% tiết kiệm · 10% giáo dục · 10% vui chơi · 10% cho đi',
-                ),
-                const SizedBox(height: 10),
-                _modelCard(
-                  model: FinanceModelType.eightTwenty,
-                  icon: Icons.call_split_rounded,
-                  title: 'Quy tắc 80/20',
-                  subtitle: '80% chi tiêu · 20% tiết kiệm',
-                ),
-                const SizedBox(height: 10),
-                _modelCard(
-                  model: FinanceModelType.custom,
-                  icon: Icons.tune_rounded,
-                  title: 'Tuỳ chỉnh',
-                  subtitle: 'Tự thiết lập các khoản & tỷ lệ phân bổ',
-                ),
-                const SizedBox(height: 20),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Cấu hình khoản',
-                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: (_totalPercent - 100).abs() < 0.5 ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Tổng: ${_totalPercent.round()}%',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: (_totalPercent - 100).abs() < 0.5 ? const Color(0xFF166534) : AppColors.danger,
-                        ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Mô hình tài chính',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                if (_model == FinanceModelType.custom) ...[
-                  ..._customJars.asMap().entries.map((e) => _jarSlider(e.value, e.key, isCustom: true)),
-                  _addCustomJarTile(),
-                ] else
-                  ..._activeJars.asMap().entries.map((e) => _jarSlider(e.value, e.key)),
-
-                const SizedBox(height: 24),
-
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.link,
-                    minimumSize: const Size.fromHeight(54),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  onPressed: (_saving || _activeJars.isEmpty || (_totalPercent - 100).abs() >= 0.5) ? null : _save,
-                  child: _saving
-                      ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text('Lưu mô hình', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
-                ),
-                const SizedBox(height: 40),
-              ],
+                  if (_loadingCurrent)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: () => _showTemplatesInfo(context),
+                      child: const Icon(
+                        Icons.info_outline_rounded,
+                        size: 20,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ]),
+
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                children: [
+                  if (_currentModelTypeLabel != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check_circle_rounded,
+                            size: 18,
+                            color: Color(0xFF16A34A),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Đang áp dụng: $_currentModelTypeLabel',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF166534),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  Text(
+                    'Chọn mô hình phân bổ thu nhập',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _modelCard(
+                    model: FinanceModelType.fiveJars,
+                    icon: Icons.account_balance_wallet_outlined,
+                    title: 'Quy tắc 5 lọ',
+                    subtitle:
+                        '50% nhu cầu · 20% tiết kiệm · 10% giáo dục · 10% vui chơi · 10% cho đi',
+                  ),
+                  const SizedBox(height: 10),
+                  _modelCard(
+                    model: FinanceModelType.eightTwenty,
+                    icon: Icons.call_split_rounded,
+                    title: 'Quy tắc 80/20',
+                    subtitle: '80% chi tiêu · 20% tiết kiệm',
+                  ),
+                  const SizedBox(height: 10),
+                  _modelCard(
+                    model: FinanceModelType.custom,
+                    icon: Icons.tune_rounded,
+                    title: 'Tuỳ chỉnh',
+                    subtitle: 'Tự thiết lập các khoản & tỷ lệ phân bổ',
+                  ),
+                  const SizedBox(height: 20),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Cấu hình khoản',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (_totalPercent - 100).abs() < 0.5
+                              ? const Color(0xFFDCFCE7)
+                              : const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Tổng: ${_totalPercent.round()}%',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: (_totalPercent - 100).abs() < 0.5
+                                ? const Color(0xFF166534)
+                                : AppColors.danger,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  if (_model == FinanceModelType.custom) ...[
+                    ..._customJars.asMap().entries.map(
+                      (e) => _jarSlider(e.value, e.key, isCustom: true),
+                    ),
+                    _addCustomJarTile(),
+                  ] else
+                    ..._activeJars.asMap().entries.map(
+                      (e) => _jarSlider(e.value, e.key),
+                    ),
+
+                  const SizedBox(height: 24),
+
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.link,
+                      minimumSize: const Size.fromHeight(54),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed:
+                        (_saving ||
+                            _activeJars.isEmpty ||
+                            (_totalPercent - 100).abs() >= 0.5)
+                        ? null
+                        : _save,
+                    child: _saving
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            'Lưu mô hình',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -305,28 +442,54 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         decoration: BoxDecoration(
           color: sel ? AppColors.link.withValues(alpha: 0.06) : AppColors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: sel ? AppColors.link : const Color(0xFFE5E7EB), width: sel ? 2 : 1),
+          border: Border.all(
+            color: sel ? AppColors.link : const Color(0xFFE5E7EB),
+            width: sel ? 2 : 1,
+          ),
         ),
-        child: Row(children: [
-          AppFeatureIcon(
-            icon: icon,
-            color: sel ? AppColors.link : AppColors.textMuted,
-            backgroundColor: sel
-                ? AppColors.link.withValues(alpha: 0.12)
-                : const Color(0xFFF3F4F6),
-            size: 48,
-            iconSize: 24,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: sel ? AppColors.link : AppColors.textPrimary)),
-              const SizedBox(height: 4),
-              Text(subtitle, style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
-            ]),
-          ),
-          if (sel) const Icon(Icons.check_circle_rounded, color: AppColors.link, size: 22),
-        ]),
+        child: Row(
+          children: [
+            AppFeatureIcon(
+              icon: icon,
+              color: sel ? AppColors.link : AppColors.textMuted,
+              backgroundColor: sel
+                  ? AppColors.link.withValues(alpha: 0.12)
+                  : const Color(0xFFF3F4F6),
+              size: 48,
+              iconSize: 24,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: sel ? AppColors.link : AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (sel)
+              const Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.link,
+                size: 22,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -338,45 +501,74 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+          ),
+        ],
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          AppFeatureIcon(
-            icon: jar.icon,
-            color: jar.color,
-            backgroundColor: jar.color.withValues(alpha: 0.12),
-            size: 34,
-            iconSize: 18,
-            radius: 10,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppFeatureIcon(
+                icon: jar.icon,
+                color: jar.color,
+                backgroundColor: jar.color.withValues(alpha: 0.12),
+                size: 34,
+                iconSize: 18,
+                radius: 10,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  jar.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                '${jar.percent.round()}%',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: jar.color,
+                ),
+              ),
+              if (isCustom) ...[
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => setState(() {
+                    _customJars.removeAt(idx);
+                    _hasLocalEdits = true;
+                  }),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(jar.name, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+          Slider(
+            value: jar.percent.clamp(1, 100),
+            min: 1,
+            max: 100,
+            activeColor: jar.color,
+            inactiveColor: jar.color.withValues(alpha: 0.15),
+            onChanged: (v) => setState(() {
+              jar.percent = v.roundToDouble();
+              _hasLocalEdits = true;
+            }),
           ),
-          Text('${jar.percent.round()}%', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: jar.color)),
-          if (isCustom) ...[
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => setState(() {
-                _customJars.removeAt(idx);
-                _hasLocalEdits = true;
-              }),
-              child: const Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
-            ),
-          ],
-        ]),
-        Slider(
-          value: jar.percent.clamp(1, 100),
-          min: 1, max: 100,
-          activeColor: jar.color,
-          inactiveColor: jar.color.withValues(alpha: 0.15),
-          onChanged: (v) => setState(() {
-            jar.percent = v.roundToDouble();
-            _hasLocalEdits = true;
-          }),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -389,59 +581,118 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Thêm khoản mới', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
-        Row(children: [
-          Expanded(
-            flex: 3,
-            child: Container(
-              height: 42,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(10)),
-              child: TextField(
-                controller: _customNameCtrl,
-                decoration: InputDecoration(hintText: 'Tên khoản...', hintStyle: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13), border: InputBorder.none),
-                style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Thêm khoản mới',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: TextField(
+                    controller: _customNameCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Tên khoản...',
+                      hintStyle: GoogleFonts.inter(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
+                      border: InputBorder.none,
+                    ),
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Container(
-              height: 42,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(border: Border.all(color: const Color(0xFFE5E7EB)), borderRadius: BorderRadius.circular(10)),
-              child: TextField(
-                controller: _customPercentCtrl,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(hintText: '%', hintStyle: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13), border: InputBorder.none),
-                style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: TextField(
+                    controller: _customPercentCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      hintText: '%',
+                      hintStyle: GoogleFonts.inter(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
+                      border: InputBorder.none,
+                    ),
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  final name = _customNameCtrl.text.trim();
+                  final pct = double.tryParse(_customPercentCtrl.text) ?? 0;
+                  if (name.isEmpty || pct <= 0) return;
+                  final colors = [
+                    const Color(0xFF2563EB),
+                    const Color(0xFF16A34A),
+                    const Color(0xFFF59E0B),
+                    const Color(0xFFEC4899),
+                    const Color(0xFF7C3AED),
+                  ];
+                  setState(() {
+                    _customJars.add(
+                      FinanceJarUi(
+                        name: name,
+                        icon: Icons.account_balance_wallet_outlined,
+                        color: colors[_customJars.length % colors.length],
+                        percent: pct,
+                      ),
+                    );
+                    _customNameCtrl.clear();
+                    _customPercentCtrl.clear();
+                    _hasLocalEdits = true;
+                  });
+                },
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.link,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.add_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              final name = _customNameCtrl.text.trim();
-              final pct  = double.tryParse(_customPercentCtrl.text) ?? 0;
-              if (name.isEmpty || pct <= 0) return;
-              final colors = [const Color(0xFF2563EB), const Color(0xFF16A34A), const Color(0xFFF59E0B), const Color(0xFFEC4899), const Color(0xFF7C3AED)];
-              setState(() {
-                _customJars.add(FinanceJarUi(name: name, icon: Icons.account_balance_wallet_outlined, color: colors[_customJars.length % colors.length], percent: pct));
-                _customNameCtrl.clear();
-                _customPercentCtrl.clear();
-                _hasLocalEdits = true;
-              });
-            },
-            child: Container(
-              width: 42, height: 42,
-              decoration: BoxDecoration(color: AppColors.link, borderRadius: BorderRadius.circular(10)),
-              child: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
-            ),
-          ),
-        ]),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -453,7 +704,9 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (ctx) => _TemplatesInfoSheet(),
     );
   }
@@ -469,17 +722,20 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final modelType = switch (_model) {
-        FinanceModelType.fiveJars    => 'FIVE_JARS',
+        FinanceModelType.fiveJars => 'FIVE_JARS',
         FinanceModelType.eightTwenty => 'EIGHTY_TWENTY',
-        FinanceModelType.custom      => 'CUSTOM',
+        FinanceModelType.custom => 'CUSTOM',
       };
       final modelName = switch (_model) {
-        FinanceModelType.fiveJars    => 'Quy tắc 5 Lọ',
+        FinanceModelType.fiveJars => 'Quy tắc 5 Lọ',
         FinanceModelType.eightTwenty => 'Quy tắc 80/20',
-        FinanceModelType.custom      => 'Tuỳ chỉnh',
+        FinanceModelType.custom => 'Tuỳ chỉnh',
       };
 
-      final created = await provider.createModel(modelType: modelType, name: modelName);
+      final created = await provider.createModel(
+        modelType: modelType,
+        name: modelName,
+      );
 
       if (_model == FinanceModelType.custom) {
         // BE không tự sinh jar cho CUSTOM — tự tạo từng lọ.
@@ -495,7 +751,9 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       } else {
         // FIVE_JARS/EIGHTY_TWENTY: BE đã tự tạo jar mặc định kèm theo —
         // patch theo jarCode đã verify, không phụ thuộc thứ tự list.
-        final uiJars = _model == FinanceModelType.fiveJars ? _fiveJars : _twoFunds;
+        final uiJars = _model == FinanceModelType.fiveJars
+            ? _fiveJars
+            : _twoFunds;
 
         // BE validate tổng % <= 100 sau MỖI lần PATCH. Nếu patch theo thứ tự
         // list mà một lọ TĂNG trước khi lọ khác GIẢM, tổng trung gian vượt 100%
@@ -525,16 +783,20 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
           _hasLocalEdits = false;
           _loadingCurrent = false;
         });
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Đã lưu và áp dụng mô hình tài chính'),
-          backgroundColor: AppColors.success,
-        ));
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Đã lưu và áp dụng mô hình tài chính'),
+            backgroundColor: AppColors.success,
+          ),
+        );
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        content: Text(e.toString().replaceFirst('Exception: ', '')),
-        backgroundColor: AppColors.danger,
-      ));
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -560,26 +822,261 @@ class _TemplatesInfoSheetState extends State<_TemplatesInfoSheet> {
   Future<void> _load() async {
     try {
       final t = await context.read<fp.FinanceProvider>().fetchModelTemplates();
-      if (mounted) setState(() { _templates = t; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _templates = t;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
+          _loading = false;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 32),
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('ℹ️ Mẫu mô hình tài chính (BE)', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-        const SizedBox(height: 16),
-        if (_loading)
-          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
-        else if (_error != null)
-          Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger))
-        else
-          JsonReportView(data: _templates),
-      ]),
+    return FractionallySizedBox(
+      heightFactor: 0.82,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          18,
+          24,
+          MediaQuery.of(context).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 22,
+                  color: AppColors.link,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Mẫu mô hình tài chính',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Dữ liệu lấy từ BE, hiển thị lại bằng tiếng Việt để đối chiếu trước khi áp dụng.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                  ? Center(
+                      child: Text(
+                        _error!,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: _templates.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (_, i) => _templateCard(_templates[i]),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
+
+  Widget _templateCard(Map<String, dynamic> template) {
+    final type = template['modelType']?.toString() ?? '';
+    final jars = (template['jars'] as List? ?? []).whereType<Map>().toList();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              AppFeatureIcon(
+                icon: _templateIcon(type),
+                color: AppColors.link,
+                backgroundColor: AppColors.link.withValues(alpha: 0.1),
+                size: 38,
+                iconSize: 20,
+                radius: 12,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _modelTypeLabel(type, template['name']?.toString()),
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _templateDescription(type),
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (jars.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ...jars.map((jar) => _jarRow(Map<String, dynamic>.from(jar))),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _jarRow(Map<String, dynamic> jar) {
+    final code = jar['jarCode']?.toString() ?? '';
+    final pct = jar['allocationPercentage']?.toString() ?? '0';
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(_jarIcon(code), size: 18, color: _jarColor(code)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _jarLabel(code, jar['name']?.toString()),
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  _jarDescription(code),
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '$pct%',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: _jarColor(code),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static IconData _templateIcon(String type) => switch (type) {
+    'FIVE_JARS' => Icons.account_balance_wallet_outlined,
+    'EIGHTY_TWENTY' => Icons.call_split_rounded,
+    _ => Icons.tune_rounded,
+  };
+
+  static String _modelTypeLabel(String type, String? fallback) =>
+      switch (type) {
+        'FIVE_JARS' => 'Quy tắc 5 lọ',
+        'EIGHTY_TWENTY' => 'Quy tắc 80/20',
+        'CUSTOM' => 'Tuỳ chỉnh',
+        _ => fallback ?? type,
+      };
+
+  static String _templateDescription(String type) => switch (type) {
+    'FIVE_JARS' => 'Phân bổ thu nhập vào 5 nhóm chi tiêu và tiết kiệm.',
+    'EIGHTY_TWENTY' => 'Tách nhanh 80% chi tiêu và 20% tiết kiệm.',
+    'CUSTOM' => 'Gia đình tự đặt tên khoản và tỷ lệ phân bổ.',
+    _ => 'Mẫu phân bổ thu nhập.',
+  };
+
+  static String _jarLabel(String code, String? fallback) => switch (code) {
+    'NECESSITIES' => 'Nhu cầu thiết yếu',
+    'SAVINGS' => 'Tiết kiệm',
+    'EDUCATION' => 'Giáo dục',
+    'ENJOYMENT' => 'Vui chơi',
+    'GIVING' => 'Cho đi / Biếu tặng',
+    'SPENDING' => 'Chi tiêu',
+    _ => fallback ?? code,
+  };
+
+  static String _jarDescription(String code) => switch (code) {
+    'NECESSITIES' => 'Chi phí sinh hoạt và nhu cầu bắt buộc.',
+    'SAVINGS' => 'Dự phòng, tiết kiệm dài hạn và mục tiêu tài chính.',
+    'EDUCATION' => 'Học tập và phát triển cá nhân.',
+    'ENJOYMENT' => 'Giải trí, trải nghiệm và nhu cầu linh hoạt.',
+    'GIVING' => 'Quà tặng, biếu tặng hoặc hỗ trợ người khác.',
+    'SPENDING' => 'Khoản chi tiêu chính trong tháng.',
+    _ => 'Khoản phân bổ tuỳ chỉnh.',
+  };
+
+  static IconData _jarIcon(String code) => switch (code) {
+    'NECESSITIES' => Icons.home_work_outlined,
+    'SAVINGS' => Icons.savings_outlined,
+    'EDUCATION' => Icons.school_outlined,
+    'ENJOYMENT' => Icons.celebration_outlined,
+    'GIVING' => Icons.volunteer_activism_outlined,
+    'SPENDING' => Icons.credit_card_rounded,
+    _ => Icons.account_balance_wallet_outlined,
+  };
+
+  static Color _jarColor(String code) => switch (code) {
+    'NECESSITIES' => const Color(0xFF2563EB),
+    'SAVINGS' => const Color(0xFF16A34A),
+    'EDUCATION' => const Color(0xFFF59E0B),
+    'ENJOYMENT' => const Color(0xFFEC4899),
+    'GIVING' => const Color(0xFF7C3AED),
+    'SPENDING' => const Color(0xFFF97316),
+    _ => AppColors.link,
+  };
 }

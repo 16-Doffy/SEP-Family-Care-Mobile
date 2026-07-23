@@ -204,8 +204,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             runSpacing: 8,
             children: [
               _chip(member.roleLabel, member.roleColor),
-              if (member.relation.isNotEmpty)
-                _chip(member.relation, AppColors.textSecondary),
+              if (member.relationLabel.isNotEmpty)
+                _chip(member.relationLabel, AppColors.textSecondary),
               _chip(_statusLabel(member.status), _statusColor(member.status)),
             ],
           ),
@@ -224,7 +224,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           _row('Vai trò', member.roleLabel),
           _row(
             'Quan hệ',
-            member.relation.isEmpty ? 'Chưa có dữ liệu' : member.relation,
+            member.relationLabel.isEmpty
+                ? 'Chưa có dữ liệu'
+                : member.relationLabel,
           ),
           _row('Trạng thái', _statusLabel(member.status)),
         ],

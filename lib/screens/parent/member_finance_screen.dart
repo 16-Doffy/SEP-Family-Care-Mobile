@@ -51,8 +51,11 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
       final finance = context.read<FinanceProvider>();
       final s = _isMe
           ? await finance.fetchMonthlySummaryMe(month: _month, year: _year)
-          : await finance.fetchMemberMonthlySummary(widget.memberId,
-              month: _month, year: _year);
+          : await finance.fetchMemberMonthlySummary(
+              widget.memberId,
+              month: _month,
+              year: _year,
+            );
       if (mounted) setState(() => _summary = s);
     } catch (e) {
       if (mounted) {
@@ -95,7 +98,7 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
 
   // null từ BE = field private (khi xem member khác) hoặc chưa nhập
   String _money(double? v, {required bool privateWhenNull}) {
-    if (v == null) return privateWhenNull && !_isMe ? '🔒 Riêng tư' : '—';
+    if (v == null) return privateWhenNull && !_isMe ? 'Riêng tư' : '—';
     return '${_fmtNum(v)} ₫';
   }
 
@@ -106,63 +109,85 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
     return Scaffold(
       backgroundColor: context.colors.background,
       body: SafeArea(
-        child: Column(children: [
-          // ── Header ──────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            child: Row(children: [
-              GestureDetector(
-                onTap: () => context.pop(),
-                child: const Icon(Icons.arrow_back_ios_new_rounded,
-                    size: 20, color: AppColors.textPrimary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Tài chính tháng',
+        child: Column(
+          children: [
+            // ── Header ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => context.pop(),
+                    child: const Icon(
+                      Icons.arrow_back_ios_new_rounded,
+                      size: 20,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Tài chính tháng',
                           style: GoogleFonts.inter(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary)),
-                      Text(_isMe ? 'Của bạn' : widget.memberName,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          _isMe ? 'Của bạn' : widget.memberName,
                           style: GoogleFonts.inter(
-                              fontSize: 12, color: AppColors.textMuted)),
-                    ]),
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ]),
-          ),
+            ),
 
-          // ── Chọn tháng ──────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  onPressed: () => _shiftMonth(-1),
-                  icon: const Icon(Icons.chevron_left_rounded,
-                      color: AppColors.textSecondary),
-                ),
-                Text('Tháng $_month/$_year',
+            // ── Chọn tháng ──────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    onPressed: () => _shiftMonth(-1),
+                    icon: const Icon(
+                      Icons.chevron_left_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  Text(
+                    'Tháng $_month/$_year',
                     style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary)),
-                IconButton(
-                  onPressed: atCurrentMonth ? null : () => _shiftMonth(1),
-                  icon: Icon(Icons.chevron_right_rounded,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: atCurrentMonth ? null : () => _shiftMonth(1),
+                    icon: Icon(
+                      Icons.chevron_right_rounded,
                       color: atCurrentMonth
                           ? const Color(0xFFE5E7EB)
-                          : AppColors.textSecondary),
-                ),
-              ],
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          Expanded(child: _body()),
-        ]),
+            Expanded(child: _body()),
+          ],
+        ),
       ),
     );
   }
@@ -171,23 +196,36 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('⚠️', style: TextStyle(fontSize: 40)),
-          const SizedBox(height: 10),
-          Text(_error!,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 40,
+              color: AppColors.danger,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _error!,
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(
-                  fontSize: 13, color: AppColors.textSecondary)),
-          const SizedBox(height: 12),
-          TextButton(onPressed: _fetch, child: const Text('Thử lại')),
-        ]),
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextButton(onPressed: _fetch, child: const Text('Thử lại')),
+          ],
+        ),
       );
     }
     final s = _summary;
     if (s == null) {
       return Center(
-        child: Text('Không có dữ liệu tháng này',
-            style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+        child: Text(
+          'Không có dữ liệu tháng này',
+          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
+        ),
       );
     }
     final mf = s.monthlyFinance;
@@ -198,136 +236,224 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
         children: [
           // ── Khai báo thu chi tháng ───────────────────────────
           _card(
-            title: '📋 Khai báo thu chi',
+            icon: Icons.receipt_long_outlined,
+            title: 'Khai báo thu chi',
             child: mf == null
                 ? Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(
-                        _isMe
-                            ? 'Bạn chưa khai báo tài chính tháng này'
-                            : 'Thành viên chưa khai báo tài chính tháng này',
-                        style: GoogleFonts.inter(
-                            fontSize: 13, color: AppColors.textMuted)),
+                      _isMe
+                          ? 'Bạn chưa khai báo tài chính tháng này'
+                          : 'Thành viên chưa khai báo tài chính tháng này',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
                   )
-                : Column(children: [
-                    _row('Thu nhập dự kiến',
-                        _money(mf.expectedIncome, privateWhenNull: mf.incomeVisibility == 'PRIVATE')),
-                    _row('Thu nhập thực tế',
-                        _money(mf.actualIncome, privateWhenNull: mf.incomeVisibility == 'PRIVATE')),
-                    _row('Chi tiêu dự kiến',
-                        _money(mf.expectedPersonalExpense, privateWhenNull: mf.expenseVisibility == 'PRIVATE')),
-                    _row('Chi tiêu thực tế',
-                        _money(mf.actualPersonalExpense, privateWhenNull: mf.expenseVisibility == 'PRIVATE')),
-                    _row('Đóng góp chung dự kiến',
-                        _money(mf.expectedSharedContribution, privateWhenNull: false)),
-                    _row('Đóng góp chung thực tế',
-                        _money(mf.actualSharedContribution, privateWhenNull: false)),
-                    if (mf.note != null && mf.note!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text('Ghi chú: ${mf.note}',
-                              style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontStyle: FontStyle.italic,
-                                  color: AppColors.textMuted)),
+                : Column(
+                    children: [
+                      _row(
+                        'Thu nhập dự kiến',
+                        _money(
+                          mf.expectedIncome,
+                          privateWhenNull: mf.incomeVisibility == 'PRIVATE',
                         ),
                       ),
-                  ]),
+                      _row(
+                        'Thu nhập thực tế',
+                        _money(
+                          mf.actualIncome,
+                          privateWhenNull: mf.incomeVisibility == 'PRIVATE',
+                        ),
+                      ),
+                      _row(
+                        'Chi tiêu dự kiến',
+                        _money(
+                          mf.expectedPersonalExpense,
+                          privateWhenNull: mf.expenseVisibility == 'PRIVATE',
+                        ),
+                      ),
+                      _row(
+                        'Chi tiêu thực tế',
+                        _money(
+                          mf.actualPersonalExpense,
+                          privateWhenNull: mf.expenseVisibility == 'PRIVATE',
+                        ),
+                      ),
+                      _row(
+                        'Đóng góp chung dự kiến',
+                        _money(
+                          mf.expectedSharedContribution,
+                          privateWhenNull: false,
+                        ),
+                      ),
+                      _row(
+                        'Đóng góp chung thực tế',
+                        _money(
+                          mf.actualSharedContribution,
+                          privateWhenNull: false,
+                        ),
+                      ),
+                      if (mf.note != null && mf.note!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Ghi chú: ${mf.note}',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontStyle: FontStyle.italic,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
           ),
           const SizedBox(height: 14),
 
           // ── Đóng góp quỹ gia đình ────────────────────────────
           _card(
-            title: '🏦 Đóng góp quỹ gia đình',
-            child: Column(children: [
-              _row('Kế hoạch', _money(s.fundPlanned, privateWhenNull: false)),
-              _row('Tự khai báo', _money(s.fundDeclared, privateWhenNull: false)),
-              _row('Ghi nhận sổ quỹ', '${_fmtNum(s.fundLedgerActual)} ₫'),
-              _row('Thực tế', '${_fmtNum(s.fundActual)} ₫', bold: true),
-            ]),
+            icon: Icons.account_balance_outlined,
+            title: 'Đóng góp quỹ gia đình',
+            child: Column(
+              children: [
+                _row('Kế hoạch', _money(s.fundPlanned, privateWhenNull: false)),
+                _row(
+                  'Tự khai báo',
+                  _money(s.fundDeclared, privateWhenNull: false),
+                ),
+                _row('Ghi nhận sổ quỹ', '${_fmtNum(s.fundLedgerActual)} ₫'),
+                _row('Thực tế', '${_fmtNum(s.fundActual)} ₫', bold: true),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
 
           // ── Đóng góp mục tiêu tài chính ──────────────────────
           _card(
-            title: '🎯 Đóng góp mục tiêu',
-            child: Column(children: [
-              _row('Tổng kế hoạch', '${_fmtNum(s.goalPlanned)} ₫'),
-              _row('Tổng đã góp', '${_fmtNum(s.goalActual)} ₫', bold: true),
-              if (s.goalShortage > 0)
-                _row('Còn thiếu', '${_fmtNum(s.goalShortage)} ₫',
-                    valueColor: AppColors.danger),
-              if (s.goalItems.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text('Chưa có kế hoạch đóng góp mục tiêu nào',
+            icon: Icons.track_changes_rounded,
+            title: 'Đóng góp mục tiêu',
+            child: Column(
+              children: [
+                _row('Tổng kế hoạch', '${_fmtNum(s.goalPlanned)} ₫'),
+                _row('Tổng đã góp', '${_fmtNum(s.goalActual)} ₫', bold: true),
+                if (s.goalShortage > 0)
+                  _row(
+                    'Còn thiếu',
+                    '${_fmtNum(s.goalShortage)} ₫',
+                    valueColor: AppColors.danger,
+                  ),
+                if (s.goalItems.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Chưa có kế hoạch đóng góp mục tiêu nào',
                       style: GoogleFonts.inter(
-                          fontSize: 12.5, color: AppColors.textMuted)),
-                )
-              else ...[
-                const Divider(height: 20),
-                ...s.goalItems.map((g) {
-                  final name = g['goalName']?.toString() ??
-                      g['name']?.toString() ??
-                      'Mục tiêu';
-                  final planned =
-                      double.tryParse(g['plannedAmount']?.toString() ?? '');
-                  final actual =
-                      double.tryParse(g['actualAmount']?.toString() ?? '');
-                  return _row(
-                    name,
-                    '${actual == null ? '—' : _fmtNum(actual)} / ${planned == null ? '—' : _fmtNum(planned)} ₫',
-                  );
-                }),
+                        fontSize: 12.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  )
+                else ...[
+                  const Divider(height: 20),
+                  ...s.goalItems.map((g) {
+                    final name =
+                        g['goalName']?.toString() ??
+                        g['name']?.toString() ??
+                        'Mục tiêu';
+                    final planned = double.tryParse(
+                      g['plannedAmount']?.toString() ?? '',
+                    );
+                    final actual = double.tryParse(
+                      g['actualAmount']?.toString() ?? '',
+                    );
+                    return _row(
+                      name,
+                      '${actual == null ? '—' : _fmtNum(actual)} / ${planned == null ? '—' : _fmtNum(planned)} ₫',
+                    );
+                  }),
+                ],
               ],
-            ]),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _card({required String title, required Widget child}) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 4)),
-          ],
+  Widget _card({
+    required IconData icon,
+    required String title,
+    required Widget child,
+  }) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 16,
+          offset: const Offset(0, 4),
         ),
-        child:
-            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title,
-              style: GoogleFonts.inter(
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: AppColors.link),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                title,
+                style: GoogleFonts.inter(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary)),
-          const SizedBox(height: 10),
-          child,
-        ]),
-      );
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        child,
+      ],
+    ),
+  );
 
-  Widget _row(String label, String value,
-          {bool bold = false, Color? valueColor}) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(children: [
-          Expanded(
-            child: Text(label,
-                style: GoogleFonts.inter(
-                    fontSize: 13, color: AppColors.textSecondary)),
+  Widget _row(
+    String label,
+    String value, {
+    bool bold = false,
+    Color? valueColor,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+            ),
           ),
-          Text(value,
-              style: GoogleFonts.inter(
-                  fontSize: 13.5,
-                  fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
-                  color: valueColor ?? AppColors.textPrimary)),
-        ]),
-      );
+        ),
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            fontSize: 13.5,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+            color: valueColor ?? AppColors.textPrimary,
+          ),
+        ),
+      ],
+    ),
+  );
 }

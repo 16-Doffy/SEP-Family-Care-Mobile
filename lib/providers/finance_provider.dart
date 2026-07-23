@@ -98,12 +98,17 @@ class FinanceCategory {
     name: j['name']?.toString() ?? '',
     categoryType: j['categoryType']?.toString() ?? 'EXPENSE',
     essentialType: j['essentialType']?.toString(),
-    status: j['status']?.toString().toUpperCase() ??
+    status:
+        j['status']?.toString().toUpperCase() ??
         ((j['isActive'] == false) ? 'INACTIVE' : 'ACTIVE'),
     isActive: j['isActive'] is bool
         ? j['isActive'] as bool
-        : !const {'INACTIVE', 'DISABLED', 'DELETED', 'VOIDED'}
-            .contains(j['status']?.toString().toUpperCase()),
+        : !const {
+            'INACTIVE',
+            'DISABLED',
+            'DELETED',
+            'VOIDED',
+          }.contains(j['status']?.toString().toUpperCase()),
   );
 }
 
@@ -400,11 +405,11 @@ class GoalContributionPlan {
   bool get isRejected => status.toUpperCase() == 'REJECTED';
 
   String get statusLabel => switch (status.toUpperCase()) {
-    'SUBMITTED' => '⏳ Chờ duyệt',
-    'APPROVED' => '✅ Đã duyệt',
-    'PAID' => '✅ Đã hoàn thành',
-    'REJECTED' => '❌ Bị từ chối',
-    _ => '📋 Chưa nộp',
+    'SUBMITTED' => 'Chờ duyệt',
+    'APPROVED' => 'Đã duyệt',
+    'PAID' => 'Đã hoàn thành',
+    'REJECTED' => 'Bị từ chối',
+    _ => 'Chưa nộp',
   };
 
   Color get statusColor => switch (status.toUpperCase()) {
@@ -760,15 +765,13 @@ class FinanceProvider extends ChangeNotifier {
     required String categoryType,
     String? essentialType,
   }) async {
-    final res = await ApiClient.instance.post(
-      '/families/$_fid/finance/categories',
-      {
-        'name': name,
-        'categoryType': categoryType,
-        if (categoryType == 'EXPENSE')
-          'essentialType': essentialType ?? 'ESSENTIAL',
-      },
-    );
+    final res = await ApiClient.instance
+        .post('/families/$_fid/finance/categories', {
+          'name': name,
+          'categoryType': categoryType,
+          if (categoryType == 'EXPENSE')
+            'essentialType': essentialType ?? 'ESSENTIAL',
+        });
     await _fetchCategories();
     notifyListeners();
     return res.isEmpty ? null : FinanceCategory.fromJson(res);
@@ -1050,7 +1053,10 @@ class FinanceProvider extends ChangeNotifier {
   }
 
   // GET /families/{familyId}/finance/financial-goals/surplus-availability
-  Future<SurplusAvailability?> fetchSurplusAvailability(int month, int year) async {
+  Future<SurplusAvailability?> fetchSurplusAvailability(
+    int month,
+    int year,
+  ) async {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/surplus-availability${_qs({'month': month, 'year': year})}',
     );

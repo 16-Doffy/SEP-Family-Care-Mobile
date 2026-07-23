@@ -218,7 +218,7 @@ class CalendarProvider extends ChangeNotifier {
       // Schema featureAccess chưa được BE chốt (Swagger khai `type: object`
       // trần) — log raw để đối chiếu key thật với giả định calendar.enabled /
       // calendar.reminders / calendar.recurringEvents. Xem VERIFY #1.
-      // ⚠️ flag() trả false CẢ KHI key không tồn tại, nên "không có quyền" và
+      // flag() trả false CẢ KHI key không tồn tại, nên "không có quyền" và
       // "sai tên key" nhìn giống hệt nhau nếu không có dòng log này.
       debugPrint(
         'CalendarProvider: subscription keys='

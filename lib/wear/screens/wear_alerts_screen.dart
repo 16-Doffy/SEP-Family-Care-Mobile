@@ -43,7 +43,11 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
     child: Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text('✅', style: TextStyle(fontSize: 28)),
+        const Icon(
+          Icons.check_circle_outline_rounded,
+          size: 30,
+          color: Color(0xFF16A34A),
+        ),
         const SizedBox(height: 8),
         Text(
           'Không có cảnh báo',
@@ -89,7 +93,7 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '🚨 ${alerts.length} cảnh báo',
+                  '${alerts.length} cảnh báo',
                   style: GoogleFonts.inter(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
@@ -133,7 +137,7 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
         children: [
           Row(
             children: [
-              const Text('🚨', style: TextStyle(fontSize: 13)),
+              const Icon(Icons.sos_rounded, size: 14, color: Color(0xFFDC2626)),
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
@@ -158,7 +162,7 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
           if (alert.address.isNotEmpty) ...[
             const SizedBox(height: 2),
             Text(
-              '📍 ${alert.address}',
+              alert.address,
               style: GoogleFonts.inter(fontSize: 7, color: Colors.white30),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -173,15 +177,23 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
                     if (sos.sending) return;
                     HapticFeedback.mediumImpact();
                     try {
-                      await sos.respond(alert.id, 'VIEWED', message: 'Tôi đang đến');
+                      await sos.respond(
+                        alert.id,
+                        'VIEWED',
+                        message: 'Tôi đang đến',
+                      );
                     } catch (e) {
                       if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                          content: Text(e.toString().replaceFirst('Exception: ', ''),
-                              style: const TextStyle(fontSize: 10)),
-                          backgroundColor: const Color(0xFFDC2626),
-                          duration: const Duration(seconds: 2),
-                        ));
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              e.toString().replaceFirst('Exception: ', ''),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                            backgroundColor: const Color(0xFFDC2626),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
                       }
                     }
                   },
@@ -216,12 +228,16 @@ class _WearAlertsScreenState extends State<WearAlertsScreen> {
                         await sos.resolveAlert(alert.id);
                       } catch (e) {
                         if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                            content: Text(e.toString().replaceFirst('Exception: ', ''),
-                                style: const TextStyle(fontSize: 10)),
-                            backgroundColor: const Color(0xFFDC2626),
-                            duration: const Duration(seconds: 2),
-                          ));
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                e.toString().replaceFirst('Exception: ', ''),
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                              backgroundColor: const Color(0xFFDC2626),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
                         }
                       }
                     },

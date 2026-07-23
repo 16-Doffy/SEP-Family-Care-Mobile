@@ -44,18 +44,6 @@ class AppNotification {
             DateTime.now(),
       );
 
-  String get emoji => switch (type) {
-    'SOS' => '🚨',
-    'TASK' => '✅',
-    'FINANCE' => '💰',
-    'INVITATION' || 'JOIN_REQUEST' => '✉️',
-    'MEMBER' || 'MEMBER_LEFT' => '👤',
-    'ALBUM_TAG' => '🖼️',
-    'CALENDAR' => '📅',
-    'CHAT' => '💬',
-    _ => '🔔',
-  };
-
   Color get accentColor => switch (priority) {
     'CRITICAL' => const Color(0xFFDC2626),
     'HIGH' => const Color(0xFFEA580C),

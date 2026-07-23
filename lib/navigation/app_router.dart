@@ -325,10 +325,7 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/settings/tabs',
         builder: (_, _) => const TabSettingsScreen(),
       ),
-      GoRoute(
-        path: '/wearables',
-        builder: (_, _) => const WearablesScreen(),
-      ),
+      GoRoute(path: '/wearables', builder: (_, _) => const WearablesScreen()),
 
       // ── Manager Shell (Trang chủ/Nhắn tin/Lịch/SOS/Album/Tôi) ──
       StatefulShellRoute.indexedStack(
@@ -433,7 +430,7 @@ GoRouter createRouter(AuthProvider auth) {
       ),
       // Album dùng chung mọi role — BE cho mọi thành viên xem/upload (verify
       // live 2026-07-13: member GET media 200), chỉ moderation là Manager/
-      // Deputy (album_screen tự gate nút 🛡️ theo isAdministrative). Manager
+      // Deputy (album_screen tự gate nút kiểm duyệt theo isAdministrative). Manager
       // vào qua tab shell /manager/album; Deputy/Member vào route phẳng này.
       GoRoute(path: '/album', builder: (_, _) => const AlbumScreen()),
       // Lịch — mọi role vào được. BE tự tạo participants khi Manager tạo event

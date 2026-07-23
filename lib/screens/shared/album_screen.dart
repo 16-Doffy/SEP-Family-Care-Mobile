@@ -330,7 +330,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '🛡️ Hàng đợi kiểm duyệt${snap.hasData ? ' (${items.length})' : ''}',
+                      'Hàng đợi kiểm duyệt${snap.hasData ? ' (${items.length})' : ''}',
                       style: GoogleFonts.inter(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -388,11 +388,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      Text(
+                                      Icon(
                                         it['mediaType']?.toString() == 'VIDEO'
-                                            ? '🎬'
-                                            : '🖼️',
-                                        style: const TextStyle(fontSize: 18),
+                                            ? Icons.movie_outlined
+                                            : Icons.image_outlined,
+                                        size: 18,
+                                        color: AppColors.link,
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
@@ -416,7 +417,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                                       child: Row(
                                         children: [
                                           _queueAction(
-                                            label: '✓ An toàn',
+                                            label: 'An toàn',
                                             color: AppColors.safe,
                                             onTap: () async {
                                               try {
@@ -1564,30 +1565,27 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   Widget _statusBadge(AlbumModerationStatus status) {
-    // Ký hiệu thay chữ: ✔ xanh (safe) · ✕ đỏ (flagged) · ❗ vàng (review) ·
-    // — xám (pending). Màu pill giữ đúng nhóm màu; Tooltip giữ nghĩa cho
-    // người đọc màn hình / khi cần rõ.
-    final (symbol, tip, color, bg) = switch (status) {
+    final (icon, tip, color, bg) = switch (status) {
       AlbumModerationStatus.safe => (
-        '✔',
+        Icons.check_rounded,
         'An toàn',
         AppColors.safe,
         const Color(0xFFDCFCE7),
       ),
       AlbumModerationStatus.needReview => (
-        '❗',
+        Icons.priority_high_rounded,
         'Cần duyệt',
         AppColors.accent500,
         const Color(0xFFFFF7ED),
       ),
       AlbumModerationStatus.flagged => (
-        '✕',
+        Icons.close_rounded,
         'Bị gắn cờ',
         AppColors.danger,
         const Color(0xFFFEE2E2),
       ),
       AlbumModerationStatus.pending => (
-        '—',
+        Icons.more_horiz_rounded,
         'Đang chờ xử lý',
         AppColors.textSecondary,
         const Color(0xFFF3F4F6),
@@ -1600,15 +1598,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         height: 22,
         alignment: Alignment.center,
         decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-        child: Text(
-          symbol,
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: color,
-            height: 1,
-          ),
-        ),
+        child: Icon(icon, size: 14, color: color),
       ),
     );
   }

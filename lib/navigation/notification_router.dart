@@ -8,7 +8,7 @@ import '../models/user.dart';
 /// (bản build cũ hơn backend) → `null` để **fallback về list, không crash**.
 class NotificationRouter {
   /// Các path là **nhánh của StatefulShellRoute** (xem `app_router.dart`).
-  /// ⚠️ Bắt buộc điều hướng bằng `context.go()` — `context.push()` sẽ dựng
+  /// Bắt buộc điều hướng bằng `context.go()` — `context.push()` sẽ dựng
   /// THÊM một shell chồng lên shell đang có, làm 2 shell dùng chung
   /// `navigatorKey` GlobalKey của nhánh → crash Navigator
   /// `'!keyReservation.contains(key)'`.

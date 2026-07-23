@@ -21,7 +21,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TaskProvider>().fetchMyAssignments();
-      // Cho banner 🎁: settlement WAITING_CONFIRMATION cần member xác nhận.
+      // Cho banner thưởng: settlement WAITING_CONFIRMATION cần member xác nhận.
       context.read<TaskProvider>().fetchRewardSettlements();
     });
   }
@@ -47,7 +47,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     }
   }
 
-  String _catIcon(String? cat) => cat == 'Học tập' ? '📚' : '🏠';
+  IconData _catIcon(String? cat) =>
+      cat == 'Học tập' ? Icons.school_outlined : Icons.home_outlined;
 
   static String _fmtAmount(double v) {
     final s = v.round().toString();
@@ -59,7 +60,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     return '${buf.toString()} ₫';
   }
 
-  // ── 🎁 Banner thưởng chờ xác nhận (WAITING_CONFIRMATION) + tranh chấp ─────
+  // ── Banner thưởng chờ xác nhận (WAITING_CONFIRMATION) + tranh chấp ─────
   // Đọc thẳng danh sách reward-settlements để member KHÔNG bị "mù" thưởng khi
   // BE không embed submission/rewardSetting vào my-assignments.
   Widget _rewardBanner(TaskProvider taskState) {
@@ -87,7 +88,11 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                   children: [
                     Row(
                       children: [
-                        const Text('🎁', style: TextStyle(fontSize: 16)),
+                        const Icon(
+                          Icons.card_giftcard_rounded,
+                          size: 16,
+                          color: Color(0xFF92400E),
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -117,7 +122,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                     .read<TaskProvider>()
                                     .confirmRewardReceived(s.id),
                                 child: Text(
-                                  '✅ Đã nhận',
+                                  'Đã nhận',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
@@ -220,7 +225,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                 child: Row(
                   children: [
                     Text(
-                      '📋 Nhiệm vụ',
+                      'Nhiệm vụ',
                       style: GoogleFonts.inter(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
@@ -324,7 +329,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               ),
               const SizedBox(height: 12),
 
-              // 🎁 Thưởng chờ xác nhận — hiển thị ĐỘC LẬP với card assignment
+              // Thưởng chờ xác nhận — hiển thị ĐỘC LẬP với card assignment
               // (my-assignments không embed latestSubmissionId → match theo
               // submission không bao giờ khớp, xem task_provider).
               _rewardBanner(taskState),
@@ -411,10 +416,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   alignment: Alignment.center,
-                  child: Text(
-                    _catIcon(cat),
-                    style: const TextStyle(fontSize: 24),
-                  ),
+                  child: Icon(_catIcon(cat), size: 24, color: AppColors.link),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -444,7 +446,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                '🔁 Định kỳ',
+                                'Định kỳ',
                                 style: GoogleFonts.inter(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
@@ -486,7 +488,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: Text(
-                            '⏰ ${a.task!.schedule!.label}',
+                            a.task!.schedule!.label,
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               color: const Color(0xFF0369A1),
@@ -509,7 +511,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: Text(
-                                '💰 ${(a.rewardSetting ?? a.task!.rewardSetting!).label}',
+                                (a.rewardSetting ?? a.task!.rewardSetting!)
+                                    .label,
                                 style: GoogleFonts.inter(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -603,7 +606,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                         ),
                         onPressed: () => _submitTask(context, a),
                         child: Text(
-                          'Nộp nhiệm vụ ✅',
+                          'Nộp nhiệm vụ',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -631,7 +634,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                           ),
                           onPressed: () => _reportUnavailable(context, a),
                           child: Text(
-                            '🚫 Bận',
+                            'Bận',
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -803,7 +806,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                         Expanded(
                           child: Text(
                             pickedImagePath != null
-                                ? '📷 Đã chọn ảnh minh chứng'
+                                ? 'Đã chọn ảnh minh chứng'
                                 : 'Đính kèm ảnh bằng chứng (tùy chọn)',
                             style: GoogleFonts.inter(
                               fontSize: 13,
@@ -873,9 +876,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                               if (ctx.mounted) Navigator.pop(ctx);
                               messenger.showSnackBar(
                                 const SnackBar(
-                                  content: Text(
-                                    'Đã nộp! Chờ Ba/Mẹ duyệt nhé 🎉',
-                                  ),
+                                  content: Text('Đã nộp! Chờ Ba/Mẹ duyệt nhé'),
                                   backgroundColor: AppColors.safe,
                                 ),
                               );
@@ -1067,7 +1068,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                   messenger.showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        '✅ Đã báo. Ba/Mẹ sẽ phân công lại.',
+                                        'Đã báo. Ba/Mẹ sẽ phân công lại.',
                                       ),
                                       backgroundColor: Color(0xFFEA580C),
                                     ),
@@ -1171,7 +1172,11 @@ class _RewardConfirmBarState extends State<_RewardConfirmBar> {
           children: [
             Row(
               children: [
-                const Text('🎁', style: TextStyle(fontSize: 16)),
+                const Icon(
+                  Icons.card_giftcard_rounded,
+                  size: 16,
+                  color: Color(0xFF92400E),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1205,7 +1210,7 @@ class _RewardConfirmBarState extends State<_RewardConfirmBar> {
                           _load();
                         },
                         child: Text(
-                          '✅ Đã nhận',
+                          'Đã nhận',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,

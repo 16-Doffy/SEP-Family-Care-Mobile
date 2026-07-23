@@ -290,7 +290,7 @@ class AuthProvider extends ChangeNotifier {
       final familyName = f['name']?.toString();
       if (familyId == null) return const _FamilyContext();
 
-      // ⚠️ BE bug: /families/my VẪN trả gia đình mà user đã bị xoá
+      // BE bug: /families/my VẪN trả gia đình mà user đã bị xoá
       // (status REMOVED) — không lọc. Xác thực tư cách thành viên còn hiệu
       // lực bằng /families/{id}: BE trả 403 "không còn hoạt động" nếu đã bị
       // xoá → coi như user CHƯA có gia đình để router đưa về /family-setup.

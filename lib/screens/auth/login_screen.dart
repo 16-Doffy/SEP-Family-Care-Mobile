@@ -156,7 +156,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           _inputField(
                             ctrl: _emailCtrl,
                             hint: 'email@example.com',
-                            icon: '✉',
+                            icon: Icons.mail_outline_rounded,
                             keyboardType: TextInputType.emailAddress,
                           ),
 
@@ -164,14 +164,17 @@ class _LoginScreenState extends State<LoginScreen> {
                           _inputField(
                             ctrl: _passwordCtrl,
                             hint: '••••••••',
-                            icon: '🔒',
+                            icon: Icons.lock_outline_rounded,
                             obscure: !_showPass,
                             suffix: GestureDetector(
                               onTap: () =>
                                   setState(() => _showPass = !_showPass),
-                              child: Text(
-                                _showPass ? '🙈' : '👁',
-                                style: const TextStyle(fontSize: 18),
+                              child: Icon(
+                                _showPass
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                size: 20,
+                                color: AppColors.textMuted,
                               ),
                             ),
                           ),
@@ -352,7 +355,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _inputField({
     required TextEditingController ctrl,
     required String hint,
-    required String icon,
+    required IconData icon,
     bool obscure = false,
     TextInputType? keyboardType,
     Widget? suffix,
@@ -368,7 +371,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       child: Row(
         children: [
-          Text(icon, style: const TextStyle(fontSize: 16)),
+          Icon(icon, size: 18, color: AppColors.textMuted),
           const SizedBox(width: 10),
           Expanded(
             child: TextField(

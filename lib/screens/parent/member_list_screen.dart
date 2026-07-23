@@ -161,9 +161,15 @@ class _MemberListScreenState extends State<MemberListScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
+                    const Icon(
+                      Icons.home_outlined,
+                      size: 16,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        '🏠 ${provider.familyName}',
+                        provider.familyName,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
                           fontSize: 14,
@@ -301,10 +307,10 @@ class _MemberListScreenState extends State<MemberListScreen> {
                       color: AppColors.textMuted,
                     ),
                   ),
-                  if (m.relation.isNotEmpty) ...[
+                  if (m.relationLabel.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      m.relation,
+                      m.relationLabel,
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         color: AppColors.textSecondary,
@@ -366,7 +372,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '✏️ Đổi tên gia đình',
+                'Đổi tên gia đình',
                 style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -677,7 +683,11 @@ class _MemberListScreenState extends State<MemberListScreen> {
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('⚠️', style: TextStyle(fontSize: 40)),
+        const Icon(
+          Icons.error_outline_rounded,
+          size: 40,
+          color: AppColors.danger,
+        ),
         const SizedBox(height: 12),
         Text(
           p.error ?? 'Lỗi tải dữ liệu',
@@ -693,7 +703,7 @@ class _MemberListScreenState extends State<MemberListScreen> {
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('👨‍👩‍👧‍👦', style: TextStyle(fontSize: 48)),
+        const Icon(Icons.groups_rounded, size: 48, color: AppColors.link),
         const SizedBox(height: 12),
         Text(
           'Chưa có thành viên',

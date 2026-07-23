@@ -134,9 +134,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
           ),
         );
       } catch (_) {
-        points.add(
-          _MonthPoint(month: d.month, income: 0, expense: 0),
-        );
+        points.add(_MonthPoint(month: d.month, income: 0, expense: 0));
       }
     }
     if (mounted) {
@@ -166,11 +164,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     }
     double maxV = 1;
     for (final p in _history) {
-      maxV = [
-        maxV,
-        p.income,
-        p.expense,
-      ].reduce((a, b) => a > b ? a : b);
+      maxV = [maxV, p.income, p.expense].reduce((a, b) => a > b ? a : b);
     }
     return Column(
       children: [
@@ -298,24 +292,20 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     ),
   );
 
-  Widget _overviewDivider() =>
-      const Divider(height: 1, color: Colors.white24);
+  Widget _overviewDivider() => const Divider(height: 1, color: Colors.white24);
 
-  Widget _moneyField(
-    TextEditingController ctrl,
-    String label,
-    IconData icon,
-  ) => TextField(
-    controller: ctrl,
-    keyboardType: TextInputType.number,
-    inputFormatters: [ThousandsSeparatorInputFormatter()],
-    decoration: InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon, size: 20),
-      suffixText: '₫',
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-    ),
-  );
+  Widget _moneyField(TextEditingController ctrl, String label, IconData icon) =>
+      TextField(
+        controller: ctrl,
+        keyboardType: TextInputType.number,
+        inputFormatters: [ThousandsSeparatorInputFormatter()],
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, size: 20),
+          suffixText: '₫',
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
 
   // Form khai báo/cập nhật tài chính tháng. Ràng buộc: chi tiêu dự đoán +
   // đóng góp quỹ KHÔNG vượt thu nhập tháng (chốt theo team).
@@ -348,7 +338,10 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
             children: [
               Row(
                 children: [
-                  const Icon(Icons.edit_calendar_outlined, color: AppColors.link),
+                  const Icon(
+                    Icons.edit_calendar_outlined,
+                    color: AppColors.link,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Tài chính tháng ${DateTime.now().month}/${DateTime.now().year}',
@@ -369,7 +362,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              _moneyField(incomeCtrl, 'Thu nhập tháng', Icons.arrow_upward_rounded),
+              _moneyField(
+                incomeCtrl,
+                'Thu nhập tháng',
+                Icons.arrow_upward_rounded,
+              ),
               const SizedBox(height: 12),
               _moneyField(
                 expenseCtrl,

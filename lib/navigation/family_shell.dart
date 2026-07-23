@@ -101,7 +101,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     // Bắn ra khay hệ thống (kêu + heads-up kể cả khi user đang ở app khác,
     // miễn tiến trình còn sống).
     LocalNotificationService.instance.show(
-      title: '${n.emoji} ${n.title}',
+      title: n.title,
       body: n.body,
       isSos: n.type == 'SOS',
       payload: '${n.referenceType ?? ''}|${n.referenceId ?? ''}',
@@ -122,7 +122,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         duration: const Duration(seconds: 4),
         backgroundColor: const Color(0xFF111827),
         content: Text(
-          '${n.emoji}  ${n.title}${n.body.isNotEmpty ? ' — ${n.body}' : ''}',
+          '${n.title}${n.body.isNotEmpty ? ' — ${n.body}' : ''}',
           style: GoogleFonts.inter(fontSize: 13, color: Colors.white),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
@@ -157,7 +157,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         // App đang bị hủy → dừng hẳn.
         _pollTimer?.cancel();
       default:
-        // ⚠️ KHÔNG dừng poll khi xuống nền. Đây là app an toàn: cảnh báo SOS
+        // KHÔNG dừng poll khi xuống nền. Đây là app an toàn: cảnh báo SOS
         // phải nổ được lúc người dùng đang ở app khác. Trước đây hủy timer ở
         // đây nên notification chỉ hiện khi mở lại app.
         // Giãn chu kỳ để đỡ pin/băng thông.
@@ -196,7 +196,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       _notifiedSosIds.add(a.id);
       if (a.isMine(myId)) continue; // không tự báo cảnh báo của chính mình
       LocalNotificationService.instance.show(
-        title: '🚨 ${a.senderName} cần trợ giúp khẩn cấp!',
+        title: '${a.senderName} cần trợ giúp khẩn cấp!',
         body: a.message.isNotEmpty ? a.message : 'Cảnh báo SOS từ gia đình',
         isSos: true,
         payload: 'SOS_ALERT|${a.id}',

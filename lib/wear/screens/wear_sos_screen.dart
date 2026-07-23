@@ -127,7 +127,9 @@ class _WearSosScreenState extends State<WearSosScreen>
     final alertId = _sentAlertId;
     if (alertId == null) {
       if (mounted) {
-        setState(() => _error = 'Không xác định được cảnh báo, vui lòng thử lại.');
+        setState(
+          () => _error = 'Không xác định được cảnh báo, vui lòng thử lại.',
+        );
       }
       return;
     }
@@ -210,7 +212,11 @@ class _WearSosScreenState extends State<WearSosScreen>
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text('🚨', style: TextStyle(fontSize: 24)),
+                            const Icon(
+                              Icons.sos_rounded,
+                              size: 26,
+                              color: Colors.white,
+                            ),
                             Text(
                               _holding ? '$_countdown' : 'SOS',
                               style: GoogleFonts.inter(
@@ -286,7 +292,7 @@ class _WearSosScreenState extends State<WearSosScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('🚨', style: TextStyle(fontSize: 38)),
+          const Icon(Icons.sos_rounded, size: 40, color: Color(0xFFDC2626)),
           const SizedBox(height: 6),
           Text(
             'SOS Đã Gửi!',

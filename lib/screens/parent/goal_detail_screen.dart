@@ -322,7 +322,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      '💰 Góp tiền cá nhân (Tiền túi)',
+                      'Góp tiền cá nhân (Tiền túi)',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -340,7 +340,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                 ),
               ),
             ),
-            if (context.read<AuthProvider>().user?.isAdministrative == true) ...[
+            if (context.read<AuthProvider>().user?.isAdministrative ==
+                true) ...[
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
@@ -354,12 +355,15 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                     ),
                   ),
                   onPressed: () => _showSurplusAllocationSheet(context, goal),
-                  icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
+                  icon: const Icon(
+                    Icons.account_balance_wallet_rounded,
+                    size: 18,
+                  ),
                   label: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        '💼 Trích từ số dư quỹ chung',
+                        'Trích từ số dư quỹ chung',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -483,7 +487,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '💰 Góp tiền cá nhân vào mục tiêu',
+                'Góp tiền cá nhân vào mục tiêu',
                 style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -529,7 +533,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
               ),
               const SizedBox(height: 10),
               InkWell(
-                onTap: () => setSheet(() => linkToMonthlyPlan = !linkToMonthlyPlan),
+                onTap: () =>
+                    setSheet(() => linkToMonthlyPlan = !linkToMonthlyPlan),
                 child: Row(
                   children: [
                     SizedBox(
@@ -537,7 +542,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                       height: 24,
                       child: Checkbox(
                         value: linkToMonthlyPlan,
-                        onChanged: (v) => setSheet(() => linkToMonthlyPlan = v ?? true),
+                        onChanged: (v) =>
+                            setSheet(() => linkToMonthlyPlan = v ?? true),
                         activeColor: AppColors.link,
                       ),
                     ),
@@ -603,13 +609,15 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                   now.month,
                                   now.year,
                                 );
-                                final user = context
-                                    .read<AuthProvider>()
-                                    .user;
+                                final user = context.read<AuthProvider>().user;
                                 final myMemberId = context
                                     .read<FamilyProvider>()
                                     .members
-                                    .where((m) => m.userId == user?.id || m.id == user?.id)
+                                    .where(
+                                      (m) =>
+                                          m.userId == user?.id ||
+                                          m.id == user?.id,
+                                    )
                                     .firstOrNull
                                     ?.id;
                                 final myUserId = user?.id;
@@ -618,7 +626,9 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                       (p) =>
                                           (p.memberId == myMemberId ||
                                               p.memberId == myUserId) &&
-                                          (p.isPending || p.isRejected || p.isSubmitted),
+                                          (p.isPending ||
+                                              p.isRejected ||
+                                              p.isSubmitted),
                                     )
                                     .firstOrNull;
 
@@ -652,8 +662,10 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                 'Exception: ',
                                 '',
                               );
-                              sheetError = message.contains(
-                                      'vượt quá số tiền còn có thể phân bổ')
+                              sheetError =
+                                  message.contains(
+                                    'vượt quá số tiền còn có thể phân bổ',
+                                  )
                                   ? 'Khoản góp này gắn với giao dịch nguồn. Số tiền sửa không thể vượt quá số tiền còn lại của giao dịch đó; hãy tạo khoản góp mới nếu muốn góp thêm.'
                                   : message;
                             });
@@ -746,7 +758,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '💼 Trích từ số dư quỹ chung',
+                  'Trích từ số dư quỹ chung',
                   style: GoogleFonts.inter(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -785,7 +797,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Trạng thái load số dư
                 if (loadingSurplus)
                   const Center(
@@ -880,7 +892,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   if (surplusData!.availableSurplus <= 0)
                     Container(
                       width: double.infinity,
@@ -930,13 +942,15 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                 final amount = parseMoneyInput(amountCtrl.text);
                                 if (amount <= 0) {
                                   setSheet(
-                                    () => sheetError = 'Nhập số tiền lớn hơn 0.',
+                                    () =>
+                                        sheetError = 'Nhập số tiền lớn hơn 0.',
                                   );
                                   return;
                                 }
                                 if (amount > surplusData!.availableSurplus) {
                                   setSheet(
-                                    () => sheetError = 'Số tiền phân bổ không được vượt quá số dư khả dụng.',
+                                    () => sheetError =
+                                        'Số tiền phân bổ không được vượt quá số dư khả dụng.',
                                   );
                                   return;
                                 }
@@ -952,7 +966,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                         periodMonth: selectedMonth,
                                         periodYear: selectedYear,
                                         amount: amount,
-                                        note: 'Chuyển số dư quỹ tháng $selectedMonth vào mục tiêu',
+                                        note:
+                                            'Chuyển số dư quỹ tháng $selectedMonth vào mục tiêu',
                                       );
                                   if (ctx.mounted) Navigator.pop(ctx);
                                   await _load();
@@ -1096,7 +1111,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '✏️ Sửa số tiền đã góp',
+                'Sửa số tiền đã góp',
                 style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -1162,9 +1177,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                 'Exception: ',
                                 '',
                               );
-                              sheetError = message.contains(
-                                      'vượt quá số tiền',
-                                    )
+                              sheetError = message.contains('vượt quá số tiền')
                                   ? 'Khoản góp này gắn với giao dịch nguồn. Số tiền sửa không thể vượt quá số tiền còn lại của giao dịch đó; hãy tạo khoản góp mới nếu muốn góp thêm.'
                                   : message;
                             });
@@ -1225,7 +1238,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '✏️ Sửa mục tiêu',
+                'Sửa mục tiêu',
                 style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,

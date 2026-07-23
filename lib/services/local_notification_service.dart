@@ -4,7 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// Hiển thị **thông báo hệ thống** (khay thông báo + heads-up + chuông) cho
 /// notification realtime nhận qua Socket.IO và cảnh báo SOS.
 ///
-/// ⚠️ **Giới hạn quan trọng:** đây KHÔNG phải push. Nó chỉ chạy khi **tiến
+/// **Giới hạn quan trọng:** đây KHÔNG phải push. Nó chỉ chạy khi **tiến
 /// trình app còn sống** (đang mở, hoặc vừa ẩn xuống nền). **App bị tắt hẳn thì
 /// không nhận được gì** — muốn vậy phải có FCM (`firebase_messaging` +
 /// `POST /devices/tokens`), xem KE_HOACH_NOTIFICATIONS_REALTIME.md.

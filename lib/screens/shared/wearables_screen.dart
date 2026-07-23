@@ -28,10 +28,10 @@ class _WearablesScreenState extends State<WearablesScreen> {
   };
 
   static const _eventLabels = {
-    'SOS_BUTTON_PRESSED': '🆘 Nhấn nút SOS',
-    'FALL_DETECTED': '🤕 Phát hiện té ngã',
-    'HARD_IMPACT': '💥 Va đập mạnh',
-    'ABNORMAL_MOVEMENT': '⚠️ Chuyển động bất thường',
+    'SOS_BUTTON_PRESSED': 'Nhấn nút SOS',
+    'FALL_DETECTED': 'Phát hiện té ngã',
+    'HARD_IMPACT': 'Va đập mạnh',
+    'ABNORMAL_MOVEMENT': 'Chuyển động bất thường',
   };
 
   @override

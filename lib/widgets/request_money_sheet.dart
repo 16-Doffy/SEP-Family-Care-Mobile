@@ -41,7 +41,7 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
 
   static const _presets = [20000, 50000, 100000, 200000];
   static const _maxReason = 80;
-  static const _minAmount = 1000;    // 1,000 ₫
+  static const _minAmount = 1000; // 1,000 ₫
   static const _maxAmount = 10000000; // 10,000,000 ₫
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -73,8 +73,9 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
     setState(() {
       _selectedPreset = amount;
       _amountCtrl.text = amount.toString();
-      _amountCtrl.selection =
-          TextSelection.collapsed(offset: _amountCtrl.text.length);
+      _amountCtrl.selection = TextSelection.collapsed(
+        offset: _amountCtrl.text.length,
+      );
     });
   }
 
@@ -98,26 +99,30 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
         ? 'Không có lý do'
         : _reasonCtrl.text.trim();
 
-    money.addRequest(MoneyRequest(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderId: user?.id ?? 'anon',
-      senderName: user?.name ?? 'Thành viên',
-      senderAvatarInitial: user?.avatarInitials ?? 'TV',
-      senderAvatarColor: user?.avatarColor ?? 0xFFEA580C,
-      amount: amount.toDouble(),
-      reason: reason,
-      createdAt: DateTime.now(),
-    ));
+    money.addRequest(
+      MoneyRequest(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        senderId: user?.id ?? 'anon',
+        senderName: user?.name ?? 'Thành viên',
+        senderAvatarInitial: user?.avatarInitials ?? 'TV',
+        senderAvatarColor: user?.avatarColor ?? 0xFFEA580C,
+        amount: amount.toDouble(),
+        reason: reason,
+        createdAt: DateTime.now(),
+      ),
+    );
 
     Navigator.pop(context);
 
-    messenger.showSnackBar(SnackBar(
-      content: Text('Đã gửi yêu cầu ${_fmtFull(amount)} đến Trưởng nhóm 📨'),
-      backgroundColor: AppColors.safe,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-    ));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Đã gửi yêu cầu ${_fmtFull(amount)} đến Trưởng nhóm'),
+        backgroundColor: AppColors.safe,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
+    );
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
@@ -166,17 +171,20 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
 
             // ── Header ───────────────────────────────────────────────────────
             Text(
-              '💸 Xin tiền',
+              'Xin tiền',
               style: GoogleFonts.inter(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary),
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
               'Gửi yêu cầu đến Trưởng / Phó nhóm để duyệt',
               style: GoogleFonts.inter(
-                  fontSize: 13, color: AppColors.textSecondary),
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 24),
 
@@ -184,9 +192,10 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
             Text(
               'Số tiền',
               style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 10),
 
@@ -201,7 +210,9 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 9),
+                        horizontal: 16,
+                        vertical: 9,
+                      ),
                       decoration: BoxDecoration(
                         color: active
                             ? AppColors.primary500
@@ -266,16 +277,22 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide:
-                      const BorderSide(color: AppColors.primary500, width: 1.5),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary500,
+                    width: 1.5,
+                  ),
                 ),
                 errorBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide:
-                      const BorderSide(color: AppColors.sos, width: 1.5),
+                  borderSide: const BorderSide(
+                    color: AppColors.sos,
+                    width: 1.5,
+                  ),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 16),
+                  horizontal: 18,
+                  vertical: 16,
+                ),
               ),
             ),
 
@@ -283,9 +300,10 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
             if (err != null)
               Padding(
                 padding: const EdgeInsets.only(top: 5, left: 4),
-                child: Text(err,
-                    style: GoogleFonts.inter(
-                        fontSize: 11, color: AppColors.sos)),
+                child: Text(
+                  err,
+                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.sos),
+                ),
               )
             else if (parsed > 0)
               Padding(
@@ -293,7 +311,9 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
                 child: Text(
                   '= ${_fmtFull(parsed)}',
                   style: GoogleFonts.inter(
-                      fontSize: 12, color: AppColors.textSecondary),
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ),
             const SizedBox(height: 16),
@@ -305,9 +325,10 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
                 Text(
                   'Lý do',
                   style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 Text(
                   '$reasonLen / $_maxReason',
@@ -326,14 +347,24 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
               maxLength: _maxReason,
               maxLines: 2,
               // Ẩn counter mặc định — đã custom ở Row trên
-              buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+              buildCounter:
+                  (
+                    _, {
+                    required currentLength,
+                    required isFocused,
+                    maxLength,
+                  }) => null,
               onChanged: (_) => setState(() {}),
               style: GoogleFonts.inter(
-                  fontSize: 14, color: AppColors.textPrimary),
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
               decoration: InputDecoration(
                 hintText: 'Mua sách, ăn sáng, tiền học phí...',
                 hintStyle: GoogleFonts.inter(
-                    fontSize: 14, color: AppColors.textMuted),
+                  fontSize: 14,
+                  color: AppColors.textMuted,
+                ),
                 filled: true,
                 fillColor: AppColors.background,
                 border: OutlineInputBorder(
@@ -342,11 +373,15 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
-                  borderSide:
-                      const BorderSide(color: AppColors.primary500, width: 1.5),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary500,
+                    width: 1.5,
+                  ),
                 ),
                 contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 14),
+                  horizontal: 18,
+                  vertical: 14,
+                ),
               ),
             ),
             const SizedBox(height: 20),
@@ -362,13 +397,12 @@ class _RequestMoneySheetState extends State<RequestMoneySheet> {
                       : AppColors.progressTrack,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
                 onPressed: _submit,
                 child: Text(
-                  _isValid
-                      ? 'Gửi ${_fmtFull(parsed)}'
-                      : 'Nhập số tiền trước',
+                  _isValid ? 'Gửi ${_fmtFull(parsed)}' : 'Nhập số tiền trước',
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,

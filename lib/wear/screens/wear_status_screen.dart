@@ -68,7 +68,7 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
         .firstOrNull;
     try {
       await context.read<SosProvider>().sendSos(
-        message: '⚠️ Phát hiện té ngã — Cần hỗ trợ ngay!',
+        message: 'Phát hiện té ngã — Cần hỗ trợ ngay!',
         address: loc != null
             ? 'GPS: ${loc.latitude?.toStringAsFixed(5)}, ${loc.longitude?.toStringAsFixed(5)}'
             : 'Vị trí đang cập nhật...',
@@ -136,7 +136,7 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
 
               // GPS
               _row(
-                '📍',
+                Icons.location_on_outlined,
                 'GPS',
                 myLoc != null
                     ? '${myLoc.latitude?.toStringAsFixed(3)}, '
@@ -160,9 +160,14 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
                 ),
                 child: Row(
                   children: [
-                    Text(
-                      _fallDetected ? '⚠️' : '🛡️',
-                      style: const TextStyle(fontSize: 13),
+                    Icon(
+                      _fallDetected
+                          ? Icons.warning_amber_rounded
+                          : Icons.shield_outlined,
+                      size: 13,
+                      color: _fallDetected
+                          ? const Color(0xFFDC2626)
+                          : const Color(0xFF16A34A),
                     ),
                     const SizedBox(width: 7),
                     Expanded(
@@ -179,7 +184,7 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
                           ),
                           if (_fallDetected)
                             Text(
-                              '⚠️ Đã gửi SOS!',
+                              'Đã gửi SOS!',
                               style: GoogleFonts.inter(
                                 fontSize: 7,
                                 color: const Color(0xFFDC2626),
@@ -213,7 +218,11 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
                   ),
                   child: Row(
                     children: [
-                      const Text('📊', style: TextStyle(fontSize: 9)),
+                      const Icon(
+                        Icons.monitor_heart_outlined,
+                        size: 10,
+                        color: Colors.white38,
+                      ),
                       const SizedBox(width: 5),
                       Text(
                         '${_magnitude.toStringAsFixed(1)} m/s²',
@@ -252,10 +261,10 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
     );
   }
 
-  Widget _row(String icon, String label, String value, Color color) {
+  Widget _row(IconData icon, String label, String value, Color color) {
     return Row(
       children: [
-        Text(icon, style: const TextStyle(fontSize: 11)),
+        Icon(icon, size: 11, color: Colors.white38),
         const SizedBox(width: 5),
         Text(
           '$label: ',

@@ -233,7 +233,11 @@ class _SOSScreenState extends State<SOSScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            const Text('⚠️', style: TextStyle(fontSize: 22)),
+            const Icon(
+              Icons.warning_amber_rounded,
+              size: 22,
+              color: AppColors.danger,
+            ),
             const SizedBox(width: 8),
             Text(
               'Không gửi được SOS',
@@ -265,7 +269,7 @@ class _SOSScreenState extends State<SOSScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '📍 Vị trí của bạn:',
+                      'Vị trí của bạn:',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -358,7 +362,7 @@ class _SOSScreenState extends State<SOSScreen>
           SnackBar(
             content: Text(
               canResolve
-                  ? 'Đã xác nhận an toàn và đóng cảnh báo ✅'
+                  ? 'Đã xác nhận an toàn và đóng cảnh báo'
                   : 'Đã báo an toàn — cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng',
             ),
             duration: Duration(seconds: canResolve ? 2 : 4),
@@ -459,9 +463,10 @@ class _SOSScreenState extends State<SOSScreen>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Text(
-                                  '🚨',
-                                  style: TextStyle(fontSize: 40),
+                                const Icon(
+                                  Icons.sos_rounded,
+                                  size: 44,
+                                  color: Colors.white,
                                 ),
                                 Text(
                                   'SOS',
@@ -601,7 +606,7 @@ class _SOSScreenState extends State<SOSScreen>
                   Expanded(
                     child: Center(
                       child: Text(
-                        'Cảnh báo khẩn cấp 🚨',
+                        'Cảnh báo khẩn cấp',
                         style: GoogleFonts.inter(
                           fontSize: 17,
                           fontWeight: FontWeight.w700,
@@ -663,7 +668,11 @@ class _SOSScreenState extends State<SOSScreen>
                   color: AppColors.sos,
                 ),
                 alignment: Alignment.center,
-                child: const Text('🚨', style: TextStyle(fontSize: 22)),
+                child: const Icon(
+                  Icons.sos_rounded,
+                  size: 22,
+                  color: Colors.white,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -727,7 +736,7 @@ class _SOSScreenState extends State<SOSScreen>
                   alert.resolutionNote != null)) ...[
             const SizedBox(height: 8),
             Text(
-              '✔ ${alert.resolvedByName ?? 'Đã xử lý'}${(alert.resolutionNote ?? '').isNotEmpty ? ': ${alert.resolutionNote}' : ''}',
+              '${alert.resolvedByName ?? 'Đã xử lý'}${(alert.resolutionNote ?? '').isNotEmpty ? ': ${alert.resolutionNote}' : ''}',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: _sosMuted,
@@ -798,9 +807,10 @@ class _SOSScreenState extends State<SOSScreen>
                                   ],
                                 ),
                                 child: const Center(
-                                  child: Text(
-                                    '🚨',
-                                    style: TextStyle(fontSize: 18),
+                                  child: Icon(
+                                    Icons.sos_rounded,
+                                    size: 20,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ),
@@ -839,7 +849,11 @@ class _SOSScreenState extends State<SOSScreen>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text('🗺️', style: TextStyle(fontSize: 13)),
+                              const Icon(
+                                Icons.map_outlined,
+                                size: 13,
+                                color: AppColors.textSecondary,
+                              ),
                               const SizedBox(width: 4),
                               Text(
                                 'Bản đồ lớn',
@@ -879,7 +893,7 @@ class _SOSScreenState extends State<SOSScreen>
                             true;
                         try {
                           if (mine) {
-                            // ⚠️ BE: confirm-safety chỉ GHI NHẬN phản hồi CONFIRM_SAFE
+                            // BE: confirm-safety chỉ GHI NHẬN phản hồi CONFIRM_SAFE
                             // (201), KHÔNG đổi status cảnh báo. Chỉ resolve/cancel
                             // (Manager/Deputy) mới đóng được.
                             await sos.confirmSafety(alert.id);
@@ -902,9 +916,9 @@ class _SOSScreenState extends State<SOSScreen>
                           }
                           if (context.mounted) {
                             final msg = !mine
-                                ? 'Đã phản hồi SOS ✅'
+                                ? 'Đã phản hồi SOS'
                                 : (canResolve
-                                      ? 'Đã xác nhận an toàn và đóng cảnh báo ✅'
+                                      ? 'Đã xác nhận an toàn và đóng cảnh báo'
                                       : 'Đã báo an toàn — cảnh báo vẫn mở tới khi Trưởng/Phó nhóm đóng');
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -937,7 +951,7 @@ class _SOSScreenState extends State<SOSScreen>
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          mine ? '🛟 Tôi đã an toàn' : '✅ Tôi đang đến',
+                          mine ? 'Tôi đã an toàn' : 'Tôi đang đến',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -1004,7 +1018,7 @@ class _SOSScreenState extends State<SOSScreen>
             const SizedBox(height: 8),
             Row(
               children: [
-                Text('ⓘ', style: TextStyle(fontSize: 12, color: _sosMuted)),
+                Icon(Icons.info_outline_rounded, size: 14, color: _sosMuted),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -1087,7 +1101,7 @@ class _SOSScreenState extends State<SOSScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('🚨', style: TextStyle(fontSize: 80)),
+                const Icon(Icons.sos_rounded, size: 84, color: AppColors.sos),
                 Text(
                   'SOS đã gửi!',
                   style: GoogleFonts.inter(
@@ -1179,9 +1193,10 @@ class _SOSScreenState extends State<SOSScreen>
                                     ],
                                   ),
                                   child: const Center(
-                                    child: Text(
-                                      '🚨',
-                                      style: TextStyle(fontSize: 18),
+                                    child: Icon(
+                                      Icons.sos_rounded,
+                                      size: 20,
+                                      color: Colors.white,
                                     ),
                                   ),
                                 ),
@@ -1246,7 +1261,7 @@ class _SOSScreenState extends State<SOSScreen>
                       ),
                     ),
                     child: Text(
-                      '⚠️ Chức năng SOS đang chờ BE triển khai',
+                      'Chức năng SOS đang chờ BE triển khai',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         color: Colors.amber.shade200,
@@ -1445,11 +1460,11 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     return null;
   }
 
-  // Ánh xạ loại phản hồi → (emoji, màu nền node, nhãn hiển thị).
+  // Ánh xạ loại phản hồi → (icon, màu nền node, nhãn hiển thị).
   // BE ship enum ON_THE_WAY (19/07) → phân biệt "Đang đến" bằng ĐÚNG enum.
   // Vẫn giữ fallback đoán theo message cho các phản hồi CŨ đã lưu dạng
   // VIEWED + "Tôi đang đến" trước khi BE bổ sung enum.
-  ({String emoji, Color color, String label}) _nodeStyle(
+  ({IconData icon, Color color, String label}) _nodeStyle(
     String type,
     String message,
   ) {
@@ -1457,22 +1472,50 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     final legacyOnWay = message.toLowerCase().contains('đang đến');
     switch (t) {
       case 'ON_THE_WAY':
-        return (emoji: '🚗', color: AppColors.safe, label: 'Đang đến');
+        return (
+          icon: Icons.directions_run_rounded,
+          color: AppColors.safe,
+          label: 'Đang đến',
+        );
       case 'VIEWED':
         return legacyOnWay
-            ? (emoji: '🚗', color: AppColors.safe, label: 'Đang đến')
-            : (emoji: '👀', color: AppColors.avatarBlue, label: 'Đã xem');
+            ? (
+                icon: Icons.directions_run_rounded,
+                color: AppColors.safe,
+                label: 'Đang đến',
+              )
+            : (
+                icon: Icons.visibility_outlined,
+                color: AppColors.avatarBlue,
+                label: 'Đã xem',
+              );
       case 'NEED_HELP':
-        return (emoji: '🆘', color: AppColors.sos, label: 'Cần trợ giúp');
+        return (
+          icon: Icons.sos_rounded,
+          color: AppColors.sos,
+          label: 'Cần trợ giúp',
+        );
       case 'CONFIRM_SAFE':
-        return (emoji: '✅', color: AppColors.safe, label: 'Đã an toàn');
+        return (
+          icon: Icons.check_circle_outline_rounded,
+          color: AppColors.safe,
+          label: 'Đã an toàn',
+        );
       case 'RESOLVED':
-        return (emoji: '✔', color: AppColors.safe, label: 'Đã xử lý');
+        return (
+          icon: Icons.done_rounded,
+          color: AppColors.safe,
+          label: 'Đã xử lý',
+        );
       case 'CANCELED':
-        return (emoji: '✖', color: AppColors.textMuted, label: 'Đã hủy');
+        return (
+          icon: Icons.close_rounded,
+          color: AppColors.textMuted,
+          label: 'Đã hủy',
+        );
       default:
         return (
-          emoji: '•',
+          icon: Icons.circle,
           color: AppColors.textSecondary,
           label: type.isEmpty ? 'Phản hồi' : type,
         );
@@ -1608,7 +1651,11 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
-                    child: const Text('🚨', style: TextStyle(fontSize: 24)),
+                    child: const Icon(
+                      Icons.sos_rounded,
+                      size: 24,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1750,9 +1797,10 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                                           ],
                                         ),
                                         child: const Center(
-                                          child: Text(
-                                            '🚨',
-                                            style: TextStyle(fontSize: 18),
+                                          child: Icon(
+                                            Icons.sos_rounded,
+                                            size: 20,
+                                            color: Colors.white,
                                           ),
                                         ),
                                       ),
@@ -1781,7 +1829,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
               ),
               const SizedBox(height: 12),
               _timelineNode(
-                emoji: '🚨',
+                icon: Icons.sos_rounded,
                 color: AppColors.sos,
                 title: 'SOS được gửi',
                 subtitle: sender,
@@ -1797,10 +1845,10 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                   status == 'CANCELED' ||
                   status == 'FALSE_ALARM')
                 _timelineNode(
-                  emoji: switch (status) {
-                    'RESOLVED' => '✔',
-                    'FALSE_ALARM' => '🔕',
-                    _ => '✖',
+                  icon: switch (status) {
+                    'RESOLVED' => Icons.done_rounded,
+                    'FALSE_ALARM' => Icons.notifications_off_outlined,
+                    _ => Icons.close_rounded,
                   },
                   color: status == 'RESOLVED'
                       ? AppColors.safe
@@ -1898,7 +1946,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     final s = _nodeStyle(type, msg);
     final subtitle = msg.isNotEmpty ? '$who · $msg' : who;
     return _timelineNode(
-      emoji: s.emoji,
+      icon: s.icon,
       color: s.color,
       title: s.label,
       subtitle: subtitle,
@@ -1908,7 +1956,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
   }
 
   Widget _timelineNode({
-    required String emoji,
+    required IconData icon,
     required Color color,
     required String title,
     String? subtitle,
@@ -1926,7 +1974,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                 height: 36,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
                 alignment: Alignment.center,
-                child: Text(emoji, style: const TextStyle(fontSize: 16)),
+                child: Icon(icon, size: 18, color: Colors.white),
               ),
               if (!isLast)
                 Expanded(

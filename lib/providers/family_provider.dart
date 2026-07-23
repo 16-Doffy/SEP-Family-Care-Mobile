@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
 class FamilyMember {
-  final String id;       // familyMember.id (membership record)
-  final String userId;   // user.id
+  final String id; // familyMember.id (membership record)
+  final String userId; // user.id
   final String name;
   final String email;
-  final String role;     // MANAGER | DEPUTY | MEMBER
+  final String role; // MANAGER | DEPUTY | MEMBER
   final String relation;
-  final String status;   // ACTIVE | REMOVED | ...
+  final String status; // ACTIVE | REMOVED | ...
   final int avatarColor;
 
   const FamilyMember({
@@ -24,22 +24,39 @@ class FamilyMember {
 
   bool get isActive => status.toUpperCase() == 'ACTIVE';
 
-  String get avatarInitials =>
-      name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase();
+  String get avatarInitials => name.length >= 2
+      ? name.substring(0, 2).toUpperCase()
+      : name.toUpperCase();
 
   bool get isManager => role.toUpperCase().contains('MANAGER');
-  bool get isDeputy  => role.toUpperCase().contains('DEPUTY');
+  bool get isDeputy => role.toUpperCase().contains('DEPUTY');
 
   String get roleLabel {
     final r = role.toUpperCase();
     if (r.contains('MANAGER')) return 'Trưởng nhóm';
-    if (r.contains('DEPUTY'))  return 'Phó nhóm';
+    if (r.contains('DEPUTY')) return 'Phó nhóm';
     return 'Thành viên';
   }
 
+  String get relationLabel => switch (relation.toUpperCase()) {
+    'FATHER' => 'Bố',
+    'MOTHER' => 'Mẹ',
+    'PARENT' => 'Cha / Mẹ',
+    'SPOUSE' => 'Vợ / Chồng',
+    'CHILD' => 'Con',
+    'SISTER' => 'Chị / Em gái',
+    'BROTHER' => 'Anh / Em trai',
+    'SIBLING' => 'Anh / Chị / Em',
+    'GRANDPARENT' => 'Ông / Bà',
+    'OTHER' => 'Khác',
+    '' => '',
+    _ => relation,
+  };
+
   Color get roleColor {
     final r = role.toUpperCase();
-    if (r.contains('MANAGER') || r.contains('DEPUTY')) return const Color(0xFF2563EB);
+    if (r.contains('MANAGER') || r.contains('DEPUTY'))
+      return const Color(0xFF2563EB);
     return const Color(0xFF6B7280);
   }
 
@@ -49,20 +66,31 @@ class FamilyMember {
     final userMap = json['user'] is Map
         ? json['user'] as Map<String, dynamic>
         : <String, dynamic>{};
-    final userId = userMap['id']?.toString() ?? json['userId']?.toString() ?? '';
-    final idx    = userId.hashCode.abs() % colors.length;
-    final name   = userMap['fullName']?.toString() ??
-                   userMap['displayName']?.toString() ??
-                   json['displayName']?.toString() ?? '';
+    final userId =
+        userMap['id']?.toString() ?? json['userId']?.toString() ?? '';
+    final idx = userId.hashCode.abs() % colors.length;
+    final name =
+        userMap['fullName']?.toString() ??
+        userMap['displayName']?.toString() ??
+        json['displayName']?.toString() ??
+        '';
     return FamilyMember(
-      id:          json['id']?.toString() ?? '',
-      userId:      userId,
-      name:        name,
-      email:       userMap['email']?.toString() ?? json['email']?.toString() ?? '',
-      role:        json['familyRole']?.toString() ?? json['role']?.toString() ?? 'MEMBER',
-      relation:    json['relationship']?.toString() ?? json['relation']?.toString() ?? '',
-      status:      json['status']?.toString() ?? 'ACTIVE',
-      avatarColor: json['avatarColor'] is int ? json['avatarColor'] as int : colors[idx],
+      id: json['id']?.toString() ?? '',
+      userId: userId,
+      name: name,
+      email: userMap['email']?.toString() ?? json['email']?.toString() ?? '',
+      role:
+          json['familyRole']?.toString() ??
+          json['role']?.toString() ??
+          'MEMBER',
+      relation:
+          json['relationship']?.toString() ??
+          json['relation']?.toString() ??
+          '',
+      status: json['status']?.toString() ?? 'ACTIVE',
+      avatarColor: json['avatarColor'] is int
+          ? json['avatarColor'] as int
+          : colors[idx],
     );
   }
 }
@@ -87,9 +115,11 @@ class FamilyProvider extends ChangeNotifier {
     _members = [];
     notifyListeners();
     try {
-      final data = await ApiClient.instance.get('/families/$familyId') as Map<String, dynamic>;
+      final data =
+          await ApiClient.instance.get('/families/$familyId')
+              as Map<String, dynamic>;
       _familyName = data['name']?.toString() ?? '';
-      final list  = data['members'] as List? ?? [];
+      final list = data['members'] as List? ?? [];
       _members = list
           .whereType<Map>()
           .map((e) => FamilyMember.fromJson(Map<String, dynamic>.from(e)))
@@ -125,7 +155,9 @@ class FamilyProvider extends ChangeNotifier {
   // UC17/18 — Thay đổi role: chờ BE-04
   // Backend hiện chỉ có admin endpoint cho việc này
   Future<void> updateRole(String memberId, String newRole) async {
-    throw Exception('Tính năng thay đổi quyền đang được cập nhật từ phía server.');
+    throw Exception(
+      'Tính năng thay đổi quyền đang được cập nhật từ phía server.',
+    );
   }
 
   // POST /families/{familyId}/transfer-ownership — trao quyền Trưởng nhóm cho
@@ -145,11 +177,13 @@ class FamilyProvider extends ChangeNotifier {
   Future<void> updateFamilyName(String name) async {
     final familyId = ApiClient.instance.familyId;
     if (familyId == null) throw Exception('Chưa có familyId');
-    await ApiClient.instance.patch('/families/$familyId', {'name': name.trim()});
+    await ApiClient.instance.patch('/families/$familyId', {
+      'name': name.trim(),
+    });
     _familyName = name.trim();
     notifyListeners();
   }
 
-  Future<void> grantDeputy(String memberId)  => updateRole(memberId, 'DEPUTY');
+  Future<void> grantDeputy(String memberId) => updateRole(memberId, 'DEPUTY');
   Future<void> revokeDeputy(String memberId) => updateRole(memberId, 'MEMBER');
 }

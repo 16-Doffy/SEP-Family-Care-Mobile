@@ -30,70 +30,70 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   static const _fallbackPlans = [
     _PlanData(
       id: 'FREE',
-      name: 'Free',
+      name: 'Miễn phí',
       price: '0 ₫',
       period: '/tháng',
-      emoji: '🏠',
+      icon: Icons.home_outlined,
       color: Color(0xFF6B7280),
       gradientColors: [Color(0xFFF3F4F6), Color(0xFFE5E7EB)],
       members: '4 thành viên',
       storage: '1 GB',
       db: 'Shared DB + RLS',
       features: [
-        '✅ Nhiệm vụ & sổ thu chi cơ bản',
-        '✅ Chat nhóm',
-        '✅ Thông báo',
-        '❌ Lịch',
-        '❌ Ảnh gia đình',
-        '❌ Theo dõi vị trí',
-        '❌ Trợ lý AI',
-        '❌ Đồng hồ thông minh',
+        '1|Nhiệm vụ & sổ thu chi cơ bản',
+        '1|Chat nhóm',
+        '1|Thông báo',
+        '0|Lịch',
+        '0|Ảnh gia đình',
+        '0|Theo dõi vị trí',
+        '0|Trợ lý AI',
+        '0|Đồng hồ thông minh',
       ],
     ),
     _PlanData(
       id: 'PLUS',
-      name: 'Family',
+      name: 'Gia đình',
       price: '99,000 ₫',
       priceValue: 99000,
       period: '/tháng',
-      emoji: '👨‍👩‍👧‍👦',
+      icon: Icons.family_restroom_rounded,
       color: Color(0xFF2563EB),
       gradientColors: [Color(0xFF2563EB), Color(0xFF3B82F6)],
       members: '8 thành viên',
       storage: '5 GB',
       db: 'Shared DB + RLS',
       features: [
-        '✅ Nhiệm vụ & sổ thu chi cơ bản',
-        '✅ Chat nhóm',
-        '✅ Thông báo',
-        '✅ Lịch + màu sự kiện',
-        '✅ Ảnh gia đình',
-        '✅ Theo dõi vị trí GPS',
-        '❌ Trợ lý AI',
-        '❌ Đồng hồ thông minh',
+        '1|Nhiệm vụ & sổ thu chi cơ bản',
+        '1|Chat nhóm',
+        '1|Thông báo',
+        '1|Lịch + màu sự kiện',
+        '1|Ảnh gia đình',
+        '1|Theo dõi vị trí GPS',
+        '0|Trợ lý AI',
+        '0|Đồng hồ thông minh',
       ],
     ),
     _PlanData(
       id: 'PREMIUM',
-      name: 'Premium',
+      name: 'Cao cấp',
       price: '299,000 ₫',
       priceValue: 299000,
       period: '/tháng',
-      emoji: '⭐',
+      icon: Icons.workspace_premium_outlined,
       color: Color(0xFF7C3AED),
       gradientColors: [Color(0xFF7C3AED), Color(0xFFA78BFA)],
       members: 'Không giới hạn',
       storage: 'Không giới hạn',
       db: 'Docker riêng / gia đình',
       features: [
-        '✅ Tất cả tính năng Family',
-        '✅ Trợ lý AI & dự báo tài chính',
-        '✅ Đồng hồ thông minh (SOS)',
-        '✅ Docker container độc lập',
-        '✅ Ưu tiên hỗ trợ kỹ thuật',
-        '✅ Báo cáo nâng cao',
-        '✅ Xuất dữ liệu',
-        '✅ Sắp ra mắt: AI insights',
+        '1|Tất cả tính năng Family',
+        '1|Trợ lý AI & dự báo tài chính',
+        '1|Đồng hồ thông minh (SOS)',
+        '1|Docker container độc lập',
+        '1|Ưu tiên hỗ trợ kỹ thuật',
+        '1|Báo cáo nâng cao',
+        '1|Xuất dữ liệu',
+        '1|Sắp ra mắt: phân tích AI',
       ],
     ),
   ];
@@ -151,36 +151,36 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           final feat = FeatureAccess.fromJson(p['featureAccess']);
           // BE mới dùng key lồng như calendar.enabled; helper vẫn hỗ trợ key phẳng cũ.
           final features = <String>[
-        '✅ Nhiệm vụ & sổ thu chi cơ bản',
-            '✅ Chat nhóm & Thông báo',
-            if (feat.calendarEnabled) '✅ Lịch',
-            if (feat.calendarReminders) '✅ Nhắc lịch',
-            if (feat.calendarRecurringEvents) '✅ Sự kiện lặp lại',
-            if (feat.aiEnabled) '✅ Tính năng AI',
-            if (feat.advancedFinance) '✅ Tài chính nâng cao',
-            if (feat.advancedReports) '✅ Báo cáo nâng cao',
-            if (feat.aiChatbot) '✅ Trợ lý AI',
-            if (feat.sos) '✅ SOS khẩn cấp',
-            if (feat.unlimitedStorage) '✅ Lưu trữ không giới hạn',
+            '1|Nhiệm vụ & sổ thu chi cơ bản',
+            '1|Chat nhóm & Thông báo',
+            if (feat.calendarEnabled) '1|Lịch',
+            if (feat.calendarReminders) '1|Nhắc lịch',
+            if (feat.calendarRecurringEvents) '1|Sự kiện lặp lại',
+            if (feat.aiEnabled) '1|Tính năng AI',
+            if (feat.advancedFinance) '1|Tài chính nâng cao',
+            if (feat.advancedReports) '1|Báo cáo nâng cao',
+            if (feat.aiChatbot) '1|Trợ lý AI',
+            if (feat.sos) '1|SOS khẩn cấp',
+            if (feat.unlimitedStorage) '1|Lưu trữ không giới hạn',
             if (feat.maxFamilies != null && feat.maxFamilies != false)
-              '✅ Nhiều gia đình',
+              '1|Nhiều gia đình',
           ];
 
           Color color;
           List<Color> gradient;
-          String emoji;
+          IconData icon;
           if (code == 'FREE') {
             color = const Color(0xFF6B7280);
             gradient = const [Color(0xFFF3F4F6), Color(0xFFE5E7EB)];
-            emoji = '🏠';
+            icon = Icons.home_outlined;
           } else if (code == 'GOLD' || code == 'PREMIUM') {
             color = const Color(0xFFD97706);
             gradient = const [Color(0xFFF59E0B), Color(0xFFFBBF24)];
-            emoji = '⭐';
+            icon = Icons.workspace_premium_outlined;
           } else {
             color = const Color(0xFF2563EB);
             gradient = const [Color(0xFF2563EB), Color(0xFF3B82F6)];
-            emoji = '👨‍👩‍👧‍👦';
+            icon = Icons.family_restroom_rounded;
           }
 
           return _PlanData(
@@ -190,7 +190,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             price: annual > 0 ? '${_fmtPrice(annual.round())} ₫' : '0 ₫',
             priceValue: annual,
             period: '/năm',
-            emoji: emoji,
+            icon: icon,
             color: color,
             gradientColors: gradient,
             members: maxM == '0' ? 'Không giới hạn' : 'tối đa $maxM thành viên',
@@ -233,7 +233,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   // BE redirect lại app qua deep link sau khi Stripe xử lý xong (ngoài scope
   // màn này — xem mục Subscription/Stripe trong BE_API_REQUESTS.md).
   //
-  // ⚠️ Response checkout chưa có schema công khai trên Swagger — field chứa
+  // Response checkout chưa có schema công khai trên Swagger — field chứa
   // URL được đoán theo convention phổ biến (`checkoutUrl`/`url`), thử nhiều
   // tên trước khi báo lỗi. Cần xác nhận lại field thật khi test tay 1 lần.
   Future<void> _subscribe(_PlanData plan) async {
@@ -373,7 +373,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.description_outlined, size: 20, color: AppColors.link),
+                        const Icon(
+                          Icons.description_outlined,
+                          size: 20,
+                          color: AppColors.link,
+                        ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -493,7 +497,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '🔒  Bảo mật dữ liệu',
+                          'Bảo mật dữ liệu',
                           style: GoogleFonts.inter(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -575,7 +579,13 @@ class _PlanCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Text(plan.emoji, style: const TextStyle(fontSize: 28)),
+                Icon(
+                  plan.icon,
+                  size: 28,
+                  color: plan.id == 'FREE'
+                      ? AppColors.textPrimary
+                      : Colors.white,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -637,20 +647,38 @@ class _PlanCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...plan.features.map(
-                  (f) => Padding(
+                ...plan.features.map((f) {
+                  final enabled = f.startsWith('1|');
+                  final text = f.length > 2 ? f.substring(2) : f;
+                  return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      f,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: f.startsWith('✅')
-                            ? AppColors.textPrimary
-                            : AppColors.textMuted,
-                      ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          enabled
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.cancel_outlined,
+                          size: 16,
+                          color: enabled
+                              ? AppColors.success
+                              : AppColors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            text,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: enabled
+                                  ? AppColors.textPrimary
+                                  : AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
+                  );
+                }),
                 const SizedBox(height: 16),
 
                 // ── CTA Button ───────────────────────────
@@ -683,7 +711,7 @@ class _PlanCard extends StatelessWidget {
                           )
                         : Text(
                             isCurrent
-                                ? '✓ Đang sử dụng'
+                                ? 'Đang sử dụng'
                                 : '${isDowngrade ? 'Hạ xuống' : 'Nâng cấp'} ${plan.name}',
                             style: GoogleFonts.inter(
                               fontSize: 14,
@@ -713,7 +741,7 @@ class _PlanData {
   // Giá dạng số để so sánh nâng/hạ gói (price chỉ là chuỗi hiển thị)
   final double priceValue;
   final String period;
-  final String emoji;
+  final IconData icon;
   final Color color;
   final List<Color> gradientColors;
   final String members;
@@ -727,7 +755,7 @@ class _PlanData {
     required this.price,
     this.priceValue = 0,
     required this.period,
-    required this.emoji,
+    required this.icon,
     required this.color,
     required this.gradientColors,
     required this.members,
