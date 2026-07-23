@@ -8,7 +8,7 @@ import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
-
+import 'package:image_picker/image_picker.dart';
 class TaskManagementScreen extends StatefulWidget {
   const TaskManagementScreen({super.key});
   @override
@@ -422,6 +422,97 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               ),
             ),
         ]),
+        Builder(
+          builder: (ctx) {
+            final myMemberId = context.read<FamilyProvider>().currentMember?.id;
+            final isMine = a.assignedToMemberId == myMemberId;
+            if (!isMine) return const SizedBox();
+
+            return Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Column(
+                children: [
+                  if (a.status == 'ASSIGNED' || a.status == 'PENDING')
+                    SizedBox(
+                      width: double.infinity,
+                      height: 40,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.link,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: () async {
+                          try {
+                            await context.read<TaskProvider>().startAssignment(a.id);
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(e.toString()), backgroundColor: AppColors.danger),
+                              );
+                            }
+                          }
+                        },
+                        child: Text(
+                          'Bắt đầu làm ▶️',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  if (a.status == 'IN_PROGRESS' || a.status == 'REJECTED')
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: SizedBox(
+                            height: 40,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: a.status == 'REJECTED' ? const Color(0xFFDC2626) : AppColors.link,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              onPressed: () => _submitTask(context, a),
+                              child: Text(
+                                a.status == 'REJECTED' ? 'Nộp lại' : 'Nộp nhiệm vụ ✅',
+                                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (a.task?.isRecurring == true && a.status == 'IN_PROGRESS') ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: SizedBox(
+                              height: 40,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Color(0xFFEA580C), width: 1.5),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: () => _reportUnavailable(context, a),
+                                child: Text(
+                                  '🚫 Bận',
+                                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFFEA580C)),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                ],
+              ),
+            );
+          },
+        ),
       ]),
     );
   }
@@ -1126,6 +1217,334 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
     child: Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
   );
+
+  // ── Nộp nhiệm vụ kèm proof (ảnh / note) cho chính user ────────────────────
+
+  void _submitTask(BuildContext context, TaskAssignment a) {
+    final noteCtrl = TextEditingController();
+    String? pickedImagePath;
+    bool uploading = false;
+    bool submitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Nộp nhiệm vụ',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  a.taskTitle ?? '',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: noteCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Thêm ghi chú...',
+                    hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.all(16),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: uploading
+                      ? null
+                      : () async {
+                          final picker = ImagePicker();
+                          final img = await picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 80,
+                          );
+                          if (img != null) {
+                            setSheet(() => pickedImagePath = img.path);
+                          }
+                        },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: pickedImagePath != null
+                          ? const Color(0xFFDCFCE7)
+                          : AppColors.background,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: pickedImagePath != null
+                            ? AppColors.success
+                            : const Color(0xFFE5E7EB),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          pickedImagePath != null
+                              ? Icons.check_circle_rounded
+                              : Icons.camera_alt_rounded,
+                          color: pickedImagePath != null
+                              ? AppColors.success
+                              : AppColors.textMuted,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            pickedImagePath != null
+                                ? '📷 Đã chọn ảnh minh chứng'
+                                : 'Đính kèm ảnh bằng chứng (tùy chọn)',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: pickedImagePath != null
+                                  ? AppColors.success
+                                  : AppColors.textMuted,
+                            ),
+                          ),
+                        ),
+                        if (pickedImagePath != null)
+                          GestureDetector(
+                            onTap: () => setSheet(() => pickedImagePath = null),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 16,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.safe,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: submitting
+                        ? null
+                        : () async {
+                            setSheet(() => submitting = true);
+                            final messenger = ScaffoldMessenger.of(context);
+                            final provider = context.read<TaskProvider>();
+                            try {
+                              final proofs = <TaskProof>[];
+                              if (pickedImagePath != null) {
+                                setSheet(() => uploading = true);
+                                final proof = await provider.uploadProof(
+                                  pickedImagePath!,
+                                  'IMAGE',
+                                );
+                                setSheet(() => uploading = false);
+                                if (proof != null) proofs.add(proof);
+                              }
+                              if (noteCtrl.text.trim().isNotEmpty &&
+                                  proofs.isEmpty) {
+                                proofs.add(
+                                  TaskProof(
+                                    proofType: 'NOTE',
+                                    note: noteCtrl.text.trim(),
+                                  ),
+                                );
+                              }
+                              await provider.submitProof(
+                                a.id,
+                                submissionNote: noteCtrl.text.trim(),
+                                proofs: proofs,
+                              );
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('Đã nộp!'),
+                                  backgroundColor: AppColors.safe,
+                                ),
+                              );
+                            } catch (e) {
+                              setSheet(() {
+                                submitting = false;
+                                uploading = false;
+                              });
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(e.toString()),
+                                  backgroundColor: AppColors.danger,
+                                ),
+                              );
+                            }
+                          },
+                    child: submitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            'Xác nhận nộp',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _reportUnavailable(BuildContext context, TaskAssignment a) {
+    final reasonCtrl = TextEditingController();
+    bool submitting = false;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Báo cáo không thể thực hiện',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Lý do (VD: Đang có việc khác...)',
+                    hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
+                    filled: true,
+                    fillColor: AppColors.background,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.all(14),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEA580C),
+                    minimumSize: const Size.fromHeight(48),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: submitting || reasonCtrl.text.trim().isEmpty
+                      ? null
+                      : () async {
+                          setSheet(() => submitting = true);
+                          final messenger = ScaffoldMessenger.of(context);
+                          try {
+                            await context
+                                .read<TaskProvider>()
+                                .reportUnavailability(
+                                  a.id,
+                                  reasonCtrl.text.trim(),
+                                );
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Đã báo.'),
+                                backgroundColor: Color(0xFFEA580C),
+                              ),
+                            );
+                          } catch (e) {
+                            setSheet(() => submitting = false);
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(e.toString()),
+                                backgroundColor: AppColors.danger,
+                              ),
+                            );
+                          }
+                        },
+                  child: submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          'Xác nhận',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // GET .../schedule (refresh mới nhất), PATCH .../schedule (sửa lịch lặp),
