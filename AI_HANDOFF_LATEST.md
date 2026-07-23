@@ -1,8 +1,30 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-07-22**
+Last updated: **2026-07-23**
 
-## 🚀 Snapshot mới nhất 2026-07-22 (Finance, Member UI Redesign & Multi-Admin Sync)
+## 🚀 Snapshot mới nhất 2026-07-23 (Phân bổ số dư mục tiêu & Deputy Task Submission & Auto Plan Approval)
+
+### 📌 Trạng thái Git / Branch Sync
+- **Nhánh local:** `NDuy` và `main` đã được merge Fast-forward đồng bộ 100%.
+- **Remote:** Cả `origin/NDuy` và `origin/main` đều đã được push và đồng bộ hoàn toàn.
+- **Biên dịch:** Đã fix triệt để toàn bộ lỗi import & type lookup `FamilyProvider`.
+
+### 🛠️ Chi tiết Fixes & Cập nhật Tính năng
+1. **Phân bổ số dư vào Mục tiêu tiết kiệm (Surplus Allocation - API 1 & 2):**
+   - Đã tích hợp API `GET /families/:familyId/finance/financial-goals/surplus-availability` và `POST /families/:familyId/finance/financial-goals/:goalId/surplus-allocations`.
+   - Tối ưu UI/UX với 2 nút hành động phân biệt rõ ràng dòng tiền:
+     - `💰 Góp tiền cá nhân (Tiền túi)`: Nộp tiền mới từ cá nhân ➡️ Tăng Tổng quỹ gia đình & Tăng quỹ mục tiêu.
+     - `💼 Trích từ số dư quỹ chung`: Trích tiền dư thừa tích lũy của tháng ➡️ Quỹ chung không đổi, trích số dư khả dụng sang mục tiêu.
+   - Thêm Info Banner giải thích minh bạch trong từng Popup Modal.
+2. **Liên kết tự động & Tự động duyệt Kế hoạch đóng góp tháng (Auto Plan Approval):**
+   - Bổ sung checkbox tự động ghi nhận khoản góp cá nhân vào Kế hoạch đóng góp tháng của thành viên.
+   - Nếu người thực hiện là **Manager hoặc Deputy**, hệ thống tự động gọi API `reviewContributionPlan(..., 'approve')` để **TỰ ĐỘNG DUYỆT BÀI NỘP**, ghi nhận `actualAmount` lập tức mà không bắt Manager tự duyệt lại bài của chính mình.
+3. **Chức năng nộp nhiệm vụ cho Deputy / Manager (`TaskManagementScreen`):**
+   - Bổ sung nút `Bắt đầu làm` & `Nộp nhiệm vụ` (kèm đính kèm ảnh minh chứng / ghi chú) ngay trong thẻ nhiệm vụ của `TaskManagementScreen` nếu công việc đó được phân công cho chính Manager / Deputy đang đăng nhập.
+
+---
+
+## 🚀 Snapshot 2026-07-22 (Finance, Member UI Redesign & Multi-Admin Sync)
 
 ### 📌 Trạng thái Git / Branch Sync
 - **Nhánh local:** `NDuy` và `main` đã được merge Fast-forward đồng bộ 100% tại commit `936006a`.
