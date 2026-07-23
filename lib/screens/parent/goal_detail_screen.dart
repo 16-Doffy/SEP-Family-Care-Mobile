@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -326,6 +327,31 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                 ),
               ),
             ),
+            if (context.read<AuthProvider>().user?.isAdministrative == true) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.link,
+                    side: const BorderSide(color: AppColors.link),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => _showSurplusAllocationSheet(context, goal),
+                  icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
+                  label: Text(
+                    'Phân bổ số dư vào mục tiêu',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -528,6 +554,292 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showSurplusAllocationSheet(BuildContext context, FinancialGoal goal) {
+    final now = DateTime.now();
+    int selectedMonth = now.month;
+    int selectedYear = now.year;
+    SurplusAvailability? surplusData;
+    bool loadingSurplus = true;
+    String? surplusError;
+
+    final amountCtrl = TextEditingController();
+    bool submitting = false;
+    String? sheetError;
+
+    // Fetch surplus availability function
+    Future<void> loadSurplus(void Function(void Function()) setSheet) async {
+      setSheet(() {
+        loadingSurplus = true;
+        surplusError = null;
+        surplusData = null;
+      });
+      try {
+        final res = await context
+            .read<FinanceProvider>()
+            .fetchSurplusAvailability(selectedMonth, selectedYear);
+        setSheet(() {
+          surplusData = res;
+          loadingSurplus = false;
+        });
+      } catch (e) {
+        setSheet(() {
+          surplusError = e.toString().replaceFirst('Exception: ', '');
+          loadingSurplus = false;
+        });
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          // Trigger initial load
+          if (loadingSurplus && surplusData == null && surplusError == null) {
+            loadSurplus(setSheet);
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              MediaQuery.of(ctx).viewInsets.bottom + 32,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '💼 Phân bổ số dư vào mục tiêu',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  goal.goalName,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                
+                // Trạng thái load số dư
+                if (loadingSurplus)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (surplusError != null)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Column(
+                        children: [
+                          Text(
+                            surplusError!,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.danger,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          TextButton(
+                            onPressed: () => loadSurplus(setSheet),
+                            child: const Text('Thử lại'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (surplusData != null) ...[
+                  // Thông tin số dư
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Kỳ tháng $selectedMonth/$selectedYear',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Tổng số dư quỹ:',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            Text(
+                              _fmt(surplusData!.totalSurplus),
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Số dư khả dụng (chưa phân bổ):',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            Text(
+                              _fmt(surplusData!.availableSurplus),
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.income,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  if (surplusData!.availableSurplus <= 0)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Không còn số dư quỹ tháng $selectedMonth để phân bổ vào mục tiêu.',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    )
+                  else ...[
+                    _inputBox(
+                      amountCtrl,
+                      'Số tiền phân bổ (₫)',
+                      keyboardType: TextInputType.number,
+                    ),
+                    if (sheetError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        sheetError!,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.link,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: submitting
+                            ? null
+                            : () async {
+                                final amount = parseMoneyInput(amountCtrl.text);
+                                if (amount <= 0) {
+                                  setSheet(
+                                    () => sheetError = 'Nhập số tiền lớn hơn 0.',
+                                  );
+                                  return;
+                                }
+                                if (amount > surplusData!.availableSurplus) {
+                                  setSheet(
+                                    () => sheetError = 'Số tiền phân bổ không được vượt quá số dư khả dụng.',
+                                  );
+                                  return;
+                                }
+                                setSheet(() {
+                                  submitting = true;
+                                  sheetError = null;
+                                });
+                                try {
+                                  await context
+                                      .read<FinanceProvider>()
+                                      .allocateSurplusToGoal(
+                                        goal.id,
+                                        periodMonth: selectedMonth,
+                                        periodYear: selectedYear,
+                                        amount: amount,
+                                        note: 'Chuyển số dư quỹ tháng $selectedMonth vào mục tiêu',
+                                      );
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                  await _load();
+                                } catch (e) {
+                                  setSheet(() {
+                                    submitting = false;
+                                    sheetError = e.toString().replaceFirst(
+                                      'Exception: ',
+                                      '',
+                                    );
+                                  });
+                                }
+                              },
+                        child: submitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                'Xác nhận phân bổ',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }
