@@ -3,6 +3,21 @@
 **Swagger UI:** https://api.familycare-digital.com/api/docs
 **Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-11 với swagger mới: 147 paths / 188 operations**. FE wiring audit toàn diện 2026-07-08, đối chiếu swagger 07/11 sau merge main.
 
+> ### 🔄 Cập nhật Tuần 10 (2026-07-23) — swagger **216 paths / 281 operations**
+> Kể từ snapshot 07/11 (147 paths), BE đã ship nhiều module; FE đã wire phần lớn:
+> - **Calendar** (5): events CRUD + `respond` + `reminder` — ✅ wire.
+> - **AI Chatbot** (5): conversations + messages + `confirm/reject-action` (pendingAction) — ✅ wire.
+> - **Album** (13) + moderation/tags/face-suggestions + **Face Profiles** (4: enroll/enable/disable/delete) — ✅ wire.
+> - **Wearables** (3), **Devices/FCM tokens** (2), **`POST /auth/firebase`** (đăng nhập Google) — ✅ wire.
+> - **Finance analytics** (4): `/finance/summary`, `/cash-flow-summary`, `/category-spending-summary`, `/member-contribution-summary` — ✅ wire (Duy).
+> - **Ledger entry** `/finance/ledger/entries/{entryId}` GET/PATCH/DELETE (sửa/void) + `DELETE /finance/categories/{categoryId}` — ✅ wire.
+> - **Monthly finance** `/finance/monthly-finances/me` + `/members/{memberId}`; `/finance/monthly-summary/me` + `/members/{memberId}` — ✅ wire.
+> - **Goal surplus** 🆕: `GET /finance/financial-goals/surplus-availability`, `POST /finance/financial-goals/{goalId}/surplus-allocations` — ✅ wire (Duy, `goal_detail_screen`).
+> - 🆕 **`POST /families/{familyId}/transfer-ownership`** `{ targetUserId, confirm }` — Trao quyền Trưởng nhóm (FAMILY_MANAGER only) — ✅ wire (`member_detail_screen`, 2026-07-23).
+>
+> **Chưa có / chưa wire:** `GET /finance/monthly-finances/me/history` (biểu đồ member đang loop từng tháng); `PATCH /auth/me`.
+> **Cần verify hành vi BE (không thấy trong DTO):** duyệt support-request có tự trừ quỹ + bump `expectedPersonalExpense`? Income có tự vào quỹ? (xem `DE_XUAT_BE_LUONG_TAI_CHINH_2026-07-22.md`).
+
 > ⚠️ **Swagger 07/11 vs 07/07 — +29 path**:
 > - **+25 path `/admin/*`** (audit-logs, backups, docker infra, revenue, provisioning, restores, system health...) → **Admin Web, NGOÀI phạm vi FE Mobile**.
 > - **+4 path mobile**: `POST /auth/forgot-password`, `POST /auth/reset-password`, `GET .../sos/.../location/current`, `POST .../sos/.../locations/batch` — **cả 4 đã wire FE** (qua commit main `d80eacf` + phần SOS trước đó).

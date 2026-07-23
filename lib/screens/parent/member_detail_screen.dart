@@ -155,6 +155,14 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                             const SizedBox(height: 14),
                             _faceProfileCard(member),
                           ],
+                          // Chỉ Trưởng nhóm mới trao quyền được, và chỉ cho
+                          // thành viên ACTIVE khác (không phải chính mình).
+                          if (me?.role == UserRole.manager &&
+                              member.userId != me?.id &&
+                              member.status == 'ACTIVE') ...[
+                            const SizedBox(height: 14),
+                            _transferOwnershipCard(member),
+                          ],
                           const SizedBox(height: 14),
                           _blockedCard(),
                         ],
@@ -625,6 +633,99 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ).showSnackBar(SnackBar(content: Text(e.toString())));
         }
       }
+    }
+  }
+
+  Widget _transferOwnershipCard(FamilyMember member) {
+    return _sectionCard(
+      title: 'Trao quyền Trưởng nhóm',
+      icon: Icons.workspace_premium_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Chuyển quyền Trưởng nhóm cho ${member.name}. Sau khi trao, bạn '
+            'trở thành thành viên thường và không còn quản lý gia đình.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: OutlinedButton.icon(
+              onPressed: () => _confirmTransferOwnership(member),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.link,
+                side: const BorderSide(color: AppColors.link, width: 1.5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+              label: Text(
+                'Trao quyền cho ${member.name}',
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmTransferOwnership(FamilyMember member) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Trao quyền Trưởng nhóm?'),
+        content: Text(
+          '${member.name} sẽ trở thành Trưởng nhóm. Bạn sẽ mất quyền quản lý '
+          'gia đình. Hãy cân nhắc kỹ trước khi xác nhận.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dCtx, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.link),
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('Trao quyền'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await context.read<FamilyProvider>().transferOwnership(member.userId);
+      if (!mounted) return;
+      // Role của mình đã đổi → cập nhật session rồi quay lại.
+      await context.read<AuthProvider>().refreshMe();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã trao quyền Trưởng nhóm cho ${member.name}'),
+          backgroundColor: AppColors.safe,
+        ),
+      );
+      context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     }
   }
 

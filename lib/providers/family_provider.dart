@@ -128,6 +128,19 @@ class FamilyProvider extends ChangeNotifier {
     throw Exception('Tính năng thay đổi quyền đang được cập nhật từ phía server.');
   }
 
+  // POST /families/{familyId}/transfer-ownership — trao quyền Trưởng nhóm cho
+  // thành viên khác (FAMILY_MANAGER only). Body { targetUserId, confirm }.
+  // Sau khi trao, người gọi không còn là Trưởng nhóm → refetch để cập nhật role.
+  Future<void> transferOwnership(String targetUserId) async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) throw Exception('Chưa có familyId');
+    await ApiClient.instance.post('/families/$familyId/transfer-ownership', {
+      'targetUserId': targetUserId,
+      'confirm': true,
+    });
+    await fetchMembers();
+  }
+
   // PATCH /families/{familyId} — đổi tên gia đình (Manager only).
   Future<void> updateFamilyName(String name) async {
     final familyId = ApiClient.instance.familyId;
