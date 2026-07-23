@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -306,7 +308,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
-              height: 42,
+              height: 46,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.link,
@@ -316,16 +318,65 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                 ),
                 onPressed: () => _showContributeSheet(context, goal),
                 icon: const Icon(Icons.savings_rounded, size: 18),
-                label: Text(
-                  'Góp tiền vào mục tiêu',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
+                label: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      '💰 Góp tiền cá nhân (Tiền túi)',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      'Nộp từ nguồn cá nhân của bạn vào quỹ & mục tiêu',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
+            if (context.read<AuthProvider>().user?.isAdministrative == true) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.link,
+                    side: const BorderSide(color: AppColors.link, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => _showSurplusAllocationSheet(context, goal),
+                  icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
+                  label: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '💼 Trích từ số dư quỹ chung',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        'Dùng tiền dư thừa tích lũy của tháng',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -410,6 +461,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
   void _showContributeSheet(BuildContext context, FinancialGoal goal) {
     final amountCtrl = TextEditingController();
     bool submitting = false;
+    bool linkToMonthlyPlan = true;
     String? sheetError;
     showModalBottomSheet(
       context: context,
@@ -431,7 +483,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '💰 Góp tiền cho mục tiêu',
+                '💰 Góp tiền cá nhân vào mục tiêu',
                 style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -445,11 +497,63 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                   color: AppColors.textSecondary,
                 ),
               ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F9FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFBAE6FD)),
+                ),
+                child: Row(
+                  children: [
+                    const Text('ℹ️', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Tiền nạp từ tài khoản cá nhân của bạn sẽ tăng Tổng quỹ gia đình và tăng số tiền tiết kiệm của mục tiêu.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: const Color(0xFF0369A1),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 16),
               _inputBox(
                 amountCtrl,
                 'Số tiền góp (₫)',
                 keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 10),
+              InkWell(
+                onTap: () => setSheet(() => linkToMonthlyPlan = !linkToMonthlyPlan),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: linkToMonthlyPlan,
+                        onChanged: (v) => setSheet(() => linkToMonthlyPlan = v ?? true),
+                        activeColor: AppColors.link,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Cập nhật vào Kế hoạch đóng góp tháng này của tôi',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               if (sheetError != null) ...[
                 const SizedBox(height: 10),
@@ -487,9 +591,58 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                             sheetError = null;
                           });
                           try {
-                            await context
-                                .read<FinanceProvider>()
-                                .contributeToGoal(goal.id, amount);
+                            final fp = context.read<FinanceProvider>();
+                            await fp.contributeToGoal(goal.id, amount);
+
+                            // Tự động ghi nhận vào Kế hoạch tháng của tôi nếu có
+                            if (linkToMonthlyPlan) {
+                              try {
+                                final now = DateTime.now();
+                                final plans = await fp.fetchContributionPlans(
+                                  goal.id,
+                                  now.month,
+                                  now.year,
+                                );
+                                final user = context
+                                    .read<AuthProvider>()
+                                    .user;
+                                final myMemberId = context
+                                    .read<FamilyProvider>()
+                                    .members
+                                    .where((m) => m.userId == user?.id || m.id == user?.id)
+                                    .firstOrNull
+                                    ?.id;
+                                final myUserId = user?.id;
+                                final myPlan = plans
+                                    .where(
+                                      (p) =>
+                                          (p.memberId == myMemberId ||
+                                              p.memberId == myUserId) &&
+                                          (p.isPending || p.isRejected || p.isSubmitted),
+                                    )
+                                    .firstOrNull;
+
+                                if (myPlan != null) {
+                                  await fp.submitContributionPlan(
+                                    goal.id,
+                                    myPlan.id,
+                                    amount,
+                                  );
+                                  if (context
+                                          .read<AuthProvider>()
+                                          .user
+                                          ?.canManageFinance ==
+                                      true) {
+                                    await fp.reviewContributionPlan(
+                                      goal.id,
+                                      myPlan.id,
+                                      'approve',
+                                    );
+                                  }
+                                }
+                              } catch (_) {}
+                            }
+
                             if (ctx.mounted) Navigator.pop(ctx);
                             await _load();
                           } catch (e) {
@@ -528,6 +681,316 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showSurplusAllocationSheet(BuildContext context, FinancialGoal goal) {
+    final now = DateTime.now();
+    int selectedMonth = now.month;
+    int selectedYear = now.year;
+    SurplusAvailability? surplusData;
+    bool loadingSurplus = true;
+    String? surplusError;
+
+    final amountCtrl = TextEditingController();
+    bool submitting = false;
+    String? sheetError;
+
+    // Fetch surplus availability function
+    Future<void> loadSurplus(void Function(void Function()) setSheet) async {
+      setSheet(() {
+        loadingSurplus = true;
+        surplusError = null;
+        surplusData = null;
+      });
+      try {
+        final res = await context
+            .read<FinanceProvider>()
+            .fetchSurplusAvailability(selectedMonth, selectedYear);
+        setSheet(() {
+          surplusData = res;
+          loadingSurplus = false;
+        });
+      } catch (e) {
+        setSheet(() {
+          surplusError = e.toString().replaceFirst('Exception: ', '');
+          loadingSurplus = false;
+        });
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          // Trigger initial load
+          if (loadingSurplus && surplusData == null && surplusError == null) {
+            loadSurplus(setSheet);
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              MediaQuery.of(ctx).viewInsets.bottom + 32,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '💼 Trích từ số dư quỹ chung',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  goal.goalName,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFED7AA)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('ℹ️', style: TextStyle(fontSize: 14)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Chuyển tiền dư thừa chưa sử dụng của Quỹ gia đình sang cho Mục tiêu này. Tổng quỹ chung gia đình không thay đổi.',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFFC2410C),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                // Trạng thái load số dư
+                if (loadingSurplus)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (surplusError != null)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Column(
+                        children: [
+                          Text(
+                            surplusError!,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.danger,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          TextButton(
+                            onPressed: () => loadSurplus(setSheet),
+                            child: const Text('Thử lại'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else if (surplusData != null) ...[
+                  // Thông tin số dư
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Kỳ tháng $selectedMonth/$selectedYear',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Tổng số dư quỹ:',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            Text(
+                              _fmt(surplusData!.totalSurplus),
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Số dư khả dụng (chưa phân bổ):',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                            Text(
+                              _fmt(surplusData!.availableSurplus),
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.income,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  if (surplusData!.availableSurplus <= 0)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Không còn số dư quỹ tháng $selectedMonth để phân bổ vào mục tiêu.',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    )
+                  else ...[
+                    _inputBox(
+                      amountCtrl,
+                      'Số tiền phân bổ (₫)',
+                      keyboardType: TextInputType.number,
+                    ),
+                    if (sheetError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        sheetError!,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.link,
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: submitting
+                            ? null
+                            : () async {
+                                final amount = parseMoneyInput(amountCtrl.text);
+                                if (amount <= 0) {
+                                  setSheet(
+                                    () => sheetError = 'Nhập số tiền lớn hơn 0.',
+                                  );
+                                  return;
+                                }
+                                if (amount > surplusData!.availableSurplus) {
+                                  setSheet(
+                                    () => sheetError = 'Số tiền phân bổ không được vượt quá số dư khả dụng.',
+                                  );
+                                  return;
+                                }
+                                setSheet(() {
+                                  submitting = true;
+                                  sheetError = null;
+                                });
+                                try {
+                                  await context
+                                      .read<FinanceProvider>()
+                                      .allocateSurplusToGoal(
+                                        goal.id,
+                                        periodMonth: selectedMonth,
+                                        periodYear: selectedYear,
+                                        amount: amount,
+                                        note: 'Chuyển số dư quỹ tháng $selectedMonth vào mục tiêu',
+                                      );
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                  await _load();
+                                } catch (e) {
+                                  setSheet(() {
+                                    submitting = false;
+                                    sheetError = e.toString().replaceFirst(
+                                      'Exception: ',
+                                      '',
+                                    );
+                                  });
+                                }
+                              },
+                        child: submitting
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                'Xác nhận phân bổ',
+                                style: GoogleFonts.inter(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }

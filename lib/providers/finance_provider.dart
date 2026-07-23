@@ -564,6 +564,33 @@ class MonthlySummary {
   }
 }
 
+// API: Lấy số dư khả dụng từ tháng
+class SurplusAvailability {
+  final int periodMonth;
+  final int periodYear;
+  final double totalSurplus;
+  final double allocatedSurplus;
+  final double availableSurplus;
+
+  const SurplusAvailability({
+    required this.periodMonth,
+    required this.periodYear,
+    required this.totalSurplus,
+    required this.allocatedSurplus,
+    required this.availableSurplus,
+  });
+
+  factory SurplusAvailability.fromJson(Map<String, dynamic> j) {
+    return SurplusAvailability(
+      periodMonth: (j['periodMonth'] as num?)?.toInt() ?? 0,
+      periodYear: (j['periodYear'] as num?)?.toInt() ?? 0,
+      totalSurplus: _money(j['totalSurplus']),
+      allocatedSurplus: _money(j['allocatedSurplus']),
+      availableSurplus: _money(j['availableSurplus']),
+    );
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // Provider
 // ════════════════════════════════════════════════════════════════════════
@@ -1017,6 +1044,37 @@ class FinanceProvider extends ChangeNotifier {
   Future<void> deleteGoalAllocation(String allocationId) async {
     await ApiClient.instance.delete(
       '/families/$_fid/finance/goal-allocations/$allocationId',
+    );
+    await _fetchGoals();
+    notifyListeners();
+  }
+
+  // GET /families/{familyId}/finance/financial-goals/surplus-availability
+  Future<SurplusAvailability?> fetchSurplusAvailability(int month, int year) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/financial-goals/surplus-availability${_qs({'month': month, 'year': year})}',
+    );
+    return data is Map<String, dynamic> && data.isNotEmpty
+        ? SurplusAvailability.fromJson(data)
+        : null;
+  }
+
+  // POST /families/{familyId}/finance/financial-goals/{goalId}/surplus-allocations
+  Future<void> allocateSurplusToGoal(
+    String goalId, {
+    required int periodMonth,
+    required int periodYear,
+    required double amount,
+    required String note,
+  }) async {
+    await ApiClient.instance.post(
+      '/families/$_fid/finance/financial-goals/$goalId/surplus-allocations',
+      {
+        'periodMonth': periodMonth,
+        'periodYear': periodYear,
+        'amount': amount,
+        'note': note,
+      },
     );
     await _fetchGoals();
     notifyListeners();

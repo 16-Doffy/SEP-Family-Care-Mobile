@@ -334,7 +334,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
             height: 38,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, padding: EdgeInsets.zero),
-              onPressed: () => _showSubmitSheet(context, plan),
+              onPressed: () => _showSubmitSheet(context, plan, canManage: canManage),
               child: Text('Tôi đã đóng góp', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
             ),
           ),
@@ -382,7 +382,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     }
   }
 
-  void _showSubmitSheet(BuildContext context, GoalContributionPlan plan) {
+  void _showSubmitSheet(BuildContext context, GoalContributionPlan plan, {bool canManage = false}) {
     final amountCtrl = TextEditingController(
       text: ThousandsSeparatorInputFormatter.formatThousands(
         plan.plannedAmount.round().toString(),
@@ -426,10 +426,14 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                   }
                   setSheet(() { submitting = true; sheetError = null; });
                   try {
-                    await context.read<FinanceProvider>().submitContributionPlan(
+                    final fp = context.read<FinanceProvider>();
+                    await fp.submitContributionPlan(
                       widget.goalId, plan.id, amt,
                       note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
                     );
+                    if (canManage) {
+                      await fp.reviewContributionPlan(widget.goalId, plan.id, 'approve');
+                    }
                     if (ctx.mounted) Navigator.pop(ctx);
                     await _load();
                   } catch (e) {
