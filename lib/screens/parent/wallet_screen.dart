@@ -9,6 +9,7 @@ import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_ui_tokens.dart';
+import '../../utils/jar_allocation.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/ring_chart.dart';
@@ -188,10 +189,58 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
+  /// Một dòng phân bổ theo hũ của mô hình tài chính đang áp dụng.
+  ///
+  /// `target` = thu nhập × tỷ lệ hũ (kế hoạch), `actual` = tổng chi thực tế của
+  /// các ledger entry có `jarId` này. BE chưa trả `byJar` trong finance/summary
+  /// (Swagger ghi "Reserved") nên phần thực tế do FE tự cộng từ giao dịch.
+  ({JarAllocation allocation, String? note}) _jarBreakdown(
+    BuildContext context,
+    WalletProvider state,
+    double income,
+  ) {
+    const empty = JarAllocation(rows: [], unassigned: 0);
+    final finance = context.watch<FinanceProvider>();
+    final model = finance.activeModel;
+
+    // activeModel fallback về model đầu tiên kể cả DRAFT → chỉ coi là đang áp
+    // dụng khi status thật là ACTIVE, không thì nói rõ cho user.
+    if (model == null || !model.isActive) {
+      return (
+        allocation: empty,
+        note: model == null
+            ? 'Gia đình chưa có mô hình tài chính. Tạo mô hình để xem phân bổ theo hũ.'
+            : 'Mô hình "${model.name}" chưa được kích hoạt nên chưa có phân bổ theo hũ.',
+      );
+    }
+
+    // GET /finance/jars trả hũ của MỌI mô hình cho quản lý → phải lọc theo
+    // đúng mô hình đang áp dụng, không thì cộng lẫn hũ của mô hình cũ.
+    final jars = finance.jars
+        .where((j) => j.isActive && j.financeModelId == model.id)
+        .toList();
+    if (jars.isEmpty) {
+      return (
+        allocation: empty,
+        note: 'Mô hình "${model.name}" chưa có hũ nào đang hoạt động.',
+      );
+    }
+
+    return (
+      allocation: computeJarAllocation(
+        jars: jars,
+        entries: state.transactions,
+        income: income,
+      ),
+      note: null,
+    );
+  }
+
   List<Widget> _buildOverview(BuildContext context, WalletProvider state) {
     final income = state.monthlyIncome;
     final expense = state.monthlyExpense;
     final remaining = income - expense;
+    final jarInfo = _jarBreakdown(context, state, income);
     final spentRatio = income > 0 ? expense / income : 0.0;
     final bufferPct = income > 0 ? ((remaining / income) * 100).round() : 0;
     final badgeBg = bufferPct < 10
@@ -310,62 +359,148 @@ class _WalletScreenState extends State<WalletScreen> {
                 _barLegend('Dư', AppColors.safe, _fmt(remaining.round())),
               ],
             ),
+            if (jarInfo.allocation.rows.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Divider(height: 1, color: AppColors.progressTrack),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Theo hũ — kế hoạch so với thực chi',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ...jarInfo.allocation.rows.asMap().entries.map(
+                (e) => _jarRow(e.value, _jarColor(e.key)),
+              ),
+              // Hiện phần chi không gán hũ để tổng khớp với tổng chi tiêu.
+              if (jarInfo.allocation.unassigned > 0)
+                _jarRow(
+                  JarAllocationRow(
+                    jarId: '',
+                    name: 'Chưa gán hũ',
+                    pct: 0,
+                    target: 0,
+                    actual: jarInfo.allocation.unassigned,
+                  ),
+                  AppColors.textMuted,
+                ),
+            ] else if (jarInfo.note != null) ...[
+              const SizedBox(height: 12),
+              _emptyFinanceText(jarInfo.note!),
+            ],
           ],
         ),
       ),
       const SizedBox(height: 16),
 
       _sectionCard(
-        title: 'Phân bổ thu nhập',
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            WaffleChart(
-              segments: [
-                WaffleSegment(
-                  color: AppColors.income,
-                  pct: income > 0 ? 50 : 0,
-                  label: 'Thu nhập',
-                  amount: income.round(),
-                ),
-                WaffleSegment(
-                  color: AppColors.shared,
-                  pct: income > 0 ? (expense / income * 100).round() : 0,
-                  label: 'Chi tiêu',
-                  amount: expense.round(),
-                ),
-              ],
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
+        title: jarInfo.allocation.rows.isEmpty
+            ? 'Phân bổ thu nhập'
+            : 'Phân bổ thu nhập theo mô hình',
+        child: jarInfo.allocation.rows.isEmpty
+            // Chưa có mô hình đang áp dụng → giữ cách chia cũ (thu/chi/dư).
+            ? Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _waffleLegend(
-                    'Thu nhập',
-                    AppColors.income,
-                    _fmt(income.round()),
-                    '100%',
+                  WaffleChart(
+                    segments: [
+                      WaffleSegment(
+                        color: AppColors.shared,
+                        pct: income > 0
+                            ? (expense / income * 100).round().clamp(0, 100)
+                            : 0,
+                        label: 'Chi tiêu',
+                        amount: expense.round(),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  _waffleLegend(
-                    'Chi tiêu',
-                    AppColors.shared,
-                    _fmt(expense.round()),
-                    income > 0 ? '${(expense / income * 100).round()}%' : '0%',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _waffleLegend(
+                          'Thu nhập',
+                          AppColors.income,
+                          _fmt(income.round()),
+                          '100%',
+                        ),
+                        const SizedBox(height: 10),
+                        _waffleLegend(
+                          'Chi tiêu',
+                          AppColors.shared,
+                          _fmt(expense.round()),
+                          income > 0
+                              ? '${(expense / income * 100).round()}%'
+                              : '0%',
+                        ),
+                        const SizedBox(height: 10),
+                        _waffleLegend(
+                          'Dư',
+                          AppColors.progressTrack,
+                          _fmt(remaining.round()),
+                          '$bufferPct%',
+                        ),
+                        if (jarInfo.note != null) ...[
+                          const SizedBox(height: 10),
+                          _emptyFinanceText(jarInfo.note!),
+                        ],
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                  _waffleLegend(
-                    'Dư',
-                    AppColors.progressTrack,
-                    _fmt(remaining.round()),
-                    '$bufferPct%',
+                ],
+              )
+            // Mỗi ô waffle = 1% thu nhập, chia theo tỷ lệ hũ của mô hình; phần
+            // legend hiện số tiền kế hoạch của từng hũ.
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  WaffleChart(
+                    segments: jarInfo.allocation.rows
+                        .asMap()
+                        .entries
+                        .map(
+                          (e) => WaffleSegment(
+                            color: _jarColor(e.key),
+                            pct: e.value.pct.round().clamp(0, 100),
+                            label: e.value.name,
+                            amount: e.value.target.round(),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final e in jarInfo.allocation.rows.asMap().entries) ...[
+                          _waffleLegend(
+                            e.value.name,
+                            _jarColor(e.key),
+                            _fmt(e.value.target.round()),
+                            '${e.value.pct.round()}%',
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+                        Text(
+                          'Kế hoạch tính trên thu nhập ${_fmt(income.round())}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
       ),
       const SizedBox(height: 16),
 
@@ -1831,6 +1966,83 @@ class _WalletScreenState extends State<WalletScreen> {
       if (list.isNotEmpty) return list;
     }
     return const <Map<String, dynamic>>[];
+  }
+
+  /// Màu cho hũ thứ [index] — xoay vòng nên số hũ bất kỳ vẫn có màu.
+  Color _jarColor(int index) {
+    const palette = [
+      AppColors.shared,
+      AppColors.income,
+      AppColors.link,
+      AppColors.accent500,
+      AppColors.safe,
+      AppColors.heroPurple,
+    ];
+    return palette[index % palette.length];
+  }
+
+  /// 1 dòng hũ: tên + % , số thực chi trên số kế hoạch, thanh tiến độ. Vượt kế
+  /// hoạch thì đổi sang màu cảnh báo để nhìn ra ngay hũ nào đang quá tay.
+  Widget _jarRow(JarAllocationRow row, Color color) {
+    final over = row.isOverBudget;
+    final ratio = row.target > 0
+        ? (row.actual / row.target).clamp(0.0, 1.0)
+        : (row.actual > 0 ? 1.0 : 0.0);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  row.pct > 0
+                      ? '${row.name} · ${row.pct.round()}%'
+                      : row.name,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                row.target > 0
+                    ? '${_fmt(row.actual.round())} / ${_fmt(row.target.round())}'
+                    : _fmt(row.actual.round()),
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: over ? AppColors.danger : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: ratio,
+              minHeight: 6,
+              backgroundColor: AppColors.progressTrack,
+              valueColor: AlwaysStoppedAnimation(
+                over ? AppColors.danger : color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Lấy text đầu tiên không rỗng theo danh sách key; null nếu không có key nào

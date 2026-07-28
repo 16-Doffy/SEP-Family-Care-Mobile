@@ -44,6 +44,11 @@ class LedgerEntry {
   final String entryDate;
   final String? categoryName;
   final String? categoryId;
+
+  /// Hũ tài chính của giao dịch. `CreateLedgerEntryDto` có `jarId` và
+  /// `POST /finance/fund-allocations` ghi mỗi hũ thành 1 entry có `jarId` →
+  /// dùng để tính thực chi theo từng hũ (BE chưa trả `byJar` trong summary).
+  final String? jarId;
   final String? sourceType;
   final String status;
 
@@ -56,6 +61,7 @@ class LedgerEntry {
     required this.entryDate,
     this.categoryName,
     this.categoryId,
+    this.jarId,
     this.sourceType,
     this.status = 'POSTED',
   });
@@ -76,6 +82,7 @@ class LedgerEntry {
 
   factory LedgerEntry.fromJson(Map<String, dynamic> json) {
     final cat = json['category'] is Map ? json['category'] as Map : null;
+    final jar = json['jar'] is Map ? json['jar'] as Map : null;
     return LedgerEntry(
       id: json['id']?.toString() ?? '',
       entryType: json['entryType']?.toString() ?? 'EXPENSE',
@@ -86,6 +93,7 @@ class LedgerEntry {
           json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
       categoryName: cat?['name']?.toString(),
       categoryId: json['categoryId']?.toString() ?? cat?['id']?.toString(),
+      jarId: json['jarId']?.toString() ?? jar?['id']?.toString(),
       sourceType: json['sourceType']?.toString(),
       status: json['status']?.toString().toUpperCase() ?? 'POSTED',
     );

@@ -176,6 +176,11 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
   - `member-contribution-summary` → `data.members[]` có tên thành viên ở **`member.displayName`** và **`member.user.fullName`** (`MemberContributionSummaryItemResponseDto`), KHÔNG có `memberName` ở cấp ngoài; số tiền là `sharedContribution` / `goalContribution` / `ledgerContributionTotal` / `totalContribution`. FE đọc `item['memberName']` nên mọi dòng rơi về fallback "Thành viên".
   - `category-spending-summary` → `data.byCategory[]` = `{categoryId, name, essentialType, amount}`. Key `name` đã khớp; "Chưa phân loại" là **dữ liệu thật** (ledger entry không có `categoryId`), không phải lỗi parse.
   - **Bài học:** endpoint analytics có schema đầy đủ trong Swagger — phải đọc `components.schemas` thay vì đoán theo tên hợp lý, vì sai tên field không sinh lỗi HTTP nào, chỉ hiện 0.
+- **[MỚI 2026-07-28, wire FE] Phân bổ theo hũ do FE tự tính:** `FinanceSpendingSummaryResponseDto.byJar` bị Swagger ghi là **"Reserved"** (ví dụ `[]`) → BE chưa trả. FE tự tính trong [jar_allocation.dart](lib/utils/jar_allocation.dart): kế hoạch = `thu nhập × allocationPercentage/100`, thực chi = cộng `signedAmount < 0` của ledger entry theo `jarId`. Điều kiện: `CreateLedgerEntryDto` **đã có `jarId`** và `POST /finance/fund-allocations` ghi mỗi hũ thành 1 entry có `jarId` (khác với ghi chú cũ "jar không liên kết ledger" — BE đã bổ sung).
+  - ⚠️ `GET /finance/jars` trả hũ của **mọi mô hình** cho quản lý (member thường chỉ thấy mô hình ACTIVE) → phải lọc `financeModelId == activeModel.id` trước khi cộng, không thì lẫn hũ của mô hình cũ.
+  - ⚠️ `FinanceProvider.activeModel` fallback về model đầu tiên **kể cả DRAFT** → màn hình phải tự check `model.isActive` trước khi coi là đang áp dụng.
+  - Jar **không có** field số dư (`JarData.balance` đọc `balance`/`currentBalance` đều không có trong schema → luôn 0), nên không dùng được để suy ra thực chi; buộc phải cộng từ ledger entry.
+  - Phần chi **không gán hũ** được hiện thành dòng "Chưa gán hũ" để tổng khớp tổng chi tiêu (entry BE tự tạo như `SUPPORT` khi duyệt xin tiền không có `jarId`).
 
 ### Finance — Financial Goals
 - `GET /api/v1/families/{familyId}/finance/financial-goals` — Danh sách. Query: `page, limit, status, relatedJarId, includeProgress`. `status`: `ACTIVE | ACHIEVED | CANCELED | AT_RISK`.
