@@ -93,15 +93,23 @@ class AlbumTag {
   final String taggedMemberId;
   final String taggedMemberName;
   final String? tagNote;
-  final bool canRemove;
+
+  /// Quyền gỡ tag theo BE. `null` = BE không trả field này (Swagger chưa
+  /// document) → xem như được phép thử, xem [canRemove].
+  final bool? canRemoveFlag;
 
   const AlbumTag({
     required this.id,
     required this.taggedMemberId,
     required this.taggedMemberName,
     this.tagNote,
-    this.canRemove = false,
+    this.canRemoveFlag,
   });
+
+  /// Fail-open như `AlbumFaceProvider.canUseFaceSuggestions`: chưa biết quyền
+  /// thì vẫn cho bấm và để BE trả 403, KHÔNG ẩn nút. Tag do AI tự gắn phải luôn
+  /// gỡ được — nếu mặc định false, BE thiếu field là user mắc kẹt với tag sai.
+  bool get canRemove => canRemoveFlag ?? true;
 
   factory AlbumTag.fromJson(Map<String, dynamic> json) {
     final member =
@@ -137,11 +145,14 @@ class AlbumTag {
                 ? nestedMemberName
                 : (nestedUserName.isNotEmpty ? nestedUserName : 'Thành viên')),
       tagNote: json['tagNote']?.toString(),
-      canRemove:
-          (json['permissions'] is Map
-              ? (json['permissions'] as Map)['canRemove']
-              : json['canRemove']) ==
-          true,
+      canRemoveFlag: switch (json['permissions'] is Map
+          ? (json['permissions'] as Map)['canRemove']
+          : json['canRemove']) {
+        final bool v => v,
+        'true' => true,
+        'false' => false,
+        _ => null, // BE không trả → fail-open ở getter canRemove
+      },
     );
   }
 }
