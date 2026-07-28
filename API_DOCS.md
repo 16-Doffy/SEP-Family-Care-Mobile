@@ -171,6 +171,11 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET /api/v1/families/{familyId}/finance/reports/budget-goal` — Báo cáo ngân sách + mục tiêu + cảnh báo. **[wire FE 2026-07-07]** `FinanceReportsScreen` tab "Ngân sách & Mục tiêu".
 - `GET /api/v1/families/{familyId}/finance/reports/non-essential-spending` — Báo cáo chi tiêu không thiết yếu. **[wire FE 2026-07-07]** `FinanceReportsScreen` tab "Chi không thiết yếu".
   - `[VERIFY]` Response schema của cả 3 report **không được Swagger document** (chỉ có mô tả ngắn) — FE render bằng `JsonReportView` (key-value đệ quy, generic) để không đoán sai tên field. Cần chạy thật với data thật để xác nhận field names, sau đó có thể nâng cấp UI structured hơn.
+- **[FIX FE 2026-07-28] Tên field analytics — đã đoán sai, gây hiện 0đ âm thầm:**
+  - `cash-flow-summary` → `data.totals` dùng **`incomeAmount` / `expenseAmount` / `adjustmentAmount` / `netCashFlow` / `netIncludingAdjustments` / `entryCount`** (`CashFlowTotalsResponseDto`), `data.byMonth[]` dùng cùng bộ key + `month: "2026-06"`. FE trước đó đọc `income`/`totalIncome`/`inflow` → luôn 0đ, trong khi `netCashFlow` khớp nên chỉ Net có số ⇒ card "Dòng tiền vào - ra" hiện Vào 0đ / Ra 0đ / Net 50 tỷ.
+  - `member-contribution-summary` → `data.members[]` có tên thành viên ở **`member.displayName`** và **`member.user.fullName`** (`MemberContributionSummaryItemResponseDto`), KHÔNG có `memberName` ở cấp ngoài; số tiền là `sharedContribution` / `goalContribution` / `ledgerContributionTotal` / `totalContribution`. FE đọc `item['memberName']` nên mọi dòng rơi về fallback "Thành viên".
+  - `category-spending-summary` → `data.byCategory[]` = `{categoryId, name, essentialType, amount}`. Key `name` đã khớp; "Chưa phân loại" là **dữ liệu thật** (ledger entry không có `categoryId`), không phải lỗi parse.
+  - **Bài học:** endpoint analytics có schema đầy đủ trong Swagger — phải đọc `components.schemas` thay vì đoán theo tên hợp lý, vì sai tên field không sinh lỗi HTTP nào, chỉ hiện 0.
 
 ### Finance — Financial Goals
 - `GET /api/v1/families/{familyId}/finance/financial-goals` — Danh sách. Query: `page, limit, status, relatedJarId, includeProgress`. `status`: `ACTIVE | ACHIEVED | CANCELED | AT_RISK`.

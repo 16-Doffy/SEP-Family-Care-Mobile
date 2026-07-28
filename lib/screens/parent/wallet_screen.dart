@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/user.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -433,9 +435,27 @@ class _WalletScreenState extends State<WalletScreen> {
     final data = state.cashFlowSummary ?? const <String, dynamic>{};
     final totals = _asMap(data['totals']);
     final byMonth = _firstList(data, ['byMonth', 'items', 'data']);
-    final income = _moneyFrom(totals, ['income', 'totalIncome', 'inflow']);
-    final expense = _moneyFrom(totals, ['expense', 'totalExpense', 'outflow']);
-    final net = _moneyFrom(totals, ['net', 'netCashFlow', 'balance']);
+    // API thật trả incomeAmount/expenseAmount/netCashFlow (CashFlowTotalsResponseDto).
+    // Thiếu 2 key đầu là lý do "Vào 0đ / Ra 0đ" mà Net vẫn có số — sai tên field
+    // thì không có lỗi nào báo, chỉ hiện 0.
+    final income = _moneyFrom(totals, [
+      'incomeAmount',
+      'income',
+      'totalIncome',
+      'inflow',
+    ]);
+    final expense = _moneyFrom(totals, [
+      'expenseAmount',
+      'expense',
+      'totalExpense',
+      'outflow',
+    ]);
+    final net = _moneyFrom(totals, [
+      'netCashFlow',
+      'netIncludingAdjustments',
+      'net',
+      'balance',
+    ]);
     return _sectionCard(
       title: 'Dòng tiền vào - ra',
       child: Column(
@@ -460,11 +480,13 @@ class _WalletScreenState extends State<WalletScreen> {
                   item['period']?.toString() ??
                   'Kỳ';
               final monthIn = _moneyFrom(item, [
+                'incomeAmount',
                 'income',
                 'totalIncome',
                 'inflow',
               ]);
               final monthOut = _moneyFrom(item, [
+                'expenseAmount',
                 'expense',
                 'totalExpense',
                 'outflow',
@@ -521,14 +543,23 @@ class _WalletScreenState extends State<WalletScreen> {
           ? _emptyFinanceText('Chưa có dữ liệu đóng góp thành viên.')
           : Column(
               children: members.take(5).map((item) {
+                // API thật để tên trong member.displayName / member.user.fullName
+                // (MemberContributionSummaryItemResponseDto), không phải cấp
+                // ngoài — đọc sai chỗ nên mọi dòng đều rơi về 'Thành viên'.
+                final member = _asMap(item['member']);
+                final user = _asMap(member['user']);
                 final name =
-                    item['memberName']?.toString() ??
-                    item['displayName']?.toString() ??
-                    item['name']?.toString() ??
+                    _firstText(member, ['displayName', 'name', 'fullName']) ??
+                    _firstText(user, ['fullName', 'displayName', 'name']) ??
+                    _firstText(item, [
+                      'memberName',
+                      'displayName',
+                      'name',
+                    ]) ??
                     'Thành viên';
                 final amount = _moneyFrom(item, [
-                  'amount',
                   'totalContribution',
+                  'amount',
                   'actualAmount',
                   'ledgerActualAmount',
                 ]);
@@ -1231,6 +1262,16 @@ class _WalletScreenState extends State<WalletScreen> {
             style: TextStyle(color: AppColors.textMuted),
           ),
         ),
+        const SizedBox(height: 12),
+        Center(
+          child: TextButton.icon(
+            onPressed: provider.loading
+                ? null
+                : () => context.read<SupportRequestProvider>().fetchRequests(),
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: Text(provider.loading ? 'Đang tải…' : 'Tải lại'),
+          ),
+        ),
       ];
     }
     return pending
@@ -1462,13 +1503,38 @@ class _WalletScreenState extends State<WalletScreen> {
                     onChanged: (value) => setSheet(() => categoryId = value),
                   ),
                   const SizedBox(height: 12),
+                ] else ...[
+                  // Trước đây ô danh mục bị ẩn hẳn khi gia đình chưa có danh
+                  // mục nào → giao dịch tạo ra luôn có categoryId = null và báo
+                  // cáo dồn hết vào "Chưa phân loại" mà user không hiểu vì sao.
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent500.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Gia đình chưa có danh mục nào nên giao dịch sẽ bị xếp vào '
+                      '"Chưa phân loại". Tạo danh mục để xem được báo cáo chi '
+                      'tiêu theo danh mục.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                 ],
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton.icon(
                     onPressed: () => _showCategoryManagerSheet(context),
                     icon: const Icon(Icons.category_outlined, size: 18),
-                    label: const Text('Quản lý danh mục'),
+                    label: Text(
+                      categories.isEmpty
+                          ? 'Tạo danh mục'
+                          : 'Quản lý danh mục',
+                    ),
                   ),
                 ),
                 TextField(
@@ -1767,6 +1833,16 @@ class _WalletScreenState extends State<WalletScreen> {
     return const <Map<String, dynamic>>[];
   }
 
+  /// Lấy text đầu tiên không rỗng theo danh sách key; null nếu không có key nào
+  /// có giá trị dùng được (để caller tự quyết fallback).
+  String? _firstText(Map<String, dynamic> map, List<String> keys) {
+    for (final key in keys) {
+      final text = map[key]?.toString().trim();
+      if (text != null && text.isNotEmpty) return text;
+    }
+    return null;
+  }
+
   double _moneyFrom(
     Map<String, dynamic> map,
     List<String> keys, {
@@ -1942,7 +2018,15 @@ class _WalletScreenState extends State<WalletScreen> {
     final active = _tab == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _tab = index),
+        onTap: () {
+          setState(() => _tab = index);
+          // Yêu cầu mới do thành viên gửi sau khi màn này đã mở sẽ không tự
+          // xuất hiện (trước đây chỉ fetch 1 lần trong initState) → nạp lại mỗi
+          // lần mở tab Yêu cầu.
+          if (index == 2) {
+            context.read<SupportRequestProvider>().fetchRequests();
+          }
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
@@ -1987,7 +2071,20 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Widget _backBtn(BuildContext ctx) => GestureDetector(
-    onTap: () => ctx.pop(),
+    // Màn này là branch root của shell khi mở từ thanh tab → không có gì để
+    // pop, bấm back sẽ không làm gì. Không pop được thì về home theo role.
+    onTap: () {
+      if (ctx.canPop()) {
+        ctx.pop();
+        return;
+      }
+      final role = ctx.read<AuthProvider>().user?.role;
+      ctx.go(switch (role) {
+        UserRole.manager => '/manager/home',
+        UserRole.deputy => '/deputy/home',
+        _ => '/member/home',
+      });
+    },
     child: Container(
       width: 40,
       height: 40,

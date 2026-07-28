@@ -7,6 +7,8 @@ import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
+import '../../widgets/money_input.dart';
 import '../../widgets/ring_chart.dart';
 
 class ChildWalletScreen extends StatefulWidget {
@@ -143,7 +145,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     final hasData = _allowance != null && _allowance! > 0;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.colors.background,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -158,7 +160,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                   const Spacer(),
@@ -292,7 +294,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.white,
+                  color: context.colors.surface,
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
@@ -327,7 +329,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                     style: GoogleFonts.inter(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800,
-                                      color: AppColors.textPrimary,
+                                      color: context.colors.textPrimary,
                                     ),
                                   ),
                                 ],
@@ -346,7 +348,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                   style: GoogleFonts.inter(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                    color: AppColors.textPrimary,
+                                    color: context.colors.textPrimary,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -355,7 +357,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                   ' · ${isOver ? 'Vượt ${_fmtNum(-remaining)} ₫' : 'Còn ${_fmtNum(remaining)} ₫'}',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
-                                    color: AppColors.textSecondary,
+                                    color: context.colors.textSecondary,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -365,11 +367,13 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: isOver
-                                        ? const Color(0xFFFEE2E2)
-                                        : isSafe
-                                        ? const Color(0xFFDCFCE7)
-                                        : const Color(0xFFFFF7ED),
+                                    color:
+                                        (isOver
+                                                ? AppColors.danger
+                                                : isSafe
+                                                ? AppColors.safe
+                                                : AppColors.accent500)
+                                            .withValues(alpha: 0.14),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
                                   child: Text(
@@ -436,7 +440,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     style: GoogleFonts.inter(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: context.colors.textPrimary,
                     ),
                   ),
                   const Spacer(),
@@ -462,7 +466,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                         : 'Chưa có giao dịch nào',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: AppColors.textMuted,
+                      color: context.colors.textMuted,
                       height: 1.4,
                     ),
                   ),
@@ -502,7 +506,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+            color: context.colors.textPrimary,
           ),
         ),
         const SizedBox(height: 4),
@@ -510,7 +514,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
           'Vào Hồ sơ → Tài chính tháng để khai báo\nhạn mức chi tiêu cá nhân.',
           style: GoogleFonts.inter(
             fontSize: 12,
-            color: AppColors.textMuted,
+            color: context.colors.textMuted,
             height: 1.4,
           ),
           textAlign: TextAlign.center,
@@ -549,9 +553,13 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               TextField(
                 controller: amountCtrl,
                 keyboardType: TextInputType.number,
+                // Dấu phẩy cho khớp cách màn này hiển thị số (_fmtNum).
+                inputFormatters: const [
+                  ThousandsSeparatorInputFormatter(separator: ','),
+                ],
                 decoration: InputDecoration(
                   labelText: 'Số tiền (₫)',
-                  hintText: 'VD: 50000',
+                  hintText: 'VD: 50,000',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -594,10 +602,8 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               onPressed: submitting
                   ? null
                   : () async {
-                      final amt = double.tryParse(
-                        amountCtrl.text.replaceAll(',', '').replaceAll('.', ''),
-                      );
-                      if (amt == null || amt <= 0) return;
+                      final amt = parseMoneyInput(amountCtrl.text);
+                      if (amt <= 0) return;
                       if (purposeCtrl.text.trim().isEmpty) return;
                       setS(() => submitting = true);
                       try {
@@ -686,7 +692,7 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
               style: GoogleFonts.inter(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+                color: context.colors.textPrimary,
               ),
             ),
             if (provider.pendingCount > 0) ...[
@@ -694,7 +700,7 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
+                  color: AppColors.accent500.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -720,7 +726,7 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                  color: AppColors.white,
+                  color: context.colors.surface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -735,8 +741,8 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
                     Container(
                       width: 44,
                       height: 44,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF3F4F6),
+                      decoration: BoxDecoration(
+                        color: context.colors.inputFill,
                         shape: BoxShape.circle,
                       ),
                       alignment: Alignment.center,
@@ -752,14 +758,14 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
                             style: GoogleFonts.inter(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
+                              color: context.colors.textPrimary,
                             ),
                           ),
                           Text(
                             req.purpose,
                             style: GoogleFonts.inter(
                               fontSize: 12,
-                              color: AppColors.textMuted,
+                              color: context.colors.textMuted,
                             ),
                           ),
                         ],
@@ -830,7 +836,7 @@ class _LedgerCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: context.colors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -867,14 +873,14 @@ class _LedgerCard extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    color: context.colors.textPrimary,
                   ),
                 ),
                 Text(
                   _fmtDate(entry.entryDate),
                   style: GoogleFonts.inter(
                     fontSize: 12,
-                    color: AppColors.textMuted,
+                    color: context.colors.textMuted,
                   ),
                 ),
               ],
@@ -885,7 +891,7 @@ class _LedgerCard extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: isPos ? AppColors.safe : AppColors.textPrimary,
+              color: isPos ? AppColors.safe : context.colors.textPrimary,
             ),
           ),
         ],
