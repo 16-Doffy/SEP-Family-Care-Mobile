@@ -76,6 +76,77 @@ class FinanceModel {
   );
 }
 
+class FundAllocationItem {
+  final String jarId;
+  final String jarName;
+  final String jarCode;
+  final double allocationPercentage;
+  final double amount;
+  final String? ledgerEntryId;
+
+  const FundAllocationItem({
+    required this.jarId,
+    required this.jarName,
+    required this.jarCode,
+    required this.allocationPercentage,
+    required this.amount,
+    this.ledgerEntryId,
+  });
+
+  factory FundAllocationItem.fromJson(Map<String, dynamic> j) =>
+      FundAllocationItem(
+        jarId: j['jarId']?.toString() ?? '',
+        jarName: j['jarName']?.toString() ?? '',
+        jarCode: j['jarCode']?.toString() ?? '',
+        allocationPercentage: _money(j['allocationPercentage']),
+        amount: _money(j['amount']),
+        ledgerEntryId: j['ledgerEntryId']?.toString(),
+      );
+}
+
+class FundAllocationResult {
+  final String modelId;
+  final String modelName;
+  final String modelType;
+  final int periodMonth;
+  final int periodYear;
+  final double totalAmount;
+  final String sourceType;
+  final String sourceId;
+  final List<FundAllocationItem> items;
+
+  const FundAllocationResult({
+    required this.modelId,
+    required this.modelName,
+    required this.modelType,
+    required this.periodMonth,
+    required this.periodYear,
+    required this.totalAmount,
+    required this.sourceType,
+    required this.sourceId,
+    required this.items,
+  });
+
+  factory FundAllocationResult.fromJson(Map<String, dynamic> j) {
+    final model = j['model'] is Map ? j['model'] as Map : const {};
+    final period = j['period'] is Map ? j['period'] as Map : const {};
+    return FundAllocationResult(
+      modelId: model['id']?.toString() ?? '',
+      modelName: model['name']?.toString() ?? '',
+      modelType: model['modelType']?.toString() ?? '',
+      periodMonth: (period['month'] as num?)?.toInt() ?? 0,
+      periodYear: (period['year'] as num?)?.toInt() ?? 0,
+      totalAmount: _money(j['totalAmount']),
+      sourceType: j['sourceType']?.toString() ?? '',
+      sourceId: j['sourceId']?.toString() ?? '',
+      items: (j['items'] as List? ?? const [])
+          .whereType<Map>()
+          .map((e) => FundAllocationItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+}
+
 class FinanceCategory {
   final String id;
   final String name;
@@ -726,6 +797,35 @@ class FinanceProvider extends ChangeNotifier {
     );
     await _fetchModels();
     notifyListeners();
+  }
+
+  /// Chia một khoản quỹ theo tỷ lệ các hũ của mô hình đang hoạt động.
+  ///
+  /// BE trả 409 nếu cùng mô hình/kỳ đã được chia trước đó. Không tự retry vì
+  /// thao tác này tạo ledger entry cho từng hũ và phải tránh ghi nhận hai lần.
+  Future<FundAllocationResult> allocateFundByModel({
+    required double amount,
+    required int periodMonth,
+    required int periodYear,
+    String? modelId,
+    String? note,
+  }) async {
+    final response = await ApiClient.instance
+        .post('/families/$_fid/finance/fund-allocations', {
+          'amount': amount,
+          'periodMonth': periodMonth,
+          'periodYear': periodYear,
+          if (modelId != null && modelId.isNotEmpty) 'modelId': modelId,
+          if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+        });
+    final result = FundAllocationResult.fromJson(
+      Map<String, dynamic>.from(response),
+    );
+    if (result.items.isEmpty) {
+      throw const ApiException(502, 'Kết quả chia quỹ không có danh sách hũ.');
+    }
+    await fetchAll();
+    return result;
   }
 
   Future<void> updateJar(

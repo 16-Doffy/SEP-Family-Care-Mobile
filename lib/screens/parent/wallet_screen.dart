@@ -365,13 +365,27 @@ class _WalletScreenState extends State<WalletScreen> {
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  'Theo hũ — kế hoạch so với thực chi',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textSecondary,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Hạn mức theo tỷ lệ thu nhập — thực chi',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Số bên phải được tính từ tổng thu nhập tháng, không phải số tiền của lần chia quỹ vừa thực hiện.',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        height: 1.35,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 10),
@@ -480,7 +494,8 @@ class _WalletScreenState extends State<WalletScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final e in jarInfo.allocation.rows.asMap().entries) ...[
+                        for (final e
+                            in jarInfo.allocation.rows.asMap().entries) ...[
                           _waffleLegend(
                             e.value.name,
                             _jarColor(e.key),
@@ -524,7 +539,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final summary = state.financeSummary ?? const <String, dynamic>{};
     final budget = _asMap(summary['budget']);
     final goals = _asMap(summary['goals']);
-    final alerts = _asList(summary['alerts']);
+    final alerts = _asMap(summary['alerts']);
     final currency = summary['currency']?.toString() ?? 'VND';
     final balance = _moneyFrom(budget, [
       'actualBalance',
@@ -558,7 +573,7 @@ class _WalletScreenState extends State<WalletScreen> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Đơn vị: $currency · Cảnh báo: ${alerts.length} · Mục tiêu: ${goals.isEmpty ? 'không tải' : 'đã tải'}',
+            'Đơn vị: $currency · Cảnh báo mới: ${_number(alerts['totalNew']).round()} · Mục tiêu: ${goals.isEmpty ? 'không tải' : 'đã tải'}',
             style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
           ),
         ],
@@ -640,6 +655,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _categorySpendingCard(WalletProvider state) {
     final data = state.categorySpendingSummary ?? const <String, dynamic>{};
+    final totalExpense = _number(data['totalExpense']);
     final items = _firstList(data, [
       'byCategory',
       'categories',
@@ -662,7 +678,10 @@ class _WalletScreenState extends State<WalletScreen> {
                   'totalAmount',
                   'expense',
                 ]);
-                final ratio = _number(item['ratio'] ?? item['percentage']);
+                final ratioValue = item['ratio'] ?? item['percentage'];
+                final ratio = ratioValue == null && totalExpense > 0
+                    ? amount / totalExpense
+                    : _number(ratioValue);
                 return _rankRow(name, amount, ratio, AppColors.danger);
               }).toList(),
             ),
@@ -671,6 +690,8 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _memberContributionCard(WalletProvider state) {
     final data = state.memberContributionSummary ?? const <String, dynamic>{};
+    final totals = _asMap(data['totals']);
+    final totalContribution = _number(totals['totalContribution']);
     final members = _firstList(data, ['members', 'items', 'data']);
     return _sectionCard(
       title: 'Đóng góp theo thành viên',
@@ -686,11 +707,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 final name =
                     _firstText(member, ['displayName', 'name', 'fullName']) ??
                     _firstText(user, ['fullName', 'displayName', 'name']) ??
-                    _firstText(item, [
-                      'memberName',
-                      'displayName',
-                      'name',
-                    ]) ??
+                    _firstText(item, ['memberName', 'displayName', 'name']) ??
                     'Thành viên';
                 final amount = _moneyFrom(item, [
                   'totalContribution',
@@ -698,7 +715,10 @@ class _WalletScreenState extends State<WalletScreen> {
                   'actualAmount',
                   'ledgerActualAmount',
                 ]);
-                final ratio = _number(item['ratio'] ?? item['percentage']);
+                final ratioValue = item['ratio'] ?? item['percentage'];
+                final ratio = ratioValue == null && totalContribution > 0
+                    ? amount / totalContribution
+                    : _number(ratioValue);
                 return _rankRow(name, amount, ratio, AppColors.success);
               }).toList(),
             ),
@@ -1666,9 +1686,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     onPressed: () => _showCategoryManagerSheet(context),
                     icon: const Icon(Icons.category_outlined, size: 18),
                     label: Text(
-                      categories.isEmpty
-                          ? 'Tạo danh mục'
-                          : 'Quản lý danh mục',
+                      categories.isEmpty ? 'Tạo danh mục' : 'Quản lý danh mục',
                     ),
                   ),
                 ),
@@ -2006,9 +2024,7 @@ class _WalletScreenState extends State<WalletScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  row.pct > 0
-                      ? '${row.name} · ${row.pct.round()}%'
-                      : row.name,
+                  row.pct > 0 ? '${row.name} · ${row.pct.round()}%' : row.name,
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

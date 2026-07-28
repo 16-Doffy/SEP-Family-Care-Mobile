@@ -157,12 +157,15 @@ class FamilyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // UC17/18 — Thay đổi role: chờ BE-04
-  // Backend hiện chỉ có admin endpoint cho việc này
-  Future<void> updateRole(String memberId, String newRole) async {
-    throw Exception(
-      'Tính năng thay đổi quyền đang được cập nhật từ phía server.',
-    );
+  // PATCH /families/{familyId}/members/{userId}/role — Manager bổ nhiệm/gỡ
+  // Phó nhóm. Endpoint nhận user.id và enum DEPUTY_MEMBER | FAMILY_MEMBER.
+  Future<void> updateRole(String userId, String newRole) async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) throw Exception('Chưa có familyId');
+    await ApiClient.instance.patch('/families/$familyId/members/$userId/role', {
+      'familyRole': newRole,
+    });
+    await fetchMembers();
   }
 
   // POST /families/{familyId}/transfer-ownership — trao quyền Trưởng nhóm cho
@@ -189,6 +192,8 @@ class FamilyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> grantDeputy(String memberId) => updateRole(memberId, 'DEPUTY');
-  Future<void> revokeDeputy(String memberId) => updateRole(memberId, 'MEMBER');
+  Future<void> grantDeputy(String userId) =>
+      updateRole(userId, 'DEPUTY_MEMBER');
+  Future<void> revokeDeputy(String userId) =>
+      updateRole(userId, 'FAMILY_MEMBER');
 }

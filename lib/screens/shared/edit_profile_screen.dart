@@ -49,6 +49,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _sharedCtrl = TextEditingController();
 
   bool _savingFinance = false;
+  bool _savingProfile = false;
   bool _loadingFinance = true;
   bool _incomeShared = false;
   bool _expenseShared = false;
@@ -151,6 +152,44 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _saveProfile() async {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng nhập họ và tên'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+    setState(() => _savingProfile = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<AuthProvider>().updateMyProfile(
+        fullName: name,
+        phone: _phoneCtrl.text,
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Đã cập nhật thông tin cá nhân'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _savingProfile = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
@@ -244,7 +283,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // ── Thông tin cá nhân (read-only — cần PATCH /auth/me từ BE) ──
+                  // ── Thông tin cá nhân — PATCH /auth/me ──
                   _sectionLabel('Thông tin cá nhân'),
                   _fieldCard(
                     children: [
@@ -253,7 +292,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         label: 'Họ và tên hiển thị',
                         hint: 'VD: Nguyễn Văn An',
                         icon: Icons.person_outline_rounded,
-                        enabled: false,
                       ),
                       const Divider(height: 1, color: Color(0xFFF3F4F6)),
                       _inputField(
@@ -262,12 +300,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         hint: 'VD: 0901234567',
                         icon: Icons.phone_outlined,
                         keyboardType: TextInputType.phone,
-                        enabled: false,
                       ),
                     ],
                   ),
-                  _infoNote(
-                    'Để chỉnh sửa tên và số điện thoại, vui lòng liên hệ quản trị viên hoặc chờ tính năng cập nhật.',
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 46,
+                    child: ElevatedButton(
+                      onPressed: _savingProfile ? null : _saveProfile,
+                      child: _savingProfile
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Lưu thông tin cá nhân'),
+                    ),
                   ),
                   const SizedBox(height: 16),
 
@@ -431,14 +478,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         fontWeight: FontWeight.w600,
         color: context.colors.textMuted,
       ),
-    ),
-  );
-
-  Widget _infoNote(String text) => Padding(
-    padding: const EdgeInsets.only(top: 6),
-    child: Text(
-      text,
-      style: GoogleFonts.inter(fontSize: 11, color: context.colors.textMuted),
     ),
   );
 

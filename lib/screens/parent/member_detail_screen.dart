@@ -163,6 +163,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               member.userId != me?.id &&
                               member.status == 'ACTIVE') ...[
                             const SizedBox(height: 14),
+                            if (!member.isManager) ...[
+                              _memberRoleCard(member),
+                              const SizedBox(height: 14),
+                            ],
                             _transferOwnershipCard(member),
                           ],
                           const SizedBox(height: 14),
@@ -795,6 +799,94 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ).showSnackBar(SnackBar(content: Text(e.toString())));
         }
       }
+    }
+  }
+
+  Widget _memberRoleCard(FamilyMember member) {
+    final granting = !member.isDeputy;
+    return _sectionCard(
+      title: 'Quyền Phó nhóm',
+      icon: Icons.admin_panel_settings_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            granting
+                ? 'Phó nhóm có thể hỗ trợ quản lý các luồng được backend cấp quyền.'
+                : '${member.name} hiện đang là Phó nhóm. Bạn có thể đưa thành viên về vai trò thường.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _confirmMemberRoleChange(member),
+              icon: Icon(
+                granting
+                    ? Icons.person_add_alt_1_rounded
+                    : Icons.person_remove_alt_1_rounded,
+                size: 18,
+              ),
+              label: Text(granting ? 'Bổ nhiệm Phó nhóm' : 'Gỡ quyền Phó nhóm'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmMemberRoleChange(FamilyMember member) async {
+    final granting = !member.isDeputy;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(granting ? 'Bổ nhiệm Phó nhóm?' : 'Gỡ quyền Phó nhóm?'),
+        content: Text(
+          granting
+              ? '${member.name} sẽ được cấp vai trò Phó nhóm.'
+              : '${member.name} sẽ trở về vai trò Thành viên.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xác nhận'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final family = context.read<FamilyProvider>();
+      if (granting) {
+        await family.grantDeputy(member.userId);
+      } else {
+        await family.revokeDeputy(member.userId);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            granting ? 'Đã bổ nhiệm Phó nhóm' : 'Đã gỡ quyền Phó nhóm',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     }
   }
 

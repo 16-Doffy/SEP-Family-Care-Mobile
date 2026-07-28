@@ -88,52 +88,15 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         }
       }
 
-      final autoTagged = await _autoTagConfident(sug);
       if (!mounted) return;
-      final remaining = sug.where((s) => !autoTagged.contains(s.id)).toList();
       setState(() {
-        _scan = remaining.isNotEmpty ? FaceScanState.hasSuggestions : scan;
-        _suggestions = remaining;
+        _scan = sug.isNotEmpty ? FaceScanState.hasSuggestions : scan;
+        _suggestions = sug;
         _loading = false;
       });
-      _announceAutoTag(autoTagged.length);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  /// Tự gắn thẻ các gợi ý AI đủ chắc chắn (>= [kFaceAutoTagMinConfidence]) để
-  /// user không phải bấm duyệt. Gợi ý yếu hơn — hoặc BE không trả confidence —
-  /// vẫn ở lại danh sách để duyệt tay.
-  ///
-  /// Trả về id các gợi ý đã gắn thẻ xong để caller loại khỏi danh sách chờ.
-  Future<Set<String>> _autoTagConfident(List<FaceSuggestion> suggestions) async {
-    if (!mounted) return const {};
-    final targets = suggestions
-        .where((s) => s.canAutoTag && !_alreadyTagged(s))
-        .toList();
-    final done = <String>{};
-    for (final s in targets) {
-      try {
-        await _face.confirmSuggestion(widget.mediaId, s.id);
-        done.add(s.id);
-      } catch (_) {
-        // Một gợi ý lỗi không được chặn các gợi ý còn lại; cái lỗi giữ nguyên
-        // trong danh sách để user duyệt tay.
-      }
-    }
-    return done;
-  }
-
-  /// Cho user biết tag vừa được gắn tự động và có thể sửa — auto-tag không có
-  /// người kiểm nên phải hiện ra, không làm âm thầm.
-  void _announceAutoTag(int count) {
-    if (count <= 0) return;
-    _snack(
-      'Đã tự động gắn thẻ $count người. Bỏ thẻ bằng dấu × nếu chưa đúng.',
-      ok: true,
-    );
-    widget.onChanged?.call();
   }
 
   bool _shouldAutoScan(FaceScanState scan, List<FaceSuggestion> suggestions) {
@@ -151,14 +114,11 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       await Future.delayed(const Duration(seconds: 2));
       final scan = await _face.fetchScanStatus(widget.mediaId);
       final sug = await _face.fetchSuggestions(widget.mediaId);
-      final autoTagged = await _autoTagConfident(sug);
       if (!mounted) return;
-      final remaining = sug.where((s) => !autoTagged.contains(s.id)).toList();
       setState(() {
-        _scan = remaining.isNotEmpty ? FaceScanState.hasSuggestions : scan;
-        _suggestions = remaining;
+        _scan = sug.isNotEmpty ? FaceScanState.hasSuggestions : scan;
+        _suggestions = sug;
       });
-      _announceAutoTag(autoTagged.length);
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     } finally {

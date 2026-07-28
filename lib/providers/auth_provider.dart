@@ -405,6 +405,19 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// PATCH /auth/me — cập nhật hồ sơ của tài khoản đang đăng nhập.
+  Future<void> updateMyProfile({
+    required String fullName,
+    String? phone,
+  }) async {
+    if (!isLoggedIn) throw Exception('Bạn chưa đăng nhập');
+    await ApiClient.instance.patch('/auth/me', {
+      'fullName': fullName.trim(),
+      'phone': phone?.trim().isEmpty == true ? null : phone?.trim(),
+    });
+    await refreshMe();
+  }
+
   // POST or PUT /families/{id}/finance/monthly-finances/me
   Future<void> saveMonthlyFinance({
     required double expectedIncome,

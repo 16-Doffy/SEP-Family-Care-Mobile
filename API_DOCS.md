@@ -1,7 +1,7 @@
 # API Backend Analysis — Family Care
 **Server:** https://api.familycare-digital.com/api/v1
 **Swagger UI:** https://api.familycare-digital.com/api/docs
-**Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-11 với swagger mới: 147 paths / 188 operations**. FE wiring audit toàn diện 2026-07-08, đối chiếu swagger 07/11 sau merge main.
+**Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-28 bằng `familycare-swagger-2026-07-28.json`**. FE wiring audit lại sau khi đồng bộ `origin/main` tại `e5aa216`.
 
 > ### 🔄 Cập nhật Tuần 10 (2026-07-23) — swagger **216 paths / 281 operations**
 > Kể từ snapshot 07/11 (147 paths), BE đã ship nhiều module; FE đã wire phần lớn:
@@ -15,7 +15,7 @@
 > - **Goal surplus** 🆕: `GET /finance/financial-goals/surplus-availability`, `POST /finance/financial-goals/{goalId}/surplus-allocations` — ✅ wire (Duy, `goal_detail_screen`).
 > - 🆕 **`POST /families/{familyId}/transfer-ownership`** `{ targetUserId, confirm }` — Trao quyền Trưởng nhóm (FAMILY_MANAGER only) — ✅ wire (`member_detail_screen`, 2026-07-23).
 >
-> **Chưa có / chưa wire:** `GET /finance/monthly-finances/me/history` (biểu đồ member đang loop từng tháng); `PATCH /auth/me`.
+> **Chưa có:** `GET /finance/monthly-finances/me/history` (biểu đồ member đang loop từng tháng). `PATCH /auth/me` và `PATCH /families/{familyId}/members/{userId}/role` đã có trong Swagger 28/07 và đã wire FE.
 > **Cần verify hành vi BE (không thấy trong DTO):** duyệt support-request có tự trừ quỹ + bump `expectedPersonalExpense`? Income có tự vào quỹ? (xem `DE_XUAT_BE_LUONG_TAI_CHINH_2026-07-22.md`).
 
 > ⚠️ **Swagger 07/11 vs 07/07 — +29 path**:
@@ -32,7 +32,7 @@
 > **Cập nhật 2026-07-11 (sau fast-forward lên `origin/main` 6621248):** BE đã ship **module Chat (18 endpoint REST)** —
 > FE đã wire (`chat_provider.dart`, xem mục Chat bên dưới). SOS thêm 2 fix (`sosAlertId`, GPS treo).
 >
-> Vẫn CHƯA có (0 endpoint): Location tracking độc lập, `PATCH /auth/me`, role endpoint user-facing (UC18), Calendar `/events`, AI, FCM token. (Album ĐÃ CÓ từ 2026-07-13 — xem mục Album.)
+> Dòng lịch sử “0 endpoint” trước đây đã hết hiệu lực: Swagger 28/07 đã có location sharing, `PATCH /auth/me`, đổi role Phó nhóm, Calendar, AI Chatbot và device/notification APIs; source Mobile hiện đã wire các nhóm này. Vẫn chưa có endpoint family-facing để sửa `relationship`/nghề nghiệp.
 
 ---
 
@@ -43,7 +43,8 @@
 - `POST /api/v1/auth/login` — Authenticate with email & password. 401 sai thông tin, 403 account bị khóa.
 - `POST /api/v1/auth/refresh` — Rotate token pair bằng refresh token hợp lệ.
 - `POST /api/v1/auth/logout` — Log out. Có `refreshToken` → revoke đúng device; bỏ trống → revoke tất cả.
-- `GET /api/v1/auth/me` — Lấy user đang đăng nhập. **(Vẫn chỉ có GET, chưa có PATCH.)**
+- `GET /api/v1/auth/me` — Lấy user đang đăng nhập.
+- `PATCH /api/v1/auth/me` — **[wire FE 2026-07-28]** cập nhật `fullName`, `phone`; `avatarUrl` có trong DTO nhưng Mobile chưa có upload/avatar storage flow.
 - `POST /api/v1/auth/verify-email` — **[MỚI, đã wire FE 2026-07-07]** Verify email bằng OTP 6 số. Body `VerifyEmailDto { code }`. 400 nếu OTP sai/hết hạn. Xem `VerifyEmailScreen` + `AuthProvider.verifyEmail()`.
 - `POST /api/v1/auth/resend-verification` — **[MỚI, đã wire FE 2026-07-07]** Gửi lại OTP (rate-limited). 400 nếu đã verify hoặc đang cooldown. Xem `AuthProvider.resendVerificationCode()`.
 - `POST /api/v1/auth/forgot-password` — **[MỚI 07/11, đã wire FE]** Body `ForgotPasswordDto { email }`. BE gửi OTP 6 số qua email. Xem `forgot_password_screen.dart` bước 1.
@@ -62,6 +63,7 @@
 - `GET /api/v1/families/{familyId}` — Lấy family (members only). 403 nếu không phải member.
 - `PATCH /api/v1/families/{familyId}` — Update family (MANAGER only). **[wire FE 2026-07-08]** nút ✏️ cạnh tên gia đình trong `member_list_screen.dart` (chỉ Manager thấy).
 - `DELETE /api/v1/families/{familyId}/members/{userId}` — Xóa member (MANAGER only). 400 không xóa được manager.
+- `PATCH /api/v1/families/{familyId}/members/{userId}/role` — **[wire FE 2026-07-28]** Manager bổ nhiệm/gỡ Phó nhóm bằng `familyRole: DEPUTY_MEMBER | FAMILY_MEMBER`. Swagger chưa có endpoint sửa `relationship`.
 
 ### SOS (10 operations — khớp `sos_provider.dart`; +2 endpoint mới 07/11)
 - `POST /api/v1/families/{familyId}/sos/alerts` — Kích hoạt SOS (mọi thành viên). Body `CreateSosAlertDto { sourceType, severity?, initialLatitude?, initialLongitude?, message? }`.
@@ -132,7 +134,7 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - **[MỚI 2026-07-27, wire FE] Face Profile validate:** `POST /face-profiles/{memberId}/validate` là multipart field `files` (3–5 ảnh). FE đọc `canEnroll` và `results[]/reasonCode`, chỉ cho đăng ký khi `canEnroll=true`; nếu endpoint chưa bật và trả `404/405/501`, FE fallback sang luồng enroll hiện tại để không chặn vận hành. ⚠️ [VERIFY WITH OFFICIAL SOURCE] Swagger hiện chưa có response DTO/schema cho validate, FE parse phòng thủ theo ghi chú BE.
 - **[MỚI 2026-07-21, wire FE] Face Profile:** `POST /face-profiles/{memberId}/enroll` là multipart field `files` (Swagger bắt buộc **3–5** ảnh) + `consentConfirmed=true`; `GET /face-profiles/{memberId}` lấy trạng thái; `PATCH .../disable|enable`; `DELETE ...` body `{confirmation: 'DELETE_FACE_PROFILE'}`. UI: Member Detail → Face Profile.
 - **[MỚI 2026-07-21, wire FE] Face Suggestion:** `POST /albums/media/{mediaId}/face-scan {force?}`; `GET .../face-suggestions`; `POST .../{suggestionId}/confirm|reject`. Tag chỉ được tạo qua `confirm`; manual tag độc lập. `album.faceSuggestions` được gate theo subscription khi BE trả featureAccess đầy đủ.
-- **[MỚI 2026-07-28, wire FE] Auto-tag khi AI chắc chắn:** BE **không có** cờ `autoConfirm`/`minConfidence` — `RequestFaceScanDto` chỉ có `force`. Nên FE tự gọi `confirm` cho gợi ý có `confidence >= 0.80` (`kFaceAutoTagMinConfidence`, chuẩn hóa cả thang 0..1 và 0..100) ngay sau khi quét, user không phải bấm duyệt. Thiếu `confidence` → **không** auto (fail-safe), giữ duyệt tay. ⚠️ [VERIFY WITH OFFICIAL SOURCE] Swagger vẫn chưa có response schema cho `face-suggestions`, nên tên field `confidence` và enum `status` là FE parse phòng thủ nhiều biến thể; cần 1 response thật để chốt.
+- **[SỬA 2026-07-28] Face suggestion luôn cần người dùng xác nhận:** FE không tự gọi `confirm` theo confidence. AI chỉ hiển thị gợi ý; chỉ nút **Xác nhận** của người dùng mới tạo tag chính thức, đúng flow nghiệp vụ đã chốt. Swagger vẫn chưa có response schema cho `face-suggestions`, nên tên field `confidence` và enum `status` đang parse phòng thủ; cần BE bổ sung schema/sample thật.
 - **[MỚI 2026-07-28] Gỡ tag — quyền fail-open:** response tag của `GET .../tags` **không** được Swagger document field quyền nào. FE đọc `permissions.canRemove`/`canRemove` nếu có, còn **thiếu thì vẫn cho bấm gỡ** và để BE trả 403 (`AlbumTag.canRemove` = `canRemoveFlag ?? true`). Lý do: tag do AI tự gắn buộc phải gỡ được, nếu default `false` thì BE thiếu field là user mắc kẹt với tag sai. Nếu BE chốt được contract quyền, sửa lại theo BE.
 
 ### Finance — Model & Jars
@@ -176,7 +178,7 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
   - `member-contribution-summary` → `data.members[]` có tên thành viên ở **`member.displayName`** và **`member.user.fullName`** (`MemberContributionSummaryItemResponseDto`), KHÔNG có `memberName` ở cấp ngoài; số tiền là `sharedContribution` / `goalContribution` / `ledgerContributionTotal` / `totalContribution`. FE đọc `item['memberName']` nên mọi dòng rơi về fallback "Thành viên".
   - `category-spending-summary` → `data.byCategory[]` = `{categoryId, name, essentialType, amount}`. Key `name` đã khớp; "Chưa phân loại" là **dữ liệu thật** (ledger entry không có `categoryId`), không phải lỗi parse.
   - **Bài học:** endpoint analytics có schema đầy đủ trong Swagger — phải đọc `components.schemas` thay vì đoán theo tên hợp lý, vì sai tên field không sinh lỗi HTTP nào, chỉ hiện 0.
-- **[MỚI 2026-07-28, wire FE] Phân bổ theo hũ do FE tự tính:** `FinanceSpendingSummaryResponseDto.byJar` bị Swagger ghi là **"Reserved"** (ví dụ `[]`) → BE chưa trả. FE tự tính trong [jar_allocation.dart](lib/utils/jar_allocation.dart): kế hoạch = `thu nhập × allocationPercentage/100`, thực chi = cộng `signedAmount < 0` của ledger entry theo `jarId`. Điều kiện: `CreateLedgerEntryDto` **đã có `jarId`** và `POST /finance/fund-allocations` ghi mỗi hũ thành 1 entry có `jarId` (khác với ghi chú cũ "jar không liên kết ledger" — BE đã bổ sung).
+- **[MỚI 2026-07-28, wire FE] Phân bổ theo hũ:** `POST /finance/fund-allocations {amount, periodMonth, periodYear, modelId?, note?}` đã được nối tại màn Mô hình tài chính qua nút **Chia quỹ tháng này theo mô hình**. BE trả `409` nếu mô hình/kỳ đã được chia, FE không tự retry để tránh tạo ledger entry trùng. `FinanceSpendingSummaryResponseDto.byJar` vẫn được Swagger ghi là **"Reserved"** (ví dụ `[]`), nên biểu đồ hiện tự tính trong [jar_allocation.dart](lib/utils/jar_allocation.dart): kế hoạch = `thu nhập × allocationPercentage/100`, thực chi = cộng `signedAmount < 0` của ledger entry theo `jarId`.
   - ⚠️ `GET /finance/jars` trả hũ của **mọi mô hình** cho quản lý (member thường chỉ thấy mô hình ACTIVE) → phải lọc `financeModelId == activeModel.id` trước khi cộng, không thì lẫn hũ của mô hình cũ.
   - ⚠️ `FinanceProvider.activeModel` fallback về model đầu tiên **kể cả DRAFT** → màn hình phải tự check `model.isActive` trước khi coi là đang áp dụng.
   - Jar **không có** field số dư (`JarData.balance` đọc `balance`/`currentBalance` đều không có trong schema → luôn 0), nên không dùng được để suy ra thực chi; buộc phải cộng từ ledger entry.
@@ -376,6 +378,13 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 
 ### CreateFinanceJarDto
 - `financeModelId`: uuid *(required)* · `name` *(required)* · `jarCode` *(required)* · `allocationPercentage`: number *(required, 0–100)* · `description` · `isActive` (default true)
+
+### Chia quỹ theo mô hình — `POST /families/{familyId}/finance/fund-allocations`
+- Body: `amount` *(required, >0)* · `periodMonth` *(required, 1–12)* · `periodYear` *(required)* · `modelId` *(optional; bỏ trống để BE lấy model ACTIVE)* · `note` *(optional)*.
+- FE kích hoạt model trước, sau đó cho Manager chọn kỳ và nhập tổng quỹ cần chia.
+- Response dùng `items[]` để hiển thị từng hũ: `jarId`, `jarName`, `jarCode`, `allocationPercentage`, `amount`, `ledgerEntryId`.
+- Handle: `400` model thiếu hũ/tổng tỷ lệ khác 100%; `404` không có model ACTIVE/modelId sai; `409` model + kỳ đã được chia trước đó.
+- FE chỉ chặn `amount` vượt số dư khi đã tải được quỹ khả dụng; BE vẫn phải validate số dư ở server để chống request trực tiếp/race condition.
 
 ### CreateFinanceCategoryDto
 - `name` *(required)* · `categoryType`: `INCOME | EXPENSE` *(required)* · `essentialType`: `ESSENTIAL | NON_ESSENTIAL | NEUTRAL` (default `NEUTRAL`)

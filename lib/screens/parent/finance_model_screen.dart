@@ -3,9 +3,12 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../providers/finance_provider.dart' as fp;
+import '../../providers/wallet_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/app_feature_icon.dart';
+import '../../widgets/money_input.dart';
 
 // UC-FIN-01 — Chọn mô hình tài chính gia đình (5 Jars / 80-20 / Custom)
 // UC-FIN-02 — Cấu hình các khoản (Jars / Funds)
@@ -54,6 +57,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   bool _hasLocalEdits = false;
   // Tên model hiện gia đình đang active (để hiện banner — null nếu chưa có)
   String? _currentModelTypeLabel;
+  String? _currentModelId;
 
   // Giá trị mặc định KHỚP với BE thật (verify qua API, không phải số bịa).
   final List<FinanceJarUi> _fiveJars = [
@@ -140,7 +144,10 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   // với số liệu thật đã lưu, không phải số mặc định cứng.
   Future<void> _loadCurrentModel() async {
     final provider = context.read<fp.FinanceProvider>();
-    await provider.fetchAll();
+    await Future.wait([
+      provider.fetchAll(),
+      context.read<WalletProvider>().fetchWallets(),
+    ]);
     if (!mounted) return;
     if (_hasLocalEdits || _saving) {
       setState(() => _loadingCurrent = false);
@@ -161,6 +168,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         .where((j) => j.financeModelId == active.id)
         .toList();
     setState(() {
+      _currentModelId = active.id;
       _currentModelTypeLabel = switch (active.modelType) {
         'FIVE_JARS' => 'Quy tắc 5 Lọ',
         'EIGHTY_TWENTY' => 'Quy tắc 80/20',
@@ -383,6 +391,21 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
                   const SizedBox(height: 24),
 
+                  if (_currentModelId != null) ...[
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        side: const BorderSide(color: AppColors.link),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: _saving ? null : _showFundAllocationDialog,
+                      icon: const Icon(Icons.account_balance_wallet_outlined),
+                      label: const Text('Chia quỹ theo mô hình đang áp dụng'),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.link,
@@ -711,6 +734,257 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     );
   }
 
+  Future<void> _showFundAllocationDialog() async {
+    final amountController = TextEditingController();
+    final noteController = TextEditingController();
+    final now = DateTime.now();
+    var selectedMonth = now.month;
+    var selectedYear = now.year;
+    final availableBalance = context.read<WalletProvider>().totalBalance;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Chia quỹ theo mô hình'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Số tiền sẽ được chia vào từng hũ theo tỷ lệ của mô hình đang áp dụng.',
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      initialValue: selectedMonth,
+                      decoration: const InputDecoration(labelText: 'Tháng'),
+                      items: List.generate(
+                        12,
+                        (index) => DropdownMenuItem(
+                          value: index + 1,
+                          child: Text('Tháng ${index + 1}'),
+                        ),
+                      ),
+                      onChanged: (value) => setDialogState(
+                        () => selectedMonth = value ?? selectedMonth,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      initialValue: selectedYear,
+                      decoration: const InputDecoration(labelText: 'Năm'),
+                      items: List.generate(5, (index) {
+                        final year = now.year - 1 + index;
+                        return DropdownMenuItem(
+                          value: year,
+                          child: Text('$year'),
+                        );
+                      }),
+                      onChanged: (value) => setDialogState(
+                        () => selectedYear = value ?? selectedYear,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType: TextInputType.number,
+                inputFormatters: const [ThousandsSeparatorInputFormatter()],
+                decoration: const InputDecoration(
+                  labelText: 'Số tiền cần chia (đ)',
+                  hintText: 'Ví dụ: 10.000.000',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteController,
+                decoration: const InputDecoration(
+                  labelText: 'Ghi chú (không bắt buộc)',
+                ),
+              ),
+              if (availableBalance > 0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Quỹ khả dụng hiện tại: ${_formatMoney(availableBalance)} đ',
+                  style: const TextStyle(color: AppColors.textMuted),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final amount = parseMoneyInput(amountController.text);
+                if (amount <= 0) {
+                  _showFundValidationMessage(
+                    'Vui lòng nhập số tiền lớn hơn 0.',
+                  );
+                  return;
+                }
+                if (availableBalance > 0 && amount > availableBalance) {
+                  _showFundValidationMessage(
+                    'Số tiền chia không được vượt quá quỹ khả dụng.',
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Xác nhận chia quỹ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final amount = parseMoneyInput(amountController.text);
+    final note = noteController.text;
+    if (confirmed != true || amount <= 0 || !mounted) {
+      amountController.dispose();
+      noteController.dispose();
+      return;
+    }
+
+    // showDialog hoàn tất Future ngay khi pop được gọi, trước khi animation đóng
+    // route kết thúc hẳn. Chờ route cũ deactive xong để không mở result sheet
+    // chồng lên và gây assertion `_dependents.isEmpty` của Flutter framework.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    amountController.dispose();
+    noteController.dispose();
+    if (!mounted) return;
+
+    setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final result = await context
+          .read<fp.FinanceProvider>()
+          .allocateFundByModel(
+            amount: amount,
+            periodMonth: selectedMonth,
+            periodYear: selectedYear,
+            modelId: _currentModelId,
+            note: note,
+          );
+      if (!mounted) return;
+      await _showFundAllocationResult(result);
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_fundAllocationError(e)),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _showFundValidationMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: AppColors.danger,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
+  String _fundAllocationError(Object error) {
+    if (error is ApiException) {
+      return switch (error.statusCode) {
+        400 =>
+          'Không thể chia quỹ: mô hình chưa có hũ hoặc tổng tỷ lệ các hũ chưa bằng 100%.',
+        404 =>
+          'Không tìm thấy mô hình đang áp dụng. Vui lòng lưu và kích hoạt mô hình trước.',
+        409 =>
+          'Kỳ này đã được chia quỹ theo mô hình đã chọn. Không thể chia trùng.',
+        _ => error.message,
+      };
+    }
+    return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  static String _formatMoney(double amount) =>
+      amount.round().toString().replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+        (match) => '${match[1]}.',
+      );
+
+  Future<void> _showFundAllocationResult(fp.FundAllocationResult result) {
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Kết quả chia quỹ',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${result.modelName} • ${result.periodMonth}/${result.periodYear} • ${_formatMoney(result.totalAmount)} đ',
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 16),
+              ...result.items.map(
+                (item) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.jarName.isEmpty ? item.jarCode : item.jarName,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      Text(
+                        '${item.allocationPercentage.toStringAsFixed(item.allocationPercentage % 1 == 0 ? 0 : 1)}%',
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        '${_formatMoney(item.amount)} đ',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () => Navigator.pop(sheetContext),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                child: const Text('Hoàn tất'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Lưu — flow thật khớp BE (verify 2026-06-26) ───────────────────────────
   //   1. Tạo model mới (BE tự sinh jar mặc định cho FIVE_JARS/EIGHTY_TWENTY)
   //   2. Đồng bộ % người dùng chỉnh khác mặc định → PATCH từng jar
@@ -779,6 +1053,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
       if (mounted) {
         setState(() {
+          _currentModelId = created.id;
           _currentModelTypeLabel = modelName;
           _hasLocalEdits = false;
           _loadingCurrent = false;
@@ -789,6 +1064,12 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
             backgroundColor: AppColors.success,
           ),
         );
+        // Để _save kết thúc và route hiện tại ổn định trước khi mở dialog kế
+        // tiếp. Mở/await dialog ngay trong vòng đời lưu có thể làm Flutter
+        // deactive InheritedWidget khi modal vẫn còn dependency.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showFundAllocationDialog();
+        });
       }
     } catch (e) {
       messenger.showSnackBar(

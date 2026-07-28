@@ -31,10 +31,6 @@ String _nameFrom(Map<String, dynamic>? map) {
   ).trim();
 }
 
-/// Ngưỡng tin cậy tối thiểu để FE tự gắn thẻ mà không cần người duyệt.
-/// BE chưa có cờ autoConfirm nên việc tự gắn thẻ do FE quyết định qua ngưỡng này.
-const double kFaceAutoTagMinConfidence = 0.80;
-
 /// Trạng thái quét khuôn mặt của một media album. Response schema của
 /// GET face-scan để trống trong Swagger → chuẩn hóa nhiều biến thể tên trạng
 /// thái mà BE có thể trả (theo flow Nhật: chưa quét / đang quét / đã quét /
@@ -87,16 +83,6 @@ class FaceSuggestion {
     if (c == null) return null;
     final v = c > 1 ? c / 100 : c;
     return v.clamp(0, 1).toDouble();
-  }
-
-  /// Đủ chắc chắn để tự gắn thẻ, không cần người duyệt.
-  ///
-  /// Thiếu `confidence` → false (fail-safe, KHÁC với các chỗ fail-open khác
-  /// trong file): tự gắn sai danh tính một người thật tệ hơn là bắt duyệt tay,
-  /// và BE chưa chốt có trả confidence hay không.
-  bool get canAutoTag {
-    final c = normalizedConfidence;
-    return !isResolved && c != null && c >= kFaceAutoTagMinConfidence;
   }
 
   /// Gợi ý đã được xử lý (xác nhận / từ chối) thì không còn là việc chờ làm.

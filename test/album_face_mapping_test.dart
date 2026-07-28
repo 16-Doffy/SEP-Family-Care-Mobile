@@ -20,54 +20,34 @@ void main() {
     expect(suggestion.memberName, 'Zap MEM 2');
   });
 
-  test('FaceSuggestion marks resolved statuses so they stop showing as todo', () {
-    FaceSuggestion withStatus(String status) =>
-        FaceSuggestion.fromJson({'id': 's1', 'status': status});
+  test(
+    'FaceSuggestion marks resolved statuses so they stop showing as todo',
+    () {
+      FaceSuggestion withStatus(String status) =>
+          FaceSuggestion.fromJson({'id': 's1', 'status': status});
 
-    // Đã xử lý → không được hiện lại kèm nút Xác nhận.
-    expect(withStatus('CONFIRMED').isResolved, isTrue);
-    expect(withStatus('REJECTED').isResolved, isTrue);
-    expect(withStatus('ACCEPTED').isResolved, isTrue);
+      // Đã xử lý → không được hiện lại kèm nút Xác nhận.
+      expect(withStatus('CONFIRMED').isResolved, isTrue);
+      expect(withStatus('REJECTED').isResolved, isTrue);
+      expect(withStatus('ACCEPTED').isResolved, isTrue);
 
-    // Chờ xử lý, hoặc status lạ/thiếu → vẫn hiện (fail-open).
-    expect(withStatus('PENDING').isResolved, isFalse);
-    expect(withStatus('').isResolved, isFalse);
-    expect(withStatus('SOME_NEW_BE_STATUS').isResolved, isFalse);
-  });
+      // Chờ xử lý, hoặc status lạ/thiếu → vẫn hiện (fail-open).
+      expect(withStatus('PENDING').isResolved, isFalse);
+      expect(withStatus('').isResolved, isFalse);
+      expect(withStatus('SOME_NEW_BE_STATUS').isResolved, isFalse);
+    },
+  );
 
-  group('auto-tag khi AI chắc chắn (>= 80%)', () {
-    FaceSuggestion withConfidence(dynamic confidence) =>
-        FaceSuggestion.fromJson({'id': 's1', 'confidence': confidence});
-
-    test('đạt ngưỡng thì tự gắn thẻ, thang 0..1 hay 0..100 đều hiểu', () {
-      expect(withConfidence(0.93).canAutoTag, isTrue);
-      expect(withConfidence(0.80).canAutoTag, isTrue, reason: 'đúng ngưỡng');
-      expect(withConfidence(93).canAutoTag, isTrue, reason: 'BE trả 0..100');
-      expect(withConfidence(80).canAutoTag, isTrue);
-    });
-
-    test('dưới ngưỡng thì vẫn phải duyệt tay', () {
-      expect(withConfidence(0.79).canAutoTag, isFalse);
-      expect(withConfidence(50).canAutoTag, isFalse);
-    });
-
-    test('thiếu confidence thì KHÔNG tự gắn thẻ (fail-safe)', () {
-      expect(withConfidence(null).canAutoTag, isFalse);
-      expect(
-        FaceSuggestion.fromJson({'id': 's1'}).canAutoTag,
-        isFalse,
-        reason: 'BE không trả confidence → không được tự gán danh tính',
-      );
-    });
-
-    test('gợi ý đã xử lý thì không tự gắn thẻ lại', () {
-      final resolved = FaceSuggestion.fromJson({
+  test('confidence chỉ dùng để hiển thị, không tự xác nhận suggestion', () {
+    expect(
+      FaceSuggestion.fromJson({
         'id': 's1',
-        'confidence': 0.99,
-        'status': 'CONFIRMED',
-      });
-      expect(resolved.canAutoTag, isFalse);
-    });
+        'confidence': 93,
+      }).normalizedConfidence,
+      0.93,
+    );
+    // Flow nghiệp vụ bắt buộc người dùng gọi confirm thủ công; model không còn
+    // cung cấp cờ auto-tag dựa trên confidence.
   });
 
   group('quyền gỡ tag', () {
