@@ -6,7 +6,12 @@ import '../../providers/auth_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
+import '../../widgets/app_bottom_sheet_scaffold.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/json_report_view.dart';
+import '../../widgets/retry_state.dart';
+import '../../widgets/status_badge.dart';
 
 class SupportRequestScreen extends StatefulWidget {
   const SupportRequestScreen({super.key});
@@ -105,9 +110,9 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0F9FF),
+                  color: const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFBAE6FD)),
+                  border: Border.all(color: AppColors.progressTrack),
                 ),
                 child: Row(
                   children: [
@@ -117,10 +122,10 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
                       child: Text(
                         isManager
                             ? 'Phê duyệt hoặc từ chối yêu cầu hỗ trợ chi tiêu từ thành viên.'
-                            : 'Gửi yêu cầu hỗ trợ chi tiêu tới trưởng nhóm. Đây là yêu cầu ảo — không có tiền thực.',
+                            : 'Gửi yêu cầu hỗ trợ chi tiêu tới người quản lý gia đình. Đây là yêu cầu ảo — không có tiền thực.',
                         style: GoogleFonts.inter(
                           fontSize: 12,
-                          color: const Color(0xFF0369A1),
+                          color: AppColors.primary600,
                         ),
                       ),
                     ),
@@ -132,9 +137,15 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
 
             Expanded(
               child: provider.loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: const [SkeletonList(items: 4, cardHeight: 118)],
+                    )
                   : provider.error != null
-                  ? _errorView(provider)
+                  ? RetryState(
+                      message: provider.error!,
+                      onRetry: () => provider.fetchRequests(),
+                    )
                   : provider.requests.isEmpty
                   ? _emptyView(isManager)
                   : RefreshIndicator(
@@ -185,49 +196,13 @@ class _SupportRequestScreenState extends State<SupportRequestScreen> {
   }
 
   Widget _emptyView(bool isManager) => Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(
-          Icons.request_quote_rounded,
-          size: 48,
-          color: AppColors.primary500,
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Chưa có yêu cầu nào',
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          isManager
-              ? 'Chưa có thành viên nào gửi yêu cầu'
-              : 'Nhấn dấu + để gửi yêu cầu hỗ trợ',
-          style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
-        ),
-      ],
-    ),
-  );
-
-  Widget _errorView(SupportRequestProvider provider) => Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(
-          Icons.error_outline_rounded,
-          size: 48,
-          color: AppColors.danger,
-        ),
-        const SizedBox(height: 12),
-        ElevatedButton(
-          onPressed: () => provider.fetchRequests(),
-          child: const Text('Thử lại'),
-        ),
-      ],
+    child: EmptyState(
+      icon: Icons.request_quote_rounded,
+      title: 'Chưa có yêu cầu nào',
+      subtitle: isManager
+          ? 'Chưa có thành viên nào gửi yêu cầu.'
+          : 'Nhấn dấu + để gửi yêu cầu hỗ trợ.',
+      compact: true,
     ),
   );
 
@@ -386,25 +361,13 @@ class _RequestCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => _showDetail(context),
-      child: Container(
+      child: AppCard(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: request.isPending
-                ? statusColor.withValues(alpha: 0.4)
-                : const Color(0xFFF3F4F6),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
+        radius: 16,
+        borderColor: request.isPending
+            ? statusColor.withValues(alpha: 0.4)
+            : AppColors.neutralBg,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -448,24 +411,7 @@ class _RequestCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: statusColor,
-                    ),
-                  ),
-                ),
+                StatusBadge(label: statusLabel, status: request.status),
               ],
             ),
 
@@ -626,8 +572,9 @@ class _RequestCard extends StatelessWidget {
                       setDialogState(() => submitting = true);
                       try {
                         await provider.cancel(request.id);
-                        if (dialogContext.mounted)
+                        if (dialogContext.mounted) {
                           Navigator.of(dialogContext).pop();
+                        }
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -807,7 +754,7 @@ class _RequestCard extends StatelessWidget {
     'APPROVED' => AppColors.success,
     'REJECTED' => AppColors.danger,
     'CANCELED' || 'CANCELLED' => AppColors.textMuted,
-    _ => const Color(0xFFF59E0B),
+    _ => AppColors.accent500,
   };
 
   static String _statusLabel(String s) => switch (s.toUpperCase()) {
@@ -876,32 +823,12 @@ class _RequestDetailSheetState extends State<_RequestDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        24,
-        24,
-        MediaQuery.of(context).viewInsets.bottom + 32,
-      ),
+    return AppBottomSheetScaffold(
+      title: 'Chi tiết yêu cầu',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.search_rounded, size: 20, color: AppColors.link),
-              const SizedBox(width: 8),
-              Text(
-                'Chi tiết yêu cầu',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           if (_loading)
             const Center(
               child: Padding(

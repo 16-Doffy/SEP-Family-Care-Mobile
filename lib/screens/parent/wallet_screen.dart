@@ -6,7 +6,11 @@ import '../../providers/finance_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_ui_tokens.dart';
+import '../../widgets/app_card.dart';
+import '../../widgets/empty_state.dart';
 import '../../widgets/ring_chart.dart';
+import '../../widgets/retry_state.dart';
 import '../../widgets/waffle_chart.dart';
 import '../../widgets/money_input.dart';
 
@@ -68,11 +72,17 @@ class _WalletScreenState extends State<WalletScreen> {
 
             Expanded(
               child: walletState.isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? ListView(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      children: const [
+                        SkeletonList(items: 4, cardHeight: 116),
+                        SizedBox(height: 110),
+                      ],
+                    )
                   : walletState.error != null
-                  ? _errorView(
-                      walletState.error!,
-                      () => walletState.fetchWallets(),
+                  ? RetryState(
+                      message: walletState.error!,
+                      onRetry: () => walletState.fetchWallets(),
                     )
                   : ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -183,15 +193,15 @@ class _WalletScreenState extends State<WalletScreen> {
     final spentRatio = income > 0 ? expense / income : 0.0;
     final bufferPct = income > 0 ? ((remaining / income) * 100).round() : 0;
     final badgeBg = bufferPct < 10
-        ? const Color(0xFFFEE2E2)
+        ? AppColors.dangerLight
         : bufferPct < 30
-        ? const Color(0xFFFFFBEB)
-        : const Color(0xFFDCFCE7);
+        ? AppColors.amberLight
+        : AppColors.safeLight;
     final badgeTxt = bufferPct < 10
-        ? const Color(0xFF991B1B)
+        ? AppColors.dangerDark
         : bufferPct < 30
-        ? const Color(0xFF92400E)
-        : const Color(0xFF166534);
+        ? AppColors.amberDark
+        : AppColors.safeDark;
 
     return [
       _sectionCard(
@@ -205,7 +215,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   size: 110,
                   strokeWidth: 14,
                   color: AppColors.shared,
-                  trackColor: const Color(0xFFDCFCE7),
+                  trackColor: AppColors.safeLight,
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -345,7 +355,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   const SizedBox(height: 10),
                   _waffleLegend(
                     'Dư',
-                    const Color(0xFFE5E7EB),
+                    AppColors.progressTrack,
                     _fmt(remaining.round()),
                     '$bufferPct%',
                   ),
@@ -357,8 +367,176 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       const SizedBox(height: 16),
 
+      _financeSummaryCard(state),
+      const SizedBox(height: 16),
+
+      _cashFlowCard(state),
+      const SizedBox(height: 16),
+
+      _categorySpendingCard(state),
+      const SizedBox(height: 16),
+
+      _memberContributionCard(state),
+      const SizedBox(height: 16),
+
       _alertBar(remaining.round(), bufferPct),
     ];
+  }
+
+  Widget _financeSummaryCard(WalletProvider state) {
+    final summary = state.financeSummary ?? const <String, dynamic>{};
+    final budget = _asMap(summary['budget']);
+    final goals = _asMap(summary['goals']);
+    final alerts = _asList(summary['alerts']);
+    final currency = summary['currency']?.toString() ?? 'VND';
+    final balance = _moneyFrom(budget, [
+      'actualBalance',
+      'balance',
+      'currentBalance',
+      'remainingAmount',
+    ], fallback: state.totalBalance);
+    final income = _moneyFrom(budget, [
+      'actualIncome',
+      'totalIncome',
+      'income',
+    ], fallback: state.monthlyIncome);
+    final expense = _moneyFrom(budget, [
+      'actualExpense',
+      'totalExpense',
+      'expense',
+    ], fallback: state.monthlyExpense);
+    return _sectionCard(
+      title: 'Tổng quan Finance API',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _metricPill('Số dư', _fmt(balance.round()), AppColors.link),
+              _metricPill('Thu', _fmt(income.round()), AppColors.success),
+              _metricPill('Chi', _fmt(expense.round()), AppColors.danger),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Đơn vị: $currency · Cảnh báo: ${alerts.length} · Mục tiêu: ${goals.isEmpty ? 'không tải' : 'đã tải'}',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cashFlowCard(WalletProvider state) {
+    final data = state.cashFlowSummary ?? const <String, dynamic>{};
+    final totals = _asMap(data['totals']);
+    final byMonth = _firstList(data, ['byMonth', 'items', 'data']);
+    final income = _moneyFrom(totals, ['income', 'totalIncome', 'inflow']);
+    final expense = _moneyFrom(totals, ['expense', 'totalExpense', 'outflow']);
+    final net = _moneyFrom(totals, ['net', 'netCashFlow', 'balance']);
+    return _sectionCard(
+      title: 'Dòng tiền vào - ra',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _miniMetric('Vào', income, AppColors.success)),
+              const SizedBox(width: 8),
+              Expanded(child: _miniMetric('Ra', expense, AppColors.danger)),
+              const SizedBox(width: 8),
+              Expanded(child: _miniMetric('Net', net, AppColors.link)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (byMonth.isEmpty)
+            _emptyFinanceText('Chưa có dữ liệu dòng tiền trong kỳ này.')
+          else
+            ...byMonth.take(4).map((item) {
+              final label =
+                  item['month']?.toString() ??
+                  item['period']?.toString() ??
+                  'Kỳ';
+              final monthIn = _moneyFrom(item, [
+                'income',
+                'totalIncome',
+                'inflow',
+              ]);
+              final monthOut = _moneyFrom(item, [
+                'expense',
+                'totalExpense',
+                'outflow',
+              ]);
+              final maxValue = [
+                monthIn.abs(),
+                monthOut.abs(),
+                1.0,
+              ].reduce((a, b) => a > b ? a : b);
+              return _cashFlowRow(label, monthIn, monthOut, maxValue);
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _categorySpendingCard(WalletProvider state) {
+    final data = state.categorySpendingSummary ?? const <String, dynamic>{};
+    final items = _firstList(data, [
+      'byCategory',
+      'categories',
+      'items',
+      'data',
+    ]);
+    return _sectionCard(
+      title: 'Chi tiêu theo danh mục',
+      child: items.isEmpty
+          ? _emptyFinanceText('Chưa có chi tiêu theo danh mục trong kỳ này.')
+          : Column(
+              children: items.take(5).map((item) {
+                final name =
+                    item['categoryName']?.toString() ??
+                    item['name']?.toString() ??
+                    item['category']?.toString() ??
+                    'Danh mục';
+                final amount = _moneyFrom(item, [
+                  'amount',
+                  'totalAmount',
+                  'expense',
+                ]);
+                final ratio = _number(item['ratio'] ?? item['percentage']);
+                return _rankRow(name, amount, ratio, AppColors.danger);
+              }).toList(),
+            ),
+    );
+  }
+
+  Widget _memberContributionCard(WalletProvider state) {
+    final data = state.memberContributionSummary ?? const <String, dynamic>{};
+    final members = _firstList(data, ['members', 'items', 'data']);
+    return _sectionCard(
+      title: 'Đóng góp theo thành viên',
+      child: members.isEmpty
+          ? _emptyFinanceText('Chưa có dữ liệu đóng góp thành viên.')
+          : Column(
+              children: members.take(5).map((item) {
+                final name =
+                    item['memberName']?.toString() ??
+                    item['displayName']?.toString() ??
+                    item['name']?.toString() ??
+                    'Thành viên';
+                final amount = _moneyFrom(item, [
+                  'amount',
+                  'totalContribution',
+                  'actualAmount',
+                  'ledgerActualAmount',
+                ]);
+                final ratio = _number(item['ratio'] ?? item['percentage']);
+                return _rankRow(name, amount, ratio, AppColors.success);
+              }).toList(),
+            ),
+    );
   }
 
   List<Widget> _buildHistory(WalletProvider state) {
@@ -394,7 +572,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         height: 38,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0xFFF3F4F6),
+                          color: AppColors.neutralBg,
                         ),
                         alignment: Alignment.center,
                         child: Icon(
@@ -842,8 +1020,8 @@ class _WalletScreenState extends State<WalletScreen> {
                                 contentPadding: EdgeInsets.zero,
                                 leading: CircleAvatar(
                                   backgroundColor: isIncome
-                                      ? const Color(0xFFDCFCE7)
-                                      : const Color(0xFFFEE2E2),
+                                      ? AppColors.safeLight
+                                      : AppColors.dangerLight,
                                   child: Icon(
                                     isIncome
                                         ? Icons.arrow_downward
@@ -1136,7 +1314,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         width: 36,
                         height: 36,
                         decoration: const BoxDecoration(
-                          color: Color(0xFFDCFCE7),
+                          color: AppColors.safeLight,
                           borderRadius: BorderRadius.all(Radius.circular(8)),
                         ),
                         child: const Icon(
@@ -1172,7 +1350,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         width: 36,
                         height: 36,
                         decoration: const BoxDecoration(
-                          color: Color(0xFFFEE2E2),
+                          color: AppColors.dangerLight,
                           borderRadius: BorderRadius.all(Radius.circular(8)),
                         ),
                         child: const Icon(
@@ -1361,40 +1539,8 @@ class _WalletScreenState extends State<WalletScreen> {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
-  Widget _errorView(String msg, VoidCallback onRetry) => Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          'Lỗi tải dữ liệu',
-          style: GoogleFonts.inter(fontSize: 15, color: AppColors.danger),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          msg,
-          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        ElevatedButton(onPressed: onRetry, child: const Text('Thử lại')),
-      ],
-    ),
-  );
-
   Widget _sectionCard({required String title, required Widget child}) =>
-      Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
+      AppCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1413,6 +1559,230 @@ class _WalletScreenState extends State<WalletScreen> {
           ],
         ),
       );
+
+  Widget _metricPill(String label, String value, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _miniMetric(String label, double amount, Color color) => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          _fmt(amount.round()),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _cashFlowRow(String label, double income, double expense, double max) {
+    final incomeFlex = ((income.abs() / max) * 100).round().clamp(1, 99);
+    final expenseFlex = ((expense.abs() / max) * 100).round().clamp(1, 99);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        flex: incomeFlex,
+                        child: Container(height: 8, color: AppColors.success),
+                      ),
+                      Flexible(
+                        flex: 100 - incomeFlex,
+                        child: Container(
+                          height: 8,
+                          color: AppColors.progressTrack,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        flex: expenseFlex,
+                        child: Container(height: 8, color: AppColors.danger),
+                      ),
+                      Flexible(
+                        flex: 100 - expenseFlex,
+                        child: Container(
+                          height: 8,
+                          color: AppColors.progressTrack,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _rankRow(String label, double amount, double ratio, Color color) {
+    final progress = ratio > 0 ? (ratio / 100).clamp(0.0, 1.0) : 0.0;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              Text(
+                _fmt(amount.round()),
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: AppColors.progressTrack,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyFinanceText(String message) => Text(
+    message,
+    style: GoogleFonts.inter(
+      fontSize: 12,
+      height: 1.4,
+      color: AppColors.textMuted,
+    ),
+  );
+
+  Map<String, dynamic> _asMap(dynamic value) =>
+      value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+
+  List<Map<String, dynamic>> _asList(dynamic value) {
+    if (value is! List) return <Map<String, dynamic>>[];
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _firstList(
+    Map<String, dynamic> root,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final list = _asList(root[key]);
+      if (list.isNotEmpty) return list;
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  double _moneyFrom(
+    Map<String, dynamic> map,
+    List<String> keys, {
+    double fallback = 0,
+  }) {
+    for (final key in keys) {
+      final value = map[key];
+      if (value != null) return _number(value);
+    }
+    return fallback;
+  }
+
+  double _number(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
 
   Widget _barLegend(String label, Color color, String val) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1498,23 +1868,23 @@ class _WalletScreenState extends State<WalletScreen> {
     final String title, sub;
     if (bufferPct < 10) {
       icon = Icons.error_outline_rounded;
-      bg = const Color(0xFFFEE2E2);
-      tc = const Color(0xFF991B1B);
-      sc = const Color(0xFFB91C1C);
+      bg = AppColors.dangerLight;
+      tc = AppColors.dangerDark;
+      sc = AppColors.danger;
       title = 'Cảnh báo ngân sách';
       sub = 'Chỉ còn ${_fmt(remaining)} ($bufferPct% dự phòng)';
     } else if (bufferPct < 30) {
       icon = Icons.warning_amber_rounded;
-      bg = const Color(0xFFFFFBEB);
-      tc = const Color(0xFF92400E);
-      sc = const Color(0xFFB45309);
+      bg = AppColors.amberLight;
+      tc = AppColors.amberDark;
+      sc = AppColors.amberText;
       title = 'Thu gần Chi';
       sub = 'Còn ${_fmt(remaining)} ($bufferPct% dự phòng)';
     } else {
       icon = Icons.check_circle_outline_rounded;
-      bg = const Color(0xFFF0FDF4);
-      tc = const Color(0xFF166634);
-      sc = const Color(0xFF15803D);
+      bg = AppColors.safeLight;
+      tc = AppColors.safeDark;
+      sc = AppColors.safe;
       title = 'Dư ${_fmt(remaining)} — Tháng tốt!';
       sub = 'Còn $bufferPct% dự phòng';
     }
@@ -1623,14 +1993,8 @@ class _WalletScreenState extends State<WalletScreen> {
       height: 40,
       decoration: BoxDecoration(
         color: AppColors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        boxShadow: AppShadows.soft,
       ),
       child: const Icon(
         Icons.arrow_back_ios_new_rounded,

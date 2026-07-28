@@ -16,9 +16,7 @@ class AiConversation {
     return AiConversation(
       id: _str(json['id'] ?? json['conversationId']),
       title: _str(
-        json['conversationTitle'] ??
-            json['title'] ??
-            json['conversationName'],
+        json['conversationTitle'] ?? json['title'] ?? json['conversationName'],
         fallback: 'Cuộc trò chuyện mới',
       ),
       lastMessage: rawLast is Map
@@ -54,7 +52,8 @@ class AiMessage {
   }) {
     final id = _str(json['id'] ?? json['messageId']);
     final rawAction = json['pendingAction'];
-    final parsedAction = pendingAction ??
+    final parsedAction =
+        pendingAction ??
         (rawAction is Map
             ? AiPendingAction.fromJson(
                 Map<String, dynamic>.from(rawAction),
@@ -72,12 +71,12 @@ class AiMessage {
   }
 
   factory AiMessage.localUser(String content) => AiMessage(
-        id: 'local-${DateTime.now().microsecondsSinceEpoch}',
-        senderType: 'USER',
-        content: content,
-        createdAt: DateTime.now(),
-        isLocal: true,
-      );
+    id: 'local-${DateTime.now().microsecondsSinceEpoch}',
+    senderType: 'USER',
+    content: content,
+    createdAt: DateTime.now(),
+    isLocal: true,
+  );
 
   bool get isUser {
     final type = senderType.toUpperCase();
@@ -85,14 +84,14 @@ class AiMessage {
   }
 
   AiMessage copyWith({AiPendingAction? pendingAction}) => AiMessage(
-        id: id,
-        senderType: senderType,
-        content: content,
-        relatedModule: relatedModule,
-        createdAt: createdAt,
-        pendingAction: pendingAction ?? this.pendingAction,
-        isLocal: isLocal,
-      );
+    id: id,
+    senderType: senderType,
+    content: content,
+    relatedModule: relatedModule,
+    createdAt: createdAt,
+    pendingAction: pendingAction ?? this.pendingAction,
+    isLocal: isLocal,
+  );
 }
 
 class AiPendingAction {
@@ -136,13 +135,13 @@ class AiPendingAction {
   }
 
   String get actionLabel => switch (actionType.toUpperCase()) {
-        'CREATE_LEDGER_ENTRY' ||
-        'CREATE_TRANSACTION' ||
-        'FINANCE_LEDGER_CREATE' =>
-          'Tạo giao dịch',
-        'CREATE_TASK' || 'TASK_CREATE' => 'Tạo nhiệm vụ',
-        _ => 'Thực hiện đề xuất',
-      };
+    'CREATE_LEDGER_ENTRY' ||
+    'CREATE_TRANSACTION' ||
+    'FINANCE_LEDGER_CREATE' => 'Tạo giao dịch',
+    'CREATE_TASK' || 'TASK_CREATE' => 'Tạo nhiệm vụ',
+    'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => 'Tạo sự kiện lịch',
+    _ => 'Thực hiện đề xuất',
+  };
 }
 
 String _str(dynamic value, {String fallback = ''}) {

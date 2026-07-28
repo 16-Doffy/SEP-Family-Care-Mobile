@@ -106,8 +106,7 @@ class SupportRequestProvider extends ChangeNotifier {
       'decision': decision,
       if (decisionNote != null && decisionNote.isNotEmpty)
         'decisionNote': decisionNote,
-      // Dart local DateTime.toIso8601String has no UTC offset. BE validates
-      // this field as an ISO timestamp with timezone, so always send UTC.
+      // Giữ semantic cũ: local wall-clock + `Z` cho tới khi BE chốt UTC thật.
       'occurredAt': ApiClient.localIsoMs(),
     };
     await ApiClient.instance.patch(

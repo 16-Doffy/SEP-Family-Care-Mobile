@@ -104,4 +104,22 @@ class AppColors {
   // ─── Misc / Utility ─────────────────────────────────────────────────────────
   static const progressTrack = Color(0xFFE5E7EB); // ring track, border, divider
   static const accentGlow = Color(0x262DD4BF); // teal glow 15%
+
+  // ─── Light tint surfaces (bg only — text is semantic token above) ───────────
+  static const safeLight = Color(0xFFDCFCE7); // safe bg tint — task done, income
+  static const dangerLight = Color(0xFFFEE2E2); // danger bg tint — reject, overdue
+  static const amberLight = Color(0xFFFFF7ED); // amber/pending bg tint
+  static const neutralBg = Color(0xFFF3F4F6); // neutral chip / card bg (gray-100)
+
+  // ─── Amber / Warn text ────────────────────────────────────────────────────
+  static const amberText = Color(0xFFD97706); // amber-600 — pending label, reaction
+
+  // ─── Dark shade text — dùng trên light tint backgrounds ──────────────────
+  // Chỉ dùng khi cần contrast tốt trên safeLight / dangerLight / amberLight
+  static const safeDark = Color(0xFF166534); // green-800 on safeLight
+  static const dangerDark = Color(0xFF991B1B); // red-800 on dangerLight
+  static const amberDark = Color(0xFF92400E); // amber-800 on amberLight
+
+  // ─── Urgent / High-priority ───────────────────────────────────────────────
+  static const urgent = Color(0xFFEA580C); // orange-600 — HIGH priority task
 }

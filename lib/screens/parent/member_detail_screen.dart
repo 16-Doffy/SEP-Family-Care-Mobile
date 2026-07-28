@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -446,6 +448,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final picker = ImagePicker();
     var paths = <String>[];
     var consent = false;
+    FaceValidationResponse? validation;
+    var validating = false;
     var submitting = false;
     String? submitError;
     await showModalBottomSheet(
@@ -492,10 +496,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           imageQuality: 88,
                         );
                         if (!sheetContext.mounted) return;
-                        setSheet(
-                          () =>
-                              paths = files.take(5).map((e) => e.path).toList(),
-                        );
+                        setSheet(() {
+                          paths = files.take(5).map((e) => e.path).toList();
+                          validation = null;
+                          submitError = null;
+                        });
                       },
                 icon: const Icon(Icons.photo_library_outlined),
                 label: Text(
@@ -512,10 +517,67 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                       : AppColors.textMuted,
                 ),
               ),
+              if (paths.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _faceEnrollPreview(paths, validation),
+              ],
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: !submitting && !validating && paths.length >= 3
+                      ? () async {
+                          setSheet(() {
+                            validating = true;
+                            submitError = null;
+                            validation = null;
+                          });
+                          try {
+                            final result = await context
+                                .read<FaceProfileProvider>()
+                                .validate(member.id, paths);
+                            if (!sheetContext.mounted) return;
+                            setSheet(() => validation = result);
+                          } catch (e) {
+                            debugPrint('Face profile validate failed: $e');
+                            if (sheetContext.mounted) {
+                              setSheet(
+                                () => submitError = _faceProfileErrorMessage(e),
+                              );
+                            }
+                          } finally {
+                            if (sheetContext.mounted) {
+                              setSheet(() => validating = false);
+                            }
+                          }
+                        }
+                      : null,
+                  icon: validating
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.verified_outlined, size: 18),
+                  label: Text(validating ? 'Đang kiểm tra...' : 'Kiểm tra ảnh'),
+                ),
+              ),
+              if (validation != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  validation!.displayMessage,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: validation!.canEnroll
+                        ? AppColors.success
+                        : AppColors.danger,
+                  ),
+                ),
+              ],
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: consent,
-                onChanged: submitting
+                onChanged: submitting || validating
                     ? null
                     : (v) => setSheet(() => consent = v ?? false),
                 title: Text(
@@ -540,7 +602,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton(
-                  onPressed: !submitting && paths.length >= 3 && consent
+                  onPressed:
+                      !submitting &&
+                          !validating &&
+                          paths.length >= 3 &&
+                          consent &&
+                          (validation?.canEnroll ?? false)
                       ? () async {
                           setSheet(() {
                             submitting = true;
@@ -603,6 +670,99 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           'râm và khuôn mặt không bị che.';
     }
     return message;
+  }
+
+  Widget _faceEnrollPreview(
+    List<String> paths,
+    FaceValidationResponse? validation,
+  ) {
+    FaceValidationResult? resultFor(int index) {
+      for (final result
+          in validation?.results ?? const <FaceValidationResult>[]) {
+        if (result.index == index) return result;
+      }
+      return null;
+    }
+
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: paths.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (_, index) {
+          final result = resultFor(index);
+          final color = result == null
+              ? validation?.validationUnavailable == true
+                    ? AppColors.accent500
+                    : AppColors.textMuted
+              : result.passed
+              ? AppColors.success
+              : AppColors.danger;
+          return SizedBox(
+            width: 82,
+            child: Column(
+              children: [
+                Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.file(
+                        File(paths[index]),
+                        width: 72,
+                        height: 72,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.white, width: 2),
+                        ),
+                        child: Icon(
+                          result == null
+                              ? validation?.validationUnavailable == true
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.hourglass_empty_rounded
+                              : result.passed
+                              ? Icons.check_rounded
+                              : Icons.close_rounded,
+                          size: 13,
+                          color: AppColors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  result == null
+                      ? validation?.validationUnavailable == true
+                            ? 'Bỏ qua KT'
+                            : 'Chưa KT'
+                      : result.passed
+                      ? 'Đạt'
+                      : 'Không đạt',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _confirmDeleteFaceProfile(FamilyMember member) async {

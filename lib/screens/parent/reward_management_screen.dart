@@ -444,8 +444,9 @@ class _SettlementDetailSheetState extends State<_SettlementDetailSheet> {
         });
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

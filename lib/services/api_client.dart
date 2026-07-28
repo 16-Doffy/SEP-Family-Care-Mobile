@@ -76,11 +76,17 @@ class ApiClient {
     return value.startsWith('/') ? '$origin$value' : '$origin/$value';
   }
 
-  /// ISO 8601 mili-giây + 'Z' theo GIỜ ĐỊA PHƯƠNG (không convert UTC).
-  /// BE mong dạng `2026-06-10T08:30:00.000Z` (entryDate/occurredAt...).
-  /// `DateTime.now().toIso8601String()` (local) THIẾU 'Z' và có thể kèm
-  /// microseconds (6 số) → BE báo "không đúng định dạng". Giữ giờ địa phương
-  /// vì BE lưu wall-clock rồi append Z (xem LedgerEntry.displayEntryDate).
+  /// ISO 8601 UTC có mili-giây và timezone `Z`. Chỉ dùng khi contract BE đã
+  /// xác nhận nhận UTC thật cho field tương ứng.
+  static String utcIsoMs([DateTime? at]) {
+    final d = (at ?? DateTime.now()).toUtc();
+    String p(int n, [int w = 2]) => n.toString().padLeft(w, '0');
+    return '${d.year}-${p(d.month)}-${p(d.day)}'
+        'T${p(d.hour)}:${p(d.minute)}:${p(d.second)}.${p(d.millisecond, 3)}Z';
+  }
+
+  /// ISO 8601 mili-giây + 'Z' theo GIỜ ĐỊA PHƯƠNG (compat flow cũ).
+  /// Không đổi semantic này nếu BE chưa xác nhận migration sang UTC thật.
   static String localIsoMs([DateTime? at]) {
     final d = at ?? DateTime.now();
     String p(int n, [int w = 2]) => n.toString().padLeft(w, '0');

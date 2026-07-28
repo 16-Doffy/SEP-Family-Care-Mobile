@@ -14,6 +14,8 @@ import '../services/api_client.dart';
 import '../services/local_notification_service.dart';
 import '../services/push_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_surface_colors.dart';
+import '../theme/app_ui_tokens.dart';
 import 'notification_router.dart';
 
 // Shell dùng chung cho cả 3 role (Manager/Deputy/Member). Mỗi role khai đủ 9
@@ -356,14 +358,8 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: AppColors.white,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
-            ),
-          ],
+          color: context.colors.surface,
+          boxShadow: AppShadows.nav,
         ),
         child: SafeArea(
           child: SizedBox(
@@ -418,27 +414,56 @@ class _NavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = index == current;
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 24,
-              color: active ? AppColors.link : AppColors.textMuted,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+          ),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: active
+                  ? AppColors.link.withValues(alpha: 0.10)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                color: active ? AppColors.link : AppColors.textMuted,
-              ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: active ? 28 : 0,
+                  height: 3,
+                  margin: const EdgeInsets.only(bottom: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.link,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
+                ),
+                Icon(
+                  icon,
+                  size: 23,
+                  color: active ? AppColors.link : context.colors.textMuted,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: active ? FontWeight.w800 : FontWeight.w500,
+                    color: active ? AppColors.link : context.colors.textMuted,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -457,56 +482,82 @@ class _SOSNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final active = current == kSosBranchIndex;
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+          ),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            decoration: BoxDecoration(
+              color: active || hasAlert
+                  ? AppColors.sos.withValues(alpha: 0.10)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.sos,
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.sos_rounded,
-                    size: 22,
-                    color: Colors.white,
-                  ),
-                ),
-                if (hasAlert)
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: Container(
-                      width: 10,
-                      height: 10,
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
-                        color: Colors.white,
                         shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.sos, width: 1.5),
+                        color: AppColors.sos,
+                        boxShadow: hasAlert
+                            ? [
+                                BoxShadow(
+                                  color: AppColors.sos.withValues(alpha: 0.35),
+                                  blurRadius: 14,
+                                  spreadRadius: 1,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.sos_rounded,
+                        size: 22,
+                        color: Colors.white,
                       ),
                     ),
+                    if (hasAlert)
+                      Positioned(
+                        top: -3,
+                        right: -3,
+                        child: Container(
+                          width: 13,
+                          height: 13,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.sos, width: 2),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'SOS',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.sos,
                   ),
+                ),
               ],
             ),
-            const SizedBox(height: 2),
-            Text(
-              'SOS',
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: AppColors.sos,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

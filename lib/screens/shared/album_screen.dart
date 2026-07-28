@@ -1047,7 +1047,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
   Widget _collectionCardFallback(IconData icon) {
     return Container(
-      color: _dark ? const Color(0xFF3F3F46) : const Color(0xFFE5E7EB),
+      color: _dark ? const Color(0xFF3F3F46) : AppColors.progressTrack,
       alignment: Alignment.center,
       child: Icon(icon, color: _photoMuted, size: 38),
     );
@@ -1570,25 +1570,25 @@ class _AlbumScreenState extends State<AlbumScreen> {
         Icons.check_rounded,
         'An toàn',
         AppColors.safe,
-        const Color(0xFFDCFCE7),
+        AppColors.safeLight,
       ),
       AlbumModerationStatus.needReview => (
         Icons.priority_high_rounded,
         'Cần duyệt',
         AppColors.accent500,
-        const Color(0xFFFFF7ED),
+        AppColors.amberLight,
       ),
       AlbumModerationStatus.flagged => (
         Icons.close_rounded,
         'Bị gắn cờ',
         AppColors.danger,
-        const Color(0xFFFEE2E2),
+        AppColors.dangerLight,
       ),
       AlbumModerationStatus.pending => (
         Icons.more_horiz_rounded,
         'Đang chờ xử lý',
         AppColors.textSecondary,
-        const Color(0xFFF3F4F6),
+        AppColors.neutralBg,
       ),
     };
     return Tooltip(
@@ -2008,7 +2008,7 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
 // ── Thumbnail lưới album ────────────────────────────────────────────────────
 // Dùng chung visual cho cả ô lưới và fallback ở màn chi tiết.
 Widget _thumbBox(IconData icon) => Container(
-  color: const Color(0xFFE5E7EB),
+  color: AppColors.progressTrack,
   alignment: Alignment.center,
   child: Icon(icon, color: AppColors.textMuted),
 );

@@ -23,23 +23,23 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   static const _statusCfg = {
     'DRAFT': (
       label: 'Bản nháp',
-      bg: Color(0xFFF3F4F6),
-      color: Color(0xFF6B7280),
+      bg: AppColors.neutralBg,
+      color: AppColors.textSecondary,
     ),
     'ACTIVE': (
       label: 'Đang chạy',
-      bg: Color(0xFFEFF6FF),
+      bg: Color(0xFFEFF6FF), // sky-50 — chưa có token info trong AppColors
       color: AppColors.planned,
     ),
     'COMPLETED': (
       label: 'Hoàn thành',
-      bg: Color(0xFFDCFCE7),
-      color: Color(0xFF16A34A),
+      bg: AppColors.safeLight,
+      color: AppColors.safe,
     ),
     'CANCELED': (
       label: 'Đã hủy',
-      bg: Color(0xFFFEE2E2),
-      color: Color(0xFFDC2626),
+      bg: AppColors.dangerLight,
+      color: AppColors.sos,
     ),
   };
 
@@ -305,26 +305,26 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       if (task.isRecurring)
                         _chip(
                           task.schedule?.label ?? "Định kỳ",
-                          const Color(0xFFF0F9FF),
+                          const Color(0xFFEFF6FF),
                           const Color(0xFF0369A1),
                         ),
                       if (task.taskCategoryName != null)
                         _chip(
                           task.taskCategoryName!,
-                          const Color(0xFFF3F4F6),
+                          AppColors.neutralBg,
                           AppColors.textSecondary,
                         ),
                       if (task.rewardSetting != null)
                         _chip(
                           task.rewardSetting!.label,
-                          const Color(0xFFDCFCE7),
-                          const Color(0xFF16A34A),
+                          AppColors.safeLight,
+                          AppColors.safe,
                         )
                       else
                         _chip(
                           'Chưa đặt thưởng',
-                          const Color(0xFFF3F4F6),
-                          const Color(0xFF6B7280),
+                          AppColors.neutralBg,
+                          AppColors.textSecondary,
                         ),
                     ],
                   ),
@@ -365,7 +365,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE5E7EB),
+                      color: AppColors.progressTrack,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -613,7 +613,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEE2E2),
+                      color: AppColors.dangerLight,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -757,7 +757,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 32),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                    side: const BorderSide(color: AppColors.progressTrack),
                   ),
                   onPressed: () => _showReviewSheet(context, a, readOnly: true),
                   child: Text(
@@ -772,7 +772,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               if (a.status == 'UNAVAILABLE')
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFEA580C),
+                    backgroundColor: AppColors.urgent,
                     minimumSize: const Size(0, 32),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
@@ -871,7 +871,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: a.status == 'REJECTED'
-                                      ? const Color(0xFFDC2626)
+                                      ? AppColors.sos
                                       : AppColors.link,
                                   elevation: 0,
                                   shape: RoundedRectangleBorder(
@@ -902,7 +902,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                 child: OutlinedButton(
                                   style: OutlinedButton.styleFrom(
                                     side: const BorderSide(
-                                      color: Color(0xFFEA580C),
+                                      color: AppColors.urgent,
                                       width: 1.5,
                                     ),
                                     shape: RoundedRectangleBorder(
@@ -916,7 +916,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                     style: GoogleFonts.inter(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
-                                      color: const Color(0xFFEA580C),
+                                      color: AppColors.urgent,
                                     ),
                                   ),
                                 ),
@@ -955,8 +955,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     final submission = await context.read<TaskProvider>().fetchLatestSubmission(
       a.id,
     );
-    if (context.mounted)
+    if (context.mounted) {
       Navigator.of(context, rootNavigator: true).pop(); // đóng loading
+    }
 
     if (submission == null) {
       messenger.showSnackBar(
@@ -1361,7 +1362,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEE2E2),
+                    color: AppColors.dangerLight,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -1498,7 +1499,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEE2E2),
+                    color: AppColors.dangerLight,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -1695,7 +1696,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEE2E2),
+                    color: AppColors.dangerLight,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
@@ -2204,7 +2205,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   }) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14),
     decoration: BoxDecoration(
-      border: Border.all(color: const Color(0xFFE5E7EB), width: 1.5),
+      border: Border.all(color: AppColors.progressTrack, width: 1.5),
       borderRadius: BorderRadius.circular(14),
     ),
     child: TextField(
@@ -2399,13 +2400,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     ),
                     decoration: BoxDecoration(
                       color: pickedImagePath != null
-                          ? const Color(0xFFDCFCE7)
+                          ? AppColors.safeLight
                           : AppColors.background,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: pickedImagePath != null
                             ? AppColors.success
-                            : const Color(0xFFE5E7EB),
+                            : AppColors.progressTrack,
                       ),
                     ),
                     child: Row(
@@ -2585,7 +2586,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 const SizedBox(height: 16),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFEA580C),
+                    backgroundColor: AppColors.urgent,
                     minimumSize: const Size.fromHeight(48),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
@@ -2608,7 +2609,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                             messenger.showSnackBar(
                               const SnackBar(
                                 content: Text('Đã báo.'),
-                                backgroundColor: Color(0xFFEA580C),
+                                backgroundColor: AppColors.urgent,
                               ),
                             );
                           } catch (e) {
@@ -2828,7 +2829,7 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
                   border: Border.all(
-                    color: const Color(0xFFE5E7EB),
+                    color: AppColors.progressTrack,
                     width: 1.5,
                   ),
                   borderRadius: BorderRadius.circular(14),
@@ -2944,7 +2945,7 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
                           vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          border: Border.all(color: AppColors.progressTrack),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
@@ -2976,7 +2977,7 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
                           vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                          border: Border.all(color: AppColors.progressTrack),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(

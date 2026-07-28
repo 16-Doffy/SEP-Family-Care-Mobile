@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../theme/app_colors.dart';
 
 class FamilyMember {
   final String id; // familyMember.id (membership record)
@@ -55,9 +56,10 @@ class FamilyMember {
 
   Color get roleColor {
     final r = role.toUpperCase();
-    if (r.contains('MANAGER') || r.contains('DEPUTY'))
-      return const Color(0xFF2563EB);
-    return const Color(0xFF6B7280);
+    if (r.contains('MANAGER') || r.contains('DEPUTY')) {
+      return AppColors.primary500;
+    }
+    return AppColors.textSecondary;
   }
 
   factory FamilyMember.fromJson(Map<String, dynamic> json) {

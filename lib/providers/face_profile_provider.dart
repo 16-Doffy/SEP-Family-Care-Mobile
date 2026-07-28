@@ -66,6 +66,125 @@ class FaceProfile {
   bool get isDisabled => status == FaceProfileStatus.disabled;
 }
 
+class FaceValidationResult {
+  final int index;
+  final String fileName;
+  final bool passed;
+  final String? reasonCode;
+  final String? message;
+  final Map<String, dynamic> raw;
+
+  const FaceValidationResult({
+    required this.index,
+    required this.fileName,
+    required this.passed,
+    this.reasonCode,
+    this.message,
+    this.raw = const {},
+  });
+
+  factory FaceValidationResult.fromJson(
+    Map<String, dynamic> json, {
+    required int fallbackIndex,
+  }) {
+    final rawPassed =
+        json['passed'] ?? json['pass'] ?? json['isValid'] ?? json['valid'];
+    final reason = json['reasonCode'] ?? json['code'] ?? json['reason'];
+    final passed = rawPassed == null
+        ? reason == null
+        : rawPassed == true ||
+              rawPassed.toString().toUpperCase() == 'TRUE' ||
+              rawPassed.toString().toUpperCase() == 'PASS';
+    return FaceValidationResult(
+      index: (json['index'] as num?)?.toInt() ?? fallbackIndex,
+      fileName: (json['fileName'] ?? json['filename'] ?? json['name'] ?? '')
+          .toString(),
+      passed: passed,
+      reasonCode: reason?.toString(),
+      message: (json['message'] ?? json['errorMessage'])?.toString(),
+      raw: json,
+    );
+  }
+
+  String get displayMessage {
+    if (passed) return 'Đạt yêu cầu.';
+    final mapped = switch (reasonCode?.toUpperCase()) {
+      'NO_FACE_DETECTED' => 'Không phát hiện khuôn mặt.',
+      'MULTIPLE_FACES_DETECTED' => 'Ảnh có nhiều hơn 1 khuôn mặt.',
+      'MIME_MISMATCH' => 'File sai định dạng/nội dung.',
+      'IMAGE_TOO_LARGE' => 'Ảnh quá 5MB.',
+      _ => message ?? 'Ảnh chưa đạt yêu cầu đăng ký.',
+    };
+    return mapped;
+  }
+}
+
+class FaceValidationResponse {
+  final bool canEnroll;
+  final List<FaceValidationResult> results;
+  final String? message;
+  final bool validationUnavailable;
+  final Map<String, dynamic> raw;
+
+  const FaceValidationResponse({
+    required this.canEnroll,
+    required this.results,
+    this.message,
+    this.validationUnavailable = false,
+    this.raw = const {},
+  });
+
+  factory FaceValidationResponse.fromJson(Map<String, dynamic> json) {
+    final rawResults = json['results'] ?? json['files'] ?? json['items'];
+    final results = rawResults is List
+        ? rawResults
+              .asMap()
+              .entries
+              .where((entry) => entry.value is Map)
+              .map(
+                (entry) => FaceValidationResult.fromJson(
+                  Map<String, dynamic>.from(entry.value as Map),
+                  fallbackIndex: entry.key,
+                ),
+              )
+              .toList()
+        : <FaceValidationResult>[];
+    final rawCanEnroll = json['canEnroll'] ?? json['isEnrollable'];
+    final inferredCanEnroll =
+        results.isNotEmpty && results.every((result) => result.passed);
+    return FaceValidationResponse(
+      canEnroll: rawCanEnroll is bool ? rawCanEnroll : inferredCanEnroll,
+      results: results,
+      message: (json['message'] ?? json['summary'])?.toString(),
+      raw: json,
+    );
+  }
+
+  String get displayMessage {
+    if (canEnroll) {
+      return message ??
+          (validationUnavailable
+              ? 'Chưa kiểm tra được ảnh. Vẫn có thể đăng ký bằng API enroll hiện tại.'
+              : 'Ảnh đạt yêu cầu. Có thể đăng ký Face Profile.');
+    }
+    final failed = results.where((result) => !result.passed).toList();
+    if (failed.isEmpty) {
+      return message ?? 'Ảnh chưa đạt yêu cầu đăng ký.';
+    }
+    return failed
+        .map((result) => 'Ảnh ${result.index + 1}: ${result.displayMessage}')
+        .join('\n');
+  }
+
+  factory FaceValidationResponse.unavailable([String? message]) =>
+      FaceValidationResponse(
+        canEnroll: true,
+        results: const [],
+        message: message,
+        validationUnavailable: true,
+      );
+}
+
 class FaceProfileProvider extends ChangeNotifier {
   FaceProfile? profile;
   bool loading = false;
@@ -145,6 +264,35 @@ class FaceProfileProvider extends ChangeNotifier {
       );
       profile = FaceProfile.fromJson(memberId, data);
       await fetch(memberId);
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<FaceValidationResponse> validate(
+    String memberId,
+    List<String> imagePaths,
+  ) async {
+    if (imagePaths.length < 3 || imagePaths.length > 5) {
+      throw ArgumentError('Chọn từ 3 đến 5 ảnh rõ mặt.');
+    }
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      final data = await ApiClient.instance.uploadFiles(
+        path: '/families/$_fid/face-profiles/$memberId/validate',
+        filePaths: imagePaths,
+      );
+      return FaceValidationResponse.fromJson(data);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404 || e.statusCode == 405 || e.statusCode == 501) {
+        return FaceValidationResponse.unavailable(
+          'BE chưa bật API kiểm tra ảnh. FE sẽ dùng luồng đăng ký hiện tại.',
+        );
+      }
+      rethrow;
     } finally {
       busy = false;
       notifyListeners();

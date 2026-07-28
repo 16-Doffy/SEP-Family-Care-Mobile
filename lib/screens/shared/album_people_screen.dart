@@ -353,7 +353,9 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
   final List<XFile> _images = [];
 
   FaceProfile? _profile;
+  FaceValidationResponse? _validation;
   bool _loading = true;
+  bool _validating = false;
   bool _saving = false;
   bool _consent = false;
   String? _error;
@@ -405,7 +407,11 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     final next = picked
         .where((e) => !existing.contains(e.path))
         .take(remaining);
-    setState(() => _images.addAll(next));
+    setState(() {
+      _images.addAll(next);
+      _validation = null;
+      _error = null;
+    });
     if (picked.length > remaining) {
       _showMessage('Đã giữ 5 ảnh đầu tiên để đăng ký.');
     }
@@ -422,11 +428,44 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     );
     if (picked == null || !mounted) return;
     if (_images.any((e) => e.path == picked.path)) return;
-    setState(() => _images.add(picked));
+    setState(() {
+      _images.add(picked);
+      _validation = null;
+      _error = null;
+    });
   }
 
   void _removeImage(String path) {
-    setState(() => _images.removeWhere((e) => e.path == path));
+    setState(() {
+      _images.removeWhere((e) => e.path == path);
+      _validation = null;
+      _error = null;
+    });
+  }
+
+  Future<void> _validateImages() async {
+    if (_images.length < 3 || _images.length > 5) {
+      _showMessage('Vui lòng chọn từ 3 đến 5 ảnh khuôn mặt.');
+      return;
+    }
+    setState(() {
+      _validating = true;
+      _validation = null;
+      _error = null;
+    });
+    try {
+      final result = await context.read<FaceProfileProvider>().validate(
+        widget.member.id,
+        _images.map((e) => e.path).toList(),
+      );
+      if (!mounted) return;
+      setState(() => _validation = result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _validating = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -436,6 +475,10 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     }
     if (!_consent) {
       _showMessage('Cần xác nhận đồng ý trước khi đăng ký.');
+      return;
+    }
+    if (!(_validation?.canEnroll ?? false)) {
+      _showMessage('Cần kiểm tra ảnh đạt yêu cầu trước khi đăng ký.');
       return;
     }
     setState(() {
@@ -453,6 +496,7 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
       setState(() {
         _profile = profile;
         _images.clear();
+        _validation = null;
         _consent = false;
         _saving = false;
       });
@@ -567,6 +611,8 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
                 _consentCard(),
                 const SizedBox(height: 14),
                 _imagePickerCard(),
+                const SizedBox(height: 12),
+                _validationCard(),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -580,7 +626,12 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
                 ],
                 const SizedBox(height: 18),
                 FilledButton.icon(
-                  onPressed: _saving ? null : _submit,
+                  onPressed:
+                      _saving ||
+                          _validating ||
+                          !(_validation?.canEnroll ?? false)
+                      ? null
+                      : _submit,
                   icon: _saving
                       ? const SizedBox.square(
                           dimension: 18,
@@ -761,7 +812,8 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
             spacing: 10,
             runSpacing: 10,
             children: [
-              for (final image in _images) _imageThumb(image),
+              for (var i = 0; i < _images.length; i++)
+                _imageThumb(_images[i], i),
               if (_images.length < 5) _addImageButton(),
             ],
           ),
@@ -770,7 +822,95 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
     );
   }
 
-  Widget _imageThumb(XFile image) {
+  Widget _validationCard() {
+    final colors = context.colors;
+    final validation = _validation;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Kiểm tra ảnh',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ),
+              if (validation != null)
+                Icon(
+                  validation.canEnroll
+                      ? Icons.check_circle_rounded
+                      : Icons.error_rounded,
+                  size: 18,
+                  color: validation.canEnroll
+                      ? AppColors.success
+                      : AppColors.sos,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            validation?.displayMessage ??
+                'Ảnh cần rõ mặt, đủ sáng, mỗi ảnh chỉ có 1 khuôn mặt và dưới 5MB.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              height: 1.4,
+              color: validation == null
+                  ? colors.textSecondary
+                  : validation.canEnroll
+                  ? AppColors.success
+                  : AppColors.sos,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _saving || _validating || _images.length < 3
+                  ? null
+                  : _validateImages,
+              icon: _validating
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.verified_outlined, size: 18),
+              label: Text(_validating ? 'Đang kiểm tra...' : 'Kiểm tra ảnh'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  FaceValidationResult? _validationResultFor(int index) {
+    for (final result
+        in _validation?.results ?? const <FaceValidationResult>[]) {
+      if (result.index == index) return result;
+    }
+    return null;
+  }
+
+  Widget _imageThumb(XFile image, int index) {
+    final result = _validationResultFor(index);
+    final color = result == null
+        ? _validation?.validationUnavailable == true
+              ? AppColors.accent500
+              : AppColors.textMuted
+        : result.passed
+        ? AppColors.success
+        : AppColors.sos;
     return Stack(
       children: [
         ClipRRect(
@@ -780,6 +920,48 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
             width: 78,
             height: 78,
             fit: BoxFit.cover,
+          ),
+        ),
+        Positioned(
+          left: 5,
+          bottom: 5,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  result == null
+                      ? _validation?.validationUnavailable == true
+                            ? Icons.warning_amber_rounded
+                            : Icons.hourglass_empty_rounded
+                      : result.passed
+                      ? Icons.check_rounded
+                      : Icons.close_rounded,
+                  size: 11,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  result == null
+                      ? _validation?.validationUnavailable == true
+                            ? 'Bỏ'
+                            : 'Chờ'
+                      : result.passed
+                      ? 'Đạt'
+                      : 'Lỗi',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         Positioned(

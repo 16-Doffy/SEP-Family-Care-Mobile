@@ -5,6 +5,9 @@ import 'package:provider/provider.dart';
 
 import '../../models/ai_chatbot.dart';
 import '../../providers/ai_chatbot_provider.dart';
+import '../../providers/calendar_provider.dart';
+import '../../providers/task_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/ai_chatbot_icon.dart';
@@ -126,10 +129,12 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
               Divider(height: 1, color: context.colors.divider),
               if (ai.error != null) _ErrorBanner(message: ai.error!),
               Expanded(child: _MessageList(scrollCtrl: _scrollCtrl)),
-              _QuickPrompts(onPick: (prompt) {
-                _inputCtrl.text = prompt;
-                _send();
-              }),
+              _QuickPrompts(
+                onPick: (prompt) {
+                  _inputCtrl.text = prompt;
+                  _send();
+                },
+              ),
               _Composer(
                 controller: _inputCtrl,
                 sending: ai.sending,
@@ -200,7 +205,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  subtitle: c.lastMessage == null ||
+                                  subtitle:
+                                      c.lastMessage == null ||
                                           c.lastMessage!.isEmpty
                                       ? null
                                       : Text(
@@ -350,7 +356,9 @@ class _MessageBubble extends StatelessWidget {
           if (message.pendingAction != null) ...[
             const SizedBox(height: 12),
             _PendingActionCard(
-              messageId: message.id,
+              messageId: message.pendingAction!.messageId.isNotEmpty
+                  ? message.pendingAction!.messageId
+                  : message.id,
               action: message.pendingAction!,
             ),
           ],
@@ -382,23 +390,20 @@ class _PendingActionCard extends StatelessWidget {
     final ai = context.watch<AiChatbotProvider>();
     final busy = ai.isActionBusy(messageId);
     final enabled = action.isPending && !busy;
+    final color = _actionColor;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.primary50,
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.primary100),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.fact_check_outlined,
-                size: 18,
-                color: AppColors.primary600,
-              ),
+              Icon(_actionIcon, size: 18, color: color),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -406,22 +411,16 @@ class _PendingActionCard extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.primary600,
+                    color: color,
                   ),
                 ),
               ),
+              _statusChip(color),
             ],
           ),
           if (action.preview.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text(
-              _previewText(action.preview),
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                height: 1.35,
-                color: AppColors.textSecondary,
-              ),
-            ),
+            ..._previewRows(action.preview),
           ],
           const SizedBox(height: 10),
           if (!action.isPending)
@@ -435,9 +434,9 @@ class _PendingActionCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: enabled
-                        ? () => context
-                            .read<AiChatbotProvider>()
-                            .rejectAction(messageId)
+                        ? () => context.read<AiChatbotProvider>().rejectAction(
+                            messageId,
+                          )
                         : null,
                     child: const Text('Hủy'),
                   ),
@@ -446,9 +445,7 @@ class _PendingActionCard extends StatelessWidget {
                 Expanded(
                   child: FilledButton(
                     onPressed: enabled
-                        ? () => context
-                            .read<AiChatbotProvider>()
-                            .confirmAction(messageId)
+                        ? () => _confirmAndReload(context)
                         : null,
                     child: busy
                         ? const SizedBox(
@@ -466,21 +463,154 @@ class _PendingActionCard extends StatelessWidget {
     );
   }
 
-  String _previewText(Map<String, dynamic> preview) {
-    return preview.entries
-        .take(6)
-        .map((e) => '${_label(e.key)}: ${e.value}')
-        .join('\n');
+  Widget _statusChip(Color color) {
+    final text = action.isPending ? 'Chờ xác nhận' : 'Đã xử lý';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.inter(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+    );
   }
 
+  List<Widget> _previewRows(Map<String, dynamic> preview) {
+    final keys = switch (action.actionType.toUpperCase()) {
+      'CREATE_TASK' ||
+      'TASK_CREATE' => ['title', 'description', 'dueAt', 'dueDate', 'assignee'],
+      'CREATE_LEDGER_ENTRY' ||
+      'CREATE_TRANSACTION' ||
+      'FINANCE_LEDGER_CREATE' => [
+        'amount',
+        'categoryName',
+        'category',
+        'description',
+        'note',
+      ],
+      'CREATE_CALENDAR_EVENT' ||
+      'CALENDAR_EVENT_CREATE' => ['title', 'startTime', 'endTime', 'location'],
+      _ => preview.keys.take(6).toList(),
+    };
+    final rows = <Widget>[];
+    final used = <String>{};
+    for (final key in keys) {
+      if (!preview.containsKey(key) || used.contains(key)) continue;
+      used.add(key);
+      rows.add(_previewRow(_label(key), preview[key]));
+    }
+    if (rows.isEmpty) {
+      rows.addAll(
+        preview.entries
+            .take(6)
+            .map((entry) => _previewRow(_label(entry.key), entry.value)),
+      );
+    }
+    return rows;
+  }
+
+  Widget _previewRow(String label, dynamic value) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 70,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            _formatPreviewValue(value),
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              height: 1.3,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
   String _label(String key) => switch (key) {
-        'amount' => 'Số tiền',
-        'category' || 'categoryName' => 'Danh mục',
-        'description' || 'note' => 'Ghi chú',
-        'title' => 'Tiêu đề',
-        'dueAt' || 'dueDate' => 'Hạn',
-        _ => key,
-      };
+    'amount' => 'Số tiền',
+    'category' || 'categoryName' => 'Danh mục',
+    'description' || 'note' => 'Ghi chú',
+    'title' => 'Tiêu đề',
+    'startTime' => 'Bắt đầu',
+    'endTime' => 'Kết thúc',
+    'location' => 'Địa điểm',
+    'assignee' || 'assignedTo' || 'assignedToName' => 'Người làm',
+    'dueAt' || 'dueDate' => 'Hạn',
+    _ => key,
+  };
+
+  IconData get _actionIcon => switch (action.actionType.toUpperCase()) {
+    'CREATE_TASK' || 'TASK_CREATE' => Icons.task_alt_rounded,
+    'CREATE_LEDGER_ENTRY' ||
+    'CREATE_TRANSACTION' ||
+    'FINANCE_LEDGER_CREATE' => Icons.account_balance_wallet_outlined,
+    'CREATE_CALENDAR_EVENT' ||
+    'CALENDAR_EVENT_CREATE' => Icons.event_available_outlined,
+    _ => Icons.fact_check_outlined,
+  };
+
+  Color get _actionColor => switch (action.actionType.toUpperCase()) {
+    'CREATE_TASK' || 'TASK_CREATE' => AppColors.link,
+    'CREATE_LEDGER_ENTRY' ||
+    'CREATE_TRANSACTION' ||
+    'FINANCE_LEDGER_CREATE' => AppColors.success,
+    'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => AppColors.calTravel,
+    _ => AppColors.primary600,
+  };
+
+  String _formatPreviewValue(dynamic value) {
+    if (value is List) return value.join(', ');
+    if (value is Map) return value.values.take(3).join(' · ');
+    return value?.toString() ?? '-';
+  }
+
+  Future<void> _confirmAndReload(BuildContext context) async {
+    final ai = context.read<AiChatbotProvider>();
+    final tasks = context.read<TaskProvider>();
+    final wallet = context.read<WalletProvider>();
+    final calendar = context.read<CalendarProvider>();
+    final ok = await ai.confirmAction(messageId);
+    if (!ok) return;
+    try {
+      switch (action.actionType.toUpperCase()) {
+        case 'CREATE_TASK':
+        case 'TASK_CREATE':
+          await tasks.fetchTasks();
+          break;
+        case 'CREATE_LEDGER_ENTRY':
+        case 'CREATE_TRANSACTION':
+        case 'FINANCE_LEDGER_CREATE':
+          await wallet.fetchWallets();
+          break;
+        case 'CREATE_CALENDAR_EVENT':
+        case 'CALENDAR_EVENT_CREATE':
+          await calendar.fetchEvents(DateTime.now());
+          break;
+      }
+    } catch (e) {
+      debugPrint('AIAssistantScreen: reload after confirm failed: $e');
+    }
+  }
 }
 
 class _TypingBubble extends StatelessWidget {
@@ -534,8 +664,14 @@ class _QuickPrompts extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const prompts = [
-      (label: 'Chi tiêu tháng này', prompt: 'Tháng này nhà mình tiêu hết bao nhiêu?'),
-      (label: 'Tạo giao dịch', prompt: 'Ghi nhận khoản chi 200000 cho ăn uống hôm nay'),
+      (
+        label: 'Chi tiêu tháng này',
+        prompt: 'Tháng này nhà mình tiêu hết bao nhiêu?',
+      ),
+      (
+        label: 'Tạo giao dịch',
+        prompt: 'Ghi nhận khoản chi 200000 cho ăn uống hôm nay',
+      ),
       (label: 'Tình hình nhiệm vụ', prompt: 'Tóm tắt nhiệm vụ của gia đình'),
       (label: 'Lịch tuần này', prompt: 'Tuần này nhà mình có lịch gì?'),
     ];

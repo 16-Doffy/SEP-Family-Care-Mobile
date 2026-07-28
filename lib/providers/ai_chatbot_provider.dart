@@ -138,19 +138,21 @@ class AiChatbotProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> confirmAction(String messageId) async {
-    await _handleAction(messageId, confirm: true);
+  Future<bool> confirmAction(String messageId) async {
+    return _handleAction(messageId, confirm: true);
   }
 
-  Future<void> rejectAction(String messageId) async {
-    await _handleAction(messageId, confirm: false);
+  Future<bool> rejectAction(String messageId) async {
+    return _handleAction(messageId, confirm: false);
   }
 
   Future<void> deleteCurrentConversation() async {
     final fid = ApiClient.instance.familyId;
     final cid = _currentConversationId;
     if (fid == null || cid == null) return;
-    await ApiClient.instance.delete('/families/$fid/ai-chatbot/conversations/$cid');
+    await ApiClient.instance.delete(
+      '/families/$fid/ai-chatbot/conversations/$cid',
+    );
     _currentConversationId = null;
     _messages.clear();
     await fetchConversations();
@@ -181,10 +183,12 @@ class AiChatbotProvider extends ChangeNotifier {
     return conversation.id;
   }
 
-  Future<void> _handleAction(String messageId, {required bool confirm}) async {
+  Future<bool> _handleAction(String messageId, {required bool confirm}) async {
     final fid = ApiClient.instance.familyId;
     final cid = _currentConversationId;
-    if (fid == null || cid == null || _actionBusy.contains(messageId)) return;
+    if (fid == null || cid == null || _actionBusy.contains(messageId)) {
+      return false;
+    }
     _actionBusy.add(messageId);
     _error = null;
     notifyListeners();
@@ -195,8 +199,10 @@ class AiChatbotProvider extends ChangeNotifier {
         {},
       );
       await fetchMessages();
+      return true;
     } catch (e) {
       _error = _friendlyError(e);
+      return false;
     } finally {
       _actionBusy.remove(messageId);
       notifyListeners();
@@ -226,10 +232,16 @@ class AiChatbotProvider extends ChangeNotifier {
 
   List<Map<String, dynamic>> _parseList(dynamic data) {
     final raw = data is Map
-        ? (data['items'] ?? data['data'] ?? data['messages'] ?? data['conversations'])
+        ? (data['items'] ??
+              data['data'] ??
+              data['messages'] ??
+              data['conversations'])
         : data;
     if (raw is! List) return <Map<String, dynamic>>[];
-    return raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 
   String _friendlyError(Object error) {
@@ -238,7 +250,8 @@ class AiChatbotProvider extends ChangeNotifier {
         403 => 'Bạn chưa có quyền dùng Trợ lý AI trong gói hiện tại.',
         409 => 'Đề xuất này đã được xử lý trước đó.',
         410 => 'Đề xuất đã hết hạn, vui lòng yêu cầu AI tạo lại.',
-        502 => 'AI chưa phản hồi kịp. Tin nhắn đã được lưu, bạn có thể thử lại.',
+        502 =>
+          'AI chưa phản hồi kịp. Tin nhắn đã được lưu, bạn có thể thử lại.',
         503 => 'Trợ lý AI chưa được bật trên server.',
         _ => error.message,
       };

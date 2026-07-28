@@ -26,8 +26,8 @@ class MoneyProvider extends ChangeNotifier {
       final list = data is List
           ? data
           : data is Map && data['items'] is List
-              ? data['items'] as List
-              : <dynamic>[];
+          ? data['items'] as List
+          : <dynamic>[];
       _requests = list
           .whereType<Map>()
           .map((e) => MoneyRequest.fromJson(Map<String, dynamic>.from(e)))
@@ -51,10 +51,7 @@ class MoneyProvider extends ChangeNotifier {
     }
     await ApiClient.instance.post(
       ApiClient.instance.familyPath('/finance/support-requests'),
-      {
-        'amount':  request.amount,
-        'purpose': request.reason,
-      },
+      {'amount': request.amount, 'purpose': request.reason},
     );
     await fetchRequests();
   }
@@ -73,13 +70,14 @@ class MoneyProvider extends ChangeNotifier {
       }
       return;
     }
-    final decision = status == MoneyRequestStatus.approved ? 'APPROVE' : 'REJECT';
+    final decision = status == MoneyRequestStatus.approved
+        ? 'APPROVE'
+        : 'REJECT';
     await ApiClient.instance.patch(
-      ApiClient.instance.familyPath('/finance/support-requests/$requestId/review'),
-      {
-        'decision':    decision,
-        'occurredAt': ApiClient.localIsoMs(),
-      },
+      ApiClient.instance.familyPath(
+        '/finance/support-requests/$requestId/review',
+      ),
+      {'decision': decision, 'occurredAt': ApiClient.localIsoMs()},
     );
     await fetchRequests();
   }
@@ -87,7 +85,9 @@ class MoneyProvider extends ChangeNotifier {
   // UC35 — Huỷ yêu cầu (bởi người tạo): PATCH .../support-requests/{id}/cancel
   Future<void> cancelRequest(String requestId) async {
     await ApiClient.instance.patch(
-      ApiClient.instance.familyPath('/finance/support-requests/$requestId/cancel'),
+      ApiClient.instance.familyPath(
+        '/finance/support-requests/$requestId/cancel',
+      ),
       {},
     );
     await fetchRequests();

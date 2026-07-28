@@ -49,8 +49,9 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
           _lines = lines;
         });
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

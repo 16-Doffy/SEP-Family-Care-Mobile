@@ -164,7 +164,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   const Icon(
                     Icons.health_and_safety_rounded,
-                    color: Color(0xFFD97706),
+                    color: AppColors.amberText,
                     size: 22,
                   ),
                   const SizedBox(width: 8),
@@ -192,7 +192,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   trailing: const Icon(
                     Icons.send_rounded,
                     size: 18,
-                    color: Color(0xFFD97706),
+                    color: AppColors.amberText,
                   ),
                   onTap: () async {
                     Navigator.pop(ctx);
@@ -1038,7 +1038,7 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          const Divider(height: 1, color: Color(0xFFF3F4F6)),
+          const Divider(height: 1, color: AppColors.neutralBg),
           Expanded(child: _buildBody(chat, myUserId)),
           _inputBar(chat),
         ],
@@ -1052,7 +1052,7 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
         color: AppColors.white,
-        border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
+        border: Border(top: BorderSide(color: AppColors.neutralBg)),
       ),
       child: archived
           ? Center(
@@ -1073,7 +1073,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     height: 40,
                     decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Color(0xFFF3F4F6),
+                      color: AppColors.neutralBg,
                     ),
                     alignment: Alignment.center,
                     child: _uploading
@@ -1096,13 +1096,13 @@ class _ChatScreenState extends State<ChatScreen> {
                     height: 40,
                     decoration: const BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Color(0xFFFFF7ED),
+                      color: AppColors.amberLight,
                     ),
                     alignment: Alignment.center,
                     child: const Icon(
                       Icons.health_and_safety_outlined,
                       size: 20,
-                      color: Color(0xFFD97706),
+                      color: AppColors.amberText,
                     ),
                   ),
                 ),
@@ -1114,7 +1114,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF3F4F6),
+                      color: AppColors.neutralBg,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: TextField(
@@ -1328,10 +1328,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: isSos
-                          ? const Color(0xFFFFF7ED)
+                          ? AppColors.amberLight
                           : (isMe ? AppColors.link : AppColors.white),
                       border: isSos
-                          ? Border.all(color: const Color(0xFFF59E0B))
+                          ? Border.all(color: AppColors.accent500)
                           : null,
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(18),
@@ -1361,7 +1361,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 const Icon(
                                   Icons.health_and_safety_rounded,
                                   size: 13,
-                                  color: Color(0xFFD97706),
+                                  color: AppColors.amberText,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
@@ -1370,7 +1370,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: .5,
-                                    color: const Color(0xFFD97706),
+                                    color: AppColors.amberText,
                                   ),
                                 ),
                               ],
@@ -1491,7 +1491,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               border: Border.all(
                                 color: mine
                                     ? AppColors.primary500
-                                    : const Color(0xFFE5E7EB),
+                                    : AppColors.progressTrack,
                               ),
                             ),
                             child: Row(

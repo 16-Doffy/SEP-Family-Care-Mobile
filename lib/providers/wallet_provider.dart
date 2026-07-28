@@ -96,9 +96,8 @@ class LedgerEntry {
   String get legacyDescription => description;
   String get legacyCreatedAt => entryDate;
 
-  /// BE currently appends `Z` while preserving the local wall-clock value
-  /// submitted by the app. Treat that value as local for display; converting
-  /// it with `toLocal()` would incorrectly add seven hours in Vietnam.
+  /// BE hiện vẫn trả hậu tố `Z` trên một số field nhưng giữ giờ local GMT+7.
+  /// Giữ cách hiển thị cũ cho tới khi BE xác nhận migration sang UTC thật.
   String get displayEntryDate {
     final localValue = entryDate.endsWith('Z')
         ? entryDate.substring(0, entryDate.length - 1)
@@ -168,7 +167,8 @@ class WalletProvider extends ChangeNotifier {
   Map<String, dynamic>? get financeSummary => _financeSummary;
   Map<String, dynamic>? get cashFlowSummary => _cashFlowSummary;
   Map<String, dynamic>? get categorySpendingSummary => _categorySpendingSummary;
-  Map<String, dynamic>? get memberContributionSummary => _memberContributionSummary;
+  Map<String, dynamic>? get memberContributionSummary =>
+      _memberContributionSummary;
   bool get isLoadingMoreEntries => _loadingMoreEntries;
   bool get hasMoreEntries => _entriesTotalPages == null
       ? _entries.length >= _entriesLimit
@@ -211,7 +211,8 @@ class WalletProvider extends ChangeNotifier {
   Future<void> _fetchOverview() async {
     final now = DateTime.now();
     final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
-    final end = '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+    final end =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
     dynamic data;
     try {
       // New documented Finance home contract.
@@ -259,16 +260,20 @@ class WalletProvider extends ChangeNotifier {
   Future<void> _fetchDashboardSummaries() async {
     final now = DateTime.now();
     final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
-    final end = '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+    final end =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
     final base = ApiClient.instance.familyPath('/finance');
     Future<Map<String, dynamic>?> read(String path) async {
       try {
-        final data = await ApiClient.instance.get('$base/$path?periodStart=$start&periodEnd=$end');
+        final data = await ApiClient.instance.get(
+          '$base/$path?periodStart=$start&periodEnd=$end',
+        );
         return data is Map ? Map<String, dynamic>.from(data) : null;
       } catch (_) {
         return null;
       }
     }
+
     final results = await Future.wait([
       read('cash-flow-summary'),
       read('category-spending-summary'),
@@ -403,7 +408,8 @@ class WalletProvider extends ChangeNotifier {
           'entryType': isIncome ? 'INCOME' : 'EXPENSE',
           'amount': amount.abs(),
           'description': description,
-          'entryDate': '${DateTime.now().toUtc().toIso8601String().split('.').first}Z',
+          'entryDate':
+              '${DateTime.now().toUtc().toIso8601String().split('.').first}Z',
           if (note != null && note.isNotEmpty) 'note': note,
           'categoryId': ?categoryId,
           'sourceType': ?sourceType,
