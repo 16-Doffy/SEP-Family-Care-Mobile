@@ -19,6 +19,24 @@ double? _numOrNull(dynamic value) {
   return double.tryParse(value.toString());
 }
 
+String _nameFrom(Map<String, dynamic>? map) {
+  if (map == null) return '';
+  final user =
+      _map(map['user']) ??
+      _map(map['userAccount']) ??
+      _map(map['account']) ??
+      _map(map['profile']);
+  return _str(
+    map['displayName'] ??
+        map['fullName'] ??
+        map['name'] ??
+        map['memberName'] ??
+        user?['displayName'] ??
+        user?['fullName'] ??
+        user?['name'],
+  ).trim();
+}
+
 AlbumMediaType albumMediaTypeFromApi(dynamic value) {
   return switch (_str(value).toUpperCase()) {
     'PHOTO' || 'IMAGE' => AlbumMediaType.photo,
@@ -86,17 +104,38 @@ class AlbumTag {
   });
 
   factory AlbumTag.fromJson(Map<String, dynamic> json) {
-    final member = _map(json['taggedMember']) ?? _map(json['member']);
-    final user = _map(member?['user']);
+    final member =
+        _map(json['taggedMember']) ??
+        _map(json['familyMember']) ??
+        _map(json['member']) ??
+        _map(json['taggedUser']);
+    final user =
+        _map(member?['user']) ??
+        _map(member?['userAccount']) ??
+        _map(json['user']) ??
+        _map(json['taggedUser']);
+    final directName = _str(
+      json['taggedMemberName'] ??
+          json['memberName'] ??
+          json['displayName'] ??
+          json['fullName'],
+    ).trim();
+    final nestedMemberName = _nameFrom(member);
+    final nestedUserName = _nameFrom(user);
     return AlbumTag(
       id: _str(json['tagId'] ?? json['id']),
-      taggedMemberId: _str(json['taggedMemberId'] ?? member?['id']),
-      taggedMemberName: _str(
-        member?['displayName'] ??
-            user?['fullName'] ??
-            json['taggedMemberName'] ??
-            'Thanh vien',
+      taggedMemberId: _str(
+        json['taggedMemberId'] ??
+            json['memberId'] ??
+            json['userId'] ??
+            member?['id'] ??
+            user?['id'],
       ),
+      taggedMemberName: directName.isNotEmpty
+          ? directName
+          : (nestedMemberName.isNotEmpty
+                ? nestedMemberName
+                : (nestedUserName.isNotEmpty ? nestedUserName : 'Thành viên')),
       tagNote: json['tagNote']?.toString(),
       canRemove:
           (json['permissions'] is Map

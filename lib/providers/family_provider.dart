@@ -74,7 +74,10 @@ class FamilyMember {
     final name =
         userMap['fullName']?.toString() ??
         userMap['displayName']?.toString() ??
+        userMap['name']?.toString() ??
         json['displayName']?.toString() ??
+        json['fullName']?.toString() ??
+        json['name']?.toString() ??
         '';
     return FamilyMember(
       id: json['id']?.toString() ?? '',

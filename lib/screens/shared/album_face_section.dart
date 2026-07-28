@@ -22,12 +22,14 @@ class AlbumFaceSection extends StatefulWidget {
     required this.isImage,
     required this.isSafe,
     required this.hasRecognizedTag,
+    this.onChanged,
   });
 
   final String mediaId;
   final bool isImage;
   final bool isSafe;
   final bool hasRecognizedTag;
+  final VoidCallback? onChanged;
 
   @override
   State<AlbumFaceSection> createState() => _AlbumFaceSectionState();
@@ -41,6 +43,16 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
 
   AlbumFaceProvider get _face => context.read<AlbumFaceProvider>();
 
+  Future<void> _ensureMembersLoaded() async {
+    final family = context.read<FamilyProvider>();
+    if (family.members.isNotEmpty) return;
+    try {
+      await family.fetchMembers();
+    } catch (_) {
+      // Tên gợi ý vẫn có thể lấy trực tiếp từ response face-suggestions.
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +65,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       return;
     }
     await _face.fetchFeatureAccess();
+    await _ensureMembersLoaded();
     if (!_face.canUseFaceSuggestions) {
       if (mounted) setState(() => _loading = false);
       return;
@@ -115,9 +128,11 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     try {
       if (confirm) {
         await _face.confirmSuggestion(widget.mediaId, s.id);
+        widget.onChanged?.call();
       } else {
         await _face.rejectSuggestion(widget.mediaId, s.id);
       }
+      if (!mounted) return;
       // Bỏ gợi ý vừa xử lý khỏi danh sách chờ.
       setState(
         () => _suggestions = _suggestions.where((e) => e.id != s.id).toList(),
@@ -140,10 +155,14 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     );
   }
 
-  String _memberName(String id) {
+  String _memberName(FaceSuggestion suggestion) {
+    if (suggestion.memberName.isNotEmpty) return suggestion.memberName;
+    final id = suggestion.memberId;
     final members = context.read<FamilyProvider>().members;
     for (final m in members) {
-      if (m.id == id) return m.name.isEmpty ? 'Thành viên' : m.name;
+      if (m.id == id || m.userId == id) {
+        return m.name.isEmpty ? 'Thành viên' : m.name;
+      }
     }
     return 'Thành viên';
   }
@@ -300,7 +319,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _memberName(s.memberId),
+                  _memberName(s),
                   style: GoogleFonts.inter(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,

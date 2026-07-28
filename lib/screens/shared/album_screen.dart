@@ -1850,6 +1850,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                   isImage: !media.isVideo,
                   isSafe: media.isSafe,
                   hasRecognizedTag: media.tags.isNotEmpty,
+                  onChanged: _refreshCurrent,
                 ),
                 const SizedBox(height: 12),
                 widget.actionListBuilder(context, media, _refreshCurrent),

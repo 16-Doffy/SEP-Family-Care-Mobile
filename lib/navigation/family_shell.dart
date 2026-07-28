@@ -363,7 +363,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         ),
         child: SafeArea(
           child: SizedBox(
-            height: 60,
+            height: 68,
             child: Row(
               children: [
                 _NavItem(
@@ -424,8 +424,8 @@ class _NavItem extends StatelessWidget {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             decoration: BoxDecoration(
               color: active
                   ? AppColors.link.withValues(alpha: 0.10)
@@ -439,7 +439,7 @@ class _NavItem extends StatelessWidget {
                   duration: const Duration(milliseconds: 180),
                   width: active ? 28 : 0,
                   height: 3,
-                  margin: const EdgeInsets.only(bottom: 4),
+                  margin: const EdgeInsets.only(bottom: 3),
                   decoration: BoxDecoration(
                     color: AppColors.link,
                     borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -447,7 +447,7 @@ class _NavItem extends StatelessWidget {
                 ),
                 Icon(
                   icon,
-                  size: 23,
+                  size: 21,
                   color: active ? AppColors.link : context.colors.textMuted,
                 ),
                 const SizedBox(height: 2),
@@ -456,7 +456,7 @@ class _NavItem extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    fontSize: 10,
+                    fontSize: 9,
                     fontWeight: active ? FontWeight.w800 : FontWeight.w500,
                     color: active ? AppColors.link : context.colors.textMuted,
                   ),
@@ -493,8 +493,8 @@ class _SOSNavItem extends StatelessWidget {
           ),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 1),
             decoration: BoxDecoration(
               color: active || hasAlert
                   ? AppColors.sos.withValues(alpha: 0.10)
@@ -508,8 +508,8 @@ class _SOSNavItem extends StatelessWidget {
                   clipBehavior: Clip.none,
                   children: [
                     Container(
-                      width: 36,
-                      height: 36,
+                      width: 34,
+                      height: 34,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: AppColors.sos,
@@ -526,7 +526,7 @@ class _SOSNavItem extends StatelessWidget {
                       alignment: Alignment.center,
                       child: const Icon(
                         Icons.sos_rounded,
-                        size: 22,
+                        size: 21,
                         color: Colors.white,
                       ),
                     ),
@@ -549,8 +549,10 @@ class _SOSNavItem extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   'SOS',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    fontSize: 10,
+                    fontSize: 9,
                     fontWeight: FontWeight.w800,
                     color: AppColors.sos,
                   ),

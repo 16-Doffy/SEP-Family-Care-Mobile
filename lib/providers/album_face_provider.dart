@@ -4,10 +4,31 @@ import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
 String _str(dynamic v) => v?.toString() ?? '';
+Map<String, dynamic>? _map(dynamic v) =>
+    v is Map ? Map<String, dynamic>.from(v) : null;
+
 double? _num(dynamic v) {
   if (v == null) return null;
   if (v is num) return v.toDouble();
   return double.tryParse(v.toString());
+}
+
+String _nameFrom(Map<String, dynamic>? map) {
+  if (map == null) return '';
+  final user =
+      _map(map['user']) ??
+      _map(map['userAccount']) ??
+      _map(map['account']) ??
+      _map(map['profile']);
+  return _str(
+    map['displayName'] ??
+        map['fullName'] ??
+        map['name'] ??
+        map['memberName'] ??
+        user?['displayName'] ??
+        user?['fullName'] ??
+        user?['name'],
+  ).trim();
 }
 
 /// Trạng thái quét khuôn mặt của một media album. Response schema của
@@ -44,12 +65,14 @@ FaceScanState _scanStateFrom(String raw) {
 class FaceSuggestion {
   final String id;
   final String memberId;
+  final String memberName;
   final double? confidence; // 0..1 hoặc 0..100 tùy BE — UI tự chuẩn hóa
   final String status; // PENDING | CONFIRMED | REJECTED
 
   const FaceSuggestion({
     required this.id,
     required this.memberId,
+    this.memberName = '',
     this.confidence,
     this.status = 'PENDING',
   });
@@ -57,19 +80,40 @@ class FaceSuggestion {
   bool get isPending => status.toUpperCase() == 'PENDING';
 
   factory FaceSuggestion.fromJson(Map<String, dynamic> j) {
-    final member = j['suggestedMember'] is Map
-        ? Map<String, dynamic>.from(j['suggestedMember'] as Map)
-        : (j['member'] is Map
-              ? Map<String, dynamic>.from(j['member'] as Map)
-              : const <String, dynamic>{});
+    final member =
+        _map(j['suggestedMember']) ??
+        _map(j['matchedMember']) ??
+        _map(j['familyMember']) ??
+        _map(j['taggedMember']) ??
+        _map(j['member']) ??
+        const <String, dynamic>{};
+    final user =
+        _map(member['user']) ??
+        _map(member['userAccount']) ??
+        _map(j['suggestedUser']) ??
+        _map(j['user']);
+    final directName = _str(
+      j['suggestedMemberName'] ??
+          j['matchedMemberName'] ??
+          j['memberName'] ??
+          j['displayName'] ??
+          j['fullName'],
+    ).trim();
+    final nestedMemberName = _nameFrom(member);
+    final nestedUserName = _nameFrom(user);
     return FaceSuggestion(
       id: _str(j['suggestionId'] ?? j['faceSuggestionId'] ?? j['id']),
       memberId: _str(
         j['suggestedMemberId'] ??
             j['matchedMemberId'] ??
+            j['familyMemberId'] ??
             j['memberId'] ??
+            j['userId'] ??
             member['id'],
       ),
+      memberName: directName.isNotEmpty
+          ? directName
+          : (nestedMemberName.isNotEmpty ? nestedMemberName : nestedUserName),
       confidence: _num(
         j['confidence'] ?? j['score'] ?? j['similarity'] ?? j['matchScore'],
       ),
@@ -153,7 +197,14 @@ class AlbumFaceProvider extends ChangeNotifier {
               ? data['items'] as List
               : (data is Map && data['data'] is List
                     ? data['data'] as List
-                    : const <dynamic>[]));
+                    : (data is Map && data['results'] is List
+                          ? data['results'] as List
+                          : (data is Map && data['suggestions'] is List
+                                ? data['suggestions'] as List
+                                : (data is Map &&
+                                          data['faceSuggestions'] is List
+                                      ? data['faceSuggestions'] as List
+                                      : const <dynamic>[])))));
     return raw
         .whereType<Map>()
         .map((e) => FaceSuggestion.fromJson(Map<String, dynamic>.from(e)))
@@ -181,5 +232,4 @@ class AlbumFaceProvider extends ChangeNotifier {
       {},
     );
   }
-
 }
