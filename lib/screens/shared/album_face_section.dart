@@ -21,14 +21,17 @@ class AlbumFaceSection extends StatefulWidget {
     required this.mediaId,
     required this.isImage,
     required this.isSafe,
-    required this.hasRecognizedTag,
+    required this.taggedMemberIds,
     this.onChanged,
   });
 
   final String mediaId;
   final bool isImage;
   final bool isSafe;
-  final bool hasRecognizedTag;
+
+  /// Id thành viên đã được gắn thẻ trên media (memberId hoặc userId tùy BE trả).
+  /// Dùng để không hiện lại gợi ý cho người vốn đã có thẻ trong ảnh.
+  final Set<String> taggedMemberIds;
   final VoidCallback? onChanged;
 
   @override
@@ -98,7 +101,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
 
   bool _shouldAutoScan(FaceScanState scan, List<FaceSuggestion> suggestions) {
     return widget.isSafe &&
-        !widget.hasRecognizedTag &&
+        widget.taggedMemberIds.isEmpty &&
         suggestions.isEmpty &&
         scan == FaceScanState.notScanned;
   }
@@ -128,16 +131,19 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     try {
       if (confirm) {
         await _face.confirmSuggestion(widget.mediaId, s.id);
-        widget.onChanged?.call();
       } else {
         await _face.rejectSuggestion(widget.mediaId, s.id);
       }
       if (!mounted) return;
-      // Bỏ gợi ý vừa xử lý khỏi danh sách chờ.
+      // Bỏ gợi ý vừa xử lý khỏi danh sách chờ TRƯỚC khi báo cho màn ngoài
+      // refresh: onChanged gọi setState ở parent, làm widget này có thể bị
+      // dựng lại và mất state — khi đó `!mounted` sẽ chặn luôn việc xóa gợi ý,
+      // để lại gợi ý đã xác nhận kèm nút Xác nhận như chưa xử lý.
       setState(
         () => _suggestions = _suggestions.where((e) => e.id != s.id).toList(),
       );
       _snack(confirm ? 'Đã xác nhận và gắn thẻ' : 'Đã bỏ qua gợi ý', ok: true);
+      if (confirm) widget.onChanged?.call();
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -167,13 +173,42 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     return 'Thành viên';
   }
 
+  /// Tag và gợi ý có thể dùng memberId hoặc userId tùy field BE trả về → mở rộng
+  /// một id sang cả hai dạng qua danh sách thành viên để so khớp không bị lệch.
+  Set<String> _idAliases(String id) {
+    if (id.isEmpty) return const {};
+    for (final m in context.read<FamilyProvider>().members) {
+      if (m.id == id || m.userId == id) {
+        return {m.id, m.userId}..removeWhere((e) => e.isEmpty);
+      }
+    }
+    return {id};
+  }
+
+  /// Người đã có thẻ trong ảnh thì không cần gợi ý gắn thẻ lại nữa — phòng cả
+  /// trường hợp BE giữ nguyên status gợi ý sau khi xác nhận.
+  bool _alreadyTagged(FaceSuggestion s) {
+    if (widget.taggedMemberIds.isEmpty) return false;
+    return _idAliases(s.memberId).any(widget.taggedMemberIds.contains);
+  }
+
+  List<FaceSuggestion> get _visibleSuggestions =>
+      _suggestions.where((s) => !_alreadyTagged(s)).toList();
+
   String _confidenceLabel(double? c) {
     if (c == null) return '';
     final pct = c <= 1 ? c * 100 : c;
     return '${pct.round()}%';
   }
 
-  ({String text, Color color}) get _statusChip => switch (_scan) {
+  /// Khi mọi gợi ý đều đã bị lọc (đã gắn thẻ xong) thì trạng thái thật là "đã
+  /// quét", không còn "có gợi ý" — tránh chip báo có gợi ý mà bên dưới trống.
+  FaceScanState get _effectiveScan =>
+      _scan == FaceScanState.hasSuggestions && _visibleSuggestions.isEmpty
+      ? FaceScanState.scanned
+      : _scan;
+
+  ({String text, Color color}) get _statusChip => switch (_effectiveScan) {
     FaceScanState.processing => (text: 'Đang quét…', color: AppColors.link),
     FaceScanState.scanned => (text: 'Đã quét', color: AppColors.success),
     FaceScanState.noFace => (
@@ -235,11 +270,11 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
             _lockedNote()
           else ...[
             _scanRow(),
-            if (_suggestions.isNotEmpty) ...[
+            if (_visibleSuggestions.isNotEmpty) ...[
               const SizedBox(height: 10),
-              ..._suggestions.map(_suggestionTile),
-            ] else if (_scan == FaceScanState.scanned ||
-                _scan == FaceScanState.noFace) ...[
+              ..._visibleSuggestions.map(_suggestionTile),
+            ] else if (_effectiveScan == FaceScanState.scanned ||
+                _effectiveScan == FaceScanState.noFace) ...[
               const SizedBox(height: 8),
               Text(
                 'Chưa có gợi ý nào. Bạn vẫn có thể gắn thẻ thủ công.',

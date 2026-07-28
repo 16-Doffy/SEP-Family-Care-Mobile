@@ -77,7 +77,20 @@ class FaceSuggestion {
     this.status = 'PENDING',
   });
 
-  bool get isPending => status.toUpperCase() == 'PENDING';
+  /// Gợi ý đã được xử lý (xác nhận / từ chối) thì không còn là việc chờ làm.
+  /// Response schema của face-suggestions vẫn để trống trong Swagger → loại theo
+  /// các trạng thái "đã xử lý" đã biết thay vì chỉ giữ đúng `PENDING`, để status
+  /// lạ vẫn hiện ra (fail-open) như phần còn lại của file.
+  bool get isResolved {
+    final s = status.toUpperCase();
+    return s.contains('CONFIRM') ||
+        s.contains('ACCEPT') ||
+        s.contains('APPROV') ||
+        s.contains('TAGGED') ||
+        s.contains('REJECT') ||
+        s.contains('DECLIN') ||
+        s.contains('DISMISS');
+  }
 
   factory FaceSuggestion.fromJson(Map<String, dynamic> j) {
     final member =
@@ -208,7 +221,9 @@ class AlbumFaceProvider extends ChangeNotifier {
     return raw
         .whereType<Map>()
         .map((e) => FaceSuggestion.fromJson(Map<String, dynamic>.from(e)))
-        .where((s) => s.id.isNotEmpty)
+        // BE vẫn trả cả gợi ý đã xác nhận/từ chối → không lọc thì tag đã gắn
+        // xong vẫn hiện lại kèm nút Xác nhận mỗi lần load lại.
+        .where((s) => s.id.isNotEmpty && !s.isResolved)
         .toList();
   }
 

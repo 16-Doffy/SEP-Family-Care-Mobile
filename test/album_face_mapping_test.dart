@@ -20,6 +20,21 @@ void main() {
     expect(suggestion.memberName, 'Zap MEM 2');
   });
 
+  test('FaceSuggestion marks resolved statuses so they stop showing as todo', () {
+    FaceSuggestion withStatus(String status) =>
+        FaceSuggestion.fromJson({'id': 's1', 'status': status});
+
+    // Đã xử lý → không được hiện lại kèm nút Xác nhận.
+    expect(withStatus('CONFIRMED').isResolved, isTrue);
+    expect(withStatus('REJECTED').isResolved, isTrue);
+    expect(withStatus('ACCEPTED').isResolved, isTrue);
+
+    // Chờ xử lý, hoặc status lạ/thiếu → vẫn hiện (fail-open).
+    expect(withStatus('PENDING').isResolved, isFalse);
+    expect(withStatus('').isResolved, isFalse);
+    expect(withStatus('SOME_NEW_BE_STATUS').isResolved, isFalse);
+  });
+
   test('AlbumTag reads tagged member name from nested backend payload', () {
     final tag = AlbumTag.fromJson({
       'id': 'tag-1',

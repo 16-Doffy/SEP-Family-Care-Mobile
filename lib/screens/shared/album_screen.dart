@@ -1846,10 +1846,16 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                 ),
                 const SizedBox(height: 14),
                 AlbumFaceSection(
+                  // Key theo mediaId để state (gợi ý đã xử lý) không bị dựng lại
+                  // mỗi khi panel này rebuild và đổi số lượng con.
+                  key: ValueKey('face-${media.id}'),
                   mediaId: media.id,
                   isImage: !media.isVideo,
                   isSafe: media.isSafe,
-                  hasRecognizedTag: media.tags.isNotEmpty,
+                  taggedMemberIds: media.tags
+                      .map((t) => t.taggedMemberId)
+                      .where((id) => id.isNotEmpty)
+                      .toSet(),
                   onChanged: _refreshCurrent,
                 ),
                 const SizedBox(height: 12),
