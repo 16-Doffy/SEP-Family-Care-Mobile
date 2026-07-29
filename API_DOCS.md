@@ -379,6 +379,10 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 ### CreateFinanceJarDto
 - `financeModelId`: uuid *(required)* · `name` *(required)* · `jarCode` *(required)* · `allocationPercentage`: number *(required, 0–100)* · `description` · `isActive` (default true)
 
+### Chat — tìm kiếm & thư viện nội dung
+- **[MỚI 2026-07-29, wire FE] Tìm kiếm tin nhắn:** `GET .../conversations/{id}/messages?q=` đã nối tại `ChatSearchScreen` (icon kính lúp trên AppBar chat), debounce 400ms. Kết quả **không nhảy tới tin nhắn** trong khung chat: tin có thể nằm ngoài trang đang tải, muốn nhảy đúng chỗ phải lật cursor tới đó rồi scroll-to-index.
+- **Thư viện ảnh/file/liên kết:** BE **không có endpoint riêng** và `GET messages` **không filter theo `messageType`** → FE phải lật cursor nhiều trang rồi tự lọc (`fetchMessageHistory`, giới hạn số trang để không kéo vô hạn). Số tin thực sự quét được hiện trên UI. ⚠️ Đề nghị BE thêm `messageType` vào query của `GET messages`, hoặc endpoint attachments riêng, để bỏ cách lật trang tốn request này.
+
 ### Chia quỹ theo mô hình — `POST /families/{familyId}/finance/fund-allocations`
 - Body: `amount` *(required, >0)* · `periodMonth` *(required, 1–12)* · `periodYear` *(required)* · `modelId` *(optional; bỏ trống để BE lấy model ACTIVE)* · `note` *(optional)*.
 - FE kích hoạt model trước, sau đó cho Manager chọn kỳ và nhập tổng quỹ cần chia.

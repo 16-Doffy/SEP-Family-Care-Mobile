@@ -9,18 +9,52 @@ import '../../theme/app_surface_colors.dart';
 
 /// Xem lại ảnh / file / liên kết đã gửi trong hội thoại.
 ///
-/// Dữ liệu lọc từ [ChatProvider.messages] — hiện là **50 tin gần nhất** vì API
-/// GET messages không có filter theo type và không phân trang lùi (xem Swagger
-/// tuần 10). Có ghi chú rõ giới hạn này trên UI để không gây hiểu nhầm là đã
-/// tải toàn bộ lịch sử.
-class ChatSharedContentScreen extends StatelessWidget {
+/// BE **không có endpoint thư viện riêng** và `GET messages` không filter theo
+/// type, nên màn này tự lọc từ tin nhắn. Trước đây chỉ lọc trong 50 tin đang mở;
+/// nay gọi [ChatProvider.fetchMessageHistory] để lật thêm cursor (giới hạn số
+/// trang) rồi lọc trên tập đó. Số tin thực sự quét được hiện luôn trên UI để
+/// không gây hiểu nhầm là đã tải toàn bộ lịch sử.
+class ChatSharedContentScreen extends StatefulWidget {
   const ChatSharedContentScreen({super.key});
 
+  @override
+  State<ChatSharedContentScreen> createState() =>
+      _ChatSharedContentScreenState();
+}
+
+class _ChatSharedContentScreenState extends State<ChatSharedContentScreen> {
   static final _linkRegex = RegExp(r'(https?://[^\s]+)', caseSensitive: false);
+
+  /// Lịch sử nạp sâu hơn khung chat (BE không có endpoint thư viện riêng, phải
+  /// lật cursor). Null = chưa nạp xong → tạm dùng tin đang có trong bộ nhớ.
+  List<ChatMessage>? _history;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadHistory());
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final all = await context.read<ChatProvider>().fetchMessageHistory();
+      if (!mounted) return;
+      setState(() => _history = all);
+    } catch (_) {
+      // Lỗi nạp sâu thì vẫn hiện được nội dung từ tin đang tải, không chặn màn.
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final messages = context.watch<ChatProvider>().messages;
+    final loaded = context.watch<ChatProvider>().messages;
+    // Lấy tập nào nhiều hơn: lịch sử sâu (nếu nạp được) hoặc tin đang mở.
+    final messages = (_history != null && _history!.length >= loaded.length)
+        ? _history!
+        : loaded;
 
     // Bỏ tin đã xóa. messages theo thứ tự DESC (mới nhất trước) — giữ nguyên để
     // nội dung mới hiện lên đầu.
@@ -73,7 +107,9 @@ class ChatSharedContentScreen extends StatelessWidget {
               color: AppColors.primary50,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(
-                'Hiển thị nội dung từ 50 tin nhắn gần nhất.',
+                _loading
+                    ? 'Đang nạp thêm lịch sử hội thoại…'
+                    : 'Hiển thị nội dung từ ${messages.length} tin nhắn gần nhất.',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: AppColors.textSecondary,

@@ -363,6 +363,67 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// GET .../messages?q= — tìm kiếm theo nội dung tin nhắn.
+  ///
+  /// Không ghi vào `_messages` để khung chat đang mở không bị thay bằng kết quả
+  /// tìm kiếm; caller tự hiển thị danh sách trả về.
+  Future<List<ChatMessage>> searchMessages(
+    String query, {
+    int limit = 50,
+  }) async {
+    final fid = _fid;
+    final cid = conversationId;
+    final q = query.trim();
+    if (fid == null || cid == null || q.isEmpty) return [];
+    final data = await ApiClient.instance.get(
+      '/families/$fid/chat/conversations/$cid/messages'
+      '?limit=$limit&q=${Uri.encodeQueryComponent(q)}',
+    );
+    return _messagesFrom(data);
+  }
+
+  /// Nạp sâu hơn 1 trang để dựng thư viện ảnh/file/link đã gửi.
+  ///
+  /// BE **không có** endpoint riêng cho thư viện, chỉ có cursor pagination trên
+  /// `messages` → phải lật nhiều trang rồi tự lọc. Giới hạn [maxPages] để không
+  /// kéo vô hạn trên hội thoại dài.
+  Future<List<ChatMessage>> fetchMessageHistory({
+    int maxPages = 4,
+    int limit = 100,
+  }) async {
+    final fid = _fid;
+    final cid = conversationId;
+    if (fid == null || cid == null) return [];
+    final all = <ChatMessage>[];
+    String? cursor;
+    for (var page = 0; page < maxPages; page++) {
+      final data = await ApiClient.instance.get(
+        '/families/$fid/chat/conversations/$cid/messages?limit=$limit'
+        '${cursor == null ? '' : '&cursor=$cursor'}',
+      );
+      final batch = _messagesFrom(data);
+      if (batch.isEmpty) break;
+      all.addAll(batch);
+      // Cursor = id tin cuối của trang trước (mới → cũ).
+      cursor = batch.last.id;
+      if (batch.length < limit) break;
+    }
+    return all;
+  }
+
+  List<ChatMessage> _messagesFrom(dynamic data) {
+    final list = data is List
+        ? data
+        : (data is Map && data['items'] is List
+              ? data['items'] as List
+              : <dynamic>[]);
+    return list
+        .whereType<Map>()
+        .map((e) => ChatMessage.fromJson(Map<String, dynamic>.from(e)))
+        .where((m) => m.id.isNotEmpty)
+        .toList();
+  }
+
   // GET .../pinned-messages
   Future<List<ChatMessage>> fetchPinnedMessages() async {
     final fid = _fid;

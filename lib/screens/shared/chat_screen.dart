@@ -10,6 +10,7 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/app_feature_icon.dart';
 import '../../widgets/avatar_widget.dart';
+import 'chat_search_screen.dart';
 import 'chat_shared_content_screen.dart';
 
 /// Chat gia đình — gán ĐỦ 18 endpoints module chat của BE (2026-07-11):
@@ -1006,6 +1007,17 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         centerTitle: false,
         actions: [
+          IconButton(
+            tooltip: 'Tìm trong tin nhắn',
+            icon: const Icon(
+              Icons.search_rounded,
+              color: AppColors.textMuted,
+              size: 21,
+            ),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ChatSearchScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Nội dung đã chia sẻ',
             icon: const Icon(

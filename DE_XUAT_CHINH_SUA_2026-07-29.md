@@ -100,14 +100,25 @@ default `false` thì user mắc kẹt với tag sai. Đề nghị BE chốt và 
 
 ### P1 — Yêu cầu nhóm đã nêu 21/7, chưa làm
 
-Verify trong code: 3 việc chat dưới đây **BE đã có endpoint, FE chưa dùng**.
+> ⚠️ **SỬA 2026-07-29 — bản đầu của mục này ghi SAI.** Tôi grep theo tên
+> operation Swagger (`listPinned`) và chuỗi tiếng Việt đoán trước ("Ảnh đã gửi")
+> nên kết luận 2 việc là "chưa làm", trong khi code đã có sẵn với tên khác
+> (`_showPinnedSheet` → `fetchPinnedMessages`, và file
+> `chat_shared_content_screen.dart`). Bảng dưới là hiện trạng đã kiểm lại đúng.
 
 | Việc | Endpoint BE | Hiện trạng FE |
 |---|---|---|
-| Tìm kiếm tin nhắn | `GET .../messages?q=` | **Chưa dùng** `q` |
-| Màn "Tin đã ghim" | `GET .../pinned-messages` | **Chưa gọi** (ghim/bỏ ghim thì đã có) |
-| Thư viện ảnh/file/link đã gửi | Lọc từ `messages`/`attachments` | **Chưa có màn** |
+| Tìm kiếm tin nhắn | `GET .../messages?q=` | ✅ **Làm 29/07** — `ChatSearchScreen` + `searchMessages()` |
+| Màn "Tin đã ghim" | `GET .../pinned-messages` | ✅ Đã có từ trước (`_showPinnedSheet`) |
+| Thư viện ảnh/file/link đã gửi | Lọc từ `messages`/`attachments` | ✅ Đã có từ trước; **29/07 nạp sâu hơn** thay vì chỉ 50 tin trong bộ nhớ |
 | Đổi tên nhóm chat | `PATCH .../conversations/{id}` | ✅ Đã có |
+
+**Còn thiếu thật (cần BE):** thư viện phải tự lọc từ `messages` vì **không có
+endpoint thư viện riêng** và `GET messages` không filter theo `messageType`. FE
+đang lật cursor nhiều trang rồi lọc — đúng nhưng tốn request. Đề nghị BE thêm
+`GET .../messages?messageType=IMAGE|FILE` (hoặc endpoint `attachments` riêng).
+Nhảy tới tin nhắn từ kết quả tìm kiếm cũng chưa làm được vì cần scroll-to-index
+trên cursor pagination.
 
 Ngoài ra còn 2 việc UI Nhật nêu, cần bạn xác nhận mức độ ưu tiên vì là việc thẩm mỹ, không phải lỗi:
 - **Sửa icon trợ lý AI.**
