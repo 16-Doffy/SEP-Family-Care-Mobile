@@ -105,16 +105,18 @@ class FundAllocationItem {
 }
 
 class FundAllocationResult {
-  final String modelId;
-  final String modelName;
-  final String modelType;
-  final int periodMonth;
-  final int periodYear;
-  final double totalAmount;
+  final String? modelId;
+  final String? modelName;
+  final String? modelType;
+  final int? periodMonth;
+  final int? periodYear;
+  final double? totalAmount;
   final String sourceType;
   final String sourceId;
   final List<FundAllocationItem> items;
   final DateTime? createdAt;
+  final String? createdByMemberId;
+  final String? note;
 
   const FundAllocationResult({
     required this.modelId,
@@ -127,6 +129,8 @@ class FundAllocationResult {
     required this.sourceId,
     required this.items,
     this.createdAt,
+    this.createdByMemberId,
+    this.note,
   });
 
   factory FundAllocationResult.fromJson(Map<String, dynamic> j) {
@@ -142,22 +146,28 @@ class FundAllocationResult {
             .whereType<DateTime>()
             .toList()
           ..sort();
+    final topLevelCreatedAt = DateTime.tryParse(
+      j['createdAt']?.toString() ?? '',
+    );
     return FundAllocationResult(
-      modelId: model['id']?.toString() ?? '',
-      modelName: model['name']?.toString() ?? '',
-      modelType: model['modelType']?.toString() ?? '',
-      periodMonth: (period['month'] as num?)?.toInt() ?? 0,
-      periodYear: (period['year'] as num?)?.toInt() ?? 0,
-      totalAmount: _money(j['totalAmount']),
+      modelId: model['id']?.toString(),
+      modelName: model['name']?.toString(),
+      modelType: model['modelType']?.toString(),
+      periodMonth: (period['month'] as num?)?.toInt(),
+      periodYear: (period['year'] as num?)?.toInt(),
+      totalAmount: _moneyNull(j['totalAmount']),
       sourceType: j['sourceType']?.toString() ?? '',
       sourceId: j['sourceId']?.toString() ?? '',
       items: (j['items'] as List? ?? const [])
           .whereType<Map>()
           .map((e) => FundAllocationItem.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
-      // Một lần chia quỹ tạo các ledger entry trong cùng transaction.
-      // Timestamp sớm nhất là thời điểm bắt đầu ghi nhận lần chia đó.
-      createdAt: entryDates.isEmpty ? null : entryDates.first,
+      // Contract mới trả createdAt ở cấp allocation. Fallback entries chỉ để
+      // đọc dữ liệu cũ được tạo trước khi BE bổ sung metadata này.
+      createdAt:
+          topLevelCreatedAt ?? (entryDates.isEmpty ? null : entryDates.first),
+      createdByMemberId: j['createdByMemberId']?.toString(),
+      note: j['note']?.toString(),
     );
   }
 }
@@ -177,20 +187,31 @@ class FundAllocationPage {
     required this.totalPages,
   });
 
-  factory FundAllocationPage.fromJson(Map<String, dynamic> j) =>
-      FundAllocationPage(
-        items: (j['items'] as List? ?? const [])
+  factory FundAllocationPage.fromJson(Map<String, dynamic> j) {
+    final items =
+        (j['items'] as List? ?? const [])
             .whereType<Map>()
             .map(
               (e) =>
                   FundAllocationResult.fromJson(Map<String, dynamic>.from(e)),
             )
-            .toList(),
-        total: (j['total'] as num?)?.toInt() ?? 0,
-        page: (j['page'] as num?)?.toInt() ?? 1,
-        limit: (j['limit'] as num?)?.toInt() ?? 20,
-        totalPages: (j['totalPages'] as num?)?.toInt() ?? 1,
-      );
+            .toList()
+          ..sort((a, b) {
+            final aTime = a.createdAt;
+            final bTime = b.createdAt;
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            return bTime.compareTo(aTime);
+          });
+    return FundAllocationPage(
+      items: items,
+      total: (j['total'] as num?)?.toInt() ?? 0,
+      page: (j['page'] as num?)?.toInt() ?? 1,
+      limit: (j['limit'] as num?)?.toInt() ?? 20,
+      totalPages: (j['totalPages'] as num?)?.toInt() ?? 1,
+    );
+  }
 }
 
 class FinanceCategory {

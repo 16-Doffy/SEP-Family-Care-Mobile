@@ -921,7 +921,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     if (error is ApiException) {
       final byCode = switch (error.code) {
         'FUND_ALLOCATION_ALREADY_EXISTS' =>
-          'Kỳ này đã được chia quỹ theo mô hình đã chọn. Không thể chia trùng.',
+          'Gia đình đã chia quỹ cho kỳ này. Mỗi tháng chỉ được chia một lần, kể cả khi đổi mô hình.',
         'NO_ACTIVE_FINANCE_MODEL' =>
           'Gia đình chưa có mô hình tài chính đang áp dụng.',
         'INVALID_FINANCE_MODEL' =>
@@ -939,7 +939,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         404 =>
           'Không tìm thấy mô hình đang áp dụng. Vui lòng lưu và kích hoạt mô hình trước.',
         409 =>
-          'Kỳ này đã được chia quỹ theo mô hình đã chọn. Không thể chia trùng.',
+          'Gia đình đã chia quỹ cho kỳ này. Mỗi tháng chỉ được chia một lần, kể cả khi đổi mô hình.',
         _ => error.message,
       };
     }
@@ -968,6 +968,13 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       );
 
   Future<void> _showFundAllocationResult(fp.FundAllocationResult result) {
+    final modelName = result.modelName?.trim();
+    final period = result.periodMonth != null && result.periodYear != null
+        ? 'Kỳ ${result.periodMonth}/${result.periodYear}'
+        : 'Kỳ chưa xác định';
+    final amount = result.totalAmount == null
+        ? 'Số tiền chưa xác định'
+        : '${_formatMoney(result.totalAmount!)} đ';
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -988,34 +995,61 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                '${result.modelName} • Kỳ ${result.periodMonth}/${result.periodYear} • ${_formatMoney(result.totalAmount)} đ'
+                '${modelName == null || modelName.isEmpty ? 'Mô hình không còn dữ liệu' : modelName} • $period • $amount'
                 '${result.createdAt == null ? '' : '\nThực hiện lúc ${_formatAllocationDateTime(result.createdAt)}'}',
                 style: const TextStyle(color: AppColors.textMuted),
               ),
-              const SizedBox(height: 16),
-              ...result.items.map(
-                (item) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.jarName.isEmpty ? item.jarCode : item.jarName,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Text(
-                        '${item.allocationPercentage.toStringAsFixed(item.allocationPercentage % 1 == 0 ? 0 : 1)}%',
-                      ),
-                      const SizedBox(width: 14),
-                      Text(
-                        '${_formatMoney(item.amount)} đ',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ],
+              if (result.note != null && result.note!.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Ghi chú: ${result.note}',
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
+              ],
+              if (result.createdByMemberId != null &&
+                  result.createdByMemberId!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Mã thành viên thực hiện: ${result.createdByMemberId}',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
                   ),
                 ),
-              ),
+              ],
+              const SizedBox(height: 16),
+              if (result.items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'Dữ liệu lịch sử cũ không còn đủ thông tin từng hũ.',
+                    style: TextStyle(color: AppColors.textMuted),
+                  ),
+                )
+              else
+                ...result.items.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.jarName.isEmpty ? item.jarCode : item.jarName,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text(
+                          '${item.allocationPercentage.toStringAsFixed(item.allocationPercentage % 1 == 0 ? 0 : 1)}%',
+                        ),
+                        const SizedBox(width: 14),
+                        Text(
+                          '${_formatMoney(item.amount)} đ',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               FilledButton(
                 onPressed: () => Navigator.pop(sheetContext),
@@ -1217,22 +1251,29 @@ class _FundAllocationHistorySheetState
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(
-                              item.modelName.isEmpty
-                                  ? 'Mô hình tài chính'
-                                  : item.modelName,
+                              item.modelName == null || item.modelName!.isEmpty
+                                  ? 'Mô hình tài chính (dữ liệu cũ)'
+                                  : item.modelName!,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             subtitle: Text(
                               [
-                                'Kỳ ${item.periodMonth}/${item.periodYear} · ${item.items.length} hũ',
+                                item.periodMonth != null &&
+                                        item.periodYear != null
+                                    ? 'Kỳ ${item.periodMonth}/${item.periodYear} · ${item.items.length} hũ'
+                                    : 'Kỳ chưa xác định · ${item.items.length} hũ',
                                 if (item.createdAt != null)
                                   'Thực hiện lúc ${_formatAllocationDateTime(item.createdAt)}',
+                                if (item.note != null && item.note!.isNotEmpty)
+                                  'Ghi chú: ${item.note}',
                               ].join('\n'),
                             ),
                             trailing: Text(
-                              '${_FinanceModelScreenState._formatMoney(item.totalAmount)} đ',
+                              item.totalAmount == null
+                                  ? '—'
+                                  : '${_FinanceModelScreenState._formatMoney(item.totalAmount!)} đ',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                               ),
