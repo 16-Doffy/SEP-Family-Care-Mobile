@@ -2432,10 +2432,22 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
           : null),
     ];
 
+    final assigner =
+        _resolveName(context, task.createdByName, task.createdByMemberId) ??
+        // Tên người giao có thể chỉ nằm ở assignment chứ không ở task.
+        active
+            .map(
+              (a) => _resolveName(
+                context,
+                a.assignedByName,
+                a.assignedByMemberId,
+              ),
+            )
+            .whereType<String>()
+            .firstOrNull;
+
     final rows = <String>[
-      ?(task.createdByName?.trim().isNotEmpty == true
-          ? 'Người giao: ${task.createdByName!.trim()}'
-          : null),
+      ?(assigner == null ? null : 'Người giao: $assigner'),
       'Người làm: $assignee',
       ?(timeParts.isEmpty ? null : timeParts.join(' · ')),
     ];
@@ -2455,6 +2467,21 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         ),
       ),
     ];
+  }
+
+  /// Ưu tiên tên BE trả; chỉ có id thì tra trong danh sách thành viên. Không ra
+  /// tên nào thì null để caller ẩn dòng, không hiện id thô.
+  String? _resolveName(BuildContext context, String? name, String? memberId) {
+    final direct = name?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final id = memberId?.trim();
+    if (id == null || id.isEmpty) return null;
+    for (final m in context.read<FamilyProvider>().members) {
+      if (m.id == id || m.userId == id) {
+        return m.name.trim().isEmpty ? null : m.name.trim();
+      }
+    }
+    return null;
   }
 
   static String _fmtDateTime(DateTime value) {

@@ -95,4 +95,60 @@ void main() {
       expect(task.createdByName, isNull);
     });
   });
+
+  group('TaskAssignment — người giao (màn nhiệm vụ của thành viên)', () {
+    test('đọc từ assignedByMember ở cấp assignment', () {
+      final a = TaskAssignment.fromJson({
+        'id': 'as1',
+        'taskId': 't1',
+        'assignedToMemberId': 'mem-1',
+        'assignedByMember': {
+          'id': 'hoh-1',
+          'user': {'fullName': 'Zap HOH'},
+        },
+      });
+
+      expect(a.assignedByMemberId, 'hoh-1');
+      expect(a.assignedByName, 'Zap HOH');
+    });
+
+    test('assignment không có thì lấy từ task lồng bên trong', () {
+      final a = TaskAssignment.fromJson({
+        'id': 'as1',
+        'assignedToMemberId': 'mem-1',
+        'task': {
+          'id': 't1',
+          'title': 'Dọn phòng',
+          'createdByMember': {
+            'id': 'hoh-1',
+            'displayName': 'Bố',
+          },
+        },
+      });
+
+      expect(a.assignedByName, isNull, reason: 'cấp assignment không có tên');
+      expect(a.task?.createdByName, 'Bố', reason: 'UI fallback sang task');
+    });
+
+    test('chỉ có id (BE không trả tên) — UI sẽ tra tên qua danh sách thành viên', () {
+      final a = TaskAssignment.fromJson({
+        'id': 'as1',
+        'assignedToMemberId': 'mem-1',
+        'assignedByMemberId': 'hoh-1',
+      });
+
+      expect(a.assignedByMemberId, 'hoh-1');
+      expect(a.assignedByName, isNull);
+    });
+
+    test('BE không trả gì về người giao thì cả hai đều null', () {
+      final a = TaskAssignment.fromJson({
+        'id': 'as1',
+        'assignedToMemberId': 'mem-1',
+      });
+
+      expect(a.assignedByMemberId, isNull);
+      expect(a.assignedByName, isNull);
+    });
+  });
 }

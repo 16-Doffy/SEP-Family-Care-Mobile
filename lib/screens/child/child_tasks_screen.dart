@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -23,6 +24,9 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
       context.read<TaskProvider>().fetchMyAssignments();
       // Cho banner thưởng: settlement WAITING_CONFIRMATION cần member xác nhận.
       context.read<TaskProvider>().fetchRewardSettlements();
+      // Cần để đổi id người giao thành tên khi BE chỉ trả id.
+      final family = context.read<FamilyProvider>();
+      if (family.members.isEmpty) family.fetchMembers();
     });
   }
 
@@ -495,6 +499,18 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                             ),
                           ),
                         ),
+                      ?_assignerLine(context, a),
+                      if (a.startAt != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            'Bắt đầu: ${_fmtDate(a.startAt!)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 8),
                       if (a.rewardSetting != null ||
                           a.task?.rewardSetting != null)
@@ -700,6 +716,40 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   }
 
   String _fmtDate(DateTime d) => '${d.day}/${d.month}';
+
+  /// Dòng "Người giao" cho thành viên biết ai giao việc này.
+  ///
+  /// Tên có thể nằm ở assignment hoặc ở task tùy BE trả; nếu chỉ có id thì tra
+  /// tiếp trong danh sách thành viên. Không ra được tên nào thì trả null để ẩn
+  /// hẳn dòng — hiện "Người giao: Không rõ" chỉ làm nhiễu.
+  Widget? _assignerLine(BuildContext context, TaskAssignment a) {
+    final name = _assignerName(context, a);
+    if (name == null) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        'Người giao: $name',
+        style: GoogleFonts.inter(
+          fontSize: 11.5,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+
+  String? _assignerName(BuildContext context, TaskAssignment a) {
+    final direct = (a.assignedByName ?? a.task?.createdByName)?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+
+    final id = (a.assignedByMemberId ?? a.task?.createdByMemberId)?.trim();
+    if (id == null || id.isEmpty) return null;
+    for (final m in context.read<FamilyProvider>().members) {
+      if (m.id == id || m.userId == id) {
+        return m.name.trim().isEmpty ? null : m.name.trim();
+      }
+    }
+    return null;
+  }
 
   // ── Nộp nhiệm vụ kèm proof (ảnh / note) ───────────────────────────────────
 

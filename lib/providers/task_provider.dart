@@ -182,6 +182,12 @@ class TaskAssignment {
   final String? taskTitle;
   final String assignedToMemberId;
   final String? assignedToName;
+
+  /// Người giao việc. Swagger không document response schema của assignment nên
+  /// đọc phòng thủ ở **cả 2 cấp**: assignment (`assignedByMember`) và task
+  /// (`task.createdByMember`) — BE trả ở đâu cũng lấy được.
+  final String? assignedByMemberId;
+  final String? assignedByName;
   final DateTime? startAt;
   final DateTime? dueAt;
   final String
@@ -197,6 +203,8 @@ class TaskAssignment {
     this.taskTitle,
     required this.assignedToMemberId,
     this.assignedToName,
+    this.assignedByMemberId,
+    this.assignedByName,
     this.startAt,
     this.dueAt,
     this.status = 'PENDING',
@@ -215,6 +223,18 @@ class TaskAssignment {
     final userMap = member['user'] is Map
         ? member['user'] as Map
         : <String, dynamic>{};
+    // Người giao: thử assignment trước, rồi mới tới task (task nested cũng đã
+    // parse createdByMember qua FamilyTask.fromJson).
+    final assigner = j['assignedByMember'] is Map
+        ? j['assignedByMember'] as Map
+        : (j['assignedBy'] is Map
+              ? j['assignedBy'] as Map
+              : (j['createdByMember'] is Map
+                    ? j['createdByMember'] as Map
+                    : const {}));
+    final assignerUser = assigner['user'] is Map
+        ? assigner['user'] as Map
+        : const {};
     // Submission có thể embedded dạng object đơn hoặc list (lấy cái mới nhất)
     String? submissionId;
     if (j['submission'] is Map) {
@@ -236,6 +256,15 @@ class TaskAssignment {
           _str(userMap['fullName']) ??
           _str(member['displayName']) ??
           _str(j['assignedToName']),
+      assignedByMemberId:
+          _str(j['assignedByMemberId']) ??
+          _str(j['createdByMemberId']) ??
+          _str(assigner['id']) ??
+          _str(taskMap?['createdByMemberId']),
+      assignedByName:
+          _str(assignerUser['fullName']) ??
+          _str(assigner['displayName']) ??
+          _str(j['assignedByName']),
       startAt: _date(j['startAt']),
       dueAt: _date(j['dueAt']),
       status: _str(j['status']) ?? 'PENDING',
