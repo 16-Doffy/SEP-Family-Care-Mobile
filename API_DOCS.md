@@ -379,6 +379,30 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 ### CreateFinanceJarDto
 - `financeModelId`: uuid *(required)* · `name` *(required)* · `jarCode` *(required)* · `allocationPercentage`: number *(required, 0–100)* · `description` · `isActive` (default true)
 
+### [MỚI 2026-07-29, CHƯA WIRE] Mapping danh mục → hũ + report jar target/actual
+> ⚠️ **[VERIFY WITH OFFICIAL SOURCE]** Nguồn duy nhất hiện tại là **tin BE trên Discord**. Bản OpenAPI được dán kèm bị **cắt giữa** (dừng ở `wearables/{deviceId}/events`) nên **không có DTO nào của 3 endpoint dưới đây được xác nhận** — chưa biết request/response schema, tên field, hay enum. Không code theo trí nhớ; xin Swagger đầy đủ trước khi wire.
+
+**BE bổ sung flow mapping `category → jar` theo từng finance model:**
+- `GET /families/{familyId}/finance/category-jar-mappings`
+- `POST /families/{familyId}/finance/category-jar-mappings`
+- `DELETE /families/{familyId}/finance/category-jar-mappings/{mappingId}`
+- Report mới: `GET /families/{familyId}/finance/reports/jar-target-actual` — target % vs actual % từng hũ, `status ∈ { ON_TRACK, OVER_TARGET, UNDER_TARGET }`.
+
+**Quy tắc nghiệp vụ BE nêu:**
+1. Manager chọn model 5 hũ / 80-20 → cần cấu hình **category nào thuộc hũ nào**.
+2. Khi tạo giao dịch, FE **chỉ cần gửi `categoryId`**. **Không gửi `jarId`** thì BE tự gán theo mapping của model **ACTIVE**.
+3. Giao dịch cũ chưa có mapping nằm trong nhóm **`unmapped`**; BE **không sửa lịch sử**.
+4. BE khuyến nghị FE ưu tiên chọn **category** khi nhập thu/chi, để BE auto-map hũ.
+
+**Ảnh hưởng tới code hiện tại (cần xử lý khi wire):**
+- ⚠️ Form ghi thu/chi ở [wallet_screen.dart](lib/screens/parent/wallet_screen.dart) **đang gửi `jarId`** khi user tự chọn hũ (chỉ với khoản chi). Gửi `jarId` sẽ **đè** auto-map của BE → phải chốt: bỏ hẳn picker hũ và để BE map, hay giữ làm "ghi đè thủ công" có nhãn rõ ràng.
+- `GET /finance/reports/jar-target-actual` **thay thế được** phần FE tự tính trong [jar_allocation.dart](lib/utils/jar_allocation.dart) — đây đúng là khoảng trống `byJar` ("Reserved") đã nêu. Khi wire xong nên bỏ phần tự cộng để tránh 2 nguồn số liệu lệch nhau. Lưu ý dòng "Chưa gán hũ" hiện có ứng với nhóm `unmapped` của BE.
+
+### [MỚI 2026-07-29] Face AI chấm điểm từng khuôn mặt
+- BE nay **kiểm tra từng face trong ảnh** rồi lấy face có điểm cao nhất để gắn thẻ (ví dụ BE đưa: face1 `0.88`, face2 `0.5` → chọn face1).
+- ⚠️ [VERIFY WITH OFFICIAL SOURCE] Ví dụ điểm `0.88`/`0.5` cho thấy **confidence là thang 0..1**, khớp `normalizedConfidence` hiện tại — nhưng Swagger **vẫn chưa có response schema** cho `face-suggestions`, nên tên field và enum `status` vẫn đang parse phòng thủ.
+- Việc BE chọn face điểm cao nhất **không đổi** quy tắc nghiệp vụ đã chốt: tag chính thức chỉ được tạo khi **người dùng bấm Xác nhận**.
+
 ### Hỗ trợ chi tiêu (xin tiền) — tên người gửi & lọc `mine`
 - **[SỬA 2026-07-29] Tên người gửi trước đây LUÔN hiện "Thành viên".** `SupportRequest.fromJson` chỉ đọc `json['requester']`/`json['user']` và chỉ lấy field **trực tiếp** (`fullName`/`name`) → không khớp khuôn DTO member của BE (`{ id, displayName, user: { fullName } }`), nên rơi về fallback 100% số lần. Nay đọc `requesterMember`/`requester`/`member`/`user` + tầng `user` lồng trong, và giữ `requesterName` **rỗng** khi BE không trả tên để UI còn tra theo `requesterMemberId`. ⚠️ [VERIFY WITH OFFICIAL SOURCE] Swagger **không có response schema** cho support-request nên tên object lồng (`requesterMember`) là suy ra từ khuôn các DTO member khác — cần BE chốt.
 - Hệ quả đã sửa: cả 2 màn duyệt của Manager (`wallet_screen` tab "Yêu cầu" và `support_request_screen`) và snackbar sau khi duyệt/từ chối đều từng ghi "cho Thành viên" — duyệt tiền mà không biết cho ai.
