@@ -69,15 +69,19 @@ class LedgerEntry {
   // amount từ BE LUÔN dương (đã verify) — dấu +/- phải tự tính theo entryType.
   // EXPENSE/SUPPORT: verify bằng kịch bản thật (duyệt support-request →
   // BE tự tạo ledger entry entryType=SUPPORT, đây chính là tiền Hoh/Dup chi
-  // ra cho Mem, phải hiện dấu "-"). CONTRIBUTION/ALLOWANCE/ADJUSTMENT suy
+  // ra cho Mem, phải hiện dấu "-"). CONTRIBUTION/ALLOWANCE và ADJUSTMENT khác suy
   // luận theo nghiệp vụ (chưa verify được bằng cách tự tạo entry thật —
   // REWARD không tự sinh ledger entry qua flow settlement chuẩn nên cũng
   // chưa verify), cần xác nhận lại với BE nếu sai.
   double get signedAmount {
+    // Chia quỹ theo mô hình chỉ phân loại tiền đang có. Các entry này tồn tại
+    // để audit, tuyệt đối không được cộng thành thu nhập hoặc trừ thành chi phí.
+    if (entryType == 'ADJUSTMENT' && sourceType == 'MODEL_FUND_ALLOCATION') {
+      return 0;
+    }
     const expenseTypes = {'EXPENSE', 'ALLOWANCE', 'REWARD', 'SUPPORT'};
     if (expenseTypes.contains(entryType)) return -amount.abs();
-    return amount
-        .abs(); // INCOME, CONTRIBUTION, ADJUSTMENT (mặc định coi là thu)
+    return amount.abs(); // INCOME, CONTRIBUTION và ADJUSTMENT khác tạm coi là thu
   }
 
   factory LedgerEntry.fromJson(Map<String, dynamic> json) {

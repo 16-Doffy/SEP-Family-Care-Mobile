@@ -16,7 +16,8 @@ const _kRequestTimeout = Duration(seconds: 15);
 class ApiException implements Exception {
   final int statusCode;
   final String message;
-  const ApiException(this.statusCode, this.message);
+  final String? code;
+  const ApiException(this.statusCode, this.message, {this.code});
   @override
   String toString() => message;
 }
@@ -305,7 +306,10 @@ class ApiClient {
       if (response.statusCode == 403 && _isVerificationRequired(message)) {
         onVerificationRequired?.call(message);
       }
-      throw ApiException(response.statusCode, message);
+      final code = body is Map
+          ? (body['code'] ?? body['errorCode'])?.toString()
+          : null;
+      throw ApiException(response.statusCode, message, code: code);
     }
 
     // Unwrap { success, data }

@@ -147,6 +147,37 @@ class FundAllocationResult {
   }
 }
 
+class FundAllocationPage {
+  final List<FundAllocationResult> items;
+  final int total;
+  final int page;
+  final int limit;
+  final int totalPages;
+
+  const FundAllocationPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.limit,
+    required this.totalPages,
+  });
+
+  factory FundAllocationPage.fromJson(Map<String, dynamic> j) =>
+      FundAllocationPage(
+        items: (j['items'] as List? ?? const [])
+            .whereType<Map>()
+            .map(
+              (e) =>
+                  FundAllocationResult.fromJson(Map<String, dynamic>.from(e)),
+            )
+            .toList(),
+        total: (j['total'] as num?)?.toInt() ?? 0,
+        page: (j['page'] as num?)?.toInt() ?? 1,
+        limit: (j['limit'] as num?)?.toInt() ?? 20,
+        totalPages: (j['totalPages'] as num?)?.toInt() ?? 1,
+      );
+}
+
 class FinanceCategory {
   final String id;
   final String name;
@@ -826,6 +857,28 @@ class FinanceProvider extends ChangeNotifier {
     }
     await fetchAll();
     return result;
+  }
+
+  /// Xem lại snapshot các lần chia quỹ. BE giữ nguyên tên/tỷ lệ hũ tại thời
+  /// điểm chia nên không ghép lại từ cấu hình model hiện tại.
+  Future<FundAllocationPage> fetchFundAllocations({
+    String? modelId,
+    int? periodMonth,
+    int? periodYear,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    if ((periodMonth == null) != (periodYear == null)) {
+      throw ArgumentError(
+        'periodMonth và periodYear phải được truyền cùng nhau',
+      );
+    }
+    final response = await ApiClient.instance.get(
+      '/families/$_fid/finance/fund-allocations${_qs({'modelId': modelId, 'periodMonth': periodMonth, 'periodYear': periodYear, 'page': page, 'limit': limit})}',
+    );
+    return FundAllocationPage.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
   }
 
   Future<void> updateJar(

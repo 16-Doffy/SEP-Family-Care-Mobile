@@ -405,6 +405,12 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                       label: const Text('Chia quỹ theo mô hình đang áp dụng'),
                     ),
                     const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: _saving ? null : _showFundAllocationHistory,
+                      icon: const Icon(Icons.history_rounded),
+                      label: const Text('Lịch sử chia quỹ'),
+                    ),
+                    const SizedBox(height: 8),
                   ],
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
@@ -903,6 +909,20 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
   String _fundAllocationError(Object error) {
     if (error is ApiException) {
+      final byCode = switch (error.code) {
+        'FUND_ALLOCATION_ALREADY_EXISTS' =>
+          'Kỳ này đã được chia quỹ theo mô hình đã chọn. Không thể chia trùng.',
+        'NO_ACTIVE_FINANCE_MODEL' =>
+          'Gia đình chưa có mô hình tài chính đang áp dụng.',
+        'INVALID_FINANCE_MODEL' =>
+          'Mô hình tài chính không hợp lệ hoặc không thuộc gia đình này.',
+        'INVALID_JAR_PERCENTAGE' =>
+          'Tổng tỷ lệ các hũ đang hoạt động phải bằng 100%.',
+        'INSUFFICIENT_AVAILABLE_FUND' =>
+          'Số tiền chia vượt quá quỹ khả dụng của kỳ này.',
+        _ => null,
+      };
+      if (byCode != null) return byCode;
       return switch (error.statusCode) {
         400 =>
           'Không thể chia quỹ: mô hình chưa có hũ hoặc tổng tỷ lệ các hũ chưa bằng 100%.',
@@ -914,6 +934,21 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       };
     }
     return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  Future<void> _showFundAllocationHistory() async {
+    final selected = await showModalBottomSheet<fp.FundAllocationResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const _FundAllocationHistorySheet(),
+    );
+    if (selected != null && mounted) {
+      await _showFundAllocationResult(selected);
+    }
   }
 
   static String _formatMoney(double amount) =>
@@ -1081,6 +1116,143 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+class _FundAllocationHistorySheet extends StatefulWidget {
+  const _FundAllocationHistorySheet();
+
+  @override
+  State<_FundAllocationHistorySheet> createState() =>
+      _FundAllocationHistorySheetState();
+}
+
+class _FundAllocationHistorySheetState
+    extends State<_FundAllocationHistorySheet> {
+  fp.FundAllocationPage? _result;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load(1));
+  }
+
+  Future<void> _load(int page) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await context
+          .read<fp.FinanceProvider>()
+          .fetchFundAllocations(page: page);
+      if (!mounted) return;
+      setState(() => _result = result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = _result;
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .72,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Lịch sử chia quỹ',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Dữ liệu là snapshot tại thời điểm chia; đổi mô hình sau đó không làm thay đổi lịch sử.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_error!, textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            OutlinedButton(
+                              onPressed: () => _load(result?.page ?? 1),
+                              child: const Text('Thử lại'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : result == null || result.items.isEmpty
+                    ? const Center(child: Text('Chưa có lần chia quỹ nào.'))
+                    : ListView.separated(
+                        itemCount: result.items.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          final item = result.items[index];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              item.modelName.isEmpty
+                                  ? 'Mô hình tài chính'
+                                  : item.modelName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              'Kỳ ${item.periodMonth}/${item.periodYear} · ${item.items.length} hũ',
+                            ),
+                            trailing: Text(
+                              '${_FinanceModelScreenState._formatMoney(item.totalAmount)} đ',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            onTap: () => Navigator.pop(context, item),
+                          );
+                        },
+                      ),
+              ),
+              if (!_loading && result != null && result.totalPages > 1)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Trang trước',
+                      onPressed: result.page > 1
+                          ? () => _load(result.page - 1)
+                          : null,
+                      icon: const Icon(Icons.chevron_left_rounded),
+                    ),
+                    Text('Trang ${result.page}/${result.totalPages}'),
+                    IconButton(
+                      tooltip: 'Trang sau',
+                      onPressed: result.page < result.totalPages
+                          ? () => _load(result.page + 1)
+                          : null,
+                      icon: const Icon(Icons.chevron_right_rounded),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
