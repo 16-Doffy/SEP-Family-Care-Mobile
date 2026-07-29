@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -37,6 +38,9 @@ class _WalletScreenState extends State<WalletScreen> {
       context.read<WalletProvider>().fetchWallets();
       context.read<SupportRequestProvider>().fetchRequests();
       context.read<FinanceProvider>().fetchAll();
+      // Cần để tra tên người gửi yêu cầu khi BE chỉ trả requesterMemberId.
+      final family = context.read<FamilyProvider>();
+      if (family.members.isEmpty) family.fetchMembers();
     });
   }
 
@@ -1454,9 +1458,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   radius: 22,
                   backgroundColor: AppColors.link.withValues(alpha: .14),
                   child: Text(
-                    req.requesterName.isEmpty
-                        ? '?'
-                        : req.requesterName.substring(0, 1).toUpperCase(),
+                    _requesterName(context, req).substring(0, 1).toUpperCase(),
                     style: GoogleFonts.inter(
                       fontWeight: FontWeight.w700,
                       color: AppColors.link,
@@ -1469,7 +1471,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${req.requesterName} · ${_fmt(req.amount.round())}',
+                        '${_requesterName(context, req)} · ${_fmt(req.amount.round())}',
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -1499,7 +1501,7 @@ class _WalletScreenState extends State<WalletScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                'Đã duyệt ${_fmt(req.amount.round())} cho ${req.requesterName}',
+                                'Đã duyệt ${_fmt(req.amount.round())} cho ${_requesterName(context, req)}',
                               ),
                               backgroundColor: AppColors.safe,
                             ),
@@ -1535,7 +1537,7 @@ class _WalletScreenState extends State<WalletScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                'Đã từ chối yêu cầu của ${req.requesterName}',
+                                'Đã từ chối yêu cầu của ${_requesterName(context, req)}',
                               ),
                               backgroundColor: AppColors.danger,
                             ),
@@ -2122,6 +2124,27 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
       ),
     );
+  }
+
+  /// Tên người gửi yêu cầu xin tiền: tên BE trả → tra theo `requesterMemberId`
+  /// trong danh sách thành viên → cuối cùng mới 'Thành viên'.
+  ///
+  /// Duyệt tiền mà không biết duyệt cho ai là không chấp nhận được, nên phải thử
+  /// hết các đường trước khi bỏ cuộc.
+  String _requesterName(BuildContext context, SupportRequest req) {
+    final direct = req.requesterName.trim();
+    if (direct.isNotEmpty) return direct;
+
+    final id = req.requesterMemberId?.trim();
+    if (id != null && id.isNotEmpty) {
+      for (final m in context.read<FamilyProvider>().members) {
+        if (m.id == id || m.userId == id) {
+          final name = m.name.trim();
+          if (name.isNotEmpty) return name;
+        }
+      }
+    }
+    return 'Thành viên';
   }
 
   /// Màu cho hũ thứ [index] — xoay vòng nên số hũ bất kỳ vẫn có màu.

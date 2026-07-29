@@ -394,7 +394,7 @@ class _RequestCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        request.requesterName,
+                        request.displayName,
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -649,7 +649,7 @@ class _RequestCard extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '${request.requesterName} · ${_fmtAmount(request.amount)} ₫',
+                '${request.displayName} · ${_fmtAmount(request.amount)} ₫',
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   color: AppColors.textSecondary,

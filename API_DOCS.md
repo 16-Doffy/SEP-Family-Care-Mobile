@@ -379,6 +379,11 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 ### CreateFinanceJarDto
 - `financeModelId`: uuid *(required)* · `name` *(required)* · `jarCode` *(required)* · `allocationPercentage`: number *(required, 0–100)* · `description` · `isActive` (default true)
 
+### Hỗ trợ chi tiêu (xin tiền) — tên người gửi & lọc `mine`
+- **[SỬA 2026-07-29] Tên người gửi trước đây LUÔN hiện "Thành viên".** `SupportRequest.fromJson` chỉ đọc `json['requester']`/`json['user']` và chỉ lấy field **trực tiếp** (`fullName`/`name`) → không khớp khuôn DTO member của BE (`{ id, displayName, user: { fullName } }`), nên rơi về fallback 100% số lần. Nay đọc `requesterMember`/`requester`/`member`/`user` + tầng `user` lồng trong, và giữ `requesterName` **rỗng** khi BE không trả tên để UI còn tra theo `requesterMemberId`. ⚠️ [VERIFY WITH OFFICIAL SOURCE] Swagger **không có response schema** cho support-request nên tên object lồng (`requesterMember`) là suy ra từ khuôn các DTO member khác — cần BE chốt.
+- Hệ quả đã sửa: cả 2 màn duyệt của Manager (`wallet_screen` tab "Yêu cầu" và `support_request_screen`) và snackbar sau khi duyệt/từ chối đều từng ghi "cho Thành viên" — duyệt tiền mà không biết cho ai.
+- **[SỬA 2026-07-29] Lọc "chỉ hiện yêu cầu của bản thân" ở màn member là no-op.** Điều kiện cũ `requesterName.isNotEmpty` luôn đúng vì parser nhồi sẵn 'Thành viên'. Muốn lọc thật phải dùng query **`mine=true`** của `GET /finance/support-requests` (mặc định `false`). Hiện FE vẫn gọi không kèm `mine`, tức dựa hoàn toàn vào việc BE tự giới hạn theo quyền — cần xác nhận BE có lọc hay không trước khi coi là an toàn.
+
 ### Phân bổ số dư quỹ tháng vào mục tiêu
 - `GET /finance/financial-goals/surplus-availability?month=&year=` → `{periodMonth, periodYear, totalSurplus, allocatedSurplus, availableSurplus}`; `POST /finance/financial-goals/{goalId}/surplus-allocations {periodMonth, periodYear, amount, note?}`.
 - **[MỚI 2026-07-29, wire FE] Lối vào ở màn tổng quan tài chính:** card "Số dư quỹ tháng" → chọn mục tiêu → mở `/manager/goal-detail?goalId=…&surplus=1` (sheet nhập số tiền + kiểm tra `availableSurplus` đã có sẵn ở màn chi tiết mục tiêu, không nhân bản logic). Trước đó chỉ vào được từ màn chi tiết mục tiêu.

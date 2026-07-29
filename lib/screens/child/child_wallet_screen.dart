@@ -675,10 +675,12 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SupportRequestProvider>();
-    // Chỉ hiện yêu cầu của bản thân
-    final myReqs = provider.requests
-        .where((r) => r.requesterName.isNotEmpty)
-        .toList();
+    // Điều kiện cũ `requesterName.isNotEmpty` KHÔNG hề lọc gì: parser luôn nhồi
+    // sẵn 'Thành viên' nên mọi phần tử đều qua. Giữ nguyên hành vi thực tế (hiện
+    // những gì BE trả cho user này) thay vì để lại điều kiện gây hiểu nhầm là đã
+    // lọc theo người gửi. Muốn lọc thật thì phải dùng query `mine=true` của BE —
+    // xem ghi chú trong API_DOCS.
+    final myReqs = provider.requests.toList();
 
     if (myReqs.isEmpty) return const SizedBox.shrink();
 

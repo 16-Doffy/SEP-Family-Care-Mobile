@@ -3,7 +3,13 @@ import '../services/api_client.dart';
 
 class SupportRequest {
   final String id;
+
+  /// Tên người gửi yêu cầu — **rỗng nếu BE không trả tên**. Dùng [displayName]
+  /// để hiển thị, hoặc tra theo [requesterMemberId] trong danh sách thành viên.
   final String requesterName;
+
+  /// `FamilyMember.id` của người gửi, để tra tên khi BE chỉ trả id.
+  final String? requesterMemberId;
   final double amount;
   final String purpose;
   final String status;
@@ -13,6 +19,7 @@ class SupportRequest {
   const SupportRequest({
     required this.id,
     required this.requesterName,
+    this.requesterMemberId,
     required this.amount,
     required this.purpose,
     required this.status,
@@ -20,14 +27,53 @@ class SupportRequest {
     this.decisionNote,
   });
 
+  /// Tên để hiển thị khi không tra được gì thêm.
+  String get displayName =>
+      requesterName.trim().isEmpty ? 'Thành viên' : requesterName.trim();
+
   factory SupportRequest.fromJson(Map<String, dynamic> json) {
-    final requester = json['requester'] as Map? ?? json['user'] as Map? ?? {};
+    // BE dùng `requesterMemberId` cho filter, nên object lồng gần như chắc là
+    // `requesterMember` theo đúng khuôn các DTO member khác
+    // (`{ id, displayName, user: { fullName } }`). Bản cũ chỉ đọc `requester`/
+    // `user` và chỉ lấy field TRỰC TIẾP → không bao giờ ra tên, luôn rơi về
+    // 'Thành viên'. Đọc phòng thủ cả 4 biến thể + tầng `user` lồng bên trong.
+    Map<String, dynamic>? asMap(dynamic v) =>
+        v is Map ? Map<String, dynamic>.from(v) : null;
+    final member =
+        asMap(json['requesterMember']) ??
+        asMap(json['requester']) ??
+        asMap(json['member']) ??
+        asMap(json['user']) ??
+        const <String, dynamic>{};
+    final user = asMap(member['user']) ?? asMap(member['userAccount']) ?? const {};
+
+    String? pick(List<String?> values) {
+      for (final v in values) {
+        final s = v?.trim();
+        if (s != null && s.isNotEmpty) return s;
+      }
+      return null;
+    }
+
     return SupportRequest(
       id: json['id']?.toString() ?? '',
+      requesterMemberId: pick([
+        json['requesterMemberId']?.toString(),
+        member['id']?.toString(),
+      ]),
+      // Để RỖNG khi không có tên thật, thay vì nhồi sẵn 'Thành viên': UI cần
+      // phân biệt "BE không trả tên" với "tên đúng là vậy" để còn tra lại theo
+      // requesterMemberId. Hiển thị dùng [displayName].
       requesterName:
-          requester['fullName']?.toString() ??
-          requester['name']?.toString() ??
-          'Thành viên',
+          pick([
+            user['fullName']?.toString(),
+            member['displayName']?.toString(),
+            user['name']?.toString(),
+            member['fullName']?.toString(),
+            member['name']?.toString(),
+            json['requesterName']?.toString(),
+          ]) ??
+          '',
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       purpose: json['purpose']?.toString() ?? '',
       status: json['status']?.toString() ?? 'PENDING',
