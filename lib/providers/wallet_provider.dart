@@ -81,8 +81,12 @@ class LedgerEntry {
     }
     const expenseTypes = {'EXPENSE', 'ALLOWANCE', 'REWARD', 'SUPPORT'};
     if (expenseTypes.contains(entryType)) return -amount.abs();
-    return amount.abs(); // INCOME, CONTRIBUTION và ADJUSTMENT khác tạm coi là thu
+    return amount
+        .abs(); // INCOME, CONTRIBUTION và ADJUSTMENT khác tạm coi là thu
   }
+
+  bool get isFundAllocationAudit =>
+      entryType == 'ADJUSTMENT' && sourceType == 'MODEL_FUND_ALLOCATION';
 
   factory LedgerEntry.fromJson(Map<String, dynamic> json) {
     final cat = json['category'] is Map ? json['category'] as Map : null;

@@ -196,7 +196,9 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      hasData ? 'Còn lại có thể tiêu' : 'Hạn mức chi tiêu cá nhân',
+                      hasData
+                          ? 'Còn lại có thể tiêu'
+                          : 'Hạn mức chi tiêu cá nhân',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         color: Colors.white70,
@@ -217,8 +219,8 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     Text(
                       hasData
                           ? (isOver
-                              ? '⚠️ Đã vượt hạn mức ${_fmtNum(-remaining)} ₫'
-                              : 'Hạn mức chi tiêu tháng này')
+                                ? '⚠️ Đã vượt hạn mức ${_fmtNum(-remaining)} ₫'
+                                : 'Hạn mức chi tiêu tháng này')
                           : 'Vào Hồ sơ → Tài chính tháng để khai báo',
                       style: GoogleFonts.inter(
                         fontSize: 11,
@@ -726,52 +728,52 @@ class _SupportRequestSectionState extends State<_SupportRequestSection> {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                  color: context.colors.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
+                    color: context.colors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
                   child: Row(
                     children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: context.colors.inputFill,
-                        shape: BoxShape.circle,
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: context.colors.inputFill,
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text('📨', style: TextStyle(fontSize: 20)),
                       ),
-                      alignment: Alignment.center,
-                      child: const Text('📨', style: TextStyle(fontSize: 20)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${_fmtAmt(req.amount)} ₫',
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: context.colors.textPrimary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_fmtAmt(req.amount)} ₫',
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: context.colors.textPrimary,
+                              ),
                             ),
-                          ),
-                          Text(
-                            req.purpose,
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: context.colors.textMuted,
+                            Text(
+                              req.purpose,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: context.colors.textMuted,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    _statusChip(req.status),
+                      _statusChip(req.status),
                     ],
                   ),
                 ),
@@ -832,6 +834,7 @@ class _LedgerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPos = entry.signedAmount >= 0;
+    final isAllocation = entry.isFundAllocationAudit;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -887,11 +890,17 @@ class _LedgerCard extends StatelessWidget {
             ),
           ),
           Text(
-            '${isPos ? '+' : '-'}${_fmtAbs(entry.signedAmount)} ₫',
+            isAllocation
+                ? '${_fmtAbs(entry.amount)} ₫ · Phân bổ'
+                : '${isPos ? '+' : '-'}${_fmtAbs(entry.signedAmount)} ₫',
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: isPos ? AppColors.safe : context.colors.textPrimary,
+              color: isAllocation
+                  ? AppColors.link
+                  : isPos
+                  ? AppColors.safe
+                  : context.colors.textPrimary,
             ),
           ),
         ],

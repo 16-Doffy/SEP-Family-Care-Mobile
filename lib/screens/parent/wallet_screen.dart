@@ -746,6 +746,7 @@ class _WalletScreenState extends State<WalletScreen> {
             ...state.transactions.map((tx) {
               final signed = tx.signedAmount;
               final isPos = signed >= 0;
+              final isAllocation = tx.isFundAllocationAudit;
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => _openLedgerEntry(context, tx),
@@ -762,11 +763,17 @@ class _WalletScreenState extends State<WalletScreen> {
                         ),
                         alignment: Alignment.center,
                         child: Icon(
-                          isPos
+                          isAllocation
+                              ? Icons.account_balance_wallet_outlined
+                              : isPos
                               ? Icons.trending_up_rounded
                               : Icons.trending_down_rounded,
                           size: 18,
-                          color: isPos ? AppColors.success : AppColors.danger,
+                          color: isAllocation
+                              ? AppColors.link
+                              : isPos
+                              ? AppColors.success
+                              : AppColors.danger,
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -793,11 +800,17 @@ class _WalletScreenState extends State<WalletScreen> {
                         ),
                       ),
                       Text(
-                        '${isPos ? '+' : ''}${_fmt(signed.abs().round())}',
+                        isAllocation
+                            ? '${_fmt(tx.amount.round())} · Phân bổ'
+                            : '${isPos ? '+' : ''}${_fmt(signed.abs().round())}',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: isPos ? AppColors.success : AppColors.danger,
+                          color: isAllocation
+                              ? AppColors.link
+                              : isPos
+                              ? AppColors.success
+                              : AppColors.danger,
                         ),
                       ),
                     ],
@@ -861,7 +874,11 @@ class _WalletScreenState extends State<WalletScreen> {
                   const SizedBox(height: 18),
                   _ledgerDetailRow(
                     'Loại',
-                    signed >= 0 ? 'Khoản thu' : 'Khoản chi',
+                    detail.isFundAllocationAudit
+                        ? 'Phân bổ nội bộ vào hũ'
+                        : signed >= 0
+                        ? 'Khoản thu'
+                        : 'Khoản chi',
                   ),
                   _ledgerDetailRow(
                     'Số tiền',
