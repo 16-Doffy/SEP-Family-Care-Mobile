@@ -268,6 +268,8 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
             )
           else if (!_face.canUseFaceSuggestions)
             _lockedNote()
+          else if (!widget.isSafe)
+            _waitingForModerationNote()
           else ...[
             _scanRow(),
             if (_visibleSuggestions.isNotEmpty) ...[
@@ -300,6 +302,52 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       'Nhận diện người trong ảnh là tính năng của gói nâng cao. Bạn vẫn có thể '
       'gắn thẻ thành viên thủ công.',
       style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+    ),
+  );
+
+  Widget _waitingForModerationNote() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: AppColors.amberLight,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: AppColors.amberText.withValues(alpha: 0.28)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.warning_amber_rounded,
+          size: 20,
+          color: AppColors.amberText,
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Ảnh đang chờ duyệt an toàn',
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.amberDark,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'AI chưa thể quét khuôn mặt khi ảnh còn dấu !. '
+                'Người có quyền kiểm duyệt cần chọn “Duyệt thủ công” và đánh dấu ảnh an toàn trước.',
+                style: GoogleFonts.inter(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: AppColors.amberDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     ),
   );
 

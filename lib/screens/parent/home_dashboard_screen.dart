@@ -634,11 +634,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                           ),
                                           alignment: Alignment.center,
                                           child: Icon(
-                                            tx.signedAmount > 0
+                                            tx.isFundAllocationAudit
+                                                ? Icons
+                                                      .account_balance_wallet_outlined
+                                                : tx.signedAmount > 0
                                                 ? Icons.trending_up_rounded
                                                 : Icons.trending_down_rounded,
                                             size: 20,
-                                            color: tx.signedAmount > 0
+                                            color: tx.isFundAllocationAudit
+                                                ? AppColors.link
+                                                : tx.signedAmount > 0
                                                 ? AppColors.success
                                                 : AppColors.danger,
                                           ),
@@ -668,11 +673,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                           ),
                                         ),
                                         Text(
-                                          '${tx.signedAmount > 0 ? '+' : '-'}${_fmtBalance(tx.signedAmount.abs())}',
+                                          tx.isFundAllocationAudit
+                                              ? '${_fmtBalance(tx.amount)} · Phân bổ'
+                                              : '${tx.signedAmount > 0 ? '+' : '-'}${_fmtBalance(tx.signedAmount.abs())}',
                                           style: GoogleFonts.inter(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w700,
-                                            color: tx.signedAmount > 0
+                                            color: tx.isFundAllocationAudit
+                                                ? AppColors.link
+                                                : tx.signedAmount > 0
                                                 ? AppColors.success
                                                 : AppColors.danger,
                                           ),

@@ -27,6 +27,14 @@ import '../../widgets/money_input.dart';
 
 enum FinanceModelType { fiveJars, eightTwenty, custom }
 
+String _formatAllocationDateTime(DateTime? value) {
+  if (value == null) return '';
+  final local = value.toLocal();
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(local.day)}/${two(local.month)}/${local.year} '
+      '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+}
+
 class FinanceJarUi {
   final String name;
   final IconData icon;
@@ -818,8 +826,16 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               if (availableBalance > 0) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Quỹ khả dụng hiện tại: ${_formatMoney(availableBalance)} đ',
+                  'Tổng quỹ hiện tại: ${_formatMoney(availableBalance)} đ',
                   style: const TextStyle(color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Chỉ để tham khảo. Server sẽ kiểm tra quỹ khả dụng riêng của kỳ $selectedMonth/$selectedYear.',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ],
@@ -835,12 +851,6 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                 if (amount <= 0) {
                   _showFundValidationMessage(
                     'Vui lòng nhập số tiền lớn hơn 0.',
-                  );
-                  return;
-                }
-                if (availableBalance > 0 && amount > availableBalance) {
-                  _showFundValidationMessage(
-                    'Số tiền chia không được vượt quá quỹ khả dụng.',
                   );
                   return;
                 }
@@ -914,8 +924,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         // Khóa chống trùng của BE là familyId + kỳ, KHÔNG kèm modelId (chốt
         // 2026-07-28) → đổi mô hình rồi chia lại trong cùng kỳ vẫn bị 409.
         'FUND_ALLOCATION_ALREADY_EXISTS' =>
-          'Kỳ này đã được chia quỹ rồi. Mỗi tháng chỉ chia một lần, kể cả khi '
-              'đổi sang mô hình khác.',
+          'Gia đình đã chia quỹ cho kỳ này. Mỗi tháng chỉ được chia một lần, kể cả khi đổi mô hình.',
         'NO_ACTIVE_FINANCE_MODEL' =>
           'Gia đình chưa có mô hình tài chính đang áp dụng.',
         'INVALID_FINANCE_MODEL' =>
@@ -923,7 +932,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         'INVALID_JAR_PERCENTAGE' =>
           'Tổng tỷ lệ các hũ đang hoạt động phải bằng 100%.',
         'INSUFFICIENT_AVAILABLE_FUND' =>
-          'Số tiền chia vượt quá quỹ khả dụng của kỳ này.',
+          'Số tiền chia vượt quá quỹ khả dụng của kỳ đã chọn. Tổng quỹ hiện tại không phải hạn mức của mọi tháng.',
         _ => null,
       };
       if (byCode != null) return byCode;
@@ -933,8 +942,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         404 =>
           'Không tìm thấy mô hình đang áp dụng. Vui lòng lưu và kích hoạt mô hình trước.',
         409 =>
-          'Kỳ này đã được chia quỹ rồi. Mỗi tháng chỉ chia một lần, kể cả khi '
-              'đổi sang mô hình khác.',
+          'Gia đình đã chia quỹ cho kỳ này. Mỗi tháng chỉ được chia một lần, kể cả khi đổi mô hình.',
         _ => error.message,
       };
     }
@@ -963,6 +971,13 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       );
 
   Future<void> _showFundAllocationResult(fp.FundAllocationResult result) {
+    final modelName = result.modelName?.trim();
+    final period = result.periodMonth != null && result.periodYear != null
+        ? 'Kỳ ${result.periodMonth}/${result.periodYear}'
+        : 'Kỳ chưa xác định';
+    final amount = result.totalAmount == null
+        ? 'Số tiền chưa xác định'
+        : '${_formatMoney(result.totalAmount!)} đ';
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -983,33 +998,61 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                '${result.modelName} • ${result.periodMonth}/${result.periodYear} • ${_formatMoney(result.totalAmount)} đ',
+                '${modelName == null || modelName.isEmpty ? 'Mô hình không còn dữ liệu' : modelName} • $period • $amount'
+                '${result.createdAt == null ? '' : '\nThực hiện lúc ${_formatAllocationDateTime(result.createdAt)}'}',
                 style: const TextStyle(color: AppColors.textMuted),
               ),
-              const SizedBox(height: 16),
-              ...result.items.map(
-                (item) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.jarName.isEmpty ? item.jarCode : item.jarName,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Text(
-                        '${item.allocationPercentage.toStringAsFixed(item.allocationPercentage % 1 == 0 ? 0 : 1)}%',
-                      ),
-                      const SizedBox(width: 14),
-                      Text(
-                        '${_formatMoney(item.amount)} đ',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ],
+              if (result.note != null && result.note!.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Ghi chú: ${result.note}',
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
+              ],
+              if (result.createdByMemberId != null &&
+                  result.createdByMemberId!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Mã thành viên thực hiện: ${result.createdByMemberId}',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
                   ),
                 ),
-              ),
+              ],
+              const SizedBox(height: 16),
+              if (result.items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    'Dữ liệu lịch sử cũ không còn đủ thông tin từng hũ.',
+                    style: TextStyle(color: AppColors.textMuted),
+                  ),
+                )
+              else
+                ...result.items.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.jarName.isEmpty ? item.jarCode : item.jarName,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Text(
+                          '${item.allocationPercentage.toStringAsFixed(item.allocationPercentage % 1 == 0 ? 0 : 1)}%',
+                        ),
+                        const SizedBox(width: 14),
+                        Text(
+                          '${_formatMoney(item.amount)} đ',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               FilledButton(
                 onPressed: () => Navigator.pop(sheetContext),
@@ -1152,23 +1195,15 @@ class _FundAllocationHistorySheetState
   /// Tên người chia quỹ, resolve từ `createdByMemberId` qua danh sách thành viên.
   /// Không tra được (chưa nạp member, hoặc người đó đã bị xoá khỏi gia đình) thì
   /// bỏ hẳn khỏi dòng phụ — hiện id thô không giúp gì cho người đọc.
-  String? _allocatorName(String memberId) {
-    if (memberId.isEmpty) return null;
+  String? _allocatorName(String? memberId) {
+    final id = memberId?.trim();
+    if (id == null || id.isEmpty) return null;
     for (final m in context.read<FamilyProvider>().members) {
-      if (m.id == memberId || m.userId == memberId) {
-        return m.name.isEmpty ? null : 'do ${m.name}';
+      if (m.id == id || m.userId == id) {
+        return m.name.trim().isEmpty ? null : 'Người chia: ${m.name.trim()}';
       }
     }
     return null;
-  }
-
-  /// Thời điểm chia quỹ dạng ngắn; null (dữ liệu legacy) thì bỏ hẳn khỏi dòng
-  /// phụ thay vì hiện chỗ trống.
-  static String? _formatAllocationTime(DateTime? value) {
-    if (value == null) return null;
-    String two(int v) => v.toString().padLeft(2, '0');
-    return '${two(value.day)}/${two(value.month)}/${value.year} '
-        '${two(value.hour)}:${two(value.minute)}';
   }
 
   Future<void> _load(int page) async {
@@ -1238,25 +1273,32 @@ class _FundAllocationHistorySheetState
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(
-                              item.modelName.isEmpty
-                                  ? 'Mô hình tài chính'
-                                  : item.modelName,
+                              item.modelName == null || item.modelName!.isEmpty
+                                  ? 'Mô hình tài chính (dữ liệu cũ)'
+                                  : item.modelName!,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             subtitle: Text(
                               [
-                                'Kỳ ${item.periodMonth}/${item.periodYear}',
-                                '${item.items.length} hũ',
-                                // createdAt do BE bổ sung 2026-07-28; dữ liệu
-                                // legacy có thể null nên chỉ hiện khi có.
-                                ?_formatAllocationTime(item.createdAt),
+                                item.periodMonth != null &&
+                                        item.periodYear != null
+                                    ? 'Kỳ ${item.periodMonth}/${item.periodYear} · ${item.items.length} hũ'
+                                    : 'Kỳ chưa xác định · ${item.items.length} hũ',
+                                if (item.createdAt != null)
+                                  'Thực hiện lúc ${_formatAllocationDateTime(item.createdAt)}',
+                                // Người chia quỹ — resolve createdByMemberId
+                                // sang tên; không tra được thì bỏ dòng.
                                 ?_allocatorName(item.createdByMemberId),
-                              ].join(' · '),
+                                if (item.note != null && item.note!.isNotEmpty)
+                                  'Ghi chú: ${item.note}',
+                              ].join('\n'),
                             ),
                             trailing: Text(
-                              '${_FinanceModelScreenState._formatMoney(item.totalAmount)} đ',
+                              item.totalAmount == null
+                                  ? '—'
+                                  : '${_FinanceModelScreenState._formatMoney(item.totalAmount!)} đ',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                               ),

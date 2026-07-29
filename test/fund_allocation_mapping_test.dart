@@ -14,6 +14,9 @@ void main() {
       'totalAmount': 10000000,
       'sourceType': 'MODEL_FUND_ALLOCATION',
       'sourceId': 'model-id:2026-07',
+      'createdAt': '2026-07-28T10:15:30.000Z',
+      'createdByMemberId': 'member-id',
+      'note': 'Chia quỹ tháng 7',
       'items': [
         {
           'jarId': 'jar-id',
@@ -24,7 +27,9 @@ void main() {
           'ledgerEntryId': 'entry-id',
         },
       ],
-      'entries': [],
+      'entries': [
+        {'createdAt': '2026-07-28T09:15:30.000Z'},
+      ],
     });
 
     expect(result.modelId, 'model-id');
@@ -35,6 +40,9 @@ void main() {
     expect(result.items.single.jarCode, 'NECESSITIES');
     expect(result.items.single.allocationPercentage, 50);
     expect(result.items.single.amount, 5000000);
+    expect(result.createdAt, DateTime.parse('2026-07-28T10:15:30.000Z'));
+    expect(result.createdByMemberId, 'member-id');
+    expect(result.note, 'Chia quỹ tháng 7');
   });
 
   test('parses paginated fund allocation history snapshots', () {
@@ -60,7 +68,9 @@ void main() {
               'ledgerEntryId': 'entry-id',
             },
           ],
-          'entries': [],
+          'entries': [
+            {'createdAt': '2026-07-29T02:05:06.000Z'},
+          ],
         },
       ],
       'total': 21,
@@ -74,6 +84,10 @@ void main() {
     expect(page.totalPages, 2);
     expect(page.items.single.modelName, 'Five Jars snapshot');
     expect(page.items.single.items.single.jarName, 'Necessities snapshot');
+    expect(
+      page.items.single.createdAt,
+      DateTime.parse('2026-07-29T02:05:06.000Z'),
+    );
   });
 
   group('createdAt cấp allocation (BE bổ sung 2026-07-28)', () {
@@ -116,7 +130,9 @@ void main() {
       });
 
       expect(result.createdAt, isNull);
-      expect(result.createdByMemberId, '');
+      // createdByMemberId là nullable (bản trên main giữ null cho dữ liệu
+      // legacy) — không quy về chuỗi rỗng để phân biệt "BE không trả".
+      expect(result.createdByMemberId, isNull);
       expect(result.note, isNull);
       expect(result.periodMonth, 10, reason: 'item vẫn dùng được');
     });
@@ -134,5 +150,38 @@ void main() {
     });
 
     expect(entry.signedAmount, 0);
+  });
+
+  test('keeps legacy allocation with nullable snapshot fields', () {
+    final page = FundAllocationPage.fromJson({
+      'items': [
+        {
+          'model': null,
+          'period': null,
+          'totalAmount': null,
+          'items': null,
+          'createdAt': '2026-07-01T00:00:00.000Z',
+        },
+      ],
+      'total': 1,
+    });
+
+    expect(page.items, hasLength(1));
+    expect(page.items.single.modelId, isNull);
+    expect(page.items.single.periodMonth, isNull);
+    expect(page.items.single.totalAmount, isNull);
+    expect(page.items.single.items, isEmpty);
+  });
+
+  test('sorts history newest first and puts unknown timestamps last', () {
+    final page = FundAllocationPage.fromJson({
+      'items': [
+        {'sourceId': 'old', 'createdAt': '2026-07-01T00:00:00.000Z'},
+        {'sourceId': 'unknown'},
+        {'sourceId': 'new', 'createdAt': '2026-07-29T00:00:00.000Z'},
+      ],
+    });
+
+    expect(page.items.map((item) => item.sourceId), ['new', 'old', 'unknown']);
   });
 }

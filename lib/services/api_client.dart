@@ -195,6 +195,7 @@ class ApiClient {
     String fieldName = 'files',
     Map<String, String>? fields,
     List<String?>? mimeTypes,
+    Duration timeout = _kRequestTimeout,
   }) async {
     if (filePaths.isEmpty) {
       throw ArgumentError.value(
@@ -223,7 +224,7 @@ class ApiClient {
       return http.Response.fromStream(await request.send());
     }
 
-    final result = await _send(doUpload);
+    final result = await _send(doUpload, timeout: timeout);
     return result is Map<String, dynamic> ? result : <String, dynamic>{};
   }
 
