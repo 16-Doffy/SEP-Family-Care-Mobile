@@ -910,8 +910,11 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   String _fundAllocationError(Object error) {
     if (error is ApiException) {
       final byCode = switch (error.code) {
+        // Khóa chống trùng của BE là familyId + kỳ, KHÔNG kèm modelId (chốt
+        // 2026-07-28) → đổi mô hình rồi chia lại trong cùng kỳ vẫn bị 409.
         'FUND_ALLOCATION_ALREADY_EXISTS' =>
-          'Kỳ này đã được chia quỹ theo mô hình đã chọn. Không thể chia trùng.',
+          'Kỳ này đã được chia quỹ rồi. Mỗi tháng chỉ chia một lần, kể cả khi '
+              'đổi sang mô hình khác.',
         'NO_ACTIVE_FINANCE_MODEL' =>
           'Gia đình chưa có mô hình tài chính đang áp dụng.',
         'INVALID_FINANCE_MODEL' =>
@@ -929,7 +932,8 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         404 =>
           'Không tìm thấy mô hình đang áp dụng. Vui lòng lưu và kích hoạt mô hình trước.',
         409 =>
-          'Kỳ này đã được chia quỹ theo mô hình đã chọn. Không thể chia trùng.',
+          'Kỳ này đã được chia quỹ rồi. Mỗi tháng chỉ chia một lần, kể cả khi '
+              'đổi sang mô hình khác.',
         _ => error.message,
       };
     }
@@ -1139,6 +1143,15 @@ class _FundAllocationHistorySheetState
     WidgetsBinding.instance.addPostFrameCallback((_) => _load(1));
   }
 
+  /// Thời điểm chia quỹ dạng ngắn; null (dữ liệu legacy) thì bỏ hẳn khỏi dòng
+  /// phụ thay vì hiện chỗ trống.
+  static String? _formatAllocationTime(DateTime? value) {
+    if (value == null) return null;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(value.day)}/${two(value.month)}/${value.year} '
+        '${two(value.hour)}:${two(value.minute)}';
+  }
+
   Future<void> _load(int page) async {
     setState(() {
       _loading = true;
@@ -1214,7 +1227,13 @@ class _FundAllocationHistorySheetState
                               ),
                             ),
                             subtitle: Text(
-                              'Kỳ ${item.periodMonth}/${item.periodYear} · ${item.items.length} hũ',
+                              [
+                                'Kỳ ${item.periodMonth}/${item.periodYear}',
+                                '${item.items.length} hũ',
+                                // createdAt do BE bổ sung 2026-07-28; dữ liệu
+                                // legacy có thể null nên chỉ hiện khi có.
+                                ?_formatAllocationTime(item.createdAt),
+                              ].join(' · '),
                             ),
                             trailing: Text(
                               '${_FinanceModelScreenState._formatMoney(item.totalAmount)} đ',

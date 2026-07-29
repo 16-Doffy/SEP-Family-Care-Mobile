@@ -76,6 +76,52 @@ void main() {
     expect(page.items.single.items.single.jarName, 'Necessities snapshot');
   });
 
+  group('createdAt cấp allocation (BE bổ sung 2026-07-28)', () {
+    test('đọc createdAt/createdByMemberId/note ở cấp allocation', () {
+      final result = FundAllocationResult.fromJson({
+        'model': {'id': 'm1', 'name': 'Five Jars', 'modelType': 'FIVE_JARS'},
+        'period': {'month': 7, 'year': 2026},
+        'totalAmount': 10000000,
+        'createdAt': '2026-07-28T03:15:00.000Z',
+        'createdByMemberId': 'member-1',
+        'note': 'Chia quỹ tháng 7',
+        'items': const [],
+      });
+
+      expect(result.createdAt, isNotNull);
+      expect(result.createdAt!.toUtc().hour, 3);
+      expect(result.createdByMemberId, 'member-1');
+      expect(result.note, 'Chia quỹ tháng 7');
+    });
+
+    test('thiếu createdAt cấp trên thì lấy từ entries[] (BE bản cũ)', () {
+      final result = FundAllocationResult.fromJson({
+        'model': {'id': 'm1'},
+        'period': {'month': 7, 'year': 2026},
+        'totalAmount': 1000,
+        'items': const [],
+        'entries': [
+          {'id': 'e1', 'createdAt': '2026-07-20T01:00:00.000Z'},
+        ],
+      });
+
+      expect(result.createdAt!.toUtc().day, 20);
+    });
+
+    test('dữ liệu legacy thiếu hết thì null, không crash', () {
+      final result = FundAllocationResult.fromJson({
+        'model': {'id': 'm1', 'name': null, 'modelType': null},
+        'period': {'month': 10, 'year': 2026},
+        'items': const [],
+      });
+
+      expect(result.createdAt, isNull);
+      expect(result.createdByMemberId, '');
+      expect(result.note, isNull);
+      expect(result.periodMonth, 10, reason: 'item vẫn dùng được');
+    });
+  });
+
   test('fund allocation ledger adjustment is neutral to family balance', () {
     final entry = LedgerEntry.fromJson({
       'id': 'entry-id',

@@ -113,6 +113,13 @@ class FundAllocationResult {
   final double totalAmount;
   final String sourceType;
   final String sourceId;
+
+  /// Thời điểm chia quỹ, BE bổ sung ở **cấp allocation** (2026-07-28) sau khi FE
+  /// báo `entries[].createdAt` trả null/rỗng lúc runtime. Null với dữ liệu legacy
+  /// không khôi phục được.
+  final DateTime? createdAt;
+  final String createdByMemberId;
+  final String? note;
   final List<FundAllocationItem> items;
 
   const FundAllocationResult({
@@ -124,6 +131,9 @@ class FundAllocationResult {
     required this.totalAmount,
     required this.sourceType,
     required this.sourceId,
+    this.createdAt,
+    this.createdByMemberId = '',
+    this.note,
     required this.items,
   });
 
@@ -139,6 +149,18 @@ class FundAllocationResult {
       totalAmount: _money(j['totalAmount']),
       sourceType: j['sourceType']?.toString() ?? '',
       sourceId: j['sourceId']?.toString() ?? '',
+      // Ưu tiên createdAt cấp allocation; fallback entries[].createdAt cho bản
+      // BE cũ, vì chính chỗ đó từng trả null nên mới sinh ra field cấp trên.
+      createdAt: DateTime.tryParse(
+        j['createdAt']?.toString() ??
+            ((j['entries'] as List? ?? const [])
+                    .whereType<Map>()
+                    .firstOrNull?['createdAt'])
+                ?.toString() ??
+            '',
+      )?.toLocal(),
+      createdByMemberId: j['createdByMemberId']?.toString() ?? '',
+      note: j['note']?.toString(),
       items: (j['items'] as List? ?? const [])
           .whereType<Map>()
           .map((e) => FundAllocationItem.fromJson(Map<String, dynamic>.from(e)))

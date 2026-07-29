@@ -383,7 +383,11 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - Body: `amount` *(required, >0)* · `periodMonth` *(required, 1–12)* · `periodYear` *(required)* · `modelId` *(optional; bỏ trống để BE lấy model ACTIVE)* · `note` *(optional)*.
 - FE kích hoạt model trước, sau đó cho Manager chọn kỳ và nhập tổng quỹ cần chia.
 - Response dùng `items[]` để hiển thị từng hũ: `jarId`, `jarName`, `jarCode`, `allocationPercentage`, `amount`, `ledgerEntryId`.
-- Handle: `400` model thiếu hũ/tổng tỷ lệ khác 100%; `404` không có model ACTIVE/modelId sai; `409` model + kỳ đã được chia trước đó.
+- **[SỬA 2026-07-28] Khóa chống trùng `409` là `familyId + periodMonth + periodYear` — KHÔNG kèm `modelId`** (Swagger ghi rõ "bat ke modelId"). Mỗi kỳ chỉ chia quỹ **một lần**, đổi sang mô hình khác rồi chia lại vẫn bị `409 FUND_ALLOCATION_ALREADY_EXISTS`. Ghi chú cũ "model + kỳ" đã sai → thông báo lỗi FE đã sửa theo khóa mới, nếu không user sẽ tưởng đổi mô hình là chia lại được.
+- **[MỚI 2026-07-28] 3 field ở cấp allocation**: `createdAt`, `createdByMemberId`, `note` (có cả trong POST và GET history). BE bổ sung sau khi FE báo `entries[].createdAt` trả null/rỗng lúc runtime — vậy nên **đọc `createdAt` ở cấp allocation, không đọc trong `entries[]`**. Dữ liệu legacy có thể null (kèm `model`/`totalAmount` null) nên UI phải chịu được thiếu.
+- `GET /finance/fund-allocations` sort **mới nhất trước** theo `createdAt`; filter `modelId`, `periodMonth`, `periodYear` (2 field kỳ phải truyền **cùng nhau**, thiếu một cái là `400`), `page`, `limit`.
+- Ledger entry của chia quỹ có `entryType = ADJUSTMENT` + `sourceType = MODEL_FUND_ALLOCATION`, chỉ để audit. `LedgerEntry.signedAmount` trả **0** cho các entry này — nếu tính như thu nhập thì mỗi lần chia quỹ sẽ làm tổng quỹ phình lên đúng bằng số tiền chia.
+- Handle: `400` model thiếu hũ/tổng tỷ lệ khác 100% (`INVALID_JAR_PERCENTAGE`) hoặc vượt quỹ khả dụng (`INSUFFICIENT_AVAILABLE_FUND`); `404` không có model ACTIVE/modelId sai; `409` kỳ đã chia. `401` thiếu/hết token; `403` `FAMILY_MEMBER` hoặc tài khoản chưa verify (chỉ Manager/Deputy đã verify được chia quỹ + activate + xem lịch sử).
 - FE chỉ chặn `amount` vượt số dư khi đã tải được quỹ khả dụng; BE vẫn phải validate số dư ở server để chống request trực tiếp/race condition.
 
 ### CreateFinanceCategoryDto
