@@ -1018,6 +1018,7 @@ class _WalletScreenState extends State<WalletScreen> {
     );
     final descriptionCtrl = TextEditingController(text: entry.description);
     final noteCtrl = TextEditingController(text: entry.note ?? '');
+    final activeJars = _activeFinanceJars(context.read<FinanceProvider>());
     final categories = context
         .read<FinanceProvider>()
         .categories
@@ -1027,6 +1028,10 @@ class _WalletScreenState extends State<WalletScreen> {
         )
         .toList();
     String? categoryId = entry.categoryId;
+    String selectedJarId = entry.jarId ?? '';
+    if (!activeJars.any((jar) => jar.id == selectedJarId)) {
+      selectedJarId = '';
+    }
     if (categoryId == null ||
         !categories.any((category) => category.id == categoryId)) {
       categoryId = categories.isNotEmpty ? categories.first.id : null;
@@ -1087,6 +1092,32 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
+              if (entry.entryType == 'EXPENSE' && activeJars.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: selectedJarId,
+                  decoration: const InputDecoration(
+                    labelText: 'Hũ chi tiêu',
+                    helperText:
+                        'Giao dịch sẽ được tính vào thực chi của hũ đã chọn.',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('Chưa gắn hũ'),
+                    ),
+                    ...activeJars.map(
+                      (jar) => DropdownMenuItem(
+                        value: jar.id,
+                        child: Text(_financeJarLabel(jar)),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) =>
+                      setSheetState(() => selectedJarId = value ?? ''),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: descriptionCtrl,
                 decoration: const InputDecoration(
@@ -1122,6 +1153,11 @@ class _WalletScreenState extends State<WalletScreen> {
                         amount: amount,
                         description: description,
                         categoryId: categoryId,
+                        jarId:
+                            entry.entryType == 'EXPENSE' &&
+                                selectedJarId.isNotEmpty
+                            ? selectedJarId
+                            : null,
                         note: noteCtrl.text.trim().isEmpty
                             ? null
                             : noteCtrl.text.trim(),
@@ -1586,6 +1622,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final amountCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     String? categoryId;
+    String selectedJarId = '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1605,6 +1642,11 @@ class _WalletScreenState extends State<WalletScreen> {
                     category.isActive,
               )
               .toList();
+          final activeJars = _activeFinanceJars(ctx.watch<FinanceProvider>());
+          if (selectedJarId.isNotEmpty &&
+              !activeJars.any((jar) => jar.id == selectedJarId)) {
+            selectedJarId = '';
+          }
           if (categoryId == null ||
               !categories.any((c) => c.id == categoryId)) {
             categoryId = categories.isNotEmpty ? categories.first.id : null;
@@ -1707,6 +1749,52 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                   ),
                 ),
+                if (!isIncome && activeJars.isNotEmpty) ...[
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedJarId,
+                    decoration: InputDecoration(
+                      labelText: 'Hũ chi tiêu',
+                      helperText:
+                          'Chọn hũ để số thực chi theo mô hình được cập nhật.',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('Chưa gắn hũ'),
+                      ),
+                      ...activeJars.map(
+                        (jar) => DropdownMenuItem(
+                          value: jar.id,
+                          child: Text(_financeJarLabel(jar)),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setSheet(() => selectedJarId = value ?? ''),
+                  ),
+                  const SizedBox(height: 12),
+                ] else if (!isIncome) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.amberLight,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'Chưa có mô hình tài chính đang áp dụng hoặc chưa có hũ hoạt động. '
+                      'Khoản chi này sẽ được tính vào “Chưa gắn hũ”.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.amberDark,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
                   controller: descCtrl,
                   decoration: InputDecoration(
@@ -1742,6 +1830,9 @@ class _WalletScreenState extends State<WalletScreen> {
                           description: desc,
                           isIncome: isIncome,
                           categoryId: categoryId,
+                          jarId: !isIncome && selectedJarId.isNotEmpty
+                              ? selectedJarId
+                              : null,
                         );
                         if (ctx.mounted) Navigator.pop(ctx);
                       } catch (e) {
@@ -1771,6 +1862,49 @@ class _WalletScreenState extends State<WalletScreen> {
         },
       ),
     );
+  }
+
+  List<FinanceJar> _activeFinanceJars(FinanceProvider finance) {
+    FinanceModel? activeModel;
+    for (final model in finance.models) {
+      if (model.isActive) {
+        activeModel = model;
+        break;
+      }
+    }
+    if (activeModel == null) return const [];
+
+    final jarsById = <String, FinanceJar>{};
+    for (final jar in activeModel.jars) {
+      if (jar.isActive && jar.id.isNotEmpty) jarsById[jar.id] = jar;
+    }
+    for (final jar in finance.jars) {
+      if (jar.isActive &&
+          jar.id.isNotEmpty &&
+          jar.financeModelId == activeModel.id) {
+        jarsById[jar.id] = jar;
+      }
+    }
+    final jars = jarsById.values.toList()
+      ..sort(
+        (a, b) => b.allocationPercentage.compareTo(a.allocationPercentage),
+      );
+    return jars;
+  }
+
+  String _financeJarLabel(FinanceJar jar) {
+    final localizedName = switch (jar.jarCode.toUpperCase()) {
+      'NECESSITIES' => 'Nhu cầu thiết yếu',
+      'SAVINGS' => 'Tiết kiệm',
+      'EDUCATION' => 'Giáo dục',
+      'ENJOYMENT' => 'Vui chơi',
+      'GIVING' => 'Cho đi / Biếu tặng',
+      _ => jar.name,
+    };
+    final percentage = jar.allocationPercentage.toStringAsFixed(
+      jar.allocationPercentage % 1 == 0 ? 0 : 1,
+    );
+    return '$localizedName · $percentage%';
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────

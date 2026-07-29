@@ -409,12 +409,14 @@ class WalletProvider extends ChangeNotifier {
   }
 
   // UC27/28 — Ghi nhận thu/chi: POST /finance/ledger/entries
-  // CreateLedgerEntryDto: { entryType, amount, description, note?, entryDate, categoryId?, sourceType?, sourceId? }
+  // CreateLedgerEntryDto: { entryType, amount, description, note?, entryDate,
+  // categoryId?, jarId?, sourceType?, sourceId? }
   Future<void> recordEntry({
     required double amount,
     required String description,
     required bool isIncome,
     String? categoryId,
+    String? jarId,
     String? note,
     String? sourceType,
     String? sourceId,
@@ -428,6 +430,7 @@ class WalletProvider extends ChangeNotifier {
               '${DateTime.now().toUtc().toIso8601String().split('.').first}Z',
           if (note != null && note.isNotEmpty) 'note': note,
           'categoryId': ?categoryId,
+          'jarId': ?jarId,
           'sourceType': ?sourceType,
           'sourceId': ?sourceId,
         });
@@ -452,6 +455,7 @@ class WalletProvider extends ChangeNotifier {
     required double amount,
     required String description,
     String? categoryId,
+    String? jarId,
     String? note,
   }) async {
     await ApiClient.instance.patch(
@@ -460,6 +464,8 @@ class WalletProvider extends ChangeNotifier {
         'amount': amount.abs(),
         'description': description,
         'categoryId': ?categoryId,
+        // UpdateLedgerEntryDto cho phép null để bỏ liên kết với hũ cũ.
+        'jarId': jarId,
         'note': ?note,
       },
     );
