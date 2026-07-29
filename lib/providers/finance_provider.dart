@@ -114,6 +114,7 @@ class FundAllocationResult {
   final String sourceType;
   final String sourceId;
   final List<FundAllocationItem> items;
+  final DateTime? createdAt;
 
   const FundAllocationResult({
     required this.modelId,
@@ -125,11 +126,22 @@ class FundAllocationResult {
     required this.sourceType,
     required this.sourceId,
     required this.items,
+    this.createdAt,
   });
 
   factory FundAllocationResult.fromJson(Map<String, dynamic> j) {
     final model = j['model'] is Map ? j['model'] as Map : const {};
     final period = j['period'] is Map ? j['period'] as Map : const {};
+    final entryDates =
+        (j['entries'] as List? ?? const [])
+            .whereType<Map>()
+            .map(
+              (entry) =>
+                  DateTime.tryParse(entry['createdAt']?.toString() ?? ''),
+            )
+            .whereType<DateTime>()
+            .toList()
+          ..sort();
     return FundAllocationResult(
       modelId: model['id']?.toString() ?? '',
       modelName: model['name']?.toString() ?? '',
@@ -143,6 +155,9 @@ class FundAllocationResult {
           .whereType<Map>()
           .map((e) => FundAllocationItem.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
+      // Một lần chia quỹ tạo các ledger entry trong cùng transaction.
+      // Timestamp sớm nhất là thời điểm bắt đầu ghi nhận lần chia đó.
+      createdAt: entryDates.isEmpty ? null : entryDates.first,
     );
   }
 }

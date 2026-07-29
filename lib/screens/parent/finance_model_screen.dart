@@ -26,6 +26,14 @@ import '../../widgets/money_input.dart';
 
 enum FinanceModelType { fiveJars, eightTwenty, custom }
 
+String _formatAllocationDateTime(DateTime? value) {
+  if (value == null) return '';
+  final local = value.toLocal();
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(local.day)}/${two(local.month)}/${local.year} '
+      '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+}
+
 class FinanceJarUi {
   final String name;
   final IconData icon;
@@ -980,7 +988,8 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                '${result.modelName} • ${result.periodMonth}/${result.periodYear} • ${_formatMoney(result.totalAmount)} đ',
+                '${result.modelName} • Kỳ ${result.periodMonth}/${result.periodYear} • ${_formatMoney(result.totalAmount)} đ'
+                '${result.createdAt == null ? '' : '\nThực hiện lúc ${_formatAllocationDateTime(result.createdAt)}'}',
                 style: const TextStyle(color: AppColors.textMuted),
               ),
               const SizedBox(height: 16),
@@ -1216,7 +1225,11 @@ class _FundAllocationHistorySheetState
                               ),
                             ),
                             subtitle: Text(
-                              'Kỳ ${item.periodMonth}/${item.periodYear} · ${item.items.length} hũ',
+                              [
+                                'Kỳ ${item.periodMonth}/${item.periodYear} · ${item.items.length} hũ',
+                                if (item.createdAt != null)
+                                  'Thực hiện lúc ${_formatAllocationDateTime(item.createdAt)}',
+                              ].join('\n'),
                             ),
                             trailing: Text(
                               '${_FinanceModelScreenState._formatMoney(item.totalAmount)} đ',

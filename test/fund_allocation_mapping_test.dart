@@ -24,7 +24,9 @@ void main() {
           'ledgerEntryId': 'entry-id',
         },
       ],
-      'entries': [],
+      'entries': [
+        {'createdAt': '2026-07-28T09:15:30.000Z'},
+      ],
     });
 
     expect(result.modelId, 'model-id');
@@ -35,6 +37,7 @@ void main() {
     expect(result.items.single.jarCode, 'NECESSITIES');
     expect(result.items.single.allocationPercentage, 50);
     expect(result.items.single.amount, 5000000);
+    expect(result.createdAt, DateTime.parse('2026-07-28T09:15:30.000Z'));
   });
 
   test('parses paginated fund allocation history snapshots', () {
@@ -60,7 +63,9 @@ void main() {
               'ledgerEntryId': 'entry-id',
             },
           ],
-          'entries': [],
+          'entries': [
+            {'createdAt': '2026-07-29T02:05:06.000Z'},
+          ],
         },
       ],
       'total': 21,
@@ -74,6 +79,10 @@ void main() {
     expect(page.totalPages, 2);
     expect(page.items.single.modelName, 'Five Jars snapshot');
     expect(page.items.single.items.single.jarName, 'Necessities snapshot');
+    expect(
+      page.items.single.createdAt,
+      DateTime.parse('2026-07-29T02:05:06.000Z'),
+    );
   });
 
   test('fund allocation ledger adjustment is neutral to family balance', () {
