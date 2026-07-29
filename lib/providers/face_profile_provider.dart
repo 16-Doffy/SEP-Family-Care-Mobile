@@ -136,7 +136,7 @@ class FaceValidationResponse {
 
   factory FaceValidationResponse.fromJson(Map<String, dynamic> json) {
     final rawResults = json['results'] ?? json['files'] ?? json['items'];
-    final results = rawResults is List
+    var results = rawResults is List
         ? rawResults
               .asMap()
               .entries
@@ -149,6 +149,28 @@ class FaceValidationResponse {
               )
               .toList()
         : <FaceValidationResult>[];
+    // Contract BE chưa document index là zero-based hay one-based. Chuẩn hóa
+    // response 1..N về 0..N-1 để badge/lỗi luôn gắn đúng thumbnail.
+    final looksOneBased =
+        results.isNotEmpty &&
+        !results.any((result) => result.index == 0) &&
+        results.every(
+          (result) => result.index >= 1 && result.index <= results.length,
+        );
+    if (looksOneBased) {
+      results = results
+          .map(
+            (result) => FaceValidationResult(
+              index: result.index - 1,
+              fileName: result.fileName,
+              passed: result.passed,
+              reasonCode: result.reasonCode,
+              message: result.message,
+              raw: result.raw,
+            ),
+          )
+          .toList();
+    }
     final rawCanEnroll = json['canEnroll'] ?? json['isEnrollable'];
     final inferredCanEnroll =
         results.isNotEmpty && results.every((result) => result.passed);
@@ -178,7 +200,9 @@ class FaceValidationResponse {
 
   factory FaceValidationResponse.unavailable([String? message]) =>
       FaceValidationResponse(
-        canEnroll: true,
+        // Contract mới bắt buộc validate thành công và BE trả canEnroll=true
+        // trước khi enroll. Fail closed để không gửi ảnh chưa được kiểm tra.
+        canEnroll: false,
         results: const [],
         message: message,
         validationUnavailable: true,
@@ -261,6 +285,9 @@ class FaceProfileProvider extends ChangeNotifier {
         path: '/families/$_fid/face-profiles/$memberId/enroll',
         filePaths: imagePaths,
         fields: const {'consentConfirmed': 'true'},
+        // Upload 3–5 ảnh và BE còn phải tạo embedding; không dùng
+        // timeout 15 giây của REST thông thường.
+        timeout: const Duration(seconds: 120),
       );
       profile = FaceProfile.fromJson(memberId, data);
       await fetch(memberId);
@@ -284,12 +311,23 @@ class FaceProfileProvider extends ChangeNotifier {
       final data = await ApiClient.instance.uploadFiles(
         path: '/families/$_fid/face-profiles/$memberId/validate',
         filePaths: imagePaths,
+        // Validate cần upload multipart và chạy face detection cho từng
+        // ảnh. 15 giây gây timeout giả trên mạng di động/BE cold start.
+        timeout: const Duration(seconds: 90),
       );
       return FaceValidationResponse.fromJson(data);
     } on ApiException catch (e) {
       if (e.statusCode == 404 || e.statusCode == 405 || e.statusCode == 501) {
         return FaceValidationResponse.unavailable(
-          'BE chưa bật API kiểm tra ảnh. FE sẽ dùng luồng đăng ký hiện tại.',
+          'Không thể kiểm tra chất lượng ảnh lúc này. Vui lòng thử lại sau.',
+        );
+      }
+      rethrow;
+    } catch (e) {
+      if (e.toString().toLowerCase().contains('server quá lâu')) {
+        throw Exception(
+          'Máy chủ kiểm tra khuôn mặt quá lâu. '
+          'Vui lòng kiểm tra kết nối và thử lại.',
         );
       }
       rethrow;

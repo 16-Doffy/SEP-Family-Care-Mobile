@@ -70,15 +70,35 @@ void main() {
       expect(response.canEnroll, isTrue);
     });
 
-    test('unavailable validate keeps enroll flow open', () {
+    test('normalizes one-based BE result indexes for image thumbnails', () {
+      final response = FaceValidationResponse.fromJson({
+        'canEnroll': false,
+        'results': [
+          {'index': 1, 'passed': true},
+          {'index': 2, 'passed': false, 'reasonCode': 'MIME_MISMATCH'},
+          {'index': 3, 'passed': false, 'reasonCode': 'IMAGE_TOO_LARGE'},
+        ],
+      });
+
+      expect(response.results.map((result) => result.index), [0, 1, 2]);
+      expect(
+        response.results[1].displayMessage,
+        'File sai định dạng/nội dung.',
+      );
+      expect(response.results[2].displayMessage, 'Ảnh quá 5MB.');
+      expect(response.displayMessage, contains('Ảnh 2'));
+      expect(response.displayMessage, contains('Ảnh 3'));
+    });
+
+    test('unavailable validate blocks enroll until images can be checked', () {
       final response = FaceValidationResponse.unavailable(
-        'BE chưa bật API kiểm tra ảnh. FE sẽ dùng luồng đăng ký hiện tại.',
+        'Không thể kiểm tra chất lượng ảnh lúc này. Vui lòng thử lại sau.',
       );
 
-      expect(response.canEnroll, isTrue);
+      expect(response.canEnroll, isFalse);
       expect(response.validationUnavailable, isTrue);
       expect(response.results, isEmpty);
-      expect(response.displayMessage, contains('BE chưa bật API'));
+      expect(response.displayMessage, contains('Không thể kiểm tra'));
     });
 
     test('respects explicit failed result even without reason code', () {

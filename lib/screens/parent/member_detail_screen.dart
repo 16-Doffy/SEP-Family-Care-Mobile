@@ -456,6 +456,39 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     var validating = false;
     var submitting = false;
     String? submitError;
+
+    Future<void> pickMoreImages(
+      BuildContext sheetContext,
+      StateSetter setSheet,
+    ) async {
+      if (paths.length >= 5) return;
+      final files = await picker.pickMultiImage(imageQuality: 88);
+      if (!sheetContext.mounted || files.isEmpty) return;
+      final remaining = 5 - paths.length;
+      final existing = paths.toSet();
+      final added = files
+          .where((file) => !existing.contains(file.path))
+          .take(remaining)
+          .map((file) => file.path)
+          .toList();
+      if (added.isEmpty) {
+        ScaffoldMessenger.of(
+          sheetContext,
+        ).showSnackBar(const SnackBar(content: Text('Ảnh này đã được chọn.')));
+        return;
+      }
+      setSheet(() {
+        paths = [...paths, ...added];
+        validation = null;
+        submitError = null;
+      });
+      if (files.length > added.length && sheetContext.mounted) {
+        ScaffoldMessenger.of(sheetContext).showSnackBar(
+          const SnackBar(content: Text('Chỉ giữ tối đa 5 ảnh khác nhau.')),
+        );
+      }
+    }
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -493,19 +526,9 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: submitting
+                onPressed: submitting || validating || paths.length >= 5
                     ? null
-                    : () async {
-                        final files = await picker.pickMultiImage(
-                          imageQuality: 88,
-                        );
-                        if (!sheetContext.mounted) return;
-                        setSheet(() {
-                          paths = files.take(5).map((e) => e.path).toList();
-                          validation = null;
-                          submitError = null;
-                        });
-                      },
+                    : () => pickMoreImages(sheetContext, setSheet),
                 icon: const Icon(Icons.photo_library_outlined),
                 label: Text(
                   paths.isEmpty ? 'Chọn ảnh' : 'Đã chọn ${paths.length} ảnh',
@@ -523,7 +546,21 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
               if (paths.isNotEmpty) ...[
                 const SizedBox(height: 10),
-                _faceEnrollPreview(paths, validation),
+                _faceEnrollPreview(
+                  paths,
+                  validation,
+                  onAdd: () => pickMoreImages(sheetContext, setSheet),
+                  onRemove: (index) {
+                    setSheet(() {
+                      paths = [...paths]..removeAt(index);
+                      validation = null;
+                      submitError = null;
+                    });
+                  },
+                  onPreview: (index) =>
+                      _showFaceImagePreview(sheetContext, paths[index]),
+                  actionsEnabled: !submitting && !validating,
+                ),
               ],
               const SizedBox(height: 10),
               SizedBox(
@@ -678,8 +715,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   Widget _faceEnrollPreview(
     List<String> paths,
-    FaceValidationResponse? validation,
-  ) {
+    FaceValidationResponse? validation, {
+    required VoidCallback onAdd,
+    required ValueChanged<int> onRemove,
+    required ValueChanged<int> onPreview,
+    required bool actionsEnabled,
+  }) {
     FaceValidationResult? resultFor(int index) {
       for (final result
           in validation?.results ?? const <FaceValidationResult>[]) {
@@ -689,12 +730,50 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
 
     return SizedBox(
-      height: 96,
+      height: 104,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: paths.length,
+        itemCount: paths.length + (paths.length < 5 ? 1 : 0),
         separatorBuilder: (_, _) => const SizedBox(width: 10),
         itemBuilder: (_, index) {
+          if (index == paths.length) {
+            return SizedBox(
+              width: 82,
+              child: Column(
+                children: [
+                  InkWell(
+                    onTap: actionsEnabled ? onAdd : null,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.primary500.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.add_rounded,
+                        size: 30,
+                        color: AppColors.primary500,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Thêm ảnh',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary500,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
           final result = resultFor(index);
           final color = result == null
               ? validation?.validationUnavailable == true
@@ -709,13 +788,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               children: [
                 Stack(
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        File(paths[index]),
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
+                    GestureDetector(
+                      onTap: () => onPreview(index),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          File(paths[index]),
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
                     Positioned(
@@ -742,6 +824,30 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                         ),
                       ),
                     ),
+                    Positioned(
+                      right: 3,
+                      top: 3,
+                      child: GestureDetector(
+                        onTap: actionsEnabled ? () => onRemove(index) : null,
+                        child: Container(
+                          width: 23,
+                          height: 23,
+                          decoration: BoxDecoration(
+                            color: AppColors.danger.withValues(alpha: 0.92),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.white,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.delete_outline_rounded,
+                            size: 14,
+                            color: AppColors.white,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -765,6 +871,37 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _showFaceImagePreview(BuildContext context, String imagePath) {
+    return showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4,
+                child: Center(child: Image.file(File(imagePath))),
+              ),
+            ),
+            Positioned(
+              right: 8,
+              top: 8,
+              child: IconButton.filled(
+                tooltip: 'Đóng',
+                onPressed: () => Navigator.pop(dialogContext),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
