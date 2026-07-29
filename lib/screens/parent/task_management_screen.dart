@@ -46,12 +46,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TaskProvider>().fetchTasks();
-      context.read<TaskProvider>().fetchCategories();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final tasks = context.read<TaskProvider>();
+      tasks.fetchCategories();
       context.read<FamilyProvider>().fetchMembers();
       // Cho badge thanh toán: đếm settlement chờ trả/tranh chấp trên icon AppBar.
-      context.read<TaskProvider>().fetchRewardSettlements();
+      tasks.fetchRewardSettlements();
+      await tasks.fetchTasks();
+      if (!mounted) return;
+      // GET /tasks không trả kèm assignment → nạp thêm để item hiện người làm
+      // và thời gian. Chạy sau khi có danh sách để biết cần nạp task nào.
+      await tasks.ensureAssignmentsFor(tasks.tasks.map((t) => t.id));
     });
   }
 
@@ -328,6 +333,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         ),
                     ],
                   ),
+                  ..._taskMetaLines(context, task),
                 ],
               ),
             ),
@@ -1126,11 +1132,38 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                           reviewNote: noteCtrl.text.trim(),
                                         );
                                     if (ctx.mounted) Navigator.pop(ctx);
-                                    // Task có thưởng → BE vừa tạo settlement chờ trả;
-                                    // nhắc Manager sang màn Quản lý thưởng.
-                                    if ((a.rewardSetting ??
-                                            a.task?.rewardSetting) !=
-                                        null) {
+                                    final setting =
+                                        a.rewardSetting ??
+                                        a.task?.rewardSetting;
+                                    if (setting == null) {
+                                      // Không có cấu hình thưởng thì BE KHÔNG
+                                      // sinh settlement — nói rõ, không thì
+                                      // thành viên chờ thưởng mãi không có.
+                                      sheetMessenger.showSnackBar(
+                                        SnackBar(
+                                          content: const Text(
+                                            'Đã duyệt. Việc này chưa đặt thưởng nên không phát sinh khoản thưởng nào.',
+                                          ),
+                                          backgroundColor: AppColors.textMuted,
+                                          duration: const Duration(seconds: 5),
+                                        ),
+                                      );
+                                    } else if (!setting.autoCreateSettlement) {
+                                      // Tắt tự tạo → phải tạo ghi nhận thưởng
+                                      // thủ công, nếu không cũng không có gì
+                                      // để trả.
+                                      sheetMessenger.showSnackBar(
+                                        SnackBar(
+                                          content: const Text(
+                                            'Đã duyệt. Cấu hình thưởng đang TẮT tự tạo — mở Quản lý thưởng để tạo ghi nhận thưởng.',
+                                          ),
+                                          backgroundColor: AppColors.amberDark,
+                                          duration: const Duration(seconds: 5),
+                                        ),
+                                      );
+                                    } else {
+                                      // BE vừa tạo settlement chờ trả; nhắc
+                                      // Manager sang màn Quản lý thưởng.
                                       sheetMessenger.showSnackBar(
                                         SnackBar(
                                           content: const Text(
@@ -1209,10 +1242,65 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       ),
                     ],
                   ),
+                // Bài nộp đã duyệt, có cấu hình thưởng, nhưng KHÔNG có ghi nhận
+                // thưởng nào (BE tắt tự tạo, hoặc lần tạo tự động thất bại) →
+                // đây là đường khôi phục duy nhất, không có nút này thì thành
+                // viên không bao giờ nhận được thưởng của bài nộp đó.
+                if (readOnly &&
+                    submission.status == 'APPROVED' &&
+                    (a.rewardSetting ?? a.task?.rewardSetting) != null &&
+                    !context.watch<TaskProvider>().rewardSettlements.any(
+                      (s) => s.submissionId == submission.id,
+                    ))
+                  _createSettlementButton(ctx, submission.id),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Nút tạo ghi nhận thưởng thủ công cho bài nộp đã duyệt mà chưa có settlement.
+  Widget _createSettlementButton(BuildContext ctx, String submissionId) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          foregroundColor: AppColors.safe,
+          side: const BorderSide(color: AppColors.safe),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: const Icon(Icons.card_giftcard_rounded, size: 18),
+        label: Text(
+          'Tạo ghi nhận thưởng',
+          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+        onPressed: () async {
+          final messenger = ScaffoldMessenger.of(ctx);
+          try {
+            await ctx.read<TaskProvider>().createSettlement(submissionId);
+            if (ctx.mounted) Navigator.pop(ctx);
+            messenger.showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Đã tạo ghi nhận thưởng — mở Quản lý thưởng để trả',
+                ),
+                backgroundColor: AppColors.success,
+              ),
+            );
+          } catch (e) {
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(e.toString().replaceFirst('Exception: ', '')),
+                backgroundColor: AppColors.danger,
+              ),
+            );
+          }
+        },
       ),
     );
   }
@@ -2303,6 +2391,75 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         ),
       ),
     );
+  }
+
+  /// Dòng phụ của item task: người giao · người làm · thời gian.
+  ///
+  /// Người làm lấy từ assignment (đã nạp qua `ensureAssignmentsFor`); người giao
+  /// chỉ hiện khi BE trả `createdByMember` — Swagger chưa document field này nên
+  /// không có thì ẩn hẳn dòng thay vì hiện "Không rõ".
+  List<Widget> _taskMetaLines(BuildContext context, FamilyTask task) {
+    final assignments = context.watch<TaskProvider>().assignmentsFor(task.id);
+    final active = assignments
+        .where((a) => a.status != 'CANCELED')
+        .toList(growable: false);
+
+    final assignee = switch (active.length) {
+      0 => 'Chưa giao cho ai',
+      1 => active.first.assignedToName?.trim().isNotEmpty == true
+          ? active.first.assignedToName!.trim()
+          : 'Thành viên',
+      _ => '${active.length} người được giao',
+    };
+
+    // Ưu tiên hạn của assignment (sát thực tế hơn), không có thì lấy hạn task.
+    final due = active
+        .map((a) => a.dueAt)
+        .whereType<DateTime>()
+        .fold<DateTime?>(null, (a, b) => a == null || b.isBefore(a) ? b : a);
+    final start = active
+        .map((a) => a.startAt)
+        .whereType<DateTime>()
+        .fold<DateTime?>(null, (a, b) => a == null || b.isBefore(a) ? b : a);
+
+    final timeParts = <String>[
+      ?(start != null ? 'Bắt đầu ${_fmtDateTime(start)}' : null),
+      ?(due ?? task.dueAt) != null
+          ? 'Hạn ${_fmtDateTime(due ?? task.dueAt!)}'
+          : null,
+      ?(task.isRecurring && start == null && due == null && task.dueAt == null
+          ? task.schedule?.label
+          : null),
+    ];
+
+    final rows = <String>[
+      ?(task.createdByName?.trim().isNotEmpty == true
+          ? 'Người giao: ${task.createdByName!.trim()}'
+          : null),
+      'Người làm: $assignee',
+      ?(timeParts.isEmpty ? null : timeParts.join(' · ')),
+    ];
+
+    return [
+      const SizedBox(height: 8),
+      ...rows.map(
+        (line) => Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            line,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  static String _fmtDateTime(DateTime value) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(value.day)}/${two(value.month)} ${two(value.hour)}:${two(value.minute)}';
   }
 
   Widget _chip(String label, Color bg, Color color) => Container(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart' as fp;
 import '../../providers/wallet_provider.dart';
 import '../../services/api_client.dart';
@@ -1140,7 +1141,25 @@ class _FundAllocationHistorySheetState
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load(1));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _load(1);
+      // Cần danh sách thành viên để đổi createdByMemberId thành tên người chia.
+      final family = context.read<FamilyProvider>();
+      if (family.members.isEmpty) family.fetchMembers();
+    });
+  }
+
+  /// Tên người chia quỹ, resolve từ `createdByMemberId` qua danh sách thành viên.
+  /// Không tra được (chưa nạp member, hoặc người đó đã bị xoá khỏi gia đình) thì
+  /// bỏ hẳn khỏi dòng phụ — hiện id thô không giúp gì cho người đọc.
+  String? _allocatorName(String memberId) {
+    if (memberId.isEmpty) return null;
+    for (final m in context.read<FamilyProvider>().members) {
+      if (m.id == memberId || m.userId == memberId) {
+        return m.name.isEmpty ? null : 'do ${m.name}';
+      }
+    }
+    return null;
   }
 
   /// Thời điểm chia quỹ dạng ngắn; null (dữ liệu legacy) thì bỏ hẳn khỏi dòng
@@ -1233,6 +1252,7 @@ class _FundAllocationHistorySheetState
                                 // createdAt do BE bổ sung 2026-07-28; dữ liệu
                                 // legacy có thể null nên chỉ hiện khi có.
                                 ?_formatAllocationTime(item.createdAt),
+                                ?_allocatorName(item.createdByMemberId),
                               ].join(' · '),
                             ),
                             trailing: Text(

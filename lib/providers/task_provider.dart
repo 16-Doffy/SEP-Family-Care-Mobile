@@ -34,19 +34,22 @@ class RewardSetting {
   final String rewardType; // MONEY_RECORD | POINT | OTHER
   final double rewardAmount;
   final String? rewardDescription;
+  /// `CreateRewardSettingDto.autoCreateSettlement` có **default `true`** trong
+  /// Swagger → BE không trả field thì phải hiểu là BẬT, không phải tắt. Đọc
+  /// `== true` như trước sẽ báo sai là đang tắt tự tạo settlement.
   final bool autoCreateSettlement;
   const RewardSetting({
     required this.rewardType,
     required this.rewardAmount,
     this.rewardDescription,
-    this.autoCreateSettlement = false,
+    this.autoCreateSettlement = true,
   });
 
   factory RewardSetting.fromJson(Map<String, dynamic> j) => RewardSetting(
     rewardType: _str(j['rewardType']) ?? 'MONEY_RECORD',
     rewardAmount: _num(j['rewardAmount']),
     rewardDescription: _str(j['rewardDescription']),
-    autoCreateSettlement: j['autoCreateSettlement'] == true,
+    autoCreateSettlement: j['autoCreateSettlement'] != false,
   );
 
   String get label => switch (rewardType) {
@@ -102,6 +105,13 @@ class FamilyTask {
   final String priority; // LOW | MEDIUM | HIGH
   final String status; // DRAFT | ACTIVE | COMPLETED | CANCELED
   final DateTime? dueAt;
+
+  /// Người giao việc. Swagger **không document response schema của task** nên
+  /// parse phòng thủ nhiều biến thể; thiếu thì UI ẩn dòng "Người giao" chứ
+  /// không hiện chỗ trống.
+  final String? createdByMemberId;
+  final String? createdByName;
+  final DateTime? createdAt;
   final RewardSetting? rewardSetting;
   final TaskSchedule? schedule;
 
@@ -115,6 +125,9 @@ class FamilyTask {
     this.priority = 'MEDIUM',
     this.status = 'ACTIVE',
     this.dueAt,
+    this.createdByMemberId,
+    this.createdByName,
+    this.createdAt,
     this.rewardSetting,
     this.schedule,
   });
@@ -125,6 +138,14 @@ class FamilyTask {
     final cat = j['taskCategory'] is Map
         ? j['taskCategory'] as Map
         : <String, dynamic>{};
+    final creator = j['createdByMember'] is Map
+        ? j['createdByMember'] as Map
+        : (j['createdBy'] is Map
+              ? j['createdBy'] as Map
+              : (j['creator'] is Map ? j['creator'] as Map : const {}));
+    final creatorUser = creator['user'] is Map
+        ? creator['user'] as Map
+        : const {};
     return FamilyTask(
       id: _str(j['id']) ?? '',
       title: _str(j['title']) ?? '',
@@ -135,6 +156,14 @@ class FamilyTask {
       priority: _str(j['priority']) ?? 'MEDIUM',
       status: _str(j['status']) ?? 'ACTIVE',
       dueAt: _date(j['dueAt']),
+      createdByMemberId:
+          _str(j['createdByMemberId']) ?? _str(creator['id']),
+      createdByName:
+          _str(creatorUser['fullName']) ??
+          _str(creator['displayName']) ??
+          _str(creatorUser['name']) ??
+          _str(j['createdByName']),
+      createdAt: _date(j['createdAt']),
       rewardSetting: j['rewardSetting'] is Map
           ? RewardSetting.fromJson(
               Map<String, dynamic>.from(j['rewardSetting']),
@@ -629,6 +658,48 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
+  /// Nạp assignment cho nhiều task để danh sách hiện được người làm.
+  ///
+  /// `GET /tasks` **không trả kèm assignment** nên buộc phải gọi từng task.
+  /// Vì vậy: bỏ qua task đã có trong cache, và chạy theo lô [_assignmentBatch]
+  /// thay vì bắn hết một lượt — tránh dựng hàng chục request cùng lúc khi danh
+  /// sách dài. Xem đề xuất BE gộp sẵn vào `GET /tasks` để bỏ hẳn N+1 này.
+  static const int _assignmentBatch = 4;
+
+  Future<void> ensureAssignmentsFor(Iterable<String> taskIds) async {
+    final missing = taskIds
+        .where((id) => id.isNotEmpty && !_assignmentsByTask.containsKey(id))
+        .toSet()
+        .toList();
+    if (missing.isEmpty) return;
+
+    // Đặt chỗ trước để lần gọi kế tiếp không nạp trùng cùng một task.
+    for (final id in missing) {
+      _assignmentsByTask[id] = const [];
+    }
+
+    for (var i = 0; i < missing.length; i += _assignmentBatch) {
+      final batch = missing.skip(i).take(_assignmentBatch);
+      await Future.wait(batch.map(_loadAssignmentsQuiet));
+      notifyListeners();
+    }
+  }
+
+  /// Nạp assignment của 1 task, lỗi thì bỏ qua — danh sách task vẫn phải hiện
+  /// được dù phần người làm không lấy được.
+  Future<void> _loadAssignmentsQuiet(String taskId) async {
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$_fid/tasks/$taskId/assignments${_qs({'limit': 100})}',
+      );
+      _assignmentsByTask[taskId] = _list(
+        data,
+      ).map(TaskAssignment.fromJson).toList();
+    } catch (e) {
+      debugPrint('TaskProvider: assignments of $taskId failed: $e');
+    }
+  }
+
   Future<void> fetchMyAssignments({
     String? status,
     String? priority,
@@ -787,7 +858,8 @@ class TaskProvider extends ChangeNotifier {
     required String rewardType,
     double? rewardAmount,
     String? rewardDescription,
-    bool autoCreateSettlement = false,
+    // Khớp default của Swagger (`true`) để không âm thầm tắt tự tạo settlement.
+    bool autoCreateSettlement = true,
   }) async {
     await ApiClient.instance
         .post('/families/$_fid/tasks/$taskId/reward-setting', {
