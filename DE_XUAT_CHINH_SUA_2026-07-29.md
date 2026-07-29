@@ -129,8 +129,10 @@ Ngoài ra còn 2 việc UI Nhật nêu, cần bạn xác nhận mức độ ưu 
 
 1. **Hiện tên người chia quỹ.** Vừa parse `createdByMemberId` nhưng UI chỉ hiện giờ; nên resolve sang
    tên qua `FamilyProvider` cho dễ đọc.
-2. **Nút "Phân bổ số dư vào mục tiêu" ở màn tổng quan finance.** Hiện chỉ có ở `goal_detail_screen` —
-   Discord đề nghị có ở cả màn tổng quan.
+2. ✅ **[Làm 29/07] Nút "Phân bổ số dư vào mục tiêu" ở màn tổng quan finance.** Card "Số dư quỹ tháng"
+   → chọn mục tiêu → mở màn chi tiết mục tiêu với `surplus=1` để dùng lại sheet nhập số tiền đã có
+   (không nhân bản ~310 dòng logic kiểm tra `availableSurplus`). Gate `canManageFinance`; ẩn card khi
+   chưa có mục tiêu ACTIVE.
 3. **Bỏ phần FE tự tính hũ** nếu BE làm A3.
 
 ---

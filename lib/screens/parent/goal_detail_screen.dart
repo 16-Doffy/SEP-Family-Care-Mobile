@@ -13,7 +13,15 @@ import '../../widgets/money_input.dart';
 // /progress vì BE đã đánh dấu deprecated. Các allocations dùng GET/PATCH/DELETE.
 class GoalDetailScreen extends StatefulWidget {
   final String goalId;
-  const GoalDetailScreen({super.key, required this.goalId});
+
+  /// Mở sẵn sheet "Phân bổ số dư quỹ tháng" ngay sau khi tải xong mục tiêu —
+  /// dùng khi đi từ màn tổng quan tài chính, để không bắt user bấm thêm một nút.
+  final bool autoOpenSurplus;
+  const GoalDetailScreen({
+    super.key,
+    required this.goalId,
+    this.autoOpenSurplus = false,
+  });
 
   @override
   State<GoalDetailScreen> createState() => _GoalDetailScreenState();
@@ -59,7 +67,22 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
       if (mounted) {
         setState(() => _loading = false);
       }
+      _maybeAutoOpenSurplus();
     }
+  }
+
+  /// Chỉ mở sheet phân bổ **một lần**, và chỉ khi mục tiêu còn nhận đóng góp —
+  /// mục tiêu đã hủy/đạt thì mở sheet ra chỉ để báo lỗi.
+  bool _surplusSheetOpened = false;
+
+  void _maybeAutoOpenSurplus() {
+    if (!widget.autoOpenSurplus || _surplusSheetOpened) return;
+    final goal = _goal;
+    if (!mounted || goal == null || goal.status != 'ACTIVE') return;
+    _surplusSheetOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showSurplusAllocationSheet(context, goal);
+    });
   }
 
   String _fmt(double v) {

@@ -467,8 +467,11 @@ GoRouter createRouter(AuthProvider auth) {
       ),
       GoRoute(
         path: '/manager/goal-detail',
-        builder: (_, state) =>
-            GoalDetailScreen(goalId: state.uri.queryParameters['goalId'] ?? ''),
+        builder: (_, state) => GoalDetailScreen(
+          goalId: state.uri.queryParameters['goalId'] ?? '',
+          // surplus=1: mở sẵn sheet phân bổ số dư (đi từ màn tổng quan tài chính).
+          autoOpenSurplus: state.uri.queryParameters['surplus'] == '1',
+        ),
       ),
       GoRoute(
         // Manager/Deputy xem tài chính tháng của member (memberId rỗng = của mình)

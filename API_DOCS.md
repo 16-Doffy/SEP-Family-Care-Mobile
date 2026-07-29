@@ -379,6 +379,12 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 ### CreateFinanceJarDto
 - `financeModelId`: uuid *(required)* · `name` *(required)* · `jarCode` *(required)* · `allocationPercentage`: number *(required, 0–100)* · `description` · `isActive` (default true)
 
+### Phân bổ số dư quỹ tháng vào mục tiêu
+- `GET /finance/financial-goals/surplus-availability?month=&year=` → `{periodMonth, periodYear, totalSurplus, allocatedSurplus, availableSurplus}`; `POST /finance/financial-goals/{goalId}/surplus-allocations {periodMonth, periodYear, amount, note?}`.
+- **[MỚI 2026-07-29, wire FE] Lối vào ở màn tổng quan tài chính:** card "Số dư quỹ tháng" → chọn mục tiêu → mở `/manager/goal-detail?goalId=…&surplus=1` (sheet nhập số tiền + kiểm tra `availableSurplus` đã có sẵn ở màn chi tiết mục tiêu, không nhân bản logic). Trước đó chỉ vào được từ màn chi tiết mục tiêu.
+- Gate bằng `canManageFinance` (Manager/Deputy) đúng theo ghi chú BE; ẩn card khi gia đình **chưa có mục tiêu ACTIVE** nào vì mở ra cũng không chọn được gì.
+- `amount` không được vượt `availableSurplus`; đây là bút toán nội bộ từ số dư quỹ tháng, **không tính là khoản thu mới** trong báo cáo dòng tiền.
+
 ### Chat — tìm kiếm & thư viện nội dung
 - **[MỚI 2026-07-29, wire FE] Tìm kiếm tin nhắn:** `GET .../conversations/{id}/messages?q=` đã nối tại `ChatSearchScreen` (icon kính lúp trên AppBar chat), debounce 400ms. Kết quả **không nhảy tới tin nhắn** trong khung chat: tin có thể nằm ngoài trang đang tải, muốn nhảy đúng chỗ phải lật cursor tới đó rồi scroll-to-index.
 - **Thư viện ảnh/file/liên kết:** BE **không có endpoint riêng** và `GET messages` **không filter theo `messageType`** → FE phải lật cursor nhiều trang rồi tự lọc (`fetchMessageHistory`, giới hạn số trang để không kéo vô hạn). Số tin thực sự quét được hiện trên UI. ⚠️ Đề nghị BE thêm `messageType` vào query của `GET messages`, hoặc endpoint attachments riêng, để bỏ cách lật trang tốn request này.

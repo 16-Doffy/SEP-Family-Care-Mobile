@@ -8,6 +8,7 @@ import '../../providers/finance_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/app_surface_colors.dart';
 import '../../theme/app_ui_tokens.dart';
 import '../../utils/jar_allocation.dart';
 import '../../widgets/app_card.dart';
@@ -530,6 +531,8 @@ class _WalletScreenState extends State<WalletScreen> {
 
       _memberContributionCard(state),
       const SizedBox(height: 16),
+
+      ..._surplusAllocationCard(context),
 
       _alertBar(remaining.round(), bufferPct),
     ];
@@ -1984,6 +1987,141 @@ class _WalletScreenState extends State<WalletScreen> {
       if (list.isNotEmpty) return list;
     }
     return const <Map<String, dynamic>>[];
+  }
+
+  /// Lối vào phân bổ số dư quỹ tháng vào mục tiêu tài chính.
+  ///
+  /// Chỉ Manager/Deputy (`canManageFinance`) — BE trả 403 với thành viên thường.
+  /// Không có mục tiêu ACTIVE thì ẩn hẳn card: mở sheet ra cũng không chọn được
+  /// gì để phân bổ.
+  List<Widget> _surplusAllocationCard(BuildContext context) {
+    final user = context.watch<AuthProvider>().user;
+    if (user?.canManageFinance != true) return const [];
+    final goals = context.watch<FinanceProvider>().activeGoals;
+    if (goals.isEmpty) return const [];
+
+    return [
+      _sectionCard(
+        title: 'Số dư quỹ tháng',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Chuyển phần quỹ còn lại của tháng vào một mục tiêu tài chính. '
+              'Đây là phân bổ nội bộ, không tính là khoản thu mới.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.4,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.link,
+                  minimumSize: const Size.fromHeight(46),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(
+                  Icons.savings_outlined,
+                  size: 18,
+                  color: Colors.white,
+                ),
+                label: Text(
+                  'Phân bổ số dư vào mục tiêu',
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                onPressed: () => _showSurplusGoalPicker(context, goals),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
+  /// Chọn mục tiêu rồi mở màn chi tiết với `surplus=1` — sheet nhập số tiền và
+  /// kiểm tra số dư khả dụng đã có sẵn ở đó, không nhân bản lại logic.
+  void _showSurplusGoalPicker(
+    BuildContext context,
+    List<FinancialGoal> goals,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 14),
+            Text(
+              'Chọn mục tiêu nhận số dư',
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: context.colors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: goals.length,
+                separatorBuilder: (_, _) =>
+                    Divider(height: 1, color: context.colors.divider),
+                itemBuilder: (_, i) {
+                  final goal = goals[i];
+                  return ListTile(
+                    leading: const Icon(
+                      Icons.flag_outlined,
+                      color: AppColors.link,
+                    ),
+                    title: Text(
+                      goal.goalName,
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: context.colors.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Mục tiêu ${_fmt(goal.targetAmount.round())} đ',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: context.colors.textMuted,
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textMuted,
+                    ),
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      context.push(
+                        '/manager/goal-detail?goalId=${goal.id}&surplus=1',
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Màu cho hũ thứ [index] — xoay vòng nên số hũ bất kỳ vẫn có màu.
