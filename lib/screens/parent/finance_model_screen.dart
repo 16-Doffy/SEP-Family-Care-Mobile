@@ -817,8 +817,16 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               if (availableBalance > 0) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Quỹ khả dụng hiện tại: ${_formatMoney(availableBalance)} đ',
+                  'Tổng quỹ hiện tại: ${_formatMoney(availableBalance)} đ',
                   style: const TextStyle(color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Chỉ để tham khảo. Server sẽ kiểm tra quỹ khả dụng riêng của kỳ $selectedMonth/$selectedYear.',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ],
@@ -834,12 +842,6 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                 if (amount <= 0) {
                   _showFundValidationMessage(
                     'Vui lòng nhập số tiền lớn hơn 0.',
-                  );
-                  return;
-                }
-                if (availableBalance > 0 && amount > availableBalance) {
-                  _showFundValidationMessage(
-                    'Số tiền chia không được vượt quá quỹ khả dụng.',
                   );
                   return;
                 }
@@ -919,7 +921,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         'INVALID_JAR_PERCENTAGE' =>
           'Tổng tỷ lệ các hũ đang hoạt động phải bằng 100%.',
         'INSUFFICIENT_AVAILABLE_FUND' =>
-          'Số tiền chia vượt quá quỹ khả dụng của kỳ này.',
+          'Số tiền chia vượt quá quỹ khả dụng của kỳ đã chọn. Tổng quỹ hiện tại không phải hạn mức của mọi tháng.',
         _ => null,
       };
       if (byCode != null) return byCode;
