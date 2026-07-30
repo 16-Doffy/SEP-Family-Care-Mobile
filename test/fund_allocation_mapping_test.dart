@@ -3,6 +3,42 @@ import 'package:family_care/providers/finance_provider.dart';
 import 'package:family_care/providers/wallet_provider.dart';
 
 void main() {
+  test('parses category to jar mapping with nested payload', () {
+    final mapping = FinanceCategoryJarMapping.fromJson({
+      'id': 'mapping-1',
+      'financeModel': {'id': 'model-1'},
+      'category': {'id': 'category-1', 'name': 'Ăn uống'},
+      'jar': {'id': 'jar-1', 'name': 'Thiết yếu'},
+    });
+
+    expect(mapping.financeModelId, 'model-1');
+    expect(mapping.categoryId, 'category-1');
+    expect(mapping.jarId, 'jar-1');
+    expect(mapping.categoryName, 'Ăn uống');
+  });
+
+  test('parses jar target actual report aliases', () {
+    final report = JarTargetActualReport.fromJson({
+      'byJar': [
+        {
+          'jar': {'id': 'jar-1', 'name': 'Thiết yếu'},
+          'allocationPercentage': 50,
+          'actualPercent': 55,
+          'plannedAmount': 5000000,
+          'spentAmount': 5500000,
+          'status': 'OVER_TARGET',
+        },
+      ],
+      'unmapped': {'amount': 100000},
+    });
+
+    expect(report.items.single.jarName, 'Thiết yếu');
+    expect(report.items.single.targetPercentage, 50);
+    expect(report.items.single.actualPercentage, 55);
+    expect(report.items.single.status, 'OVER_TARGET');
+    expect(report.unmappedAmount, 100000);
+  });
+
   test('parses fund allocation response items from BE contract', () {
     final result = FundAllocationResult.fromJson({
       'model': {

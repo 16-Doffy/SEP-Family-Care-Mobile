@@ -250,6 +250,133 @@ class FinanceCategory {
   );
 }
 
+class FinanceCategoryJarMapping {
+  final String id;
+  final String financeModelId;
+  final String categoryId;
+  final String jarId;
+  final String? categoryName;
+  final String? jarName;
+
+  const FinanceCategoryJarMapping({
+    required this.id,
+    required this.financeModelId,
+    required this.categoryId,
+    required this.jarId,
+    this.categoryName,
+    this.jarName,
+  });
+
+  factory FinanceCategoryJarMapping.fromJson(Map<String, dynamic> j) {
+    final category = j['category'] is Map
+        ? Map<String, dynamic>.from(j['category'] as Map)
+        : const <String, dynamic>{};
+    final jar = j['jar'] is Map
+        ? Map<String, dynamic>.from(j['jar'] as Map)
+        : const <String, dynamic>{};
+    final model = j['financeModel'] is Map
+        ? Map<String, dynamic>.from(j['financeModel'] as Map)
+        : const <String, dynamic>{};
+    return FinanceCategoryJarMapping(
+      id: j['id']?.toString() ?? j['mappingId']?.toString() ?? '',
+      financeModelId:
+          j['financeModelId']?.toString() ?? model['id']?.toString() ?? '',
+      categoryId:
+          j['categoryId']?.toString() ?? category['id']?.toString() ?? '',
+      jarId: j['jarId']?.toString() ?? jar['id']?.toString() ?? '',
+      categoryName:
+          j['categoryName']?.toString() ?? category['name']?.toString(),
+      jarName: j['jarName']?.toString() ?? jar['name']?.toString(),
+    );
+  }
+}
+
+class JarTargetActualItem {
+  final String jarId;
+  final String jarName;
+  final double targetPercentage;
+  final double actualPercentage;
+  final double? targetAmount;
+  final double? actualAmount;
+  final String status;
+
+  const JarTargetActualItem({
+    required this.jarId,
+    required this.jarName,
+    required this.targetPercentage,
+    required this.actualPercentage,
+    this.targetAmount,
+    this.actualAmount,
+    required this.status,
+  });
+
+  factory JarTargetActualItem.fromJson(Map<String, dynamic> j) {
+    final jar = j['jar'] is Map
+        ? Map<String, dynamic>.from(j['jar'] as Map)
+        : const <String, dynamic>{};
+    return JarTargetActualItem(
+      jarId: j['jarId']?.toString() ?? jar['id']?.toString() ?? '',
+      jarName:
+          j['jarName']?.toString() ??
+          j['name']?.toString() ??
+          jar['name']?.toString() ??
+          'Hũ tài chính',
+      targetPercentage: _money(
+        j['targetPercentage'] ??
+            j['targetPercent'] ??
+            j['allocationPercentage'],
+      ),
+      actualPercentage: _money(
+        j['actualPercentage'] ?? j['actualPercent'] ?? j['percentage'],
+      ),
+      targetAmount: _moneyNull(j['targetAmount'] ?? j['plannedAmount']),
+      actualAmount: _moneyNull(j['actualAmount'] ?? j['spentAmount']),
+      status: j['status']?.toString().toUpperCase() ?? '',
+    );
+  }
+}
+
+class JarTargetActualReport {
+  final List<JarTargetActualItem> items;
+  final double? unmappedAmount;
+  final Map<String, dynamic> raw;
+
+  const JarTargetActualReport({
+    required this.items,
+    required this.unmappedAmount,
+    required this.raw,
+  });
+
+  factory JarTargetActualReport.fromJson(Map<String, dynamic> j) {
+    List<dynamic> rawItems = const [];
+    for (final key in const [
+      'items',
+      'jars',
+      'byJar',
+      'results',
+      'breakdown',
+    ]) {
+      if (j[key] is List) {
+        rawItems = j[key] as List;
+        break;
+      }
+    }
+    return JarTargetActualReport(
+      items: rawItems
+          .whereType<Map>()
+          .map(
+            (e) => JarTargetActualItem.fromJson(Map<String, dynamic>.from(e)),
+          )
+          .toList(),
+      unmappedAmount: _moneyNull(
+        j['unmappedAmount'] ??
+            (j['unmapped'] is Map ? (j['unmapped'] as Map)['amount'] : null),
+      ),
+      raw: j,
+    );
+  }
+}
+
 class BudgetPlan {
   final String id;
   final String planName;
@@ -988,6 +1115,56 @@ class FinanceProvider extends ChangeNotifier {
     );
     await _fetchCategories();
     notifyListeners();
+  }
+
+  /// Mapping thuộc từng model, không dùng chung giữa model cũ và model active.
+  Future<List<FinanceCategoryJarMapping>> fetchCategoryJarMappings({
+    required String financeModelId,
+  }) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/category-jar-mappings${_qs({'financeModelId': financeModelId})}',
+    );
+    return _list(data)
+        .map(FinanceCategoryJarMapping.fromJson)
+        .where((mapping) => mapping.categoryId.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> upsertCategoryJarMapping({
+    required String financeModelId,
+    required String categoryId,
+    required String jarId,
+  }) async {
+    await ApiClient.instance.post(
+      '/families/$_fid/finance/category-jar-mappings',
+      {
+        'financeModelId': financeModelId,
+        'categoryId': categoryId,
+        'jarId': jarId,
+      },
+    );
+  }
+
+  Future<void> deleteCategoryJarMapping(String mappingId) async {
+    await ApiClient.instance.delete(
+      '/families/$_fid/finance/category-jar-mappings/$mappingId',
+    );
+  }
+
+  Future<JarTargetActualReport> fetchJarTargetActualReport({
+    DateTime? periodStart,
+    DateTime? periodEnd,
+    String? financeModelId,
+  }) async {
+    String? date(DateTime? value) => value == null
+        ? null
+        : '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/reports/jar-target-actual${_qs({'periodStart': date(periodStart), 'periodEnd': date(periodEnd), 'financeModelId': financeModelId})}',
+    );
+    return JarTargetActualReport.fromJson(
+      Map<String, dynamic>.from(data as Map),
+    );
   }
 
   // ── Mutations: Budget Plan ────────────────────────────────────────────────

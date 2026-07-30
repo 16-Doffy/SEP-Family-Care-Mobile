@@ -22,7 +22,7 @@ class FinanceReportsScreen extends StatefulWidget {
 
 class _FinanceReportsScreenState extends State<FinanceReportsScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabCtrl = TabController(length: 3, vsync: this);
+  late final TabController _tabCtrl = TabController(length: 4, vsync: this);
 
   @override
   void initState() {
@@ -102,6 +102,7 @@ class _FinanceReportsScreenState extends State<FinanceReportsScreen>
               ),
               tabs: const [
                 Tab(text: 'Ngân sách'),
+                Tab(text: 'Theo hũ'),
                 Tab(text: 'Chi không thiết yếu'),
                 Tab(text: 'Ngân sách & Mục tiêu'),
               ],
@@ -111,6 +112,7 @@ class _FinanceReportsScreenState extends State<FinanceReportsScreen>
                 controller: _tabCtrl,
                 children: const [
                   _BudgetPlanReportTab(),
+                  _JarTargetActualReportTab(),
                   _NonEssentialSpendingTab(),
                   _BudgetGoalReportTab(),
                 ],
@@ -118,6 +120,199 @@ class _FinanceReportsScreenState extends State<FinanceReportsScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _JarTargetActualReportTab extends StatefulWidget {
+  const _JarTargetActualReportTab();
+
+  @override
+  State<_JarTargetActualReportTab> createState() =>
+      _JarTargetActualReportTabState();
+}
+
+class _JarTargetActualReportTabState extends State<_JarTargetActualReportTab> {
+  JarTargetActualReport? _report;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final now = DateTime.now();
+      final start = DateTime(now.year, now.month, 1);
+      final end = DateTime(now.year, now.month + 1, 0);
+      final report = await context
+          .read<FinanceProvider>()
+          .fetchJarTargetActualReport(periodStart: start, periodEnd: end);
+      if (mounted) setState(() => _report = report);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  ({String label, Color color}) _status(String raw) => switch (raw) {
+    'ON_TRACK' => (label: 'Đúng kế hoạch', color: AppColors.success),
+    'OVER_TARGET' => (label: 'Vượt mục tiêu', color: AppColors.danger),
+    'UNDER_TARGET' => (label: 'Dưới mục tiêu', color: const Color(0xFFD97706)),
+    _ => (
+      label: raw.isEmpty ? 'Chưa xác định' : raw,
+      color: AppColors.textMuted,
+    ),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        children: [
+          _card(
+            child: Text(
+              'So sánh tỷ lệ mục tiêu của mô hình đang áp dụng với tỷ lệ chi '
+              'thực tế trong tháng này. Giao dịch cũ chưa map nằm ở mục chưa gán.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          if (_error != null)
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _error!,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                  TextButton(onPressed: _load, child: const Text('Thử lại')),
+                ],
+              ),
+            )
+          else if (_report == null || _report!.items.isEmpty)
+            _card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Chưa có dữ liệu target/actual theo hũ cho kỳ này.',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  if (_report != null && _report!.raw.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    JsonReportView(data: _report!.raw, financeReportMode: true),
+                  ],
+                ],
+              ),
+            )
+          else ...[
+            ..._report!.items.map((item) {
+              final status = _status(item.status);
+              final maxPercent = [
+                item.targetPercentage,
+                item.actualPercentage,
+                100,
+              ].reduce((a, b) => a > b ? a : b);
+              return _card(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.jarName,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: status.color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            status.label,
+                            style: GoogleFonts.inter(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: status.color,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    LinearProgressIndicator(
+                      value: maxPercent <= 0
+                          ? 0
+                          : (item.actualPercentage / maxPercent).clamp(0, 1),
+                      minHeight: 8,
+                      borderRadius: BorderRadius.circular(999),
+                      color: status.color,
+                      backgroundColor: status.color.withValues(alpha: 0.12),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Mục tiêu ${item.targetPercentage.toStringAsFixed(1)}% · '
+                      'Thực tế ${item.actualPercentage.toStringAsFixed(1)}%',
+                      style: GoogleFonts.inter(fontSize: 12),
+                    ),
+                    if (item.targetAmount != null || item.actualAmount != null)
+                      Text(
+                        'Số tiền mục tiêu ${_fmtMoney(item.targetAmount ?? 0)} · '
+                        'Thực tế ${_fmtMoney(item.actualAmount ?? 0)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          color: context.colors.textMuted,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+            if ((_report!.unmappedAmount ?? 0) > 0)
+              _card(
+                child: Text(
+                  'Chưa gán hũ: ${_fmtMoney(_report!.unmappedAmount!)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+          ],
+        ],
       ),
     );
   }

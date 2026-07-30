@@ -408,6 +408,19 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
+                      onPressed: _saving ? null : _showCategoryJarMappings,
+                      icon: const Icon(Icons.account_tree_outlined),
+                      label: const Text('Gán danh mục vào hũ'),
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        side: const BorderSide(color: AppColors.link),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
                       onPressed: _saving ? null : _showFundAllocationDialog,
                       icon: const Icon(Icons.account_balance_wallet_outlined),
                       label: const Text('Chia quỹ theo mô hình đang áp dụng'),
@@ -458,6 +471,21 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _showCategoryJarMappings() async {
+    final modelId = _currentModelId;
+    if (modelId == null || modelId.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: context.colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _CategoryJarMappingSheet(financeModelId: modelId),
     );
   }
 
@@ -1148,7 +1176,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         // tiếp. Mở/await dialog ngay trong vòng đời lưu có thể làm Flutter
         // deactive InheritedWidget khi modal vẫn còn dependency.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _showFundAllocationDialog();
+          if (mounted) _showCategoryJarMappings();
         });
       }
     } catch (e) {
@@ -1161,6 +1189,257 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+class _CategoryJarMappingSheet extends StatefulWidget {
+  const _CategoryJarMappingSheet({required this.financeModelId});
+
+  final String financeModelId;
+
+  @override
+  State<_CategoryJarMappingSheet> createState() =>
+      _CategoryJarMappingSheetState();
+}
+
+class _CategoryJarMappingSheetState extends State<_CategoryJarMappingSheet> {
+  List<fp.FinanceCategoryJarMapping> _mappings = const [];
+  bool _loading = true;
+  String? _busyCategoryId;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final provider = context.read<fp.FinanceProvider>();
+      await provider.fetchAll();
+      final mappings = await provider.fetchCategoryJarMappings(
+        financeModelId: widget.financeModelId,
+      );
+      if (!mounted) return;
+      setState(() => _mappings = mappings);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  fp.FinanceCategoryJarMapping? _mappingFor(String categoryId) {
+    for (final mapping in _mappings) {
+      if (mapping.categoryId == categoryId) return mapping;
+    }
+    return null;
+  }
+
+  Future<void> _changeMapping(
+    fp.FinanceCategory category,
+    String? jarId,
+  ) async {
+    final provider = context.read<fp.FinanceProvider>();
+    final current = _mappingFor(category.id);
+    setState(() {
+      _busyCategoryId = category.id;
+      _error = null;
+    });
+    try {
+      if (jarId == null || jarId.isEmpty) {
+        if (current != null && current.id.isNotEmpty) {
+          await provider.deleteCategoryJarMapping(current.id);
+        }
+      } else {
+        await provider.upsertCategoryJarMapping(
+          financeModelId: widget.financeModelId,
+          categoryId: category.id,
+          jarId: jarId,
+        );
+      }
+      final mappings = await provider.fetchCategoryJarMappings(
+        financeModelId: widget.financeModelId,
+      );
+      if (!mounted) return;
+      setState(() => _mappings = mappings);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _busyCategoryId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final finance = context.watch<fp.FinanceProvider>();
+    final categories = finance.categories
+        .where(
+          (category) => category.isActive && category.categoryType == 'EXPENSE',
+        )
+        .toList();
+    final jars = finance.jars
+        .where(
+          (jar) => jar.isActive && jar.financeModelId == widget.financeModelId,
+        )
+        .toList();
+    return FractionallySizedBox(
+      heightFactor: 0.88,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Gán danh mục vào hũ',
+                    style: GoogleFonts.inter(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            Text(
+              'Khi ghi khoản chi, chỉ cần chọn danh mục. Backend sẽ tự gán '
+              'đúng hũ của mô hình đang áp dụng.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.4,
+                color: context.colors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (_error != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.dangerLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _error!,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.danger,
+                  ),
+                ),
+              ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : categories.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Chưa có danh mục chi đang hoạt động. Hãy tạo danh '
+                        'mục trước khi cấu hình mapping.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: context.colors.textMuted,
+                        ),
+                      ),
+                    )
+                  : jars.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Mô hình này chưa có hũ hoạt động.',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppColors.danger,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: categories.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (_, index) {
+                        final category = categories[index];
+                        final mapping = _mappingFor(category.id);
+                        final value =
+                            jars.any((jar) => jar.id == mapping?.jarId)
+                            ? mapping!.jarId
+                            : '';
+                        final busy = _busyCategoryId == category.id;
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: context.colors.inputFill,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                category.name,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              DropdownButtonFormField<String>(
+                                key: ValueKey('${category.id}:$value'),
+                                initialValue: value,
+                                decoration: InputDecoration(
+                                  labelText: 'Hũ nhận khoản chi',
+                                  suffixIcon: busy
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : null,
+                                  border: const OutlineInputBorder(),
+                                ),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: '',
+                                    child: Text('Chưa gán hũ'),
+                                  ),
+                                  ...jars.map(
+                                    (jar) => DropdownMenuItem(
+                                      value: jar.id,
+                                      child: Text(
+                                        '${jar.name} · ${jar.allocationPercentage.toStringAsFixed(0)}%',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: busy
+                                    ? null
+                                    : (jarId) =>
+                                          _changeMapping(category, jarId),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
