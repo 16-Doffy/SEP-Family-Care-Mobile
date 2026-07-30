@@ -408,7 +408,9 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      onPressed: _saving ? null : _showCategoryJarMappings,
+                      onPressed: _saving || _hasLocalEdits
+                          ? null
+                          : _showCategoryJarMappings,
                       icon: const Icon(Icons.account_tree_outlined),
                       label: const Text('Gán danh mục vào hũ'),
                     ),
@@ -497,10 +499,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   }) {
     final sel = _model == model;
     return GestureDetector(
-      onTap: () => setState(() {
-        _model = model;
-        _hasLocalEdits = true;
-      }),
+      onTap: () => _selectModel(model),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(16),
@@ -557,6 +556,37 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _selectModel(FinanceModelType model) async {
+    setState(() {
+      _model = model;
+      _hasLocalEdits = true;
+      _loadingCurrent = model != FinanceModelType.custom;
+    });
+    if (model == FinanceModelType.custom) return;
+
+    final modelType = model == FinanceModelType.fiveJars
+        ? 'FIVE_JARS'
+        : 'EIGHTY_TWENTY';
+    final provider = context.read<fp.FinanceProvider>();
+    final reusable = await _findReusableTemplateModel(provider, modelType);
+    if (!mounted || _model != model) return;
+
+    if (reusable != null) {
+      final realJars = provider.jars
+          .where((jar) => jar.financeModelId == reusable.id)
+          .toList();
+      setState(() {
+        _applyRealJars(
+          model == FinanceModelType.fiveJars ? _fiveJars : _twoFunds,
+          realJars,
+        );
+        _loadingCurrent = false;
+      });
+    } else {
+      setState(() => _loadingCurrent = false);
+    }
   }
 
   Widget _jarSlider(FinanceJarUi jar, int idx, {bool isCustom = false}) {
@@ -1093,8 +1123,45 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     );
   }
 
+  // Tìm lại model mẫu đã từng cấu hình. Mapping category -> jar thuộc về
+  // financeModelId, vì vậy tạo một model mới mỗi lần đổi 5 lọ <-> 80/20 sẽ
+  // làm người dùng tưởng mapping cũ bị mất. Nếu dữ liệu cũ đã có nhiều model
+  // trùng loại, ưu tiên model ACTIVE; nếu không thì chọn model có nhiều mapping
+  // nhất để khôi phục cấu hình đã dùng thay vì tiếp tục tạo bản trùng.
+  Future<fp.FinanceModel?> _findReusableTemplateModel(
+    fp.FinanceProvider provider,
+    String modelType,
+  ) async {
+    final candidates = provider.models
+        .where((model) => model.modelType == modelType)
+        .toList();
+    if (candidates.isEmpty) return null;
+
+    for (final model in candidates) {
+      if (model.status == 'ACTIVE') return model;
+    }
+
+    fp.FinanceModel? best;
+    var bestMappingCount = -1;
+    for (final model in candidates) {
+      try {
+        final mappings = await provider.fetchCategoryJarMappings(
+          financeModelId: model.id,
+        );
+        if (mappings.length > bestMappingCount) {
+          best = model;
+          bestMappingCount = mappings.length;
+        }
+      } catch (_) {
+        // Một model legacy có thể không đọc được mapping; vẫn còn fallback
+        // về model đầu tiên bên dưới.
+      }
+    }
+    return best ?? candidates.first;
+  }
+
   // ── Lưu — flow thật khớp BE (verify 2026-06-26) ───────────────────────────
-  //   1. Tạo model mới (BE tự sinh jar mặc định cho FIVE_JARS/EIGHTY_TWENTY)
+  //   1. Tái sử dụng model mẫu đã có; chỉ tạo mới khi loại đó chưa tồn tại.
   //   2. Đồng bộ % người dùng chỉnh khác mặc định → PATCH từng jar
   //   3. CUSTOM: POST jar riêng cho từng khoản người dùng thêm
   //   4. Activate model (BE tự vô hiệu hoá model cũ của gia đình)
@@ -1114,17 +1181,19 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         FinanceModelType.custom => 'Tuỳ chỉnh',
       };
 
-      final created = await provider.createModel(
-        modelType: modelType,
-        name: modelName,
-      );
+      final reusable = _model == FinanceModelType.custom
+          ? null
+          : await _findReusableTemplateModel(provider, modelType);
+      final target =
+          reusable ??
+          await provider.createModel(modelType: modelType, name: modelName);
 
       if (_model == FinanceModelType.custom) {
         // BE không tự sinh jar cho CUSTOM — tự tạo từng lọ.
         for (var i = 0; i < _customJars.length; i++) {
           final jar = _customJars[i];
           await provider.createJar(
-            financeModelId: created.id,
+            financeModelId: target.id,
             name: jar.name,
             jarCode: 'CUSTOM_${i + 1}',
             allocationPercentage: jar.percent,
@@ -1142,9 +1211,14 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         // → BE trả "không được vượt quá 100%" dù đích cuối đúng 100%.
         // Cách sửa: gom các lọ cần đổi rồi patch GIẢM trước, TĂNG sau (sort theo
         // delta tăng dần) → tổng chạy luôn <= 100 tại mọi bước.
+        final modelJars = target.jars.isNotEmpty
+            ? target.jars
+            : provider.jars
+                  .where((jar) => jar.financeModelId == target.id)
+                  .toList();
         final pending = <({String id, double pct, double delta})>[];
         for (final uiJar in uiJars) {
-          final realJar = _jarByCode(created.jars, uiJar.jarCode);
+          final realJar = _jarByCode(modelJars, uiJar.jarCode);
           if (realJar == null) continue;
           final delta = uiJar.percent - realJar.allocationPercentage;
           if (delta.abs() >= 0.5) {
@@ -1157,11 +1231,11 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         }
       }
 
-      await provider.activateModel(created.id);
+      await provider.activateModel(target.id);
 
       if (mounted) {
         setState(() {
-          _currentModelId = created.id;
+          _currentModelId = target.id;
           _currentModelTypeLabel = modelName;
           _hasLocalEdits = false;
           _loadingCurrent = false;

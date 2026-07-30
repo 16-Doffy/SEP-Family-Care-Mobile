@@ -150,12 +150,33 @@ class _JarTargetActualReportTabState extends State<_JarTargetActualReportTab> {
       _error = null;
     });
     try {
+      final finance = context.read<FinanceProvider>();
+      // Luôn gửi rõ model ACTIVE cho report. Không phụ thuộc BE tự chọn model,
+      // vì family có thể còn nhiều model cũ cùng loại sau các lần cấu hình.
+      if (finance.models.isEmpty ||
+          !finance.models.any((model) => model.isActive)) {
+        await finance.fetchAll();
+      }
+      FinanceModel? activeModel;
+      for (final model in finance.models) {
+        if (model.isActive) {
+          activeModel = model;
+          break;
+        }
+      }
+      if (activeModel == null || activeModel.id.isEmpty) {
+        throw Exception(
+          'Chưa có mô hình tài chính đang áp dụng để lập báo cáo theo hũ.',
+        );
+      }
       final now = DateTime.now();
       final start = DateTime(now.year, now.month, 1);
       final end = DateTime(now.year, now.month + 1, 0);
-      final report = await context
-          .read<FinanceProvider>()
-          .fetchJarTargetActualReport(periodStart: start, periodEnd: end);
+      final report = await finance.fetchJarTargetActualReport(
+        periodStart: start,
+        periodEnd: end,
+        financeModelId: activeModel.id,
+      );
       if (mounted) setState(() => _report = report);
     } catch (e) {
       if (mounted) {
