@@ -68,6 +68,8 @@ class FaceSuggestion {
   final String memberName;
   final double? confidence; // 0..1 hoặc 0..100 tùy BE — UI tự chuẩn hóa
   final String status; // PENDING | CONFIRMED | REJECTED
+  final String faceKey;
+  final int? faceIndex;
 
   const FaceSuggestion({
     required this.id,
@@ -75,6 +77,8 @@ class FaceSuggestion {
     this.memberName = '',
     this.confidence,
     this.status = 'PENDING',
+    this.faceKey = '',
+    this.faceIndex,
   });
 
   /// Confidence chuẩn hóa về thang 0..1 (BE có thể trả 0..1 hoặc 0..100).
@@ -141,8 +145,105 @@ class FaceSuggestion {
       status: _str(j['status'] ?? j['state']).isEmpty
           ? 'PENDING'
           : _str(j['status'] ?? j['state']),
+      faceKey: _str(
+        j['faceId'] ??
+            j['detectedFaceId'] ??
+            j['faceDetectionId'] ??
+            j['detectionId'],
+      ),
+      faceIndex:
+          (j['faceIndex'] as num?)?.toInt() ?? (j['index'] as num?)?.toInt(),
     );
   }
+}
+
+/// Chuẩn hóa response face-suggestions mới của BE.
+///
+/// BE có thể trả danh sách phẳng (mỗi item là một suggestion), hoặc nhóm theo
+/// từng khuôn mặt với `candidates`/`matches`. Với mỗi khuôn mặt FE chỉ giữ ứng
+/// viên có điểm cao nhất; các khuôn mặt khác nhau vẫn được giữ độc lập để user
+/// xác nhận từng người. Việc chọn điểm cao nhất KHÔNG tự tạo tag chính thức.
+@visibleForTesting
+List<FaceSuggestion> parseFaceSuggestions(dynamic data) {
+  List<dynamic> rootItems(dynamic value) {
+    if (value is List) return value;
+    if (value is! Map) return const [];
+    for (final key in const [
+      'items',
+      'results',
+      'suggestions',
+      'faceSuggestions',
+      'faces',
+      'detections',
+    ]) {
+      final nested = value[key];
+      if (nested is List) return nested;
+    }
+    return [value];
+  }
+
+  final flattened = <Map<String, dynamic>>[];
+  for (final raw in rootItems(data)) {
+    if (raw is! Map) continue;
+    final face = Map<String, dynamic>.from(raw);
+    List? candidates;
+    for (final key in const [
+      'candidates',
+      'matches',
+      'suggestions',
+      'faceSuggestions',
+    ]) {
+      if (face[key] is List) {
+        candidates = face[key] as List;
+        break;
+      }
+    }
+    if (candidates == null) {
+      flattened.add(face);
+      continue;
+    }
+    for (final candidate in candidates.whereType<Map>()) {
+      final merged = <String, dynamic>{
+        ...face,
+        ...Map<String, dynamic>.from(candidate),
+      };
+      // Không để list lồng nhau bị hiểu nhầm ở bước parse tiếp theo.
+      for (final key in const [
+        'candidates',
+        'matches',
+        'suggestions',
+        'faceSuggestions',
+      ]) {
+        merged.remove(key);
+      }
+      flattened.add(merged);
+    }
+  }
+
+  final parsed = flattened
+      .map(FaceSuggestion.fromJson)
+      .where((s) => s.id.isNotEmpty && !s.isResolved)
+      .toList();
+  final bestByFace = <String, FaceSuggestion>{};
+  final withoutFaceKey = <FaceSuggestion>[];
+  for (final suggestion in parsed) {
+    final key = suggestion.faceKey.isNotEmpty
+        ? suggestion.faceKey
+        : suggestion.faceIndex != null
+        ? 'index:${suggestion.faceIndex}'
+        : '';
+    if (key.isEmpty) {
+      withoutFaceKey.add(suggestion);
+      continue;
+    }
+    final current = bestByFace[key];
+    if (current == null ||
+        (suggestion.normalizedConfidence ?? -1) >
+            (current.normalizedConfidence ?? -1)) {
+      bestByFace[key] = suggestion;
+    }
+  }
+  return [...bestByFace.values, ...withoutFaceKey];
 }
 
 class AlbumFaceProvider extends ChangeNotifier {
@@ -212,27 +313,7 @@ class AlbumFaceProvider extends ChangeNotifier {
     final data = await ApiClient.instance.get(
       '/families/$fid/albums/media/$mediaId/face-suggestions',
     );
-    final raw = data is List
-        ? data
-        : (data is Map && data['items'] is List
-              ? data['items'] as List
-              : (data is Map && data['data'] is List
-                    ? data['data'] as List
-                    : (data is Map && data['results'] is List
-                          ? data['results'] as List
-                          : (data is Map && data['suggestions'] is List
-                                ? data['suggestions'] as List
-                                : (data is Map &&
-                                          data['faceSuggestions'] is List
-                                      ? data['faceSuggestions'] as List
-                                      : const <dynamic>[])))));
-    return raw
-        .whereType<Map>()
-        .map((e) => FaceSuggestion.fromJson(Map<String, dynamic>.from(e)))
-        // BE vẫn trả cả gợi ý đã xác nhận/từ chối → không lọc thì tag đã gắn
-        // xong vẫn hiện lại kèm nút Xác nhận mỗi lần load lại.
-        .where((s) => s.id.isNotEmpty && !s.isResolved)
-        .toList();
+    return parseFaceSuggestions(data);
   }
 
   // POST .../face-suggestions/{suggestionId}/confirm — chỉ khi xác nhận mới

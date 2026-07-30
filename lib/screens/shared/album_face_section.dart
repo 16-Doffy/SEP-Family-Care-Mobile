@@ -274,6 +274,15 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
             _scanRow(),
             if (_visibleSuggestions.isNotEmpty) ...[
               const SizedBox(height: 10),
+              Text(
+                'AI đã so sánh từng khuôn mặt và giữ ứng viên có điểm cao '
+                'nhất. Hãy xác nhận trước khi tạo thẻ chính thức.',
+                style: GoogleFonts.inter(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: context.colors.textMuted,
+                ),
+              ),
               ..._visibleSuggestions.map(_suggestionTile),
             ] else if (_effectiveScan == FaceScanState.scanned ||
                 _effectiveScan == FaceScanState.noFace) ...[
@@ -387,6 +396,9 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
 
   Widget _suggestionTile(FaceSuggestion s) {
     final conf = _confidenceLabel(s);
+    final faceLabel = s.faceIndex == null
+        ? ''
+        : 'Khuôn mặt ${s.faceIndex! + 1}';
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Row(
@@ -410,7 +422,9 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 ),
                 if (conf.isNotEmpty)
                   Text(
-                    'Độ tin cậy $conf',
+                    faceLabel.isEmpty
+                        ? 'Độ tin cậy $conf'
+                        : '$faceLabel · Độ tin cậy $conf',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: context.colors.textMuted,
