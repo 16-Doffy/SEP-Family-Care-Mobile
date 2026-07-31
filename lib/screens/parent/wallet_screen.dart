@@ -1627,7 +1627,6 @@ class _WalletScreenState extends State<WalletScreen> {
     final amountCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     String? categoryId;
-    String selectedJarId = '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1647,11 +1646,6 @@ class _WalletScreenState extends State<WalletScreen> {
                     category.isActive,
               )
               .toList();
-          final activeJars = _activeFinanceJars(ctx.watch<FinanceProvider>());
-          if (selectedJarId.isNotEmpty &&
-              !activeJars.any((jar) => jar.id == selectedJarId)) {
-            selectedJarId = '';
-          }
           if (categoryId == null ||
               !categories.any((c) => c.id == categoryId)) {
             categoryId = categories.isNotEmpty ? categories.first.id : null;
@@ -1754,47 +1748,22 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                   ),
                 ),
-                if (!isIncome && activeJars.isNotEmpty) ...[
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedJarId,
-                    decoration: InputDecoration(
-                      labelText: 'Hũ chi tiêu',
-                      helperText:
-                          'Chọn hũ để số thực chi theo mô hình được cập nhật.',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('Chưa gắn hũ'),
-                      ),
-                      ...activeJars.map(
-                        (jar) => DropdownMenuItem(
-                          value: jar.id,
-                          child: Text(_financeJarLabel(jar)),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setSheet(() => selectedJarId = value ?? ''),
-                  ),
-                  const SizedBox(height: 12),
-                ] else if (!isIncome) ...[
+                if (!isIncome) ...[
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: AppColors.amberLight,
+                      color: AppColors.link.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      'Chưa có mô hình tài chính đang áp dụng hoặc chưa có hũ hoạt động. '
-                      'Khoản chi này sẽ được tính vào “Chưa gắn hũ”.',
+                      categoryId == null
+                          ? 'Chưa chọn danh mục nên Backend không thể tự gán hũ.'
+                          : 'Hũ sẽ được Backend tự gán theo danh mục và mô hình '
+                                'tài chính đang áp dụng.',
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        color: AppColors.amberDark,
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ),
@@ -1835,9 +1804,9 @@ class _WalletScreenState extends State<WalletScreen> {
                           description: desc,
                           isIncome: isIncome,
                           categoryId: categoryId,
-                          jarId: !isIncome && selectedJarId.isNotEmpty
-                              ? selectedJarId
-                              : null,
+                          // Contract mới: gửi categoryId, không gửi jarId để
+                          // BE auto-map theo model ACTIVE.
+                          jarId: null,
                         );
                         if (ctx.mounted) Navigator.pop(ctx);
                       } catch (e) {

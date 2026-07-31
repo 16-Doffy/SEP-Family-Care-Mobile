@@ -43,6 +43,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
   List<FaceSuggestion> _suggestions = const [];
   bool _loading = true;
   bool _busy = false;
+  bool _scanWaitingTooLong = false;
 
   AlbumFaceProvider get _face => context.read<AlbumFaceProvider>();
 
@@ -80,18 +81,23 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       if (_shouldAutoScan(scan, sug)) {
         try {
           await _face.requestScan(widget.mediaId);
-          await Future.delayed(const Duration(seconds: 2));
-          scan = await _face.fetchScanStatus(widget.mediaId);
-          sug = await _face.fetchSuggestions(widget.mediaId);
+          final result = await _pollScanStatus(waitBeforeFirstCheck: true);
+          scan = result.scan;
+          sug = result.suggestions;
         } catch (_) {
           // Keep the manual scan button available if the priority scan fails.
         }
+      } else if (scan == FaceScanState.processing && sug.isEmpty) {
+        final result = await _pollScanStatus();
+        scan = result.scan;
+        sug = result.suggestions;
       }
 
       if (!mounted) return;
       setState(() {
         _scan = sug.isNotEmpty ? FaceScanState.hasSuggestions : scan;
         _suggestions = sug;
+        _scanWaitingTooLong = scan == FaceScanState.processing && sug.isEmpty;
         _loading = false;
       });
     } catch (_) {
@@ -106,18 +112,64 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         scan == FaceScanState.notScanned;
   }
 
+  Future<({FaceScanState scan, List<FaceSuggestion> suggestions})>
+  _pollScanStatus({bool waitBeforeFirstCheck = false}) async {
+    var scan = FaceScanState.processing;
+    var suggestions = const <FaceSuggestion>[];
+
+    for (var attempt = 0; attempt < 8; attempt++) {
+      if (waitBeforeFirstCheck || attempt > 0) {
+        await Future.delayed(const Duration(milliseconds: 1500));
+      }
+      if (!mounted) return (scan: scan, suggestions: suggestions);
+
+      try {
+        scan = await _face.fetchScanStatus(widget.mediaId);
+        suggestions = await _face.fetchSuggestions(widget.mediaId);
+      } catch (_) {
+        if (attempt == 7) rethrow;
+        continue;
+      }
+
+      if (suggestions.isNotEmpty) {
+        return (scan: FaceScanState.hasSuggestions, suggestions: suggestions);
+      }
+      if (scan == FaceScanState.scanned ||
+          scan == FaceScanState.noFace ||
+          scan == FaceScanState.failed) {
+        return (scan: scan, suggestions: suggestions);
+      }
+    }
+
+    return (scan: scan, suggestions: suggestions);
+  }
+
   Future<void> _scanNow() async {
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _scanWaitingTooLong = false;
+    });
     try {
-      await _face.requestScan(widget.mediaId, force: true);
+      final isAlreadyProcessing = _scan == FaceScanState.processing;
+      if (!isAlreadyProcessing) {
+        await _face.requestScan(
+          widget.mediaId,
+          force: _scan != FaceScanState.notScanned,
+        );
+      }
       // Quét chạy nền (202). Đợi một nhịp rồi lấy trạng thái + gợi ý.
-      await Future.delayed(const Duration(seconds: 2));
-      final scan = await _face.fetchScanStatus(widget.mediaId);
-      final sug = await _face.fetchSuggestions(widget.mediaId);
+      final result = await _pollScanStatus(
+        waitBeforeFirstCheck: !isAlreadyProcessing,
+      );
       if (!mounted) return;
       setState(() {
-        _scan = sug.isNotEmpty ? FaceScanState.hasSuggestions : scan;
-        _suggestions = sug;
+        _scan = result.suggestions.isNotEmpty
+            ? FaceScanState.hasSuggestions
+            : result.scan;
+        _suggestions = result.suggestions;
+        _scanWaitingTooLong =
+            result.scan == FaceScanState.processing &&
+            result.suggestions.isEmpty;
       });
     } catch (e) {
       _snack(e.toString().replaceFirst('Exception: ', ''));
@@ -272,8 +324,29 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
             _waitingForModerationNote()
           else ...[
             _scanRow(),
+            if (_scanWaitingTooLong && !_busy) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Máy chủ vẫn đang xử lý ảnh. Bạn có thể rời màn hình và quay lại, '
+                'hoặc bấm “Kiểm tra trạng thái” mà không tạo thêm lượt quét.',
+                style: GoogleFonts.inter(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: context.colors.textMuted,
+                ),
+              ),
+            ],
             if (_visibleSuggestions.isNotEmpty) ...[
               const SizedBox(height: 10),
+              Text(
+                'AI đã so sánh từng khuôn mặt và giữ ứng viên có điểm cao '
+                'nhất. Hãy xác nhận trước khi tạo thẻ chính thức.',
+                style: GoogleFonts.inter(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: context.colors.textMuted,
+                ),
+              ),
               ..._visibleSuggestions.map(_suggestionTile),
             ] else if (_effectiveScan == FaceScanState.scanned ||
                 _effectiveScan == FaceScanState.noFace) ...[
@@ -373,12 +446,14 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         const Spacer(),
         if (widget.isSafe)
           TextButton.icon(
-            onPressed: _busy || _scan == FaceScanState.processing
-                ? null
-                : _scanNow,
+            onPressed: _busy ? null : _scanNow,
             icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
             label: Text(
-              _scan == FaceScanState.notScanned ? 'Quét khuôn mặt' : 'Quét lại',
+              _scan == FaceScanState.processing
+                  ? 'Kiểm tra trạng thái'
+                  : _scan == FaceScanState.notScanned
+                  ? 'Quét khuôn mặt'
+                  : 'Quét lại',
             ),
           ),
       ],
@@ -387,6 +462,9 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
 
   Widget _suggestionTile(FaceSuggestion s) {
     final conf = _confidenceLabel(s);
+    final faceLabel = s.faceIndex == null
+        ? ''
+        : 'Khuôn mặt ${s.faceIndex! + 1}';
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Row(
@@ -410,7 +488,9 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 ),
                 if (conf.isNotEmpty)
                   Text(
-                    'Độ tin cậy $conf',
+                    faceLabel.isEmpty
+                        ? 'Độ tin cậy $conf'
+                        : '$faceLabel · Độ tin cậy $conf',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: context.colors.textMuted,

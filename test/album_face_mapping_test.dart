@@ -50,6 +50,33 @@ void main() {
     // cung cấp cờ auto-tag dựa trên confidence.
   });
 
+  test('mỗi khuôn mặt chỉ giữ ứng viên có confidence cao nhất', () {
+    final suggestions = parseFaceSuggestions({
+      'faces': [
+        {
+          'faceId': 'face-1',
+          'faceIndex': 0,
+          'candidates': [
+            {'id': 'low', 'memberId': 'm1', 'score': 0.5},
+            {'id': 'high', 'memberId': 'm2', 'score': 0.88},
+          ],
+        },
+        {
+          'faceId': 'face-2',
+          'faceIndex': 1,
+          'matches': [
+            {'id': 'second-face', 'memberId': 'm3', 'confidence': 0.75},
+          ],
+        },
+      ],
+    });
+
+    expect(suggestions, hasLength(2));
+    expect(suggestions.first.id, 'high');
+    expect(suggestions.first.faceKey, 'face-1');
+    expect(suggestions.last.id, 'second-face');
+  });
+
   group('quyền gỡ tag', () {
     test('BE không trả quyền thì vẫn cho gỡ (fail-open, để BE trả 403)', () {
       final tag = AlbumTag.fromJson({'id': 'tag-1'});
