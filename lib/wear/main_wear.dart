@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/gps_provider.dart';
 import '../providers/sos_provider.dart';
-import 'screens/wear_login_screen.dart';
 import 'screens/wear_home_screen.dart';
+import 'screens/wear_pairing_screen.dart';
 
 void main() {
   runApp(
@@ -71,6 +71,6 @@ class _WearRoot extends StatelessWidget {
         ),
       );
     }
-    return auth.isLoggedIn ? const WearHomeScreen() : const WearLoginScreen();
+    return auth.isLoggedIn ? const WearHomeScreen() : const WearPairingScreen();
   }
 }

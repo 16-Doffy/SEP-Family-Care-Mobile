@@ -398,6 +398,13 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - ⚠️ Form ghi thu/chi ở [wallet_screen.dart](lib/screens/parent/wallet_screen.dart) **đang gửi `jarId`** khi user tự chọn hũ (chỉ với khoản chi). Gửi `jarId` sẽ **đè** auto-map của BE → phải chốt: bỏ hẳn picker hũ và để BE map, hay giữ làm "ghi đè thủ công" có nhãn rõ ràng.
 - `GET /finance/reports/jar-target-actual` **thay thế được** phần FE tự tính trong [jar_allocation.dart](lib/utils/jar_allocation.dart) — đây đúng là khoảng trống `byJar` ("Reserved") đã nêu. Khi wire xong nên bỏ phần tự cộng để tránh 2 nguồn số liệu lệch nhau. Lưu ý dòng "Chưa gán hũ" hiện có ứng với nhóm `unmapped` của BE.
 
+### [2026-07-30] Wearable — ghép từ mobile CHƯA cấp được token cho đồng hồ
+- Luồng mới: đồng hồ hiện mã `FCW-XXXXXX`, người dùng nhập mã đó ở **Hồ sơ → Thiết bị đeo → Ghép thiết bị** (`POST /wearables`, mã đi vào `deviceIdentifier`).
+- ⚠️ **Mã này chỉ là identifier hiển thị.** Nó được sinh **cục bộ trên đồng hồ** bằng `Random` và **không được gửi lên BE từ phía đồng hồ**. Sau khi điện thoại ghép xong, đồng hồ **vẫn không có access token**: `tryRestoreSession()` đọc secure storage của chính đồng hồ (rỗng), và **không có** MethodChannel / Wearable Data Layer nào đồng bộ token phone→watch.
+- Vì vậy màn ghép nối giữ lại lối **"Đăng nhập trên đồng hồ"** (`WearLoginScreen`). Bỏ lối này đi thì đồng hồ kẹt vĩnh viễn ở màn ghép — đã xảy ra một lần và không bị `flutter build`/test bắt được (không có test nào chạm luồng wear).
+- **Cần BE để hoàn thiện** (chưa có trong Swagger): cơ chế đổi mã lấy token, ví dụ đồng hồ `POST /wearables/pair-code {code}` → điện thoại `POST /wearables/{deviceId}/issue-token` → đồng hồ poll `GET /wearables/pair-code/{code}` nhận token. Có hợp đồng này rồi mới bỏ được lối đăng nhập trên đồng hồ.
+- Ghi chú: nhóm `/wearables` **không có** trong `family-care-api.json` của repo (file đã lỗi thời) — chỉ có trong Swagger live.
+
 ### [MỚI 2026-07-29] Face AI chấm điểm từng khuôn mặt
 - BE nay **kiểm tra từng face trong ảnh** rồi lấy face có điểm cao nhất để gắn thẻ (ví dụ BE đưa: face1 `0.88`, face2 `0.5` → chọn face1).
 - ⚠️ [VERIFY WITH OFFICIAL SOURCE] Ví dụ điểm `0.88`/`0.5` cho thấy **confidence là thang 0..1**, khớp `normalizedConfidence` hiện tại — nhưng Swagger **vẫn chưa có response schema** cho `face-suggestions`, nên tên field và enum `status` vẫn đang parse phòng thủ.

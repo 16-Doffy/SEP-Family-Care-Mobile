@@ -11,7 +11,6 @@ import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../theme/app_ui_tokens.dart';
-import '../../utils/jar_allocation.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/ring_chart.dart';
@@ -22,6 +21,25 @@ import '../../widgets/money_input.dart';
 String _fmt(int n) =>
     '${n.toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (m) => "${m[1]},")} ₫';
 
+class _JarOverviewRow {
+  const _JarOverviewRow({
+    required this.name,
+    required this.pct,
+    required this.target,
+    required this.actual,
+    required this.status,
+  });
+
+  final String name;
+  final double pct;
+  final double target;
+  final double actual;
+  final String status;
+
+  bool get isOverBudget =>
+      status == 'OVER_TARGET' || (target > 0 && actual > target);
+}
+
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
   @override
@@ -30,18 +48,84 @@ class WalletScreen extends StatefulWidget {
 
 class _WalletScreenState extends State<WalletScreen> {
   int _tab = 0;
+  JarTargetActualReport? _jarTargetReport;
+  bool _jarTargetReportLoading = false;
+  String? _jarTargetReportError;
+  String? _jarTargetReportModelId;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<WalletProvider>().fetchWallets();
-      context.read<SupportRequestProvider>().fetchRequests();
-      context.read<FinanceProvider>().fetchAll();
-      // Cần để tra tên người gửi yêu cầu khi BE chỉ trả requesterMemberId.
-      final family = context.read<FamilyProvider>();
-      if (family.members.isEmpty) family.fetchMembers();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialData());
+  }
+
+  Future<void> _loadInitialData() async {
+    final family = context.read<FamilyProvider>();
+    await Future.wait([
+      context.read<WalletProvider>().fetchWallets(),
+      context.read<SupportRequestProvider>().fetchRequests(),
+      context.read<FinanceProvider>().fetchAll(),
+      if (family.members.isEmpty) family.fetchMembers(),
+    ]);
+    if (!mounted) return;
+    await _loadJarTargetActualReport();
+  }
+
+  Future<void> _loadJarTargetActualReport() async {
+    if (!mounted) return;
+    setState(() {
+      _jarTargetReportLoading = true;
+      _jarTargetReportError = null;
     });
+    try {
+      final finance = context.read<FinanceProvider>();
+      if (finance.models.isEmpty ||
+          !finance.models.any((model) => model.isActive)) {
+        await finance.fetchAll();
+      }
+
+      FinanceModel? activeModel;
+      for (final model in finance.models) {
+        if (model.isActive) {
+          activeModel = model;
+          break;
+        }
+      }
+
+      if (activeModel == null || activeModel.id.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _jarTargetReport = null;
+            _jarTargetReportModelId = null;
+          });
+        }
+        return;
+      }
+
+      final now = DateTime.now();
+      final report = await finance.fetchJarTargetActualReport(
+        periodStart: DateTime(now.year, now.month, 1),
+        periodEnd: DateTime(now.year, now.month + 1, 0),
+        financeModelId: activeModel.id,
+      );
+      if (mounted) {
+        setState(() {
+          _jarTargetReport = report;
+          _jarTargetReportModelId = activeModel!.id;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _jarTargetReport = null;
+          _jarTargetReportError = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _jarTargetReportLoading = false);
+      }
+    }
   }
 
   @override
@@ -194,58 +278,85 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  /// Một dòng phân bổ theo hũ của mô hình tài chính đang áp dụng.
-  ///
-  /// `target` = thu nhập × tỷ lệ hũ (kế hoạch), `actual` = tổng chi thực tế của
-  /// các ledger entry có `jarId` này. BE chưa trả `byJar` trong finance/summary
-  /// (Swagger ghi "Reserved") nên phần thực tế do FE tự cộng từ giao dịch.
-  ({JarAllocation allocation, String? note}) _jarBreakdown(
-    BuildContext context,
-    WalletProvider state,
-    double income,
-  ) {
-    const empty = JarAllocation(rows: [], unassigned: 0);
+  /// Report target/actual theo hu tu BE cho model tai chinh dang active.
+  /// Khong tu cong ledger o FE de tranh lech voi mapping category -> jar.
+  ({List<_JarOverviewRow> rows, double unmappedAmount, String? note})
+  _jarBreakdown(BuildContext context, double income) {
+    const empty = <_JarOverviewRow>[];
     final finance = context.watch<FinanceProvider>();
-    final model = finance.activeModel;
+    FinanceModel? model;
+    for (final candidate in finance.models) {
+      if (candidate.isActive) {
+        model = candidate;
+        break;
+      }
+    }
 
-    // activeModel fallback về model đầu tiên kể cả DRAFT → chỉ coi là đang áp
-    // dụng khi status thật là ACTIVE, không thì nói rõ cho user.
-    if (model == null || !model.isActive) {
+    if (model == null) {
       return (
-        allocation: empty,
-        note: model == null
-            ? 'Gia đình chưa có mô hình tài chính. Tạo mô hình để xem phân bổ theo hũ.'
-            : 'Mô hình "${model.name}" chưa được kích hoạt nên chưa có phân bổ theo hũ.',
+        rows: empty,
+        unmappedAmount: 0,
+        note:
+            'Gia \u0111\u00ecnh ch\u01b0a c\u00f3 m\u00f4 h\u00ecnh t\u00e0i ch\u00ednh \u0111ang \u00e1p d\u1ee5ng \u0111\u1ec3 xem b\u00e1o c\u00e1o theo h\u0169.',
       );
     }
 
-    // GET /finance/jars trả hũ của MỌI mô hình cho quản lý → phải lọc theo
-    // đúng mô hình đang áp dụng, không thì cộng lẫn hũ của mô hình cũ.
-    final jars = finance.jars
-        .where((j) => j.isActive && j.financeModelId == model.id)
-        .toList();
-    if (jars.isEmpty) {
+    if (_jarTargetReportLoading) {
       return (
-        allocation: empty,
-        note: 'Mô hình "${model.name}" chưa có hũ nào đang hoạt động.',
+        rows: empty,
+        unmappedAmount: 0,
+        note:
+            '\u0110ang t\u1ea3i b\u00e1o c\u00e1o th\u1ef1c chi theo h\u0169 t\u1eeb Backend...',
       );
     }
 
-    return (
-      allocation: computeJarAllocation(
-        jars: jars,
-        entries: state.transactions,
-        income: income,
-      ),
-      note: null,
-    );
+    if (_jarTargetReportError != null) {
+      return (
+        rows: empty,
+        unmappedAmount: 0,
+        note:
+            'Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c b\u00e1o c\u00e1o theo h\u0169: $_jarTargetReportError',
+      );
+    }
+
+    final report = _jarTargetReportModelId == model.id
+        ? _jarTargetReport
+        : null;
+    if (report == null || report.items.isEmpty) {
+      return (
+        rows: empty,
+        unmappedAmount: report?.unmappedAmount ?? 0,
+        note:
+            'Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u target/actual theo h\u0169 cho th\u00e1ng n\u00e0y.',
+      );
+    }
+
+    final rows =
+        report.items
+            .map(
+              (item) => _JarOverviewRow(
+                name: item.jarName,
+                pct: item.targetPercentage,
+                target:
+                    item.targetAmount ??
+                    (income > 0 ? income * item.targetPercentage / 100 : 0),
+                actual:
+                    item.actualAmount ??
+                    (income > 0 ? income * item.actualPercentage / 100 : 0),
+                status: item.status,
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.pct.compareTo(a.pct));
+
+    return (rows: rows, unmappedAmount: report.unmappedAmount ?? 0, note: null);
   }
 
   List<Widget> _buildOverview(BuildContext context, WalletProvider state) {
     final income = state.monthlyIncome;
     final expense = state.monthlyExpense;
     final remaining = income - expense;
-    final jarInfo = _jarBreakdown(context, state, income);
+    final jarInfo = _jarBreakdown(context, income);
     final spentRatio = income > 0 ? expense / income : 0.0;
     final bufferPct = income > 0 ? ((remaining / income) * 100).round() : 0;
     final badgeBg = bufferPct < 10
@@ -364,7 +475,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 _barLegend('Dư', AppColors.safe, _fmt(remaining.round())),
               ],
             ),
-            if (jarInfo.allocation.rows.isNotEmpty) ...[
+            if (jarInfo.rows.isNotEmpty) ...[
               const SizedBox(height: 16),
               Divider(height: 1, color: AppColors.progressTrack),
               const SizedBox(height: 12),
@@ -394,18 +505,18 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-              ...jarInfo.allocation.rows.asMap().entries.map(
+              ...jarInfo.rows.asMap().entries.map(
                 (e) => _jarRow(e.value, _jarColor(e.key)),
               ),
               // Hiện phần chi không gán hũ để tổng khớp với tổng chi tiêu.
-              if (jarInfo.allocation.unassigned > 0)
+              if (jarInfo.unmappedAmount > 0)
                 _jarRow(
-                  JarAllocationRow(
-                    jarId: '',
+                  _JarOverviewRow(
                     name: 'Chưa gán hũ',
                     pct: 0,
                     target: 0,
-                    actual: jarInfo.allocation.unassigned,
+                    actual: jarInfo.unmappedAmount,
+                    status: '',
                   ),
                   AppColors.textMuted,
                 ),
@@ -419,10 +530,10 @@ class _WalletScreenState extends State<WalletScreen> {
       const SizedBox(height: 16),
 
       _sectionCard(
-        title: jarInfo.allocation.rows.isEmpty
+        title: jarInfo.rows.isEmpty
             ? 'Phân bổ thu nhập'
             : 'Phân bổ thu nhập theo mô hình',
-        child: jarInfo.allocation.rows.isEmpty
+        child: jarInfo.rows.isEmpty
             // Chưa có mô hình đang áp dụng → giữ cách chia cũ (thu/chi/dư).
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -481,7 +592,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   WaffleChart(
-                    segments: jarInfo.allocation.rows
+                    segments: jarInfo.rows
                         .asMap()
                         .entries
                         .map(
@@ -499,8 +610,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final e
-                            in jarInfo.allocation.rows.asMap().entries) ...[
+                        for (final e in jarInfo.rows.asMap().entries) ...[
                           _waffleLegend(
                             e.value.name,
                             _jarColor(e.key),
@@ -929,6 +1039,9 @@ class _WalletScreenState extends State<WalletScreen> {
                                 await context.read<WalletProvider>().voidEntry(
                                   detail.id,
                                 );
+                                if (mounted) {
+                                  await _loadJarTargetActualReport();
+                                }
                                 if (sheetContext.mounted) {
                                   Navigator.pop(sheetContext);
                                 }
@@ -1025,7 +1138,6 @@ class _WalletScreenState extends State<WalletScreen> {
     );
     final descriptionCtrl = TextEditingController(text: entry.description);
     final noteCtrl = TextEditingController(text: entry.note ?? '');
-    final activeJars = _activeFinanceJars(context.read<FinanceProvider>());
     final categories = context
         .read<FinanceProvider>()
         .categories
@@ -1035,10 +1147,6 @@ class _WalletScreenState extends State<WalletScreen> {
         )
         .toList();
     String? categoryId = entry.categoryId;
-    String selectedJarId = entry.jarId ?? '';
-    if (!activeJars.any((jar) => jar.id == selectedJarId)) {
-      selectedJarId = '';
-    }
     if (categoryId == null ||
         !categories.any((category) => category.id == categoryId)) {
       categoryId = categories.isNotEmpty ? categories.first.id : null;
@@ -1099,32 +1207,6 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-              if (entry.entryType == 'EXPENSE' && activeJars.isNotEmpty) ...[
-                DropdownButtonFormField<String>(
-                  initialValue: selectedJarId,
-                  decoration: const InputDecoration(
-                    labelText: 'Hũ chi tiêu',
-                    helperText:
-                        'Giao dịch sẽ được tính vào thực chi của hũ đã chọn.',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: '',
-                      child: Text('Chưa gắn hũ'),
-                    ),
-                    ...activeJars.map(
-                      (jar) => DropdownMenuItem(
-                        value: jar.id,
-                        child: Text(_financeJarLabel(jar)),
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) =>
-                      setSheetState(() => selectedJarId = value ?? ''),
-                ),
-                const SizedBox(height: 12),
-              ],
               TextField(
                 controller: descriptionCtrl,
                 decoration: const InputDecoration(
@@ -1160,15 +1242,13 @@ class _WalletScreenState extends State<WalletScreen> {
                         amount: amount,
                         description: description,
                         categoryId: categoryId,
-                        jarId:
-                            entry.entryType == 'EXPENSE' &&
-                                selectedJarId.isNotEmpty
-                            ? selectedJarId
-                            : null,
+                        // Không truyền jarId: hũ do BE map theo category, sửa
+                        // giao dịch không được làm mất liên kết hũ đang có.
                         note: noteCtrl.text.trim().isEmpty
                             ? null
                             : noteCtrl.text.trim(),
                       );
+                      if (mounted) await _loadJarTargetActualReport();
                       if (sheetContext.mounted) {
                         Navigator.pop(sheetContext);
                       }
@@ -1804,10 +1884,8 @@ class _WalletScreenState extends State<WalletScreen> {
                           description: desc,
                           isIncome: isIncome,
                           categoryId: categoryId,
-                          // Contract mới: gửi categoryId, không gửi jarId để
-                          // BE auto-map theo model ACTIVE.
-                          jarId: null,
                         );
+                        if (mounted) await _loadJarTargetActualReport();
                         if (ctx.mounted) Navigator.pop(ctx);
                       } catch (e) {
                         if (ctx.mounted) {
@@ -1836,49 +1914,6 @@ class _WalletScreenState extends State<WalletScreen> {
         },
       ),
     );
-  }
-
-  List<FinanceJar> _activeFinanceJars(FinanceProvider finance) {
-    FinanceModel? activeModel;
-    for (final model in finance.models) {
-      if (model.isActive) {
-        activeModel = model;
-        break;
-      }
-    }
-    if (activeModel == null) return const [];
-
-    final jarsById = <String, FinanceJar>{};
-    for (final jar in activeModel.jars) {
-      if (jar.isActive && jar.id.isNotEmpty) jarsById[jar.id] = jar;
-    }
-    for (final jar in finance.jars) {
-      if (jar.isActive &&
-          jar.id.isNotEmpty &&
-          jar.financeModelId == activeModel.id) {
-        jarsById[jar.id] = jar;
-      }
-    }
-    final jars = jarsById.values.toList()
-      ..sort(
-        (a, b) => b.allocationPercentage.compareTo(a.allocationPercentage),
-      );
-    return jars;
-  }
-
-  String _financeJarLabel(FinanceJar jar) {
-    final localizedName = switch (jar.jarCode.toUpperCase()) {
-      'NECESSITIES' => 'Nhu cầu thiết yếu',
-      'SAVINGS' => 'Tiết kiệm',
-      'EDUCATION' => 'Giáo dục',
-      'ENJOYMENT' => 'Vui chơi',
-      'GIVING' => 'Cho đi / Biếu tặng',
-      _ => jar.name,
-    };
-    final percentage = jar.allocationPercentage.toStringAsFixed(
-      jar.allocationPercentage % 1 == 0 ? 0 : 1,
-    );
-    return '$localizedName · $percentage%';
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -2173,10 +2208,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   /// Chọn mục tiêu rồi mở màn chi tiết với `surplus=1` — sheet nhập số tiền và
   /// kiểm tra số dư khả dụng đã có sẵn ở đó, không nhân bản lại logic.
-  void _showSurplusGoalPicker(
-    BuildContext context,
-    List<FinancialGoal> goals,
-  ) {
+  void _showSurplusGoalPicker(BuildContext context, List<FinancialGoal> goals) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.colors.surface,
@@ -2282,7 +2314,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   /// 1 dòng hũ: tên + % , số thực chi trên số kế hoạch, thanh tiến độ. Vượt kế
   /// hoạch thì đổi sang màu cảnh báo để nhìn ra ngay hũ nào đang quá tay.
-  Widget _jarRow(JarAllocationRow row, Color color) {
+  Widget _jarRow(_JarOverviewRow row, Color color) {
     final over = row.isOverBudget;
     final ratio = row.target > 0
         ? (row.actual / row.target).clamp(0.0, 1.0)

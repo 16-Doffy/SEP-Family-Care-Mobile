@@ -93,10 +93,11 @@ class _WearablesScreenState extends State<WearablesScreen> {
         child: wp.loading && wp.devices.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : wp.devices.isEmpty
-            ? _empty(wp.error)
+            ? _empty(wp.error, canManage)
             : ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  _pairingGuide(canManage),
                   if (!canManage) _note(),
                   ...wp.devices.map((d) => _deviceCard(d, canManage)),
                 ],
@@ -105,9 +106,54 @@ class _WearablesScreenState extends State<WearablesScreen> {
     );
   }
 
-  Widget _empty(String? error) => ListView(
+  Widget _pairingGuide(bool canManage) => Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.link.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: AppColors.link.withValues(alpha: 0.16)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.phonelink_ring_rounded, color: AppColors.link),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Liên kết qua điện thoại',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                canManage
+                    ? 'Mở FamilyCare trên đồng hồ, lấy mã FCW hiển thị rồi bấm Ghép thiết bị tại đây. Đồng hồ không cần đăng nhập riêng.'
+                    : 'Đồng hồ được liên kết bằng app mobile của Trưởng nhóm hoặc Phó nhóm, không đăng nhập trực tiếp trên đồng hồ.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  height: 1.35,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _empty(String? error, bool canManage) => ListView(
+    padding: const EdgeInsets.all(16),
     children: [
-      SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+      _pairingGuide(canManage),
+      SizedBox(height: MediaQuery.of(context).size.height * 0.14),
       const Icon(Icons.watch_outlined, size: 56, color: AppColors.textMuted),
       const SizedBox(height: 12),
       Center(
@@ -420,7 +466,10 @@ class _WearablesScreenState extends State<WearablesScreen> {
                 TextField(
                   controller: idCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Mã thiết bị (serial / MAC)',
+                    labelText: 'Mã thiết bị trên đồng hồ',
+                    hintText: 'VD: FCW-7KQ2PA',
+                    helperText:
+                        'Mã hiển thị trên màn hình liên kết của đồng hồ.',
                   ),
                 ),
                 const SizedBox(height: 10),

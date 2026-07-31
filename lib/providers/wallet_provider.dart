@@ -410,13 +410,12 @@ class WalletProvider extends ChangeNotifier {
 
   // UC27/28 — Ghi nhận thu/chi: POST /finance/ledger/entries
   // CreateLedgerEntryDto: { entryType, amount, description, note?, entryDate,
-  // categoryId?, jarId?, sourceType?, sourceId? }
+  // categoryId?, sourceType?, sourceId? }. BE maps expense category -> jar.
   Future<void> recordEntry({
     required double amount,
     required String description,
     required bool isIncome,
     String? categoryId,
-    String? jarId,
     String? note,
     String? sourceType,
     String? sourceId,
@@ -430,7 +429,6 @@ class WalletProvider extends ChangeNotifier {
               '${DateTime.now().toUtc().toIso8601String().split('.').first}Z',
           if (note != null && note.isNotEmpty) 'note': note,
           'categoryId': ?categoryId,
-          'jarId': ?jarId,
           'sourceType': ?sourceType,
           'sourceId': ?sourceId,
         });
@@ -464,8 +462,12 @@ class WalletProvider extends ChangeNotifier {
         'amount': amount.abs(),
         'description': description,
         'categoryId': ?categoryId,
-        // UpdateLedgerEntryDto cho phép null để bỏ liên kết với hũ cũ.
-        'jarId': jarId,
+        // KHÔNG gửi `jarId: null` mặc định: UpdateLedgerEntryDto coi null là
+        // "bỏ liên kết hũ", nên chỉ sửa mô tả/số tiền cũng sẽ gỡ mất hũ mà BE
+        // đã auto-map theo category — và BE chỉ auto-map lúc TẠO nên không tự
+        // gán lại. Bỏ hẳn field khi caller không truyền; muốn gỡ hũ có chủ đích
+        // thì cần thêm cờ riêng.
+        'jarId': ?jarId,
         'note': ?note,
       },
     );
