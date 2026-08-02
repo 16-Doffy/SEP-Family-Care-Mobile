@@ -7,6 +7,15 @@ String _str(dynamic v) => v?.toString() ?? '';
 Map<String, dynamic>? _map(dynamic v) =>
     v is Map ? Map<String, dynamic>.from(v) : null;
 
+/// `null` khi BE không trả field — để caller phân biệt "không có quyền" với
+/// "BE chưa khai báo quyền".
+bool? _boolOrNull(dynamic v) {
+  if (v is bool) return v;
+  if (v == 'true') return true;
+  if (v == 'false') return false;
+  return null;
+}
+
 double? _num(dynamic v) {
   if (v == null) return null;
   if (v is num) return v.toDouble();
@@ -67,9 +76,15 @@ class FaceSuggestion {
   final String memberId;
   final String memberName;
   final double? confidence; // 0..1 hoặc 0..100 tùy BE — UI tự chuẩn hóa
-  final String status; // PENDING | CONFIRMED | REJECTED
+  /// Enum chính thức (Swagger 30/07): PENDING | CONFIRMED | REJECTED | EXPIRED.
+  final String status;
   final String faceKey;
   final int? faceIndex;
+
+  /// `permissions` của BE. `null` = BE không trả field → cho phép (fail-open,
+  /// để BE trả 403), giống cách xử lý quyền gỡ tag.
+  final bool? canConfirmFlag;
+  final bool? canRejectFlag;
 
   const FaceSuggestion({
     required this.id,
@@ -79,7 +94,12 @@ class FaceSuggestion {
     this.status = 'PENDING',
     this.faceKey = '',
     this.faceIndex,
+    this.canConfirmFlag,
+    this.canRejectFlag,
   });
+
+  bool get canConfirm => canConfirmFlag ?? true;
+  bool get canReject => canRejectFlag ?? true;
 
   /// Confidence chuẩn hóa về thang 0..1 (BE có thể trả 0..1 hoặc 0..100).
   double? get normalizedConfidence {
@@ -89,10 +109,12 @@ class FaceSuggestion {
     return v.clamp(0, 1).toDouble();
   }
 
-  /// Gợi ý đã được xử lý (xác nhận / từ chối) thì không còn là việc chờ làm.
-  /// Response schema của face-suggestions vẫn để trống trong Swagger → loại theo
-  /// các trạng thái "đã xử lý" đã biết thay vì chỉ giữ đúng `PENDING`, để status
-  /// lạ vẫn hiện ra (fail-open) như phần còn lại của file.
+  /// Gợi ý không còn là việc chờ làm: đã xử lý (xác nhận/từ chối) **hoặc đã hết
+  /// hạn**. `EXPIRED` là trạng thái chính thức trong Swagger 30/07 — thiếu nó thì
+  /// gợi ý hết hạn vẫn hiện kèm nút Xác nhận và bấm vào chỉ nhận lỗi.
+  ///
+  /// Vẫn khớp theo chuỗi con thay vì so bằng đúng enum, để status lạ hiện ra
+  /// (fail-open) như phần còn lại của file.
   bool get isResolved {
     final s = status.toUpperCase();
     return s.contains('CONFIRM') ||
@@ -101,7 +123,8 @@ class FaceSuggestion {
         s.contains('TAGGED') ||
         s.contains('REJECT') ||
         s.contains('DECLIN') ||
-        s.contains('DISMISS');
+        s.contains('DISMISS') ||
+        s.contains('EXPIRE');
   }
 
   factory FaceSuggestion.fromJson(Map<String, dynamic> j) {
@@ -153,6 +176,8 @@ class FaceSuggestion {
       ),
       faceIndex:
           (j['faceIndex'] as num?)?.toInt() ?? (j['index'] as num?)?.toInt(),
+      canConfirmFlag: _boolOrNull(_map(j['permissions'])?['canConfirm']),
+      canRejectFlag: _boolOrNull(_map(j['permissions'])?['canReject']),
     );
   }
 }

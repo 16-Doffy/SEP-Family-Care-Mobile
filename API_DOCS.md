@@ -379,7 +379,30 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 ### CreateFinanceJarDto
 - `financeModelId`: uuid *(required)* · `name` *(required)* · `jarCode` *(required)* · `allocationPercentage`: number *(required, 0–100)* · `description` · `isActive` (default true)
 
-### [MỚI 2026-07-29, CHƯA WIRE] Mapping danh mục → hũ + report jar target/actual
+### [2026-07-30] Swagger ĐÃ CÓ schema chính thức — hết phải đoán
+Bản Swagger 30/07 bổ sung DTO đầy đủ cho `face-suggestions`, `jar-target-actual`, `category-jar-mappings`. Các ghi chú "[VERIFY WITH OFFICIAL SOURCE]" ở mục 29/07 bên dưới **đã được chốt**; giữ lại để truy vết lý do FE từng parse phòng thủ.
+
+**Face suggestions — contract chính thức:**
+- `data.faces[]` là contract chính: mỗi face có `faceId`, `detectionId`, `faceIndex`, `boundingBox`, `detectionScore`, `qualityScore`, `status ∈ {MATCHED, UNMATCHED, SUPERSEDED}`, và `candidates[]` riêng. `candidates: []` = phát hiện được mặt nhưng không khớp ai. `data.items[]` là flat list **cũ**, giữ để tương thích.
+- Candidate: `suggestionId`, `memberId`, `displayName`, `avatarUrl`, **`score` thang 0..1**, `secondBestScore`, `scoreMargin`, `status ∈ {PENDING, CONFIRMED, REJECTED, EXPIRED}`, `permissions {canConfirm, canReject}`.
+- **[SỬA 2026-07-30]** FE trước đó thiếu 2 thứ, đã bổ sung:
+  - **`EXPIRED`** không nằm trong `isResolved` → gợi ý hết hạn vẫn hiện kèm nút Xác nhận, bấm vào chỉ nhận lỗi.
+  - **`permissions`** không được đọc → nút Xác nhận/Từ chối vẫn bật kể cả khi BE nói không có quyền. Nay đọc `permissions`, thiếu field thì fail-open (để BE trả 403), giống quyền gỡ tag.
+- BE chỉ tạo **suggestion**; tag chính thức vẫn chỉ sinh khi user bấm ✓ — không đổi.
+
+**Face scan — rate limit & retry (FE CHƯA WIRE):**
+- `POST .../face-scan` khi ép quét lại quá nhiều: **429** + `errorCode/code = FACE_SCAN_FORCE_RESCAN_RATE_LIMITED`, `retryAfterSeconds`, `cooldownSeconds`, header `Retry-After`.
+- **`POST .../face-scan/retry`** *(endpoint mới)* — dùng khi `GET face-scan` trả `retryAllowed = true`; job `PROCESSING/PENDING` chỉ retry được sau `maxProcessingSeconds`.
+- Scan status chính thức: `PENDING, PROCESSING, COMPLETED, FAILED`.
+- ⚠️ FE hiện **chưa** xử lý 429 (hiện lỗi thô, không nói còn bao lâu) và **chưa** gọi endpoint retry.
+
+**Jar target/actual — công thức chính thức:**
+- `totals.trackedAmount = mappedAmount + unmappedAmount`; `targetAmount = trackedAmount × targetPercentage / 100`; `actualPercentage = actualAmount / trackedAmount × 100`; `status`: `ON_TRACK` khi `|variancePercentage| ≤ 5`, `OVER_TARGET` khi `> 5`, còn lại `UNDER_TARGET`.
+- Chỉ tính ledger **ACTIVE**, cash-out types **EXPENSE/SUPPORT/ALLOWANCE/REWARD**, `entryDate >= periodStart` và `< nextUtcDay(periodEnd)`.
+- ⚠️ **Giao dịch mang `jarId` của mô hình CŨ/khác model đang chọn rơi vào `unmapped.legacyJarAmount`, không cộng vào hũ của model mới.** Đây là hành vi **đúng theo spec**, không phải bug — nếu gia đình vừa đổi mô hình thì actual của hũ mới có thể bằng 0 và unmapped rất lớn. Cần đối chiếu `unmapped.legacyJarEntryCount` trước khi kết luận BE tính sai.
+- FE parser đã đọc đúng cả tên chính thức (`items`, `targetPercentage`, `actualAmount`) lẫn biến thể cũ (`byJar`, `allocationPercentage`, `spentAmount`).
+
+### [MỚI 2026-07-29, ĐÃ CHỐT SCHEMA 30/07] Mapping danh mục → hũ + report jar target/actual
 > ⚠️ **[VERIFY WITH OFFICIAL SOURCE]** Nguồn duy nhất hiện tại là **tin BE trên Discord**. Bản OpenAPI được dán kèm bị **cắt giữa** (dừng ở `wearables/{deviceId}/events`) nên **không có DTO nào của 3 endpoint dưới đây được xác nhận** — chưa biết request/response schema, tên field, hay enum. Không code theo trí nhớ; xin Swagger đầy đủ trước khi wire.
 
 **BE bổ sung flow mapping `category → jar` theo từng finance model:**

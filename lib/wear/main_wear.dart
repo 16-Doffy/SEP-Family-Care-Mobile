@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/gps_provider.dart';
 import '../providers/sos_provider.dart';
+import '../providers/task_provider.dart';
 import 'screens/wear_home_screen.dart';
 import 'screens/wear_pairing_screen.dart';
 
@@ -14,6 +16,9 @@ void main() {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => GpsProvider()),
         ChangeNotifierProvider(create: (_) => SosProvider()),
+        // Cần cho trang "Việc của tôi" và "Nhắn nhanh" trên đồng hồ.
+        ChangeNotifierProvider(create: (_) => TaskProvider()),
+        ChangeNotifierProvider(create: (_) => ChatProvider()),
       ],
       child: const WearApp(),
     ),

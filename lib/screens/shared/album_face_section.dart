@@ -501,7 +501,11 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
           ),
           IconButton(
             tooltip: 'Xác nhận',
-            onPressed: _busy ? null : () => _resolve(s, confirm: true),
+            // BE trả permissions.canConfirm/canReject (Swagger 30/07). Không có
+            // quyền mà vẫn cho bấm thì chỉ nhận 403.
+            onPressed: _busy || !s.canConfirm
+                ? null
+                : () => _resolve(s, confirm: true),
             icon: const Icon(
               Icons.check_circle_rounded,
               color: AppColors.success,
@@ -509,7 +513,9 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
           ),
           IconButton(
             tooltip: 'Từ chối',
-            onPressed: _busy ? null : () => _resolve(s, confirm: false),
+            onPressed: _busy || !s.canReject
+                ? null
+                : () => _resolve(s, confirm: false),
             icon: const Icon(Icons.cancel_rounded, color: AppColors.textMuted),
           ),
         ],

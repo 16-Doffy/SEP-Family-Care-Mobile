@@ -77,6 +77,58 @@ void main() {
     expect(suggestions.last.id, 'second-face');
   });
 
+  group('schema chính thức face-suggestions (Swagger 30/07)', () {
+    test('EXPIRED là trạng thái đã xử lý, không hiện kèm nút Xác nhận', () {
+      final expired = FaceSuggestion.fromJson({
+        'suggestionId': 's1',
+        'memberId': 'm1',
+        'score': 0.9,
+        'status': 'EXPIRED',
+      });
+
+      expect(
+        expired.isResolved,
+        isTrue,
+        reason: 'gợi ý hết hạn mà cho bấm thì chỉ nhận lỗi',
+      );
+    });
+
+    test('đọc permissions.canConfirm/canReject của BE', () {
+      final s = FaceSuggestion.fromJson({
+        'suggestionId': 's1',
+        'memberId': 'm1',
+        'score': 0.88,
+        'permissions': {'canConfirm': false, 'canReject': true},
+      });
+
+      expect(s.canConfirm, isFalse);
+      expect(s.canReject, isTrue);
+    });
+
+    test('BE không trả permissions thì fail-open, để BE trả 403', () {
+      final s = FaceSuggestion.fromJson({'suggestionId': 's1', 'score': 0.88});
+
+      expect(s.canConfirmFlag, isNull);
+      expect(s.canConfirm, isTrue);
+      expect(s.canReject, isTrue);
+    });
+
+    test('đọc đúng suggestionId + score theo tên field chính thức', () {
+      final s = FaceSuggestion.fromJson({
+        'suggestionId': '22222222-2222-4222-8222-222222222222',
+        'memberId': 'member-1',
+        'displayName': 'Ngo Pham Nhut Duy',
+        'score': 0.88,
+        'status': 'PENDING',
+      });
+
+      expect(s.id, '22222222-2222-4222-8222-222222222222');
+      expect(s.memberName, 'Ngo Pham Nhut Duy');
+      expect(s.normalizedConfidence, 0.88);
+      expect(s.isResolved, isFalse);
+    });
+  });
+
   group('quyền gỡ tag', () {
     test('BE không trả quyền thì vẫn cho gỡ (fail-open, để BE trả 403)', () {
       final tag = AlbumTag.fromJson({'id': 'tag-1'});

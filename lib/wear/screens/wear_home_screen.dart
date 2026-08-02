@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
+import 'wear_map_screen.dart';
+import 'wear_quick_message_screen.dart';
 import 'wear_sos_screen.dart';
-import 'wear_alerts_screen.dart';
-import 'wear_status_screen.dart';
+import 'wear_tasks_screen.dart';
 
 class WearHomeScreen extends StatefulWidget {
   const WearHomeScreen({super.key});
@@ -42,10 +43,13 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
           PageView(
             controller: _ctrl,
             onPageChanged: (i) => setState(() => _page = i),
+            // 4 việc đồng hồ cần làm, vuốt ngang. Không bê bottom-nav hay
+            // dashboard của app điện thoại sang đây.
             children: const [
               WearSosScreen(),
-              WearAlertsScreen(),
-              WearStatusScreen(),
+              WearMapScreen(),
+              WearTasksScreen(),
+              WearQuickMessageScreen(),
             ],
           ),
 
@@ -56,9 +60,10 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
             right: 0,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(3, (i) {
+              children: List.generate(4, (i) {
                 final isActive = _page == i;
-                final hasAlert = i == 1 && activeAlerts.isNotEmpty;
+                // Có cảnh báo đang diễn ra thì chấm SOS (trang 0) đỏ lên.
+                final hasAlert = i == 0 && activeAlerts.isNotEmpty;
                 return Container(
                   margin: const EdgeInsets.symmetric(horizontal: 3),
                   width: isActive ? 7 : 4,
