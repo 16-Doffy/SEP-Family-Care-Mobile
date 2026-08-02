@@ -285,8 +285,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         '/families/$fid/subscription/checkout',
         {'planCode': plan.id},
       );
-      final url = data['checkoutUrl']?.toString();
-      if (url == null) {
+      // Swagger chưa khai response schema. Ưu tiên field BE đã dùng hiện tại,
+      // nhưng chấp nhận hai envelope phổ biến để không báo lỗi giả nếu contract
+      // được bọc thêm một lớp data hoặc đổi alias URL.
+      final nested = data['data'] is Map ? data['data'] as Map : const {};
+      final url =
+          (data['checkoutUrl'] ??
+                  data['url'] ??
+                  nested['checkoutUrl'] ??
+                  nested['url'])
+              ?.toString();
+      if (url == null || url.trim().isEmpty) {
         throw Exception('Không lấy được link thanh toán từ server');
       }
       final uri = Uri.parse(url);
