@@ -64,6 +64,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   bool _saving = false;
   bool _loadingCurrent = true;
   bool _hasLocalEdits = false;
+  bool _jarConfigurationChanged = false;
   // Tên model hiện gia đình đang active (để hiện banner — null nếu chưa có)
   String? _currentModelTypeLabel;
   String? _currentModelId;
@@ -436,6 +437,28 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                     ),
                     const SizedBox(height: 8),
                   ],
+                  if (_jarConfigurationChanged && _currentModelId != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFED7AA)),
+                      ),
+                      child: Text(
+                        'Mô hình đang áp dụng không sửa trực tiếp. Khi lưu, '
+                        'ứng dụng sẽ tạo một bản điều chỉnh mới, giữ mapping '
+                        'danh mục và áp dụng tỷ lệ mới.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          height: 1.4,
+                          color: const Color(0xFF9A3412),
+                        ),
+                      ),
+                    ),
+                  ],
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.link,
@@ -459,7 +482,9 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                             ),
                           )
                         : Text(
-                            'Lưu mô hình',
+                            _jarConfigurationChanged && _currentModelId != null
+                                ? 'Lưu bản điều chỉnh và áp dụng'
+                                : 'Lưu mô hình',
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -563,6 +588,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     setState(() {
       _model = model;
       _hasLocalEdits = true;
+      _jarConfigurationChanged = false;
       _loadingCurrent = model != FinanceModelType.custom;
     });
     if (model == FinanceModelType.custom) return;
@@ -642,6 +668,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                   onTap: () => setState(() {
                     _customJars.removeAt(idx);
                     _hasLocalEdits = true;
+                    _jarConfigurationChanged = true;
                   }),
                   child: const Icon(
                     Icons.close_rounded,
@@ -661,6 +688,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
             onChanged: (v) => setState(() {
               jar.percent = v.roundToDouble();
               _hasLocalEdits = true;
+              _jarConfigurationChanged = true;
             }),
           ),
         ],
@@ -769,6 +797,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                     _customNameCtrl.clear();
                     _customPercentCtrl.clear();
                     _hasLocalEdits = true;
+                    _jarConfigurationChanged = true;
                   });
                 },
                 child: Container(
@@ -1163,8 +1192,58 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     return best ?? candidates.first;
   }
 
-  // ── Lưu — flow thật khớp BE (verify 2026-06-26) ───────────────────────────
-  //   1. Tái sử dụng model mẫu đã có; chỉ tạo mới khi loại đó chưa tồn tại.
+  Future<void> _copyMappingsToDraft({
+    required fp.FinanceProvider provider,
+    required fp.FinanceModel source,
+    required fp.FinanceModel target,
+  }) async {
+    final mappings = await provider.fetchCategoryJarMappings(
+      financeModelId: source.id,
+    );
+    if (mappings.isEmpty) return;
+
+    var targetJars = target.jars;
+    if (targetJars.isEmpty) {
+      await provider.fetchAll();
+      targetJars = provider.jars
+          .where((jar) => jar.financeModelId == target.id)
+          .toList();
+    }
+    final sourceJars = provider.jars
+        .where((jar) => jar.financeModelId == source.id)
+        .toList();
+
+    for (final mapping in mappings) {
+      final sourceJar = sourceJars
+          .where((jar) => jar.id == mapping.jarId)
+          .firstOrNull;
+      if (sourceJar == null || sourceJar.jarCode.isEmpty) {
+        throw const ApiException(
+          502,
+          'Không thể xác định hũ cũ để giữ mapping danh mục.',
+        );
+      }
+      final targetJar = targetJars
+          .where((jar) => jar.jarCode == sourceJar.jarCode)
+          .firstOrNull;
+      if (targetJar == null) {
+        throw ApiException(
+          502,
+          'Bản điều chỉnh mới thiếu hũ ${sourceJar.name}.',
+        );
+      }
+      await provider.upsertCategoryJarMapping(
+        financeModelId: target.id,
+        categoryId: mapping.categoryId,
+        jarId: targetJar.id,
+      );
+    }
+  }
+
+  // ── Lưu — flow thật khớp BE (verify 2026-08-02) ───────────────────────────
+  //   1. BE chỉ cho PATCH hũ của model DRAFT. Nếu user chỉnh tỷ lệ của model
+  //      ACTIVE/INACTIVE, tạo một bản DRAFT mới cùng loại và chép mapping.
+  //      Nếu chỉ chuyển model mà không sửa tỷ lệ, có thể tái kích hoạt bản cũ.
   //   2. Đồng bộ % người dùng chỉnh khác mặc định → PATCH từng jar
   //   3. CUSTOM: POST jar riêng cho từng khoản người dùng thêm
   //   4. Activate model (BE tự vô hiệu hoá model cũ của gia đình)
@@ -1187,9 +1266,13 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       final reusable = _model == FinanceModelType.custom
           ? null
           : await _findReusableTemplateModel(provider, modelType);
-      final target =
-          reusable ??
-          await provider.createModel(modelType: modelType, name: modelName);
+      final needsDraftCopy =
+          reusable != null &&
+          _jarConfigurationChanged &&
+          reusable.status != 'DRAFT';
+      final target = reusable == null || needsDraftCopy
+          ? await provider.createModel(modelType: modelType, name: modelName)
+          : reusable;
 
       if (_model == FinanceModelType.custom) {
         // BE không tự sinh jar cho CUSTOM — tự tạo từng lọ.
@@ -1234,6 +1317,14 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
         }
       }
 
+      if (needsDraftCopy) {
+        await _copyMappingsToDraft(
+          provider: provider,
+          source: reusable,
+          target: target,
+        );
+      }
+
       await provider.activateModel(target.id);
 
       if (mounted) {
@@ -1241,6 +1332,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
           _currentModelId = target.id;
           _currentModelTypeLabel = modelName;
           _hasLocalEdits = false;
+          _jarConfigurationChanged = false;
           _loadingCurrent = false;
         });
         messenger.showSnackBar(
