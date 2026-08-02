@@ -77,6 +77,32 @@ void main() {
     expect(suggestions.last.id, 'second-face');
   });
 
+  test('FaceScanStatusInfo đọc retry metadata từ response root', () {
+    final info = FaceScanStatusInfo.fromJson({
+      'status': 'PROCESSING',
+      'retryAllowed': true,
+      'maxProcessingSeconds': 90,
+    });
+
+    expect(info.state, FaceScanState.processing);
+    expect(info.retryAllowed, isTrue);
+    expect(info.maxProcessingSeconds, 90);
+  });
+
+  test('FaceScanStatusInfo đọc status lồng trong job', () {
+    final info = FaceScanStatusInfo.fromJson({
+      'job': {
+        'scanStatus': 'FAILED',
+        'retryAllowed': 'true',
+        'maxProcessingSeconds': '120',
+      },
+    });
+
+    expect(info.state, FaceScanState.failed);
+    expect(info.retryAllowed, isTrue);
+    expect(info.maxProcessingSeconds, 120);
+  });
+
   group('quyền gỡ tag', () {
     test('BE không trả quyền thì vẫn cho gỡ (fail-open, để BE trả 403)', () {
       final tag = AlbumTag.fromJson({'id': 'tag-1'});

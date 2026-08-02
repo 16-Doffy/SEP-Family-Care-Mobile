@@ -17,7 +17,16 @@ class ApiException implements Exception {
   final int statusCode;
   final String message;
   final String? code;
-  const ApiException(this.statusCode, this.message, {this.code});
+  final int? retryAfterSeconds;
+  final int? cooldownSeconds;
+
+  const ApiException(
+    this.statusCode,
+    this.message, {
+    this.code,
+    this.retryAfterSeconds,
+    this.cooldownSeconds,
+  });
   @override
   String toString() => message;
 }
@@ -298,6 +307,8 @@ class ApiClient {
 
     final body = _decodeBody(response);
     if (response.statusCode >= 400) {
+      final bodyMap = body is Map ? Map<String, dynamic>.from(body) : null;
+      final details = _errorDetails(bodyMap);
       final msg = body is Map
           ? (body['message'] is List
                 ? (body['message'] as List).join(', ')
@@ -307,10 +318,27 @@ class ApiClient {
       if (response.statusCode == 403 && _isVerificationRequired(message)) {
         onVerificationRequired?.call(message);
       }
-      final code = body is Map
-          ? (body['code'] ?? body['errorCode'])?.toString()
-          : null;
-      throw ApiException(response.statusCode, message, code: code);
+      final code =
+          (bodyMap?['code'] ??
+                  bodyMap?['errorCode'] ??
+                  details?['code'] ??
+                  details?['errorCode'])
+              ?.toString();
+      final retryAfterSeconds = _intValue(
+        bodyMap?['retryAfterSeconds'] ??
+            details?['retryAfterSeconds'] ??
+            response.headers['retry-after'],
+      );
+      final cooldownSeconds = _intValue(
+        bodyMap?['cooldownSeconds'] ?? details?['cooldownSeconds'],
+      );
+      throw ApiException(
+        response.statusCode,
+        message,
+        code: code,
+        retryAfterSeconds: retryAfterSeconds,
+        cooldownSeconds: cooldownSeconds,
+      );
     }
 
     // Unwrap { success, data }
@@ -320,6 +348,21 @@ class ApiClient {
       return body['data'];
     }
     return body;
+  }
+
+  Map<String, dynamic>? _errorDetails(Map<String, dynamic>? body) {
+    if (body == null) return null;
+    for (final key in const ['data', 'details', 'error']) {
+      final value = body[key];
+      if (value is Map) return Map<String, dynamic>.from(value);
+    }
+    return null;
+  }
+
+  int? _intValue(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return int.tryParse(value?.toString() ?? '');
   }
 
   bool _isVerificationRequired(String message) {

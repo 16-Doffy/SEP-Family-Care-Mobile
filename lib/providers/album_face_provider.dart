@@ -44,6 +44,47 @@ enum FaceScanState {
   failed,
 }
 
+/// Metadata của GET face-scan. Swagger chưa khai báo response schema đầy đủ,
+/// nên parser chấp nhận cả field ở root lẫn object `job`/`scan`.
+class FaceScanStatusInfo {
+  final FaceScanState state;
+  final bool retryAllowed;
+  final int? maxProcessingSeconds;
+
+  const FaceScanStatusInfo({
+    required this.state,
+    this.retryAllowed = false,
+    this.maxProcessingSeconds,
+  });
+
+  factory FaceScanStatusInfo.fromJson(dynamic value) {
+    final root = value is Map
+        ? Map<String, dynamic>.from(value)
+        : const <String, dynamic>{};
+    final nested = _map(root['job']) ?? _map(root['scan']) ?? root;
+    final raw = _str(
+      nested['scanStatus'] ??
+          nested['faceScanStatus'] ??
+          nested['status'] ??
+          nested['state'] ??
+          root['scanStatus'] ??
+          root['faceScanStatus'] ??
+          root['status'] ??
+          root['state'],
+    );
+    final retryValue = nested['retryAllowed'] ?? root['retryAllowed'];
+    final maxSeconds = _num(
+      nested['maxProcessingSeconds'] ?? root['maxProcessingSeconds'],
+    );
+    return FaceScanStatusInfo(
+      state: _scanStateFrom(raw),
+      retryAllowed:
+          retryValue == true || retryValue?.toString().toLowerCase() == 'true',
+      maxProcessingSeconds: maxSeconds?.round(),
+    );
+  }
+}
+
 FaceScanState _scanStateFrom(String raw) {
   final s = raw.toUpperCase();
   if (s.contains('PROCESS') || s.contains('SCANNING') || s == 'PENDING') {
@@ -290,20 +331,29 @@ class AlbumFaceProvider extends ChangeNotifier {
   }
 
   // GET /albums/media/{mediaId}/face-scan
-  Future<FaceScanState> fetchScanStatus(String mediaId) async {
+  Future<FaceScanStatusInfo> fetchScanInfo(String mediaId) async {
     final fid = _fid;
-    if (fid == null) return FaceScanState.notScanned;
+    if (fid == null) {
+      return const FaceScanStatusInfo(state: FaceScanState.notScanned);
+    }
     final data = await ApiClient.instance.get(
       '/families/$fid/albums/media/$mediaId/face-scan',
     );
-    final map = data is Map ? Map<String, dynamic>.from(data) : const {};
-    final raw = _str(
-      map['scanStatus'] ??
-          map['faceScanStatus'] ??
-          map['status'] ??
-          map['state'],
+    return FaceScanStatusInfo.fromJson(data);
+  }
+
+  Future<FaceScanState> fetchScanStatus(String mediaId) async =>
+      (await fetchScanInfo(mediaId)).state;
+
+  // POST /albums/media/{mediaId}/face-scan/retry — chỉ gọi khi GET status trả
+  // retryAllowed=true (job FAILED hoặc PROCESSING/PENDING quá thời gian tối đa).
+  Future<void> retryScan(String mediaId) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.post(
+      '/families/$fid/albums/media/$mediaId/face-scan/retry',
+      const {},
     );
-    return _scanStateFrom(raw);
   }
 
   // GET /albums/media/{mediaId}/face-suggestions
