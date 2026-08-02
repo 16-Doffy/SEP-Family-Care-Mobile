@@ -39,6 +39,45 @@ void main() {
     expect(report.unmappedAmount, 100000);
   });
 
+  test('parses exact jar target actual Swagger response', () {
+    final report = JarTargetActualReport.fromJson({
+      'period': {'periodStart': '2026-07-01', 'periodEnd': '2026-07-31'},
+      'currency': 'VND',
+      'financeModel': {'id': 'model-1', 'name': '80/20'},
+      'totals': {
+        'trackedAmount': 10000000,
+        'mappedAmount': 8000000,
+        'unmappedAmount': 2000000,
+      },
+      'items': [
+        {
+          'jar': {'id': 'jar-1', 'name': 'Spending'},
+          'targetPercentage': 80,
+          'actualPercentage': 75,
+          'targetAmount': 8000000,
+          'actualAmount': 7500000,
+          'varianceAmount': -500000,
+          'status': 'UNDER_TARGET',
+          'categories': const [],
+        },
+      ],
+      'unmapped': {
+        'amount': 2000000,
+        'percentage': 20,
+        'entryCount': 2,
+        'legacyJarAmount': 1500000,
+        'legacyJarEntryCount': 1,
+      },
+    });
+
+    expect(report.items.single.jarId, 'jar-1');
+    expect(report.items.single.jarName, 'Spending');
+    expect(report.items.single.targetAmount, 8000000);
+    expect(report.items.single.actualAmount, 7500000);
+    expect(report.items.single.status, 'UNDER_TARGET');
+    expect(report.unmappedAmount, 2000000);
+  });
+
   test('parses fund allocation response items from BE contract', () {
     final result = FundAllocationResult.fromJson({
       'model': {
