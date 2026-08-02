@@ -3,11 +3,12 @@ import '../services/api_client.dart';
 
 class SosAlert {
   final String id;
-  final String status;   // ACTIVE | RESOLVED | CANCELED
+  final String status; // ACTIVE | RESOLVED | CANCELED
   final String severity; // LOW | MEDIUM | HIGH | CRITICAL
   final String message;
   final String address;
   final String senderName;
+
   /// userId của người kích hoạt (`triggeredByMember.user.id`) — dùng để biết
   /// cảnh báo này có phải DO CHÍNH MÌNH phát hay không. Thiếu nó thì UI đối
   /// xử người phát như người nhận (banner "cần trợ giúp", nút "Tôi đang đến"
@@ -21,9 +22,7 @@ class SosAlert {
 
   /// true nếu cảnh báo do chính [myUserId] phát.
   bool isMine(String? myUserId) =>
-      myUserId != null &&
-      myUserId.isNotEmpty &&
-      triggeredByUserId == myUserId;
+      myUserId != null && myUserId.isNotEmpty && triggeredByUserId == myUserId;
 
   const SosAlert({
     required this.id,
@@ -79,16 +78,21 @@ class SosAlert {
       severity: json['severity']?.toString() ?? 'HIGH',
       message: json['message']?.toString() ?? 'SOS',
       address: json['address']?.toString() ?? '',
-      senderName: _memberName(json['triggeredByMember']) ??
+      senderName:
+          _memberName(json['triggeredByMember']) ??
           _memberName(json['sender']) ??
           _memberName(json['triggeredBy']) ??
           json['senderName']?.toString() ??
           'Thành viên',
       // Swagger: triggeredByMember.user.id (verify 19/07).
-      triggeredByUserId: _memberUserId(json['triggeredByMember']) ??
+      triggeredByUserId:
+          _memberUserId(json['triggeredByMember']) ??
           _memberUserId(json['sender']) ??
           _memberUserId(json['triggeredBy']),
-      createdAt: json['triggeredAt']?.toString() ?? json['createdAt']?.toString() ?? '',
+      createdAt:
+          json['triggeredAt']?.toString() ??
+          json['createdAt']?.toString() ??
+          '',
       resolutionNote: json['resolutionNote']?.toString(),
       resolvedByName: _memberName(json['resolvedByMember']),
       latitude: _d(json['latitude'] ?? json['initialLatitude']),
@@ -124,13 +128,13 @@ class EmergencyContact {
   });
 
   factory EmergencyContact.fromJson(Map<String, dynamic> j) => EmergencyContact(
-        id: j['id']?.toString() ?? j['contactId']?.toString() ?? '',
-        contactName: j['contactName']?.toString() ?? 'Liên hệ',
-        phoneNumber: j['phoneNumber']?.toString() ?? '',
-        relationshipNote: j['relationshipNote']?.toString(),
-        priorityOrder: (j['priorityOrder'] as num?)?.toInt(),
-        isActive: j['isActive'] as bool? ?? true,
-      );
+    id: j['id']?.toString() ?? j['contactId']?.toString() ?? '',
+    contactName: j['contactName']?.toString() ?? 'Liên hệ',
+    phoneNumber: j['phoneNumber']?.toString() ?? '',
+    relationshipNote: j['relationshipNote']?.toString(),
+    priorityOrder: (j['priorityOrder'] as num?)?.toInt(),
+    isActive: j['isActive'] as bool? ?? true,
+  );
 }
 
 /// Cài đặt SOS của gia đình — khớp UpdateSosSettingsDto (Swagger tuần 10).
@@ -153,32 +157,31 @@ class SosSettings {
   static bool _b(dynamic v, bool fallback) => v is bool ? v : fallback;
 
   factory SosSettings.fromJson(Map<String, dynamic> j) => SosSettings(
-        isEnabled: _b(j['isEnabled'], true),
-        notifyAllMembers: _b(j['notifyAllMembers'], true),
-        autoCreateAlertFromFall: _b(j['autoCreateAlertFromFall'], false),
-        locationRequired: _b(j['locationRequired'], true),
-      );
+    isEnabled: _b(j['isEnabled'], true),
+    notifyAllMembers: _b(j['notifyAllMembers'], true),
+    autoCreateAlertFromFall: _b(j['autoCreateAlertFromFall'], false),
+    locationRequired: _b(j['locationRequired'], true),
+  );
 
   SosSettings copyWith({
     bool? isEnabled,
     bool? notifyAllMembers,
     bool? autoCreateAlertFromFall,
     bool? locationRequired,
-  }) =>
-      SosSettings(
-        isEnabled: isEnabled ?? this.isEnabled,
-        notifyAllMembers: notifyAllMembers ?? this.notifyAllMembers,
-        autoCreateAlertFromFall:
-            autoCreateAlertFromFall ?? this.autoCreateAlertFromFall,
-        locationRequired: locationRequired ?? this.locationRequired,
-      );
+  }) => SosSettings(
+    isEnabled: isEnabled ?? this.isEnabled,
+    notifyAllMembers: notifyAllMembers ?? this.notifyAllMembers,
+    autoCreateAlertFromFall:
+        autoCreateAlertFromFall ?? this.autoCreateAlertFromFall,
+    locationRequired: locationRequired ?? this.locationRequired,
+  );
 
   Map<String, dynamic> toJson() => {
-        'isEnabled': isEnabled,
-        'notifyAllMembers': notifyAllMembers,
-        'autoCreateAlertFromFall': autoCreateAlertFromFall,
-        'locationRequired': locationRequired,
-      };
+    'isEnabled': isEnabled,
+    'notifyAllMembers': notifyAllMembers,
+    'autoCreateAlertFromFall': autoCreateAlertFromFall,
+    'locationRequired': locationRequired,
+  };
 }
 
 class SosProvider extends ChangeNotifier {
@@ -225,8 +228,10 @@ class SosProvider extends ChangeNotifier {
     _settings = next;
     notifyListeners();
     try {
-      await ApiClient.instance
-          .patch('/families/$fid/sos/settings', next.toJson());
+      await ApiClient.instance.patch(
+        '/families/$fid/sos/settings',
+        next.toJson(),
+      );
     } catch (e) {
       _settings = prev;
       notifyListeners();
@@ -242,23 +247,90 @@ class SosProvider extends ChangeNotifier {
     final fid = _fid;
     if (fid == null) return;
     try {
-      final data =
-          await ApiClient.instance.get('/families/$fid/sos/emergency-contacts');
+      final data = await ApiClient.instance.get(
+        '/families/$fid/sos/emergency-contacts',
+      );
       final raw = data is List
           ? data
-          : (data is Map && data['items'] is List ? data['items'] : <dynamic>[]);
-      final list = (raw as List)
-          .whereType<Map>()
-          .map((e) => EmergencyContact.fromJson(Map<String, dynamic>.from(e)))
-          .where((c) => c.isActive && c.phoneNumber.isNotEmpty)
-          .toList()
-        ..sort((a, b) =>
-            (a.priorityOrder ?? 9999).compareTo(b.priorityOrder ?? 9999));
+          : (data is Map && data['items'] is List
+                ? data['items']
+                : <dynamic>[]);
+      final list =
+          (raw as List)
+              .whereType<Map>()
+              .map(
+                (e) => EmergencyContact.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .where((c) => c.isActive && c.phoneNumber.isNotEmpty)
+              .toList()
+            ..sort(
+              (a, b) =>
+                  (a.priorityOrder ?? 9999).compareTo(b.priorityOrder ?? 9999),
+            );
       _contacts = list;
       notifyListeners();
     } catch (e) {
       debugPrint('SosProvider: fetchEmergencyContacts failed: $e');
     }
+  }
+
+  Future<void> addEmergencyContact({
+    required String contactName,
+    required String phoneNumber,
+    String? relationshipNote,
+    int? priorityOrder,
+    bool isActive = true,
+  }) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    final payload = <String, dynamic>{
+      'contactName': contactName.trim(),
+      'phoneNumber': phoneNumber.trim(),
+      'isActive': isActive,
+    };
+    if (relationshipNote != null && relationshipNote.trim().isNotEmpty) {
+      payload['relationshipNote'] = relationshipNote.trim();
+    }
+    if (priorityOrder != null) payload['priorityOrder'] = priorityOrder;
+    await ApiClient.instance.post(
+      '/families/$fid/sos/emergency-contacts',
+      payload,
+    );
+    await fetchEmergencyContacts();
+  }
+
+  Future<void> updateEmergencyContact(
+    String contactId, {
+    String? contactName,
+    String? phoneNumber,
+    String? relationshipNote,
+    int? priorityOrder,
+    bool? isActive,
+  }) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    final payload = <String, dynamic>{};
+    if (contactName != null) payload['contactName'] = contactName.trim();
+    if (phoneNumber != null) payload['phoneNumber'] = phoneNumber.trim();
+    if (relationshipNote != null) {
+      payload['relationshipNote'] = relationshipNote.trim();
+    }
+    if (priorityOrder != null) payload['priorityOrder'] = priorityOrder;
+    if (isActive != null) payload['isActive'] = isActive;
+    await ApiClient.instance.patch(
+      '/families/$fid/sos/emergency-contacts/$contactId',
+      payload,
+    );
+    await fetchEmergencyContacts();
+  }
+
+  Future<void> deleteEmergencyContact(String contactId) async {
+    final fid = _fid;
+    if (fid == null) throw Exception('Chưa có gia đình');
+    await ApiClient.instance.delete(
+      '/families/$fid/sos/emergency-contacts/$contactId',
+    );
+    await fetchEmergencyContacts();
   }
 
   List<SosAlert> _alerts = [];
@@ -288,8 +360,8 @@ class SosProvider extends ChangeNotifier {
           : (data is Map && data['items'] is List
                 ? data['items']
                 : (data is Map && data['alerts'] is List
-                    ? data['alerts']
-                    : <dynamic>[]));
+                      ? data['alerts']
+                      : <dynamic>[]));
       _alerts = (raw as List)
           .whereType<Map>()
           .map((e) => SosAlert.fromJson(Map<String, dynamic>.from(e)))
@@ -320,12 +392,13 @@ class SosProvider extends ChangeNotifier {
     try {
       // address KHÔNG nằm trong CreateSosAlertDto theo API_DOCS — không gửi
       // vì backend có thể bật forbidNonWhitelisted và trả 400 cho field lạ.
-      final created = await ApiClient.instance.post('/families/$fid/sos/alerts', {
-        'sourceType': 'MOBILE_APP',
-        'message': message,
-        'initialLatitude': ?latitude,
-        'initialLongitude': ?longitude,
-      });
+      final created = await ApiClient.instance
+          .post('/families/$fid/sos/alerts', {
+            'sourceType': 'MOBILE_APP',
+            'message': message,
+            'initialLatitude': ?latitude,
+            'initialLongitude': ?longitude,
+          });
       await fetchAlerts();
       // BE trả "sosAlertId" (verified live), không phải "id"
       final id = created['sosAlertId']?.toString() ?? created['id']?.toString();
@@ -342,28 +415,40 @@ class SosProvider extends ChangeNotifier {
   // PATCH /families/{familyId}/sos/alerts/{alertId}/resolve — chỉ
   // FAMILY_MANAGER / DEPUTY_MEMBER. [isFalseAlarm] (BE ship 19/07) = đóng với
   // trạng thái FALSE_ALARM thay vì RESOLVED; cancel bỏ qua field này.
-  Future<void> resolveAlert(String alertId,
-          {String? resolutionNote, bool isFalseAlarm = false}) =>
-      _patchAlert(alertId, 'resolve', resolutionNote,
-          isFalseAlarm: isFalseAlarm);
+  Future<void> resolveAlert(
+    String alertId, {
+    String? resolutionNote,
+    bool isFalseAlarm = false,
+  }) => _patchAlert(
+    alertId,
+    'resolve',
+    resolutionNote,
+    isFalseAlarm: isFalseAlarm,
+  );
 
   // PATCH /families/{familyId}/sos/alerts/{alertId}/cancel — chỉ
   // FAMILY_MANAGER / DEPUTY_MEMBER.
   Future<void> cancelAlert(String alertId, {String? resolutionNote}) =>
       _patchAlert(alertId, 'cancel', resolutionNote);
 
-  Future<void> _patchAlert(String alertId, String action, String? resolutionNote,
-      {bool isFalseAlarm = false}) async {
+  Future<void> _patchAlert(
+    String alertId,
+    String action,
+    String? resolutionNote, {
+    bool isFalseAlarm = false,
+  }) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
     _ensureNoActionInProgress();
     _sending = true;
     notifyListeners();
     try {
-      await ApiClient.instance.patch('/families/$fid/sos/alerts/$alertId/$action', {
-        if (resolutionNote != null && resolutionNote.isNotEmpty) 'resolutionNote': resolutionNote,
-        if (action == 'resolve' && isFalseAlarm) 'isFalseAlarm': true,
-      });
+      await ApiClient.instance
+          .patch('/families/$fid/sos/alerts/$alertId/$action', {
+            if (resolutionNote != null && resolutionNote.isNotEmpty)
+              'resolutionNote': resolutionNote,
+            if (action == 'resolve' && isFalseAlarm) 'isFalseAlarm': true,
+          });
       await fetchAlerts();
     } finally {
       _sending = false;
@@ -374,17 +459,22 @@ class SosProvider extends ChangeNotifier {
   // POST /families/{familyId}/sos/alerts/{alertId}/responses — thành viên
   // khác phản hồi cảnh báo. Enum BE (verify 19/07): VIEWED | ON_THE_WAY |
   // CONFIRM_SAFE | NEED_HELP (RESOLVED/CANCELED do manager qua endpoint riêng).
-  Future<void> respond(String alertId, String responseType, {String? message}) async {
+  Future<void> respond(
+    String alertId,
+    String responseType, {
+    String? message,
+  }) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
     _ensureNoActionInProgress();
     _sending = true;
     notifyListeners();
     try {
-      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/responses', {
-        'responseType': responseType,
-        if (message != null && message.isNotEmpty) 'message': message,
-      });
+      await ApiClient.instance
+          .post('/families/$fid/sos/alerts/$alertId/responses', {
+            'responseType': responseType,
+            if (message != null && message.isNotEmpty) 'message': message,
+          });
       await fetchAlerts();
     } finally {
       _sending = false;
@@ -401,7 +491,10 @@ class SosProvider extends ChangeNotifier {
     _sending = true;
     notifyListeners();
     try {
-      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/confirm-safety', {});
+      await ApiClient.instance.post(
+        '/families/$fid/sos/alerts/$alertId/confirm-safety',
+        {},
+      );
       await fetchAlerts();
     } finally {
       _sending = false;
@@ -414,16 +507,22 @@ class SosProvider extends ChangeNotifier {
   // _startLocationStreaming). Không dùng _ensureNoActionInProgress/_sending
   // vì đây là tác vụ nền lặp lại, không nên chặn các thao tác SOS khác
   // (resolve/cancel/confirm-safety) của cùng alert.
-  Future<void> pushLocation(String alertId, double latitude, double longitude, {double? accuracy}) async {
+  Future<void> pushLocation(
+    String alertId,
+    double latitude,
+    double longitude, {
+    double? accuracy,
+  }) async {
     final fid = _fid;
     if (fid == null) return;
     try {
-      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/locations', {
-        'latitude': latitude,
-        'longitude': longitude,
-        'sourceType': 'MOBILE_GPS',
-        'accuracy': ?accuracy,
-      });
+      await ApiClient.instance
+          .post('/families/$fid/sos/alerts/$alertId/locations', {
+            'latitude': latitude,
+            'longitude': longitude,
+            'sourceType': 'MOBILE_GPS',
+            'accuracy': ?accuracy,
+          });
     } catch (e) {
       debugPrint('SosProvider: pushLocation failed: $e');
     }
@@ -432,12 +531,15 @@ class SosProvider extends ChangeNotifier {
   // GET .../sos/alerts/{alertId}/location/current — vị trí MỚI NHẤT của alert
   // (BE bổ sung 2026-07-10, dành cho người theo dõi vừa vào xem). Trả null nếu
   // alert chưa có điểm vị trí nào hoặc gọi lỗi — caller tự fallback.
-  Future<({double lat, double lng})?> fetchCurrentLocation(String alertId) async {
+  Future<({double lat, double lng})?> fetchCurrentLocation(
+    String alertId,
+  ) async {
     final fid = _fid;
     if (fid == null) return null;
     try {
-      final data = await ApiClient.instance
-          .get('/families/$fid/sos/alerts/$alertId/location/current');
+      final data = await ApiClient.instance.get(
+        '/families/$fid/sos/alerts/$alertId/location/current',
+      );
       if (data is Map) {
         final lat = double.tryParse(data['latitude']?.toString() ?? '');
         final lng = double.tryParse(data['longitude']?.toString() ?? '');
@@ -453,23 +555,30 @@ class SosProvider extends ChangeNotifier {
   // lần (BE bổ sung 2026-07-10; thiết bị buffer khi offline rồi flush — dành
   // cho Wear OS / mất mạng tạm thời).
   Future<void> pushLocationBatch(
-      String alertId, List<({double lat, double lng, double? accuracy, DateTime? recordedAt})> points,
-      {String sourceType = 'MOBILE_GPS'}) async {
+    String alertId,
+    List<({double lat, double lng, double? accuracy, DateTime? recordedAt})>
+    points, {
+    String sourceType = 'MOBILE_GPS',
+  }) async {
     final fid = _fid;
     if (fid == null || points.isEmpty) return;
     try {
-      await ApiClient.instance.post('/families/$fid/sos/alerts/$alertId/locations/batch', {
-        'points': [
-          for (final p in points)
-            {
-              'latitude': p.lat,
-              'longitude': p.lng,
-              'sourceType': sourceType,
-              if (p.accuracy != null) 'accuracy': p.accuracy,
-              if (p.recordedAt != null) 'recordedAt': p.recordedAt!.toUtc().toIso8601String(),
-            }
-        ],
-      });
+      await ApiClient.instance.post(
+        '/families/$fid/sos/alerts/$alertId/locations/batch',
+        {
+          'points': [
+            for (final p in points)
+              {
+                'latitude': p.lat,
+                'longitude': p.lng,
+                'sourceType': sourceType,
+                if (p.accuracy != null) 'accuracy': p.accuracy,
+                if (p.recordedAt != null)
+                  'recordedAt': p.recordedAt!.toUtc().toIso8601String(),
+              },
+          ],
+        },
+      );
     } catch (e) {
       debugPrint('SosProvider: pushLocationBatch failed: $e');
     }
@@ -481,7 +590,9 @@ class SosProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> fetchAlertDetail(String alertId) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
-    final data = await ApiClient.instance.get('/families/$fid/sos/alerts/$alertId');
+    final data = await ApiClient.instance.get(
+      '/families/$fid/sos/alerts/$alertId',
+    );
     return data is Map<String, dynamic> ? data : <String, dynamic>{};
   }
 
