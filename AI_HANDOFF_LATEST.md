@@ -1,6 +1,280 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-07-23**
+Last updated: **2026-08-02**
+
+## Snapshot hiện hành 2026-08-02 — đồng bộ main, Finance model/hũ và Face scan
+
+> Snapshot này mới hơn toàn bộ phần 2026-07-29 bên dưới. Khi có mâu thuẫn,
+> dùng trạng thái ở đây và source hiện tại.
+
+### Git / phạm vi thay đổi
+
+- Nhánh làm việc `NDuy` đã fast-forward an toàn tới `origin/main` commit
+  `1c452e1`; trước pull `main` đi trước 12 commit, không có nhánh rẽ.
+- WIP được stash tạm, pull `--ff-only`, rồi khôi phục. Chỉ `API_DOCS.md` trùng
+  nội dung và đã được hợp nhất giữ đủ cả hai phía; không mất code.
+- Local `NDuy` hiện đi trước `origin/NDuy` 12 commit do chưa push sau khi kéo
+  main. Working tree còn nhiều thay đổi cục bộ thuộc Album/SOS/Subscription,
+  tài liệu và report; không commit/push nếu người dùng chưa yêu cầu.
+
+### Finance model / category → jar — đã wire theo contract mới
+
+- Mapping dùng đủ GET/POST/DELETE `/finance/category-jar-mappings`, luôn truyền
+  `financeModelId`; mapping 5 hũ và 80/20 được tách theo từng model.
+- Form tạo/sửa ledger ưu tiên `categoryId`, không gửi `jarId`; BE tự map theo
+  model ACTIVE. Giao dịch cũ hoặc jar thuộc model khác đi vào `unmapped`.
+- Dashboard và Báo cáo → Theo hũ gọi
+  `GET /finance/reports/jar-target-actual` với active `financeModelId`; không
+  còn dùng phép cộng local (`lib/utils/jar_allocation.dart` đã bị xóa).
+- Parser khớp DTO live: `items[].jar`, target/actual %, target/actual amount,
+  status `ON_TRACK | OVER_TARGET | UNDER_TARGET`, và `unmapped.amount`.
+- Contract BE xác nhận report chỉ tính ledger `ACTIVE`, cash-out
+  `EXPENSE | SUPPORT | ALLOWANCE | REWARD` trong kỳ. Jar của model cũ/khác
+  model được cộng vào `unmapped.legacyJarAmount`, không cộng vào hũ mới.
+- Swagger live đã có response schema/example cho mapping và
+  `jar-target-actual`. Tuy nhiên GET/POST model và GET/POST/PATCH jar vẫn thiếu
+  response DTO rõ ràng; đánh `[VERIFY]`, không suy diễn thêm field số dư hũ.
+
+### Album Face AI — multi-face đã có, retry/rate-limit vừa bổ sung
+
+- Multi-face đã đọc `data.faces[]`, mỗi face giữ candidate confidence cao nhất;
+  người dùng vẫn phải bấm ✓ mới tạo tag chính thức.
+- Bổ sung `FaceScanStatusInfo`: đọc `PENDING | PROCESSING | COMPLETED | FAILED`,
+  `retryAllowed`, `maxProcessingSeconds` ở root hoặc object `job/scan`.
+- Khi `retryAllowed=true`, FE gọi `POST .../face-scan/retry`; không tạo force
+  scan mới. Lỗi `429 FACE_SCAN_FORCE_RESCAN_RATE_LIMITED` đọc
+  `retryAfterSeconds`, `cooldownSeconds` hoặc header `Retry-After`, khóa nút và
+  đếm ngược rõ trên UI.
+- Swagger live còn thiếu success response schema cho POST scan, GET status và
+  POST retry, nên parser status giữ phòng thủ và cần verify runtime với job kẹt.
+
+### Verification 2026-08-02
+
+- `dart analyze` trực tiếp 3 file Face/API vừa sửa: **No issues found**.
+- `flutter analyze --no-fatal-infos` toàn project: **0 error, 0 warning**;
+  còn 20 info-lint có sẵn ở các module khác.
+- Targeted Flutter tests Face + Finance model/hũ: **21/21 pass**, gồm parser
+  retry metadata, multi-face, mapping lồng, response chính xác của
+  `jar-target-actual`, history allocation và ADJUSTMENT trung tính với số dư.
+
+## Snapshot hiện hành 2026-07-29 — Face AI, giao dịch theo hũ và lịch sử chia quỹ
+
+> Đây là snapshot ưu tiên để tiếp tục làm việc. Các snapshot bên dưới là lịch
+> sử và có thể chứa commit, API contract hoặc `[VERIFY]` đã lỗi thời.
+
+### Git / nhánh
+
+- Nhánh làm việc: `NDuy`.
+- `NDuy`, `origin/NDuy` và `origin/main` đang đồng bộ tại commit `dfb8c6c`.
+- `main` được fast-forward từ `bb368ac` lên `dfb8c6c`; không có nhánh rẽ,
+  conflict hoặc merge commit thừa.
+- Các commit mới nhất đã push:
+  - `dfb8c6c` — `fix(tài chính): đồng bộ lịch sử chia quỹ theo contract BE mới`;
+  - `6f8a744` — `fix(tài chính): gắn giao dịch chi vào đúng hũ đang áp dụng`;
+  - `96961b8` — `fix(khuôn mặt): giải thích trạng thái ảnh chờ duyệt an toàn`;
+  - `3d90726` — `feat(khuôn mặt): hoàn thiện kiểm tra và chọn ảnh Face Profile`;
+  - `958e303` — `feat(tài chính): hiển thị thời điểm thực hiện chia quỹ`.
+- Working tree vẫn có thay đổi khác chưa commit trong `AI_HANDOFF_LATEST.md`,
+  `API_DOCS.md`, Album/SOS/Subscription và các file report tạm. Không stage
+  chung các file này nếu chưa rà lại đúng phạm vi.
+
+### Face Profile / Album Face AI đã kiểm tra runtime
+
+- Face Profile cho phép chọn từng ảnh, thêm/xóa preview, đủ 3–5 ảnh mới kiểm
+  tra; gọi `POST .../face-profiles/{memberId}/validate` trước khi enroll.
+- FE đọc `canEnroll` và `results[]`, hiển thị pass/fail từng ảnh; chỉ bật nút
+  tạo hồ sơ khi ảnh đạt và đã xác nhận đồng ý.
+- Runtime đã test: 3 ảnh đạt validate, enroll thành công và member detail hiện
+  trạng thái **Đã thiết lập**.
+- Album media chưa SAFE hiện cảnh báo rõ **Ảnh đang chờ duyệt an toàn**; phải
+  duyệt thủ công trước khi AI scan.
+- Runtime đã test: ảnh SAFE quét được gợi ý thành viên, người dùng bấm xác nhận
+  rồi tag chính thức được tạo. Flow hiện hành giữ rule user phải xác nhận;
+  không tự tạo tag chỉ vì confidence >= 80%.
+
+### Finance — gắn khoản chi vào hũ
+
+- `CreateLedgerEntryDto` và `UpdateLedgerEntryDto` có `jarId`; FE đã thêm
+  dropdown **Hũ chi tiêu** khi tạo/sửa giao dịch EXPENSE.
+- Chỉ hiển thị hũ active thuộc đúng mô hình `ACTIVE`; có thể chuyển hũ hoặc
+  chọn **Chưa gắn hũ** để bỏ liên kết.
+- Runtime đã test: ghi chi `100.000đ` vào Education làm dòng Education tăng
+  từ `0đ` lên `100.000đ`; số này không còn bị dồn vào **Chưa gắn hũ**.
+- `POST /finance/fund-allocations` chỉ phân loại quỹ nội bộ và tạo ADJUSTMENT
+  ledger để audit; không tạo tiền mới và không tự làm tăng thực chi hũ.
+- Verify targeted: `flutter analyze` hai file Wallet/Provider không có lỗi;
+  `test/jar_allocation_test.dart` đạt **10/10**.
+
+### Finance — chia quỹ theo mô hình và lịch sử
+
+- Flow: activate model → nhập số tiền/kỳ/ghi chú →
+  `POST /finance/fund-allocations` → hiển thị `items[]` theo từng hũ.
+- Contract BE chốt ngày 29/07/2026:
+  - POST và GET history trả thêm `createdAt`, `createdByMemberId`, `note` ở
+    cấp allocation;
+  - GET history sort mới nhất trước theo `createdAt`;
+  - history cố trả `model`, `period`, `totalAmount`, `items`, `createdAt`;
+    dữ liệu legacy không khôi phục được có thể null nhưng item không bị loại;
+  - unique rule là `familyId + periodMonth + periodYear`: một gia đình chỉ
+    được chia một lần trong một kỳ, dù đổi model;
+  - đổi active model chỉ áp dụng cho lần chia tương lai, không đổi snapshot cũ.
+- FE đã đọc metadata mới ở cấp allocation, fallback timestamp từ entries cho
+  legacy, giữ item nullable, sắp xếp mới nhất trước và đưa item thiếu thời gian
+  xuống cuối.
+- UI chi tiết hiển thị thời điểm, ghi chú, `createdByMemberId`; dữ liệu legacy
+  thiếu model/kỳ/tổng/items có nhãn thay thế thay vì crash hoặc bị mất.
+- Error `409 FUND_ALLOCATION_ALREADY_EXISTS` hiển thị đúng: mỗi tháng chỉ
+  chia một lần kể cả đổi mô hình.
+- Runtime đã test:
+  - lịch sử `17:02:36` nằm trên bản `16:43:13`, ghi chú hiển thị đúng;
+  - chia lại cùng kỳ trả đúng cảnh báo 409;
+  - hai bản ghi trùng kỳ 7/2026 nhìn thấy trong lịch sử là dữ liệu cũ tạo trước
+    khi BE áp dụng unique rule mới, không phải FE tạo thêm sau fix.
+- Verify targeted: analyzer ba file contract/history không có lỗi;
+  `test/fund_allocation_mapping_test.dart` đạt **5/5** (metadata mới, legacy
+  nullable, sort newest-first và ADJUSTMENT không đổi tổng quỹ).
+
+### Việc tiếp theo đề xuất
+
+1. Test quyền chia/xem lịch sử bằng `FAMILY_MANAGER`, `DEPUTY_MEMBER` và xác
+   nhận `FAMILY_MEMBER` nhận 403 đúng contract.
+2. Khi xem chi tiết history, nếu không muốn lộ UUID thành viên thì đề nghị BE
+   trả thêm snapshot/display name người thực hiện; hiện contract chỉ có
+   `createdByMemberId` nên FE chỉ có thể hiển thị mã.
+3. Tiếp tục từng module còn dở; chỉ commit/push khi người dùng yêu cầu. Commit
+   message dùng tiếng Việt và tách theo chức năng.
+
+## Snapshot đang làm 2026-07-30 — Face nhiều khuôn mặt và Category → Jar
+
+- Đã đọc lại Swagger live ngày 30/07/2026 và tin nhắn contract BE.
+- Face Album: FE nhận cả response suggestion phẳng và response nhóm theo từng
+  khuôn mặt (`faces/results` + `candidates/matches`), chỉ giữ ứng viên score cao
+  nhất cho mỗi face. Vẫn giữ rule: AI chỉ gợi ý, user xác nhận mới tạo tag.
+- Finance: đã thêm provider/UI CRUD mapping category → jar theo từng model qua
+  GET/POST/DELETE `category-jar-mappings`; sau khi activate model, màn hình ưu
+  tiên mở bước cấu hình mapping.
+- Tạo giao dịch mới ưu tiên `categoryId`, không gửi `jarId`, để BE tự map theo
+  model ACTIVE. Giao dịch cũ không map giữ nguyên ở `unmapped`.
+- Đã wire report `reports/jar-target-actual` vào tab **Theo hũ**, hỗ trợ trạng
+  thái ON_TRACK / OVER_TARGET / UNDER_TARGET và fallback raw khi response chưa
+  khớp parser.
+- Swagger live vẫn thiếu response schema/example cho Face Suggestions,
+  category-jar-mappings và jar-target-actual; cần giữ `[VERIFY]` cho tên field
+  response cho đến khi có DTO/sample chính thức hoặc test runtime có dữ liệu.
+- Chưa commit/push các thay đổi 30/07; chỉ thực hiện khi người dùng yêu cầu.
+
+## 🚀 Snapshot mới nhất 2026-07-28 (Đối chiếu toàn bộ Swagger API 2026-07-28 & Verification Mobile + Web Admin)
+
+### 📌 Trạng thái Git & Biên Dịch
+- **Mobile FE (`d:\Desktop\mobile-sep`)**: `flutter analyze` clean (**0 error**, **0 warning**), `flutter test` **109 / 109 PASS 100%**.
+- **Web Admin FE (`d:\Desktop\sep`)**: Next.js production build (`pnpm --filter web build`) **Compiled successfully**, 29/29 static pages.
+
+### 🛠️ Chi Tiết Kiểm Tra & Đối Chiếu API Swagger (`familycare-swagger-2026-07-28.json`)
+1. **Đối chiếu Mobile App (Flutter)**:
+   - Tổng cộng 236 Non-Admin Swagger endpoints, Mobile App đã gán và hoạt động **227/236 endpoints (96.2% độ phủ)**.
+   - Đã rà soát & đảm bảo phòng thủ toàn bộ 12 luồng nghiệp vụ chính: Auth, Family & Invite (mã 8 ký tự), SOS & Vị trí, Wearables, Notifications & Real-time Socket.IO, Subscriptions, Finance Module (Summary, Monthly Finance, Models/Jars, Categories, Ledger, Support Requests, Budget Plans, Goals, Reports, Alerts), Task & Reward, Calendar, Chat, Album & Face Profiles, AI Chatbot.
+2. **Đối chiếu Web Admin (Next.js)**:
+   - Phủ đầy đủ 100% các màn Admin: Users, Families, Subscriptions, Payments, System & Host Infrastructure, Docker containers, Audit logs, Backups & Restore, Revenue, Provisioning logs.
+   - Các API Admin mới (`confirm restore`, `container stats/logs`, `family subscription/activation/provisioning logs`) đều đã có sẵn helper hooks chuẩn TypeScript trong `useAdmin.ts`.
+
+### 📋 List 5 Điểm Cần Phản Hồi Team Backend (BE Report List)
+1. **Face Profile Validate Response DTO (`POST /families/:familyId/face-profiles/:memberId/validate`)**:
+   - API trả về `201 Created` thành công, nhưng Swagger OpenAPI schema chưa định nghĩa DTO mẫu JSON cho `canEnroll: boolean`, `results: Array`, `reasonCode: string`.
+2. **Kế hoạch đóng góp mục tiêu (Goal Contribution Plan)**:
+   - Khi tạo Kế hoạch đóng góp mới cho tháng, các khoản trích cũ (`allocations`) thực hiện trước thời điểm tạo plan không được cộng dồn vào `actualAmount` của plan mới, trừ khi được gắn với `planId`.
+3. **Chuẩn hóa Timezone của các bản ghi Ledger / Support Request**:
+   - Chuỗi thời gian trong response API cần được BE trả về dạng UTC chuẩn có đuôi `Z` hoặc offset `+07:00` nhất quán, tránh trả wall-clock local nhưng gắn đuôi `Z`.
+4. **Trạng thái SOS Response (`SosResponseResponseDto.responseType`)**:
+   - Swagger liệt kê enum gồm `VIEWED`, `CONFIRM_SAFE`, `NEED_HELP`, `RESOLVED`, `CANCELED`, nhưng summary nhắc tới `ON_THE_WAY`. BE cần xác nhận xem `ON_THE_WAY` đã hỗ trợ chưa.
+5. **Nội dung Push Notification Lock Screen**:
+   - Notification tin nhắn Chat hiện đẩy toàn bộ text tin nhắn. Cần cờ cấu hình ẩn nội dung nhạy cảm trên màn hình khóa.
+
+---
+
+## Snapshot 2026-07-28 - Finance API update, branch state, and current handoff
+
+### Git / Branch State
+
+- Working branch: `NDuy`.
+- Local `NDuy` is currently at commit `2c2bf4c`.
+- `origin/main` is also at `2c2bf4c`, so the latest remote `main` already contains the most recent merged code currently checked out locally.
+- `origin/NDuy` is **behind local `NDuy` by 5 commits**. Before testing on another machine or opening another PR from `NDuy`, run:
+  - `git checkout NDuy`
+  - `git push origin NDuy`
+- Local `main` branch is behind `origin/main` by 5 commits. If switching to `main`, run `git checkout main` then `git pull origin main`.
+- Current working tree before this handoff update was clean except Git warnings about the global ignore file permission: `C:\Users\N DUY/.config/git/ignore`.
+
+### Latest commits on top of old `origin/NDuy`
+
+- `62f8108` - `revert(finance): dung lai design So chi tieu theo model khai-bao-thu-nhap`
+- `18c8e27` - `merge: keo main ve giap (surplus allocation, deputy task proof, contribution/fund) - giu child_wallet design cua minh`
+- `696c899` - `feat(family): trao quyen Truong nhom + cap nhat API_DOCS Tuan 10`
+- `847e2ab` - `chore(mobile): gom thay doi moi (polish finance/theme/screens + transfer-ownership)`
+- `2c2bf4c` - `chore(finance): an child_wallet design cua minh - dung ban main (Duy) de tranh xung dot merge`
+
+### Finance API list from BE - current FE mapping status
+
+BE confirmed Finance prefix: `/families/:familyId/finance`.
+
+Covered in mobile FE:
+
+- Overview / dashboard: `/overview` legacy fallback and newer `/summary`, `/cash-flow-summary`, `/category-spending-summary`, `/member-contribution-summary`.
+- Reports: `/reports/overview`, `/reports/budget-goal`, `/reports/non-essential-spending`.
+- Monthly finance: `/monthly-finances/me`, `/monthly-finances/members/:memberId`, `/monthly-summary/me`, `/monthly-summary/members/:memberId`.
+- Ledger: `/ledger/entries`, detail/edit/delete flow, soft delete `VOIDED` hidden from active lists.
+- Categories: `/categories` CRUD, inactive categories labeled and excluded from new-create forms.
+- Models/Jars: `/model-templates`, `/models`, activate model, `/jars`, patch jar.
+- Budget plans: list/create/detail/edit/activate/close/cancel/report and line CRUD.
+- Financial goals: list/create/detail/edit/cancel, allocations CRUD, contribution suggestions/plans/shortage and approve/reject flow.
+- Alerts: list/detail/recompute/acknowledge/resolve.
+- Support requests: list/create/detail/review/cancel, with Member privacy and Manager/Deputy review expectations.
+
+Important BE updates already acknowledged:
+
+- Swagger now has schemas + sample JSON for `/overview`, `/summary`, `/cash-flow-summary`, `/category-spending-summary`, `/member-contribution-summary`.
+- Money unit is VND and response envelope is `{ success, message, data }`.
+- Empty arrays should return `[]`; nullable object fields may return `null`.
+- Query params include `periodStart`, `periodEnd`, `budgetPlanId`, `includeAlerts`, `includeGoals`, `includeBreakdown`.
+- BE says contribution plan now only counts allocations/submissions belonging to the correct `planId`.
+- BE requires ledger/support timestamps as ISO with timezone (`Z` or `+07:00`); FE sends UTC ISO where touched.
+- BE says Member support request list only returns that member's own requests.
+- BE says Deputy can view member monthly finance, approve/reject contribution plans, and review support requests.
+
+### Latest Finance QA notes from user testing
+
+Already fixed or adjusted in FE:
+
+- Ledger delete/huy giao dich: hide `VOIDED` rows after refresh so canceled entries do not stay in active history/totals.
+- Category management: inactive categories are visible with status label, sorted after active items, and not selectable in create forms.
+- Budget plan detail/report: canceled plans should not show action/report like active plans; report labels localized and UUID/raw fields reduced where possible.
+- Financial goal achieved state: achieved goals show completed status and progress amount such as `8.000.000 / 15.000.000`, not misleading `0 / target`.
+- Contribution plan: Manager/Deputy can update monthly contribution plan after creating it; cards show planned/paid/shortage in compact UI instead of raw JSON.
+- Alerts: `Acknowledge` means "Đã xem"; `Resolve` means "Đã xử lý"; recompute can recreate alerts if the underlying budget/goal condition still exists.
+- Support request: Member wallet wording changed toward personal spending support, request cards are tappable, and Manager/Deputy review uses ISO timestamp.
+- Monthly finance: save uses PUT/POST fallback and should keep data after leaving/re-entering the screen.
+- Finance dashboard: wired newer summary APIs with fallback to old overview.
+
+Still needs focused retest:
+
+1. Pull/push sync first: `git push origin NDuy` if continuing from this local repo, then run app fresh.
+2. Manager Ledger: create income/expense, edit, delete, refresh; deleted entry must disappear and totals must recalc.
+3. Category: create, rename, deactivate; inactive category must show status and must not appear in new ledger/budget forms.
+4. Budget Plan: create draft with first line, edit/add/delete line, activate, view report, cancel/close; historical closed plans may remain in report dropdown but must show status.
+5. Goal Allocation: create/edit/delete allocation; if amount exceeds source transaction available amount, FE should show a friendly domain error.
+6. Contribution Plan: Manager creates/updates monthly plan; Member submits; Manager/Deputy approves/rejects; shortage updates correctly.
+7. Alerts: recompute after fixing source data; alert should disappear only when source condition is actually fixed.
+8. Support Request: Member create/cancel/open detail; Manager/Deputy approve/reject/open detail.
+9. Monthly Finance Privacy: Member saves monthly finance with visibility toggles; Manager/Deputy view member summary and private fields must be hidden/null when toggled off.
+
+### BE questions / bugs to keep on report list
+
+- Confirm contribution-plan retest after BE fix: old allocations must not be counted into a new monthly plan unless tied to that plan.
+- Confirm all Finance summary/report endpoints document enum/nullability/400/403 cases consistently in Swagger.
+- Confirm support request detail/list includes enough identity fields for FE display (`requesterMemberId`, display name, status, reviewer fields).
+- Confirm profile fields `occupation`, family-facing relationship update, member role update, grant/revoke deputy permission remain missing from mobile-facing APIs unless BE has newly added them.
+- Face Profile enroll still depends on BE face quality validation; if BE returns `Face image is not enrollable`, FE can only show guidance unless BE returns detailed reason codes.
+
+---
 
 ## 🚀 Snapshot mới nhất 2026-07-23 (Phân bổ số dư mục tiêu & Deputy Task Submission & Auto Plan Approval)
 
@@ -668,6 +942,11 @@ Swagger live vẫn **0 endpoint** cho (Chat & Album nay đã CÓ — xem các m�
 
 1. **[Payment]** `POST /subscription/checkout` trả field nào để redirect Stripe (`checkoutUrl`/`url`/`sessionId`)? Chọn FREE là downgrade riêng hay cũng qua `/checkout`?
 2. **[Chat]** Transport hiện là REST polling — BE có kế hoạch chuyển WebSocket realtime không? Giới hạn `limit` khi load lịch sử, encode emoji trong URL reaction.
+3. **[RESOLVED 2026-07-29 — Finance model / fund allocation]** BE đã đổi khóa
+   chống trùng thành `familyId + periodMonth + periodYear`; đổi model không cho
+   chia lại cùng kỳ. POST/GET history đã trả `createdAt`,
+   `createdByMemberId`, `note`, sort mới nhất trước và giữ item legacy nullable.
+   FE đã wire contract, xử lý 409, test mapping và kiểm tra runtime thành công.
 
 ---
 
