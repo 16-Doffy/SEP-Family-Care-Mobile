@@ -2,16 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/auth_provider.dart';
-import '../../providers/family_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
-/// Quản lý thiết bị đeo (đồng hồ/định vị) đã ghép với gia đình.
-///
-/// Ghép/gỡ/đổi cấu hình chỉ dành cho Manager/Deputy (giống các config gia đình
-/// khác). Member xem read-only.
 class WearablesScreen extends StatefulWidget {
   const WearablesScreen({super.key});
 
@@ -27,20 +21,12 @@ class _WearablesScreenState extends State<WearablesScreen> {
     'SIMULATED_DEVICE': 'Thiết bị mô phỏng',
   };
 
-  static const _eventLabels = {
-    'SOS_BUTTON_PRESSED': 'Nhấn nút SOS',
-    'FALL_DETECTED': 'Phát hiện té ngã',
-    'HARD_IMPACT': 'Va đập mạnh',
-    'ABNORMAL_MOVEMENT': 'Chuyển động bất thường',
-  };
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<WearableProvider>().fetchDevices();
-      context.read<FamilyProvider>().fetchMembers();
+      context.read<WearableProvider>().fetchCurrentDevice();
     });
   }
 
@@ -57,8 +43,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
   @override
   Widget build(BuildContext context) {
     final wp = context.watch<WearableProvider>();
-    final canManage =
-        context.watch<AuthProvider>().user?.canResolveSos ?? false;
+    final device = wp.currentDevice;
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -74,40 +59,29 @@ class _WearablesScreenState extends State<WearablesScreen> {
           ),
         ),
       ),
-      floatingActionButton: canManage
-          ? FloatingActionButton.extended(
-              backgroundColor: AppColors.link,
-              icon: const Icon(Icons.add_rounded, color: Colors.white),
-              label: Text(
-                'Ghép thiết bị',
-                style: GoogleFonts.inter(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onPressed: _showPairSheet,
-            )
-          : null,
       body: RefreshIndicator(
-        onRefresh: () => context.read<WearableProvider>().fetchDevices(),
-        child: wp.loading && wp.devices.isEmpty
-            ? const Center(child: CircularProgressIndicator())
-            : wp.devices.isEmpty
-            ? _empty(wp.error, canManage)
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _pairingGuide(canManage),
-                  if (!canManage) _note(),
-                  ...wp.devices.map((d) => _deviceCard(d, canManage)),
-                ],
-              ),
+        onRefresh: () => context.read<WearableProvider>().fetchCurrentDevice(),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _introCard(device),
+            const SizedBox(height: 12),
+            if (wp.loading && device == null)
+              const Padding(
+                padding: EdgeInsets.only(top: 80),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (device == null)
+              _notConnectedCard(wp.error)
+            else
+              _connectedCard(device),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _pairingGuide(bool canManage) => Container(
-    margin: const EdgeInsets.only(bottom: 12),
+  Widget _introCard(WearableDevice? device) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
       color: AppColors.link.withValues(alpha: 0.08),
@@ -117,27 +91,30 @@ class _WearablesScreenState extends State<WearablesScreen> {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.phonelink_ring_rounded, color: AppColors.link),
+        Icon(
+          device == null ? Icons.watch_outlined : Icons.watch_rounded,
+          color: AppColors.link,
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Liên kết qua điện thoại',
+                device == null
+                    ? 'Chưa kết nối wearable'
+                    : 'Đã kết nối wearable',
                 style: GoogleFonts.inter(
-                  fontSize: 13.5,
+                  fontSize: 14,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
-                canManage
-                    ? 'Mở FamilyCare trên đồng hồ, lấy mã FCW hiển thị rồi bấm Ghép thiết bị tại đây. Đồng hồ không cần đăng nhập riêng.'
-                    : 'Đồng hồ được liên kết bằng app mobile của Trưởng nhóm hoặc Phó nhóm, không đăng nhập trực tiếp trên đồng hồ.',
+                'Mobile app đang đăng nhập thay mặt user để kết nối thiết bị. Mỗi tài khoản chỉ có một wearable đang kết nối.',
                 style: GoogleFonts.inter(
-                  fontSize: 12,
+                  fontSize: 12.5,
                   height: 1.35,
                   color: AppColors.textSecondary,
                 ),
@@ -149,141 +126,153 @@ class _WearablesScreenState extends State<WearablesScreen> {
     ),
   );
 
-  Widget _empty(String? error, bool canManage) => ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      _pairingGuide(canManage),
-      SizedBox(height: MediaQuery.of(context).size.height * 0.14),
-      const Icon(Icons.watch_outlined, size: 56, color: AppColors.textMuted),
-      const SizedBox(height: 12),
-      Center(
-        child: Text(
-          error == null
-              ? 'Chưa ghép thiết bị đeo nào.'
-              : 'Không tải được danh sách thiết bị.',
-          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
-        ),
-      ),
-    ],
-  );
-
-  Widget _note() => Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    padding: const EdgeInsets.all(12),
+  Widget _notConnectedCard(String? error) => Container(
+    padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      color: AppColors.primary50,
-      borderRadius: BorderRadius.circular(12),
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(18),
     ),
-    child: Text(
-      'Chỉ Trưởng nhóm hoặc Phó nhóm mới ghép/gỡ thiết bị. Bạn đang xem ở chế '
-      'độ chỉ đọc.',
-      style: GoogleFonts.inter(fontSize: 12.5, color: AppColors.textSecondary),
-    ),
-  );
-
-  Widget _deviceCard(WearableDevice d, bool canManage) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                d.deviceType == 'GPS_TRACKER'
-                    ? Icons.location_searching_rounded
-                    : Icons.watch_rounded,
-                color: d.isPaired ? AppColors.link : AppColors.textMuted,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      d.deviceName,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    Text(
-                      '${_typeLabels[d.deviceType] ?? d.deviceType}'
-                      '${d.ownerName != null ? ' · ${d.ownerName}' : ''}',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _statusChip(d),
-            ],
+    child: Column(
+      children: [
+        const Icon(
+          Icons.watch_off_rounded,
+          size: 54,
+          color: AppColors.textMuted,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          error == null
+              ? 'Chưa kết nối wearable'
+              : 'Không tải được trạng thái wearable',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
           ),
+        ),
+        if (error != null) ...[
           const SizedBox(height: 6),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: Text(
-              'Chia sẻ vị trí (GPS)',
-              style: GoogleFonts.inter(fontSize: 13.5),
-            ),
-            value: d.gpsEnabled,
-            onChanged: canManage ? (v) => _update(d.id, gpsEnabled: v) : null,
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: Text(
-              'Cho phép gửi SOS',
-              style: GoogleFonts.inter(fontSize: 13.5),
-            ),
-            value: d.sosEnabled,
-            onChanged: canManage ? (v) => _update(d.id, sosEnabled: v) : null,
-          ),
-          Row(
-            children: [
-              TextButton.icon(
-                onPressed: () => _showEvents(d),
-                icon: const Icon(Icons.history_rounded, size: 18),
-                label: const Text('Lịch sử sự kiện'),
-              ),
-              const Spacer(),
-              if (canManage)
-                TextButton.icon(
-                  onPressed: () => _confirmUnpair(d),
-                  icon: const Icon(
-                    Icons.link_off_rounded,
-                    size: 18,
-                    color: AppColors.danger,
-                  ),
-                  label: Text(
-                    'Gỡ',
-                    style: GoogleFonts.inter(color: AppColors.danger),
-                  ),
-                ),
-            ],
+          Text(
+            error,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
           ),
         ],
-      ),
-    );
-  }
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.link),
+            onPressed: _connectSimulator,
+            icon: const Icon(Icons.link_rounded, color: Colors.white),
+            label: Text(
+              'Kết nối wearable',
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _connectedCard(WearableDevice device) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.watch_rounded, color: AppColors.success),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    device.deviceName,
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    _typeLabels[device.deviceType] ?? device.deviceType,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _statusChip(device),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _infoRow('Device ID', device.id),
+        _infoRow('Identifier', device.deviceIdentifier),
+        _infoRow('Last seen', _fmtTime(device.lastSeenAt)),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _flagChip('GPS', device.gpsEnabled)),
+            const SizedBox(width: 8),
+            Expanded(child: _flagChip('SOS', device.sosEnabled)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _testEvent(device, sos: true),
+                icon: const Icon(Icons.sos_rounded, size: 18),
+                label: const Text('Test SOS'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _testEvent(device, sos: false),
+                icon: const Icon(Icons.warning_amber_rounded, size: 18),
+                label: const Text('Fall'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          height: 46,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => _confirmUnpair(device),
+            icon: const Icon(Icons.link_off_rounded),
+            label: const Text('Ngắt kết nối'),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _statusChip(WearableDevice d) {
     final (label, color) = d.isPaired
-        ? ('Đã ghép', AppColors.success)
+        ? ('Đã kết nối', AppColors.success)
         : d.isLost
         ? ('Mất kết nối', AppColors.danger)
-        : ('Chưa ghép', AppColors.textMuted);
+        : ('Chưa kết nối', AppColors.textMuted);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
@@ -292,31 +281,90 @@ class _WearablesScreenState extends State<WearablesScreen> {
         label,
         style: GoogleFonts.inter(
           fontSize: 11,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w800,
           color: color,
         ),
       ),
     );
   }
 
-  Future<void> _update(String id, {bool? gpsEnabled, bool? sosEnabled}) async {
+  Widget _infoRow(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 86,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value.isEmpty ? 'Không rõ' : value,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _flagChip(String label, bool enabled) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+    decoration: BoxDecoration(
+      color: (enabled ? AppColors.success : AppColors.textMuted).withValues(
+        alpha: 0.1,
+      ),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          enabled ? Icons.check_circle_rounded : Icons.cancel_rounded,
+          size: 16,
+          color: enabled ? AppColors.success : AppColors.textMuted,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: enabled ? AppColors.success : AppColors.textMuted,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> _connectSimulator() async {
     try {
-      await context.read<WearableProvider>().updateDevice(
-        id,
-        gpsEnabled: gpsEnabled,
-        sosEnabled: sosEnabled,
+      await context.read<WearableProvider>().pairDevice(
+        deviceName: 'Wear OS Simulator',
+        deviceType: 'SIMULATED_DEVICE',
+        deviceIdentifier: 'wearos-emulator-001',
+        gpsEnabled: true,
+        sosEnabled: true,
       );
+      _snack('Wearable simulator đã được kết nối.', ok: true);
     } catch (e) {
       _snack(e);
     }
   }
 
-  void _confirmUnpair(WearableDevice d) {
+  void _confirmUnpair(WearableDevice device) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Gỡ thiết bị?'),
-        content: Text('Gỡ "${d.deviceName}" khỏi gia đình?'),
+        title: const Text('Ngắt kết nối wearable?'),
+        content: Text(
+          'Ngắt kết nối "${device.deviceName}" khỏi tài khoản này?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -327,237 +375,56 @@ class _WearablesScreenState extends State<WearablesScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await context.read<WearableProvider>().unpairDevice(d.id);
-                _snack('Đã gỡ thiết bị', ok: true);
+                await context.read<WearableProvider>().unpairDevice(device.id);
+                _snack('Đã ngắt kết nối wearable.', ok: true);
               } catch (e) {
                 _snack(e);
               }
             },
-            child: const Text('Gỡ'),
+            child: const Text('Ngắt kết nối'),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _showEvents(WearableDevice d) async {
-    List<WearableEvent> events = [];
+  Future<void> _testEvent(WearableDevice device, {required bool sos}) async {
     try {
-      events = await context.read<WearableProvider>().fetchEvents(d.id);
+      final result = await context.read<WearableProvider>().createEvent(
+        device.id,
+        eventType: sos ? 'SOS_BUTTON_PRESSED' : 'FALL_DETECTED',
+        severity: 'HIGH',
+        rawValue: sos
+            ? {'source': 'wearos-emulator', 'heartRate': 120, 'battery': 86}
+            : {'source': 'wearos-emulator', 'gForce': 3.2, 'heartRate': 132},
+      );
+      if (!mounted) return;
+      if (result.alertCreated) {
+        _showAlertCreated(result.alertId);
+      } else {
+        _snack('Đã gửi sự kiện wearable.', ok: true);
+      }
     } catch (e) {
       _snack(e);
-      return;
     }
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Sự kiện — ${d.deviceName}',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (events.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Chưa có sự kiện nào.',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                )
-              else
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 340),
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: events
-                        .map(
-                          (e) => ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              _eventLabels[e.eventType] ?? e.eventType,
-                              style: GoogleFonts.inter(fontSize: 13.5),
-                            ),
-                            subtitle: Text(
-                              '${e.severity} · ${_fmtTime(e.detectedAt)}',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
-  void _showPairSheet() {
-    final nameCtrl = TextEditingController();
-    final idCtrl = TextEditingController();
-    var type = 'SMARTWATCH';
-    var gps = true;
-    var sos = true;
-    String? ownerId;
-    final members = context
-        .read<FamilyProvider>()
-        .members
-        .where((m) => m.isActive)
-        .toList();
-
-    showModalBottomSheet(
+  void _showAlertCreated(String? alertId) {
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            18,
-            20,
-            MediaQuery.of(ctx).viewInsets.bottom + 20,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Ghép thiết bị đeo',
-                  style: GoogleFonts.inter(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Tên thiết bị',
-                    hintText: 'VD: Đồng hồ của bà',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: idCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Mã thiết bị trên đồng hồ',
-                    hintText: 'VD: FCW-7KQ2PA',
-                    helperText:
-                        'Mã hiển thị trên màn hình liên kết của đồng hồ.',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: type,
-                  decoration: const InputDecoration(labelText: 'Loại thiết bị'),
-                  items: _typeLabels.entries
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e.key,
-                          child: Text(e.value),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => setS(() => type = v ?? 'SMARTWATCH'),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: ownerId,
-                  decoration: const InputDecoration(
-                    labelText: 'Người dùng (tùy chọn)',
-                  ),
-                  items: [
-                    const DropdownMenuItem(
-                      value: null,
-                      child: Text('— Không gán —'),
-                    ),
-                    ...members.map(
-                      (m) => DropdownMenuItem(value: m.id, child: Text(m.name)),
-                    ),
-                  ],
-                  onChanged: (v) => setS(() => ownerId = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Chia sẻ vị trí (GPS)'),
-                  value: gps,
-                  onChanged: (v) => setS(() => gps = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Cho phép gửi SOS'),
-                  value: sos,
-                  onChanged: (v) => setS(() => sos = v),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.link,
-                    ),
-                    onPressed: () async {
-                      final name = nameCtrl.text.trim();
-                      final ident = idCtrl.text.trim();
-                      if (name.isEmpty || ident.isEmpty) {
-                        _snack('Nhập tên và mã thiết bị');
-                        return;
-                      }
-                      Navigator.pop(ctx);
-                      try {
-                        await context.read<WearableProvider>().pairDevice(
-                          deviceName: name,
-                          deviceType: type,
-                          deviceIdentifier: ident,
-                          gpsEnabled: gps,
-                          sosEnabled: sos,
-                          ownerMemberId: ownerId,
-                        );
-                        _snack('Đã ghép thiết bị', ok: true);
-                      } catch (e) {
-                        _snack(e);
-                      }
-                    },
-                    child: Text(
-                      'Ghép',
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Đã tạo cảnh báo SOS'),
+        content: Text(
+          alertId == null
+              ? 'Sự kiện wearable đã tạo cảnh báo mới.'
+              : 'Alert ID: $alertId',
         ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đã hiểu'),
+          ),
+        ],
       ),
     );
   }

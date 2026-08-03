@@ -7,17 +7,14 @@ bool _bool(dynamic v) => v == true;
 DateTime? _date(dynamic v) =>
     v == null ? null : DateTime.tryParse(v.toString())?.toLocal();
 
-/// Thiết bị đeo đã ghép với gia đình. Response schema của GET/POST wearables
-/// để trống trong Swagger tuần 10 → parse phòng thủ, chấp nhận nhiều alias key.
 class WearableDevice {
   final String id;
   final String deviceName;
-  final String
-  deviceType; // SMARTWATCH | GPS_TRACKER | BLE_DEVICE | SIMULATED_DEVICE
+  final String deviceType;
   final String deviceIdentifier;
   final bool gpsEnabled;
   final bool sosEnabled;
-  final String pairingStatus; // PAIRED | UNPAIRED | LOST
+  final String pairingStatus;
   final String? ownerMemberId;
   final String? ownerName;
   final DateTime? lastSeenAt;
@@ -50,7 +47,7 @@ class WearableDevice {
     return WearableDevice(
       id: _str(j['deviceId'] ?? j['id']),
       deviceName: _str(j['deviceName']).isEmpty
-          ? 'Thiết bị'
+          ? 'Thiết bị đeo'
           : _str(j['deviceName']),
       deviceType: _str(j['deviceType']).isEmpty
           ? 'SMARTWATCH'
@@ -72,18 +69,16 @@ class WearableDevice {
           : _str(
               owner['displayName'] ?? ownerUser['fullName'] ?? j['ownerName'],
             ),
-      lastSeenAt: _date(j['lastSeenAt'] ?? j['lastEventAt']),
+      lastSeenAt: _date(j['lastSeenAt'] ?? j['lastEventAt'] ?? j['updatedAt']),
       raw: j,
     );
   }
 }
 
-/// Sự kiện cảm biến từ thiết bị đeo (té ngã, va đập, nút SOS...).
 class WearableEvent {
   final String id;
-  final String
-  eventType; // SOS_BUTTON_PRESSED | FALL_DETECTED | HARD_IMPACT | ABNORMAL_MOVEMENT
-  final String severity; // LOW | MEDIUM | HIGH | CRITICAL
+  final String eventType;
+  final String severity;
   final DateTime? detectedAt;
 
   const WearableEvent({
@@ -101,16 +96,50 @@ class WearableEvent {
   );
 }
 
+class WearableEventResult {
+  final WearableEvent? event;
+  final String? alertId;
+  final bool alertCreated;
+  final Map<String, dynamic> raw;
+
+  const WearableEventResult({
+    this.event,
+    this.alertId,
+    this.alertCreated = false,
+    this.raw = const {},
+  });
+
+  factory WearableEventResult.fromJson(Map<String, dynamic> j) {
+    final rawEvent = j['event'];
+    return WearableEventResult(
+      event: rawEvent is Map
+          ? WearableEvent.fromJson(Map<String, dynamic>.from(rawEvent))
+          : null,
+      alertId: _str(j['alertId']).isEmpty ? null : _str(j['alertId']),
+      alertCreated: j['alertCreated'] == true,
+      raw: j,
+    );
+  }
+}
+
 class WearableProvider extends ChangeNotifier {
-  List<WearableDevice> _devices = [];
+  WearableDevice? _currentDevice;
+  List<WearableDevice> _familyDevices = [];
   bool _loading = false;
   String? _error;
 
-  List<WearableDevice> get devices => _devices;
+  WearableDevice? get currentDevice => _currentDevice;
+  List<WearableDevice> get devices =>
+      _currentDevice == null ? const [] : [_currentDevice!];
+  List<WearableDevice> get familyDevices => _familyDevices;
   bool get loading => _loading;
   String? get error => _error;
+  bool get isConnected => _currentDevice?.isPaired == true;
 
   String? get _fid => ApiClient.instance.familyId;
+
+  static const duplicateWearableMessage =
+      'Tài khoản này đã kết nối một wearable. Vui lòng ngắt kết nối thiết bị hiện tại trước.';
 
   static List<Map<String, dynamic>> _list(dynamic data) {
     final raw = data is List
@@ -126,18 +155,24 @@ class WearableProvider extends ChangeNotifier {
         .toList();
   }
 
-  // GET /families/{familyId}/wearables
-  Future<void> fetchDevices() async {
-    final fid = _fid;
-    if (fid == null) return;
+  static WearableDevice? _deviceFrom(dynamic data) {
+    if (data == null) return null;
+    if (data is Map) {
+      final map = Map<String, dynamic>.from(data);
+      final nested = map['wearable'] ?? map['device'];
+      if (nested is Map) return WearableDevice.fromJson(Map.from(nested));
+      return WearableDevice.fromJson(map);
+    }
+    return null;
+  }
+
+  Future<void> fetchCurrentDevice() async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      final data = await ApiClient.instance.get('/families/$fid/wearables');
-      _devices = _list(
-        data,
-      ).map(WearableDevice.fromJson).where((d) => d.id.isNotEmpty).toList();
+      final data = await ApiClient.instance.get('/wearables/me');
+      _currentDevice = _deviceFrom(data);
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -146,8 +181,20 @@ class WearableProvider extends ChangeNotifier {
     }
   }
 
-  // POST /families/{familyId}/wearables
-  Future<void> pairDevice({
+  Future<void> fetchDevices() => fetchCurrentDevice();
+
+  Future<List<WearableDevice>> fetchFamilyDevices() async {
+    final fid = _fid;
+    if (fid == null) return const [];
+    final data = await ApiClient.instance.get('/families/$fid/wearables');
+    _familyDevices = _list(
+      data,
+    ).map(WearableDevice.fromJson).where((d) => d.id.isNotEmpty).toList();
+    notifyListeners();
+    return _familyDevices;
+  }
+
+  Future<WearableDevice?> pairDevice({
     required String deviceName,
     required String deviceType,
     required String deviceIdentifier,
@@ -157,19 +204,26 @@ class WearableProvider extends ChangeNotifier {
   }) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
-    await ApiClient.instance.post('/families/$fid/wearables', {
-      'deviceName': deviceName.trim(),
-      'deviceType': deviceType,
-      'deviceIdentifier': deviceIdentifier.trim(),
-      'gpsEnabled': gpsEnabled,
-      'sosEnabled': sosEnabled,
-      if (ownerMemberId != null && ownerMemberId.isNotEmpty)
-        'ownerMemberId': ownerMemberId,
-    });
-    await fetchDevices();
+    try {
+      final data = await ApiClient.instance.post('/families/$fid/wearables', {
+        'deviceName': deviceName.trim(),
+        'deviceType': deviceType,
+        'deviceIdentifier': deviceIdentifier.trim(),
+        'gpsEnabled': gpsEnabled,
+        'sosEnabled': sosEnabled,
+        if (ownerMemberId != null && ownerMemberId.isNotEmpty)
+          'ownerMemberId': ownerMemberId,
+      });
+      _currentDevice = _deviceFrom(data);
+      if (_currentDevice == null) await fetchCurrentDevice();
+      notifyListeners();
+      return _currentDevice;
+    } on ApiException catch (e) {
+      if (e.statusCode == 409) throw Exception(duplicateWearableMessage);
+      rethrow;
+    }
   }
 
-  // PATCH /families/{familyId}/wearables/{deviceId}
   Future<void> updateDevice(
     String deviceId, {
     String? deviceName,
@@ -179,45 +233,52 @@ class WearableProvider extends ChangeNotifier {
   }) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
-    // Cập nhật lạc quan cờ gps/sos cho công tắc mượt, rollback nếu BE lỗi.
-    final idx = _devices.indexWhere((d) => d.id == deviceId);
-    final prev = idx >= 0 ? _devices[idx] : null;
-    if (prev != null && (gpsEnabled != null || sosEnabled != null)) {
-      _devices[idx] = WearableDevice.fromJson({
+    final prev = _currentDevice;
+    final cleanDeviceName = deviceName?.trim();
+    if (prev != null && prev.id == deviceId) {
+      _currentDevice = WearableDevice.fromJson({
         ...prev.raw,
         'deviceId': prev.id,
-        'gpsEnabled': gpsEnabled ?? prev.gpsEnabled,
-        'sosEnabled': sosEnabled ?? prev.sosEnabled,
-      });
-      notifyListeners();
-    }
-    try {
-      await ApiClient.instance.patch('/families/$fid/wearables/$deviceId', {
-        if (deviceName != null) 'deviceName': deviceName.trim(),
+        'deviceName': ?cleanDeviceName,
         'gpsEnabled': ?gpsEnabled,
         'sosEnabled': ?sosEnabled,
         'pairingStatus': ?pairingStatus,
       });
-      await fetchDevices();
-    } catch (e) {
-      if (prev != null && idx >= 0) {
-        _devices[idx] = prev;
-        notifyListeners();
+      notifyListeners();
+    }
+    try {
+      final data = await ApiClient.instance
+          .patch('/families/$fid/wearables/$deviceId', {
+            'deviceName': ?cleanDeviceName,
+            'gpsEnabled': ?gpsEnabled,
+            'sosEnabled': ?sosEnabled,
+            'pairingStatus': ?pairingStatus,
+          });
+      _currentDevice = pairingStatus == 'UNPAIRED' ? null : _deviceFrom(data);
+      if (_currentDevice == null && pairingStatus != 'UNPAIRED') {
+        await fetchCurrentDevice();
       }
+      notifyListeners();
+    } catch (e) {
+      _currentDevice = prev;
+      notifyListeners();
       rethrow;
     }
   }
 
-  // DELETE /families/{familyId}/wearables/{deviceId}
   Future<void> unpairDevice(String deviceId) async {
+    await updateDevice(deviceId, pairingStatus: 'UNPAIRED');
+  }
+
+  Future<void> removeDevice(String deviceId) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
     await ApiClient.instance.delete('/families/$fid/wearables/$deviceId');
-    _devices.removeWhere((d) => d.id == deviceId);
+    if (_currentDevice?.id == deviceId) _currentDevice = null;
+    _familyDevices.removeWhere((d) => d.id == deviceId);
     notifyListeners();
   }
 
-  // GET /families/{familyId}/wearables/{deviceId}/events
   Future<List<WearableEvent>> fetchEvents(String deviceId) async {
     final fid = _fid;
     if (fid == null) return [];
@@ -230,9 +291,7 @@ class WearableProvider extends ChangeNotifier {
         .toList();
   }
 
-  // POST /families/{familyId}/wearables/{deviceId}/events — thường do thiết bị
-  // gửi lên; giữ ở đây để test với SIMULATED_DEVICE. Chưa gắn UI.
-  Future<void> createEvent(
+  Future<WearableEventResult> createEvent(
     String deviceId, {
     required String eventType,
     String? severity,
@@ -240,11 +299,13 @@ class WearableProvider extends ChangeNotifier {
   }) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
-    await ApiClient.instance.post('/families/$fid/wearables/$deviceId/events', {
-      'eventType': eventType,
-      'severity': ?severity,
-      'rawValue': ?rawValue,
-      'detectedAt': DateTime.now().toUtc().toIso8601String(),
-    });
+    final data = await ApiClient.instance
+        .post('/families/$fid/wearables/$deviceId/events', {
+          'eventType': eventType,
+          'severity': ?severity,
+          'rawValue': ?rawValue,
+          'detectedAt': DateTime.now().toUtc().toIso8601String(),
+        });
+    return WearableEventResult.fromJson(data);
   }
 }
