@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_period.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/money_input.dart';
+import '../../widgets/month_switcher.dart';
 
 // GET .../financial-goals/{id} trả cả goal + progress; không gọi endpoint
 // /progress vì BE đã đánh dấu deprecated. Các allocations dùng GET/PATCH/DELETE.
@@ -17,10 +19,16 @@ class GoalDetailScreen extends StatefulWidget {
   /// Mở sẵn sheet "Phân bổ số dư quỹ tháng" ngay sau khi tải xong mục tiêu —
   /// dùng khi đi từ màn tổng quan tài chính, để không bắt user bấm thêm một nút.
   final bool autoOpenSurplus;
+
+  /// Kỳ mở sẵn trong sheet. Card "Kết chuyển tháng trước" truyền kỳ **tháng
+  /// trước** vào đây; bỏ trống thì sheet mở ở tháng hiện tại như trước.
+  final FinancePeriod? surplusPeriod;
+
   const GoalDetailScreen({
     super.key,
     required this.goalId,
     this.autoOpenSurplus = false,
+    this.surplusPeriod,
   });
 
   @override
@@ -720,10 +728,12 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
     );
   }
 
-  void _showSurplusAllocationSheet(BuildContext context, FinancialGoal goal) {
-    final now = DateTime.now();
-    int selectedMonth = now.month;
-    int selectedYear = now.year;
+  void _showSurplusAllocationSheet(
+    BuildContext context,
+    FinancialGoal goal, {
+    FinancePeriod? initialPeriod,
+  }) {
+    var period = initialPeriod ?? widget.surplusPeriod ?? FinancePeriod.current();
     SurplusAvailability? surplusData;
     bool loadingSurplus = true;
     String? surplusError;
@@ -742,7 +752,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
       try {
         final res = await context
             .read<FinanceProvider>()
-            .fetchSurplusAvailability(selectedMonth, selectedYear);
+            .fetchSurplusAvailability(period.month, period.year);
         setSheet(() {
           surplusData = res;
           loadingSurplus = false;
@@ -821,6 +831,23 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                 ),
                 const SizedBox(height: 16),
 
+                // Chọn kỳ ngay trong sheet: số dư chưa phân bổ của các tháng
+                // trước vẫn còn ở BE, trước đây FE khóa cứng tháng hiện tại nên
+                // không có đường nào chạm tới.
+                MonthSwitcher(
+                  period: period,
+                  enabled: !loadingSurplus && !submitting,
+                  onChanged: (p) {
+                    setSheet(() {
+                      period = p;
+                      amountCtrl.clear();
+                      sheetError = null;
+                    });
+                    loadSurplus(setSheet);
+                  },
+                ),
+                const SizedBox(height: 16),
+
                 // Trạng thái load số dư
                 if (loadingSurplus)
                   const Center(
@@ -863,7 +890,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Kỳ tháng $selectedMonth/$selectedYear',
+                          'Kỳ ${period.label.toLowerCase()}',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -925,7 +952,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        'Không còn số dư quỹ tháng $selectedMonth để phân bổ vào mục tiêu.',
+                        'Không còn số dư quỹ ${period.label.toLowerCase()} để '
+                        'phân bổ vào mục tiêu. Thử chuyển sang kỳ khác ở thanh trên.',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           color: AppColors.danger,
@@ -986,11 +1014,11 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                                       .read<FinanceProvider>()
                                       .allocateSurplusToGoal(
                                         goal.id,
-                                        periodMonth: selectedMonth,
-                                        periodYear: selectedYear,
+                                        periodMonth: period.month,
+                                        periodYear: period.year,
                                         amount: amount,
                                         note:
-                                            'Chuyển số dư quỹ tháng $selectedMonth vào mục tiêu',
+                                            'Chuyển số dư quỹ ${period.label.toLowerCase()} vào mục tiêu',
                                       );
                                   if (ctx.mounted) Navigator.pop(ctx);
                                   await _load();

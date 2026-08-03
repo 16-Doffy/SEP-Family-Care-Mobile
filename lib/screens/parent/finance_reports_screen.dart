@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_period.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/json_report_view.dart';
+import '../../widgets/month_switcher.dart';
 import '../../widgets/ring_chart.dart';
 
 // UC — Báo cáo kế hoạch vs thực tế (feedback Hội đồng Review 2: "thiếu so
@@ -23,6 +25,10 @@ class FinanceReportsScreen extends StatefulWidget {
 class _FinanceReportsScreenState extends State<FinanceReportsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl = TabController(length: 4, vsync: this);
+
+  /// Kỳ áp dụng cho 3 tab đọc theo `periodStart`/`periodEnd`. Tab "Ngân sách"
+  /// chọn plan trực tiếp — plan đã tự mang kỳ của nó nên không chịu ảnh hưởng.
+  FinancePeriod _period = FinancePeriod.current();
 
   @override
   void initState() {
@@ -87,6 +93,13 @@ class _FinanceReportsScreenState extends State<FinanceReportsScreen>
                 ],
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: MonthSwitcher(
+                period: _period,
+                onChanged: (p) => setState(() => _period = p),
+              ),
+            ),
             TabBar(
               controller: _tabCtrl,
               labelColor: AppColors.link,
@@ -110,11 +123,11 @@ class _FinanceReportsScreenState extends State<FinanceReportsScreen>
             Expanded(
               child: TabBarView(
                 controller: _tabCtrl,
-                children: const [
-                  _BudgetPlanReportTab(),
-                  _JarTargetActualReportTab(),
-                  _NonEssentialSpendingTab(),
-                  _BudgetGoalReportTab(),
+                children: [
+                  const _BudgetPlanReportTab(),
+                  _JarTargetActualReportTab(period: _period),
+                  _NonEssentialSpendingTab(period: _period),
+                  _BudgetGoalReportTab(period: _period),
                 ],
               ),
             ),
@@ -126,7 +139,9 @@ class _FinanceReportsScreenState extends State<FinanceReportsScreen>
 }
 
 class _JarTargetActualReportTab extends StatefulWidget {
-  const _JarTargetActualReportTab();
+  const _JarTargetActualReportTab({required this.period});
+
+  final FinancePeriod period;
 
   @override
   State<_JarTargetActualReportTab> createState() =>
@@ -142,6 +157,12 @@ class _JarTargetActualReportTabState extends State<_JarTargetActualReportTab> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _JarTargetActualReportTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.period != widget.period) _load();
   }
 
   Future<void> _load() async {
@@ -169,12 +190,9 @@ class _JarTargetActualReportTabState extends State<_JarTargetActualReportTab> {
           'Chưa có mô hình tài chính đang áp dụng để lập báo cáo theo hũ.',
         );
       }
-      final now = DateTime.now();
-      final start = DateTime(now.year, now.month, 1);
-      final end = DateTime(now.year, now.month + 1, 0);
       final report = await finance.fetchJarTargetActualReport(
-        periodStart: start,
-        periodEnd: end,
+        periodStart: widget.period.start,
+        periodEnd: widget.period.end,
         financeModelId: activeModel.id,
       );
       if (mounted) setState(() => _report = report);
@@ -207,7 +225,8 @@ class _JarTargetActualReportTabState extends State<_JarTargetActualReportTab> {
           _card(
             child: Text(
               'So sánh tỷ lệ mục tiêu của mô hình đang áp dụng với tỷ lệ chi '
-              'thực tế trong tháng này. Giao dịch cũ chưa map nằm ở mục chưa gán.',
+              'thực tế trong ${widget.period.label.toLowerCase()}. '
+              'Giao dịch cũ chưa map nằm ở mục chưa gán.',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: AppColors.textSecondary,
@@ -926,7 +945,10 @@ class _BudgetPlanReportTabState extends State<_BudgetPlanReportTab> {
 // ── Tab 2: Chi tiêu không thiết yếu ─────────────────────────────────────────
 
 class _NonEssentialSpendingTab extends StatefulWidget {
-  const _NonEssentialSpendingTab();
+  const _NonEssentialSpendingTab({required this.period});
+
+  final FinancePeriod period;
+
   @override
   State<_NonEssentialSpendingTab> createState() =>
       _NonEssentialSpendingTabState();
@@ -943,6 +965,12 @@ class _NonEssentialSpendingTabState extends State<_NonEssentialSpendingTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void didUpdateWidget(covariant _NonEssentialSpendingTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.period != widget.period) _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -951,7 +979,10 @@ class _NonEssentialSpendingTabState extends State<_NonEssentialSpendingTab> {
     try {
       final r = await context
           .read<FinanceProvider>()
-          .fetchNonEssentialSpendingReport();
+          .fetchNonEssentialSpendingReport(
+            periodStart: widget.period.start,
+            periodEnd: widget.period.end,
+          );
       if (mounted) setState(() => _report = r);
     } catch (e) {
       if (mounted) {
@@ -971,7 +1002,8 @@ class _NonEssentialSpendingTabState extends State<_NonEssentialSpendingTab> {
         children: [
           _card(
             child: Text(
-              'Cho biết trong tháng có bao nhiêu tiền được chi cho các danh mục đã đánh dấu “Không thiết yếu”.',
+              'Cho biết trong ${widget.period.label.toLowerCase()} có bao nhiêu '
+              'tiền được chi cho các danh mục đã đánh dấu “Không thiết yếu”.',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: AppColors.textSecondary,
@@ -1015,7 +1047,10 @@ class _NonEssentialSpendingTabState extends State<_NonEssentialSpendingTab> {
 // ── Tab 3: Ngân sách & Mục tiêu ──────────────────────────────────────────────
 
 class _BudgetGoalReportTab extends StatefulWidget {
-  const _BudgetGoalReportTab();
+  const _BudgetGoalReportTab({required this.period});
+
+  final FinancePeriod period;
+
   @override
   State<_BudgetGoalReportTab> createState() => _BudgetGoalReportTabState();
 }
@@ -1031,13 +1066,22 @@ class _BudgetGoalReportTabState extends State<_BudgetGoalReportTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void didUpdateWidget(covariant _BudgetGoalReportTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.period != widget.period) _load();
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final r = await context.read<FinanceProvider>().fetchBudgetGoalReport();
+      final r = await context.read<FinanceProvider>().fetchBudgetGoalReport(
+        periodStart: widget.period.start,
+        periodEnd: widget.period.end,
+      );
       if (mounted) setState(() => _report = r);
     } catch (e) {
       if (mounted) {

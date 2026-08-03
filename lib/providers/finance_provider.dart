@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/finance_period.dart';
 import '../services/api_client.dart';
 
 // ════════════════════════════════════════════════════════════════════════
@@ -895,6 +896,12 @@ class FinanceProvider extends ChangeNotifier {
     return fid;
   }
 
+  /// `2026-08-01` — định dạng ngày BE dùng cho mọi field `period*` của Finance.
+  static String _dateOnly(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
   String _qs(Map<String, dynamic> params) {
     final entries = params.entries.where(
       (e) => e.value != null && e.value.toString().isNotEmpty,
@@ -955,19 +962,28 @@ class FinanceProvider extends ChangeNotifier {
     goals = _list(data).map(FinancialGoal.fromJson).toList();
   }
 
+  /// Bản khai của **tháng hiện tại**. Cố ý không đi theo kỳ người dùng đang
+  /// xem: `upsertMonthlyFinance` dùng field này để chọn POST hay PUT, và màn
+  /// khai báo (`edit_profile_screen`) luôn khai cho tháng này. Muốn đọc kỳ khác
+  /// thì dùng [fetchMonthlyFinanceFor] — nó không đụng vào state chung.
   Future<void> _fetchMonthlyFinance() async {
-    final now = DateTime.now();
     try {
-      final data = await ApiClient.instance.get(
-        '/families/$_fid/finance/monthly-finances/me${_qs({'month': now.month, 'year': now.year})}',
-      );
-      monthlyFinance = data is Map<String, dynamic> && data.isNotEmpty
-          ? MonthlyFinance.fromJson(data)
-          : null;
+      monthlyFinance = await fetchMonthlyFinanceFor(FinancePeriod.current());
     } catch (e) {
       debugPrint('FinanceProvider: fetchMonthlyFinance failed: $e');
       monthlyFinance = null;
     }
+  }
+
+  /// Đọc bản khai tài chính của chính mình ở một kỳ bất kỳ (không cache).
+  Future<MonthlyFinance?> fetchMonthlyFinanceFor(FinancePeriod period) async {
+    final data = await ApiClient.instance.get(
+      '/families/$_fid/finance/monthly-finances/me'
+      '${_qs({'month': period.month, 'year': period.year})}',
+    );
+    return data is Map<String, dynamic> && data.isNotEmpty
+        ? MonthlyFinance.fromJson(data)
+        : null;
   }
 
   // ── Mutations: Model / Jar ───────────────────────────────────────────────
@@ -1182,16 +1198,22 @@ class FinanceProvider extends ChangeNotifier {
     double? expectedSharedExpense,
     List<Map<String, dynamic>> lines = const [],
   }) async {
-    final res = await ApiClient.instance
-        .post('/families/$_fid/finance/budget-plans', {
-          'planName': planName,
-          'periodType': periodType,
-          'periodStart': periodStart.toIso8601String(),
-          'periodEnd': periodEnd.toIso8601String(),
-          'expectedSharedIncome': ?expectedSharedIncome,
-          'expectedSharedExpense': ?expectedSharedExpense,
-          'lines': lines,
-        });
+    final res = await ApiClient.instance.post(
+      '/families/$_fid/finance/budget-plans',
+      {
+        'planName': planName,
+        'periodType': periodType,
+        // `CreateBudgetPlanDto` khai `periodStart`/`periodEnd` dạng chuỗi ngày
+        // (`2026-06-01`). `toIso8601String()` gửi kèm giờ local không timezone
+        // (`2026-08-02T11:11:23.456`) — lệch contract, và là một trong hai
+        // nghi phạm của lỗi "Lỗi hệ thống" khi tạo kế hoạch (2026-08-02).
+        'periodStart': _dateOnly(periodStart),
+        'periodEnd': _dateOnly(periodEnd),
+        'expectedSharedIncome': ?expectedSharedIncome,
+        'expectedSharedExpense': ?expectedSharedExpense,
+        'lines': lines,
+      },
+    );
 
     // `lines` is part of CreateBudgetPlanDto.  Some deployed BE versions
     // created the plan but silently omitted those nested lines.  Verify the
@@ -1267,15 +1289,18 @@ class FinanceProvider extends ChangeNotifier {
     double? expectedSharedIncome,
     double? expectedSharedExpense,
   }) async {
-    await ApiClient.instance
-        .patch('/families/$_fid/finance/budget-plans/$planId', {
-          'planName': ?planName,
-          'periodType': ?periodType,
-          'periodStart': ?periodStart?.toIso8601String(),
-          'periodEnd': ?periodEnd?.toIso8601String(),
-          'expectedSharedIncome': ?expectedSharedIncome,
-          'expectedSharedExpense': ?expectedSharedExpense,
-        });
+    await ApiClient.instance.patch(
+      '/families/$_fid/finance/budget-plans/$planId',
+      {
+        'planName': ?planName,
+        'periodType': ?periodType,
+        // Cùng định dạng ngày với create — xem ghi chú ở `createBudgetPlan`.
+        'periodStart': ?(periodStart == null ? null : _dateOnly(periodStart)),
+        'periodEnd': ?(periodEnd == null ? null : _dateOnly(periodEnd)),
+        'expectedSharedIncome': ?expectedSharedIncome,
+        'expectedSharedExpense': ?expectedSharedExpense,
+      },
+    );
     await _fetchBudgetPlans();
     notifyListeners();
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_period.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -9,6 +10,8 @@ import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/money_input.dart';
+import '../../widgets/month_start_checklist.dart';
+import '../../widgets/month_switcher.dart';
 import '../../widgets/ring_chart.dart';
 
 class ChildWalletScreen extends StatefulWidget {
@@ -27,6 +30,10 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
   double? _actualSpent; // actualPersonalExpense (nếu BE trả về)
   bool _loadingFinance = false;
   String? _financeError;
+
+  /// Kỳ đang xem. Hạn mức đã khai của tháng trước vẫn phải tra lại được — đó là
+  /// căn cứ duy nhất để biết tháng này nên khai bao nhiêu.
+  FinancePeriod _period = FinancePeriod.current();
 
   // AuthProvider listener — fix StatefulShellRoute pre-build
   AuthProvider? _authListener;
@@ -72,10 +79,9 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     });
 
     try {
-      final now = DateTime.now();
       final data = await ApiClient.instance.get(
         '/families/$fid/finance/monthly-finances/me'
-        '?month=${now.month}&year=${now.year}',
+        '?month=${_period.month}&year=${_period.year}',
       );
 
       final allowance = _parseNum(data, 'expectedPersonalExpense');
@@ -131,6 +137,15 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     ]);
   }
 
+  Future<void> _changePeriod(FinancePeriod period) async {
+    setState(() => _period = period);
+    await Future.wait([
+      _fetchMonthlyFinance(),
+      if (mounted)
+        context.read<WalletProvider>().fetchWallets(period: period),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     context.watch<AuthProvider>(); // rebuild khi auth thay đổi
@@ -172,7 +187,23 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+
+              MonthSwitcher(
+                period: _period,
+                enabled: !_loadingFinance,
+                onChanged: _changePeriod,
+              ),
+              const SizedBox(height: 16),
+
+              // Thành viên thường chỉ có đúng một việc đầu tháng — nhưng đó là
+              // việc quyết định toàn bộ màn này có số hay không, và trước đây
+              // chỗ khai báo chỉ được mô tả bằng chữ chứ không bấm vào được.
+              MonthStartChecklist(
+                period: _period,
+                canManageFinance:
+                    context.watch<AuthProvider>().user?.canManageFinance == true,
+              ),
 
               // ── Balance / Allowance card ──────────────────────
               Container(
@@ -504,7 +535,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
         const Text('📋', style: TextStyle(fontSize: 32)),
         const SizedBox(height: 8),
         Text(
-          'Chưa khai báo hạn mức tháng',
+          'Chưa khai báo hạn mức ${_period.label.toLowerCase()}',
           style: GoogleFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -513,7 +544,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
         ),
         const SizedBox(height: 4),
         Text(
-          'Vào Hồ sơ → Tài chính tháng để khai báo\nhạn mức chi tiêu cá nhân.',
+          _period.isCurrent
+              ? 'Vào Hồ sơ → Tài chính tháng để khai báo\nhạn mức chi tiêu cá nhân.'
+              // Màn khai báo chỉ ghi cho tháng hiện tại — nói rõ để người dùng
+              // không đi tìm chỗ khai bù cho kỳ đã qua.
+              : 'Kỳ này bạn không khai báo. Chỉ khai được cho tháng hiện tại.',
           style: GoogleFonts.inter(
             fontSize: 12,
             color: context.colors.textMuted,

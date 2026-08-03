@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/finance_period.dart';
 import '../services/api_client.dart';
 
 // Đại diện cho 1 jar trong finance model (5 Jars, 80-20, v.v.)
@@ -147,6 +148,11 @@ class OverviewData {
 }
 
 class WalletProvider extends ChangeNotifier {
+  /// Kỳ đang xem. Giữ ở provider chứ không ở screen: mọi mutation (ghi/sửa/xóa
+  /// giao dịch) đều gọi lại `fetchWallets()` không tham số, nếu kỳ nằm ở screen
+  /// thì sau mỗi lần ghi màn sẽ âm thầm nhảy về tháng hiện tại.
+  FinancePeriod _period = FinancePeriod.current();
+
   OverviewData? _familyOverview;
   List<LedgerEntry> _entries = [];
   List<JarData> _jars = [];
@@ -167,6 +173,9 @@ class WalletProvider extends ChangeNotifier {
   final int _entriesLimit = 20;
   int? _entriesTotalPages;
   bool _loadingMoreEntries = false;
+
+  FinancePeriod get period => _period;
+  bool get isViewingCurrentPeriod => _period.isCurrent;
 
   List<OverviewData> get wallets =>
       _familyOverview != null ? [_familyOverview!] : [];
@@ -202,9 +211,13 @@ class WalletProvider extends ChangeNotifier {
   List<OverviewData> get memberWallets => [];
 
   // GET /families/{familyId}/finance/overview + /finance/ledger/entries
-  Future<void> fetchWallets() async {
+  //
+  // [period] null = giữ nguyên kỳ đang xem (mọi mutation gọi kiểu này). Truyền
+  // kỳ cụ thể khi người dùng bấm chuyển tháng trên `MonthSwitcher`.
+  Future<void> fetchWallets({FinancePeriod? period}) async {
     final api = ApiClient.instance;
     if (api.familyId == null) return;
+    if (period != null) _period = period;
     _loading = true;
     _error = null;
     notifyListeners();
@@ -225,10 +238,8 @@ class WalletProvider extends ChangeNotifier {
   }
 
   Future<void> _fetchOverview() async {
-    final now = DateTime.now();
-    final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
-    final end =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+    final start = _period.startIso;
+    final end = _period.endIso;
     dynamic data;
     try {
       // New documented Finance home contract.
@@ -253,7 +264,7 @@ class WalletProvider extends ChangeNotifier {
       // Keep compatibility with the existing overview endpoint below.
     }
     data = await ApiClient.instance.get(
-      '${ApiClient.instance.familyPath('/finance/overview')}?month=${now.month}&year=${now.year}',
+      '${ApiClient.instance.familyPath('/finance/overview')}?month=${_period.month}&year=${_period.year}',
     );
     if (data is Map) {
       _familyOverview = OverviewData(
@@ -274,10 +285,8 @@ class WalletProvider extends ChangeNotifier {
   }
 
   Future<void> _fetchDashboardSummaries() async {
-    final now = DateTime.now();
-    final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
-    final end =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+    final start = _period.startIso;
+    final end = _period.endIso;
     final base = ApiClient.instance.familyPath('/finance');
     Future<Map<String, dynamic>?> read(String path) async {
       try {
@@ -302,10 +311,8 @@ class WalletProvider extends ChangeNotifier {
 
   Future<void> _fetchReport() async {
     try {
-      final now = DateTime.now();
-      final start = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
-      final end =
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${_lastDay(now)}';
+      final start = _period.startIso;
+      final end = _period.endIso;
       final data = await ApiClient.instance.get(
         '${ApiClient.instance.familyPath('/finance/reports/overview')}?periodStart=$start&periodEnd=$end&includeBreakdown=true&includeAlerts=true&includeGoals=false',
       );
@@ -321,11 +328,6 @@ class WalletProvider extends ChangeNotifier {
       debugPrint('WalletProvider: fetchReport failed: $e');
       _report = null;
     }
-  }
-
-  static String _lastDay(DateTime d) {
-    final last = DateTime(d.year, d.month + 1, 0);
-    return last.day.toString().padLeft(2, '0');
   }
 
   int? _readTotalPages(dynamic data, int fetchedCount) {
@@ -345,11 +347,10 @@ class WalletProvider extends ChangeNotifier {
 
   Future<void> _fetchEntries({bool refresh = true}) async {
     try {
-      final now = DateTime.now();
       final nextPage = refresh ? 1 : _entriesPage + 1;
       final data = await ApiClient.instance.get(
         '${ApiClient.instance.familyPath('/finance/ledger/entries')}'
-        '?page=$nextPage&limit=$_entriesLimit&month=${now.month}&year=${now.year}',
+        '?page=$nextPage&limit=$_entriesLimit&month=${_period.month}&year=${_period.year}',
       );
       final list = data is List
           ? data
@@ -432,7 +433,9 @@ class WalletProvider extends ChangeNotifier {
           'sourceType': ?sourceType,
           'sourceId': ?sourceId,
         });
-    await fetchWallets();
+    // `entryDate` luôn là thời điểm hiện tại → giao dịch vừa ghi thuộc tháng
+    // này. Nếu người dùng đang xem kỳ cũ mà giữ nguyên kỳ, họ sẽ tưởng ghi hụt.
+    await fetchWallets(period: FinancePeriod.current());
   }
 
   /// GET /families/{familyId}/finance/ledger/entries/{entryId}

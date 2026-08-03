@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/finance_period.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 
@@ -467,11 +468,22 @@ GoRouter createRouter(AuthProvider auth) {
       ),
       GoRoute(
         path: '/manager/goal-detail',
-        builder: (_, state) => GoalDetailScreen(
-          goalId: state.uri.queryParameters['goalId'] ?? '',
-          // surplus=1: mở sẵn sheet phân bổ số dư (đi từ màn tổng quan tài chính).
-          autoOpenSurplus: state.uri.queryParameters['surplus'] == '1',
-        ),
+        builder: (_, state) {
+          // period=2026-07: mở sheet phân bổ ở đúng kỳ đó (card "Kết chuyển
+          // tháng trước"). Sai định dạng thì bỏ qua, sheet về mặc định tháng này.
+          final raw = state.uri.queryParameters['period'] ?? '';
+          final parts = raw.split('-');
+          final year = parts.length == 2 ? int.tryParse(parts[0]) : null;
+          final month = parts.length == 2 ? int.tryParse(parts[1]) : null;
+          return GoalDetailScreen(
+            goalId: state.uri.queryParameters['goalId'] ?? '',
+            // surplus=1: mở sẵn sheet phân bổ số dư (đi từ màn tổng quan tài chính).
+            autoOpenSurplus: state.uri.queryParameters['surplus'] == '1',
+            surplusPeriod: (year != null && month != null && month >= 1 && month <= 12)
+                ? FinancePeriod(year, month)
+                : null,
+          );
+        },
       ),
       GoRoute(
         // Manager/Deputy xem tài chính tháng của member (memberId rỗng = của mình)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_period.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
@@ -13,6 +14,8 @@ import '../../theme/app_surface_colors.dart';
 import '../../theme/app_ui_tokens.dart';
 import '../../widgets/app_card.dart';
 import '../../widgets/empty_state.dart';
+import '../../widgets/month_start_checklist.dart';
+import '../../widgets/month_switcher.dart';
 import '../../widgets/ring_chart.dart';
 import '../../widgets/retry_state.dart';
 import '../../widgets/waffle_chart.dart';
@@ -53,6 +56,11 @@ class _WalletScreenState extends State<WalletScreen> {
   String? _jarTargetReportError;
   String? _jarTargetReportModelId;
 
+  /// Số dư chưa phân bổ của **kỳ liền trước kỳ đang xem** — nguồn dữ liệu cho
+  /// card "Kết chuyển tháng trước".
+  SurplusAvailability? _carrySurplus;
+  bool _carrySurplusLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +77,48 @@ class _WalletScreenState extends State<WalletScreen> {
     ]);
     if (!mounted) return;
     await _loadJarTargetActualReport();
+    if (!mounted) return;
+    await _loadCarrySurplus();
+  }
+
+  /// Đổi kỳ: sổ chung do `WalletProvider` giữ, còn báo cáo theo hũ và số dư kỳ
+  /// trước là state cục bộ của màn này nên phải nạp lại thủ công.
+  Future<void> _changePeriod(FinancePeriod period) async {
+    await context.read<WalletProvider>().fetchWallets(period: period);
+    if (!mounted) return;
+    await _loadJarTargetActualReport();
+    if (!mounted) return;
+    await _loadCarrySurplus();
+  }
+
+  /// Đọc `surplus-availability` của kỳ liền trước.
+  ///
+  /// Chỉ Manager/Deputy gọi được — BE trả 403 với thành viên thường, nên chặn
+  /// từ FE thay vì để lỗi rơi vào catch và hiện card trống.
+  Future<void> _loadCarrySurplus() async {
+    if (context.read<AuthProvider>().user?.canManageFinance != true) {
+      if (_carrySurplus != null && mounted) {
+        setState(() => _carrySurplus = null);
+      }
+      return;
+    }
+    final previous = context.read<WalletProvider>().period.previous;
+    final finance = context.read<FinanceProvider>();
+    setState(() => _carrySurplusLoading = true);
+    try {
+      final res = await finance.fetchSurplusAvailability(
+        previous.month,
+        previous.year,
+      );
+      if (mounted) setState(() => _carrySurplus = res);
+    } catch (e) {
+      // Kỳ chưa có dữ liệu là chuyện bình thường (gia đình mới lập) — ẩn card
+      // chứ không dựng banner lỗi ở màn tổng quan.
+      debugPrint('WalletScreen: loadCarrySurplus failed: $e');
+      if (mounted) setState(() => _carrySurplus = null);
+    } finally {
+      if (mounted) setState(() => _carrySurplusLoading = false);
+    }
   }
 
   Future<void> _loadJarTargetActualReport() async {
@@ -79,6 +129,8 @@ class _WalletScreenState extends State<WalletScreen> {
     });
     try {
       final finance = context.read<FinanceProvider>();
+      // Đọc kỳ trước mọi await — sau await context có thể đã bị unmount.
+      final period = context.read<WalletProvider>().period;
       if (finance.models.isEmpty ||
           !finance.models.any((model) => model.isActive)) {
         await finance.fetchAll();
@@ -102,10 +154,9 @@ class _WalletScreenState extends State<WalletScreen> {
         return;
       }
 
-      final now = DateTime.now();
       final report = await finance.fetchJarTargetActualReport(
-        periodStart: DateTime(now.year, now.month, 1),
-        periodEnd: DateTime(now.year, now.month + 1, 0),
+        periodStart: period.start,
+        periodEnd: period.end,
         financeModelId: activeModel.id,
       );
       if (mounted) {
@@ -179,6 +230,13 @@ class _WalletScreenState extends State<WalletScreen> {
                   : ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       children: [
+                        MonthSwitcher(
+                          period: walletState.period,
+                          enabled: !walletState.isLoading,
+                          onChanged: _changePeriod,
+                        ),
+                        const SizedBox(height: 16),
+
                         _buildHeroCard(context, walletState),
                         const SizedBox(height: 20),
 
@@ -237,9 +295,30 @@ class _WalletScreenState extends State<WalletScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Tổng quỹ gia đình',
-            style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  // Trước đây ghi "Tổng quỹ gia đình" nhưng con số lấy từ
+                  // `/finance/summary` có kèm periodStart/periodEnd — gắn kỳ vào
+                  // nhãn để không ai đọc nhầm đây là quỹ luỹ kế mọi thời gian.
+                  'Quỹ gia đình · ${state.period.shortLabel}',
+                  style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => _showPeriodExplainerSheet(context, state.period),
+                behavior: HitTestBehavior.opaque,
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Icon(
+                    Icons.help_outline_rounded,
+                    size: 18,
+                    color: Colors.white70,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
@@ -252,27 +331,51 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
           ),
           Text(
-            'Tháng này +${_fmt(totalIn.round())} / -${_fmt(totalOut.round())}',
+            '${state.period.isCurrent ? 'Tháng này' : state.period.label} '
+            '+${_fmt(totalIn.round())} / -${_fmt(totalOut.round())}',
             style: GoogleFonts.inter(fontSize: 12, color: Colors.white60),
           ),
           const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _showRecordSheet(context, isIncome: true),
-                  child: _heroBtn(Icons.call_received_rounded, 'Thu'),
+          // Ghi giao dịch luôn mang ngày hôm nay → chỉ mở nút khi đang đứng ở
+          // tháng hiện tại, tránh cảnh bấm "Thu" trong kỳ cũ rồi không thấy đâu.
+          if (state.period.isCurrent)
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _showRecordSheet(context, isIncome: true),
+                    child: _heroBtn(Icons.call_received_rounded, 'Thu'),
+                  ),
                 ),
-              ),
-              Container(width: 1, height: 36, color: Colors.white30),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _showRecordSheet(context, isIncome: false),
-                  child: _heroBtn(Icons.call_made_rounded, 'Chi'),
+                Container(width: 1, height: 36, color: Colors.white30),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _showRecordSheet(context, isIncome: false),
+                    child: _heroBtn(Icons.call_made_rounded, 'Chi'),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                const Icon(
+                  Icons.history_rounded,
+                  size: 16,
+                  color: Colors.white70,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Đang xem kỳ đã qua. Quay lại "Tháng này" để ghi giao dịch.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -327,7 +430,7 @@ class _WalletScreenState extends State<WalletScreen> {
         rows: empty,
         unmappedAmount: report?.unmappedAmount ?? 0,
         note:
-            'Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u target/actual theo h\u0169 cho th\u00e1ng n\u00e0y.',
+            'Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u target/actual theo h\u0169 cho k\u1ef3 n\u00e0y.',
       );
     }
 
@@ -371,8 +474,28 @@ class _WalletScreenState extends State<WalletScreen> {
         : AppColors.safeDark;
 
     return [
+      MonthStartChecklist(
+        period: state.period,
+        canManageFinance:
+            context.watch<AuthProvider>().user?.canManageFinance == true,
+        carrySurplus: _carrySurplus,
+        onAllocateSurplus: () {
+          final goals = context.read<FinanceProvider>().activeGoals;
+          if (goals.isEmpty) return;
+          _showSurplusGoalPicker(
+            context,
+            goals,
+            period: state.period.previous,
+          );
+        },
+      ),
+
+      ..._carryOverCard(context, state),
+
       _sectionCard(
-        title: 'Ngân sách tháng này',
+        title: state.period.isCurrent
+            ? 'Ngân sách tháng này'
+            : 'Ngân sách ${state.period.label.toLowerCase()}',
         child: Column(
           children: [
             Row(
@@ -2206,9 +2329,236 @@ class _WalletScreenState extends State<WalletScreen> {
     ];
   }
 
+  /// Giải thích cơ chế kỳ ngay trong app. Câu "qua tháng mới số dư tháng cũ đi
+  /// đâu" là câu hỏi đầu tiên người dùng gặp mỗi ngày mùng 1 — trả lời tại chỗ
+  /// rẻ hơn nhiều so với để họ đi hỏi Trưởng nhóm.
+  void _showPeriodExplainerSheet(BuildContext context, FinancePeriod period) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tiền của tháng trước đi đâu?',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: sheetCtx.colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _explainerLine(
+                sheetCtx,
+                '1',
+                'Số liệu trên màn này tính theo kỳ bạn đang chọn '
+                    '(${period.label.toLowerCase()}). Sang tháng mới, các số về 0 '
+                    'vì kỳ mới chưa có giao dịch — không phải tiền biến mất.',
+              ),
+              _explainerLine(
+                sheetCtx,
+                '2',
+                'Muốn xem lại kỳ cũ: dùng thanh chuyển tháng ở đầu màn hình. '
+                    'Toàn bộ giao dịch, báo cáo và hạn mức của kỳ đó vẫn còn nguyên.',
+              ),
+              _explainerLine(
+                sheetCtx,
+                '3',
+                'Phần quỹ tháng trước chưa tiêu hết nằm ở mục "Kết chuyển" — '
+                    'nó vẫn thuộc quỹ chung cho tới khi được chuyển vào một mục '
+                    'tiêu tài chính.',
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(sheetCtx),
+                  child: const Text('Đã hiểu'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _explainerLine(BuildContext context, String index, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppColors.primary50,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              index,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                height: 1.45,
+                color: context.colors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Card "Kết chuyển tháng trước" — trả lời thẳng câu "số dư tháng cũ đi đâu".
+  ///
+  /// Cố ý **không** giới hạn theo ngày đầu tháng: số dư chưa phân bổ là một sự
+  /// thật đứng yên, BE chưa xác nhận có job tự chốt kỳ nào (xem
+  /// `PHAN_TICH_CHUYEN_THANG_TAI_CHINH_2026-08-02.md` mục 5.4). Ẩn card sau ngày
+  /// 10 sẽ dựng lại đúng cái bẫy "tiền biến mất" mà nó sinh ra để xử lý.
+  List<Widget> _carryOverCard(BuildContext context, WalletProvider state) {
+    if (context.watch<AuthProvider>().user?.canManageFinance != true) {
+      return const [];
+    }
+    final carry = _carrySurplus;
+    if (_carrySurplusLoading || carry == null || carry.availableSurplus <= 0) {
+      return const [];
+    }
+    final previous = state.period.previous;
+    // Không có mục tiêu ACTIVE thì phân bổ đi đâu — vẫn báo số dư nhưng không
+    // dựng nút dẫn vào một danh sách rỗng.
+    final goals = context.watch<FinanceProvider>().activeGoals;
+
+    return [
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.amberLight,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: const Color(0xFFFED7AA)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.savings_outlined,
+                  size: 18,
+                  color: AppColors.amberDark,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Kết chuyển ${previous.label.toLowerCase()}',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.amberDark,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${_fmt(carry.availableSurplus.round())} chưa phân bổ',
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              carry.allocatedSurplus > 0
+                  ? 'Tổng dư ${_fmt(carry.totalSurplus.round())}, đã phân bổ '
+                        '${_fmt(carry.allocatedSurplus.round())}. Phần còn lại '
+                        'vẫn nằm trong quỹ chung cho tới khi bạn chuyển đi.'
+                  : 'Số dư này vẫn nằm trong quỹ chung, chưa mất đi đâu. '
+                        'Chuyển vào một mục tiêu để tiền có đích đến rõ ràng.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.45,
+                color: AppColors.amberDark,
+              ),
+            ),
+            if (goals.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.amberText,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: const Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 18,
+                    color: Colors.white,
+                  ),
+                  label: Text(
+                    'Phân bổ số dư ${previous.shortLabel}',
+                    style: GoogleFonts.inter(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  onPressed: () =>
+                      _showSurplusGoalPicker(context, goals, period: previous),
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'Chưa có mục tiêu tài chính nào đang chạy để nhận số dư này.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
   /// Chọn mục tiêu rồi mở màn chi tiết với `surplus=1` — sheet nhập số tiền và
   /// kiểm tra số dư khả dụng đã có sẵn ở đó, không nhân bản lại logic.
-  void _showSurplusGoalPicker(BuildContext context, List<FinancialGoal> goals) {
+  ///
+  /// [period] null = sheet mở ở tháng hiện tại (lối vào cũ). Card "Kết chuyển"
+  /// truyền kỳ cũ vào để không bắt người dùng tự dò lại tháng.
+  void _showSurplusGoalPicker(
+    BuildContext context,
+    List<FinancialGoal> goals, {
+    FinancePeriod? period,
+  }) {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: context.colors.surface,
@@ -2264,9 +2614,19 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                     onTap: () {
                       Navigator.pop(sheetCtx);
-                      context.push(
-                        '/manager/goal-detail?goalId=${goal.id}&surplus=1',
-                      );
+                      final periodQuery = period == null
+                          ? ''
+                          : '&period=${period.year}-${period.month}';
+                      context
+                          .push(
+                            '/manager/goal-detail'
+                            '?goalId=${goal.id}&surplus=1$periodQuery',
+                          )
+                          // Phân bổ xong thì số dư kỳ đó đã đổi — nạp lại để
+                          // card "Kết chuyển" không hiện số cũ.
+                          .then((_) {
+                            if (mounted) _loadCarrySurplus();
+                          });
                     },
                   );
                 },
