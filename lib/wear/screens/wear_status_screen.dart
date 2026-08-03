@@ -74,6 +74,7 @@ class _WearStatusScreenState extends State<WearStatusScreen> {
             : 'Vị trí đang cập nhật...',
         latitude: loc?.latitude,
         longitude: loc?.longitude,
+        sourceType: 'WEARABLE',
       );
     } catch (_) {}
     await Future.delayed(const Duration(seconds: 10));

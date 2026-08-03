@@ -26,6 +26,7 @@ import 'providers/theme_mode_controller.dart';
 import 'theme/app_surface_colors.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
+import 'wear/wear_root.dart';
 
 void main() {
   runApp(
@@ -104,6 +105,23 @@ class _FamilyCareAppState extends State<FamilyCareApp> {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: _router,
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.maybeOf(context);
+        if (mediaQuery != null && _isWearDisplay(mediaQuery)) {
+          return const WearNavigatorRoot();
+        }
+        return child ?? const SizedBox.shrink();
+      },
     );
+  }
+
+  bool _isWearDisplay(MediaQueryData mediaQuery) {
+    final size = mediaQuery.size;
+    if (size.isEmpty) {
+      return false;
+    }
+    final shortestSide = size.shortestSide;
+    final aspectRatio = size.width / size.height;
+    return shortestSide <= 300 && aspectRatio > 0.75 && aspectRatio < 1.35;
   }
 }

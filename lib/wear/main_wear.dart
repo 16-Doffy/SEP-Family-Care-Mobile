@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/calendar_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/gps_provider.dart';
+import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/task_provider.dart';
-import 'screens/wear_home_screen.dart';
-import 'screens/wear_pairing_screen.dart';
+import 'wear_root.dart';
 
 void main() {
   runApp(
@@ -19,6 +20,8 @@ void main() {
         // Cần cho trang "Việc của tôi" và "Nhắn nhanh" trên đồng hồ.
         ChangeNotifierProvider(create: (_) => TaskProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProvider(create: (_) => CalendarProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
       ],
       child: const WearApp(),
     ),
@@ -51,31 +54,7 @@ class _WearAppState extends State<WearApp> {
           surface: Color(0xFF1A1A1A),
         ),
       ),
-      home: const _WearRoot(),
+      home: const WearRoot(),
     );
-  }
-}
-
-class _WearRoot extends StatelessWidget {
-  const _WearRoot();
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    if (auth.restoring) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(
-          child: SizedBox.square(
-            dimension: 28,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              color: Color(0xFFDC2626),
-            ),
-          ),
-        ),
-      );
-    }
-    return auth.isLoggedIn ? const WearHomeScreen() : const WearPairingScreen();
   }
 }

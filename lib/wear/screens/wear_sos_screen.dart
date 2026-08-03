@@ -1,17 +1,18 @@
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
-
-// UC57 — Trigger SOS từ Wearable (hold 2 giây)
+import '../wear_widgets.dart';
 
 class WearSosScreen extends StatefulWidget {
   const WearSosScreen({super.key});
+
   @override
   State<WearSosScreen> createState() => _WearSosScreenState();
 }
@@ -26,8 +27,8 @@ class _WearSosScreenState extends State<WearSosScreen>
   int _countdown = 2;
   Timer? _holdTimer;
 
-  late AnimationController _pulse;
-  late Animation<double> _scale;
+  late final AnimationController _pulse;
+  late final Animation<double> _scale;
 
   @override
   void initState() {
@@ -37,33 +38,37 @@ class _WearSosScreenState extends State<WearSosScreen>
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
     _scale = Tween<double>(
-      begin: 1.0,
-      end: 1.1,
+      begin: 1,
+      end: 1.08,
     ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<GpsProvider>().fetchFamilyLocations();
-    });
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<GpsProvider>().fetchFamilyLocations(),
+    );
   }
 
   @override
   void dispose() {
-    _pulse.dispose();
     _holdTimer?.cancel();
+    _pulse.dispose();
     super.dispose();
   }
 
   void _onHoldStart() {
+    if (_sent || _sending) return;
     HapticFeedback.mediumImpact();
     _pulse.stop();
     setState(() {
       _holding = true;
       _countdown = 2;
+      _error = null;
     });
-    _holdTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+    _holdTimer?.cancel();
+    _holdTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
       setState(() => _countdown--);
       HapticFeedback.heavyImpact();
       if (_countdown <= 0) {
-        t.cancel();
+        timer.cancel();
         _triggerSOS();
       }
     });
@@ -85,6 +90,7 @@ class _WearSosScreenState extends State<WearSosScreen>
       _holding = false;
     });
     HapticFeedback.heavyImpact();
+
     try {
       final myId = context.read<AuthProvider>().user?.id ?? '';
       final gps = context.read<GpsProvider>();
@@ -92,47 +98,41 @@ class _WearSosScreenState extends State<WearSosScreen>
           .where((s) => s.userId == myId && s.latitude != null)
           .firstOrNull;
       final alertId = await context.read<SosProvider>().sendSos(
-        message: 'SOS khẩn cấp từ đồng hồ FamilyCare',
+        message: 'SOS từ đồng hồ FamilyCare',
         address: loc != null
             ? 'GPS: ${loc.latitude?.toStringAsFixed(5)}, ${loc.longitude?.toStringAsFixed(5)}'
-            : 'Vị trí đang cập nhật...',
+            : 'Vị trí đang cập nhật',
         latitude: loc?.latitude,
         longitude: loc?.longitude,
+        sourceType: 'WEARABLE',
       );
-      if (mounted) {
-        setState(() {
-          _sentAlertId = alertId;
-          _sent = true;
-          _sending = false;
-          _error = null;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _sentAlertId = alertId;
+        _sent = true;
+        _sending = false;
+        _error = null;
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _sending = false;
-          _holding = false;
-          _countdown = 2;
-          _error = e.toString().replaceFirst('Exception: ', '');
-        });
-        _pulse.repeat(reverse: true);
-      }
+      if (!mounted) return;
+      setState(() {
+        _sending = false;
+        _holding = false;
+        _countdown = 2;
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
+      _pulse.repeat(reverse: true);
     }
   }
 
-  // Người đeo đồng hồ tự xác nhận an toàn (confirm-safety) — không dùng
-  // /cancel vì endpoint đó chỉ Manager/Deputy mới có quyền gọi.
-  void _cancelSOS() async {
+  Future<void> _confirmSafe() async {
     if (context.read<SosProvider>().sending) return;
     final alertId = _sentAlertId;
     if (alertId == null) {
-      if (mounted) {
-        setState(
-          () => _error = 'Không xác định được cảnh báo, vui lòng thử lại.',
-        );
-      }
+      setState(() => _error = 'Không xác định được cảnh báo');
       return;
     }
+
     try {
       await context.read<SosProvider>().confirmSafety(alertId);
     } catch (e) {
@@ -157,178 +157,150 @@ class _WearSosScreenState extends State<WearSosScreen>
     if (_sent) return _sentView();
 
     final size = MediaQuery.of(context).size;
-    final btnSize = min(size.width, size.height) * 0.50;
+    final buttonSize = min(size.width, size.height) * 0.46;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _holding ? 'Thả để huỷ...' : 'Giữ để gửi SOS',
-              style: GoogleFonts.inter(fontSize: 9, color: Colors.white38),
-            ),
-            const SizedBox(height: 8),
-
-            GestureDetector(
-              onTapDown: (_) => _onHoldStart(),
-              onTapUp: (_) => _onHoldEnd(),
-              onTapCancel: _onHoldEnd,
-              child: AnimatedBuilder(
-                animation: _pulse,
-                builder: (_, _) => Transform.scale(
-                  scale: _holding ? 1.06 : _scale.value,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: btnSize + 18,
-                        height: btnSize + 18,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: const Color(
-                            0xFFDC2626,
-                          ).withValues(alpha: _holding ? 0.25 : 0.1),
-                        ),
+    return WearPage(
+      child: Column(
+        children: [
+          WearHeader(
+            icon: Icons.sos_rounded,
+            label: 'SOS',
+            color: _holding ? WearPalette.sos : WearPalette.faint,
+          ),
+          const Spacer(),
+          Text(
+            _holding ? 'Thả để hủy' : 'Giữ 2 giây',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: WearPalette.faint),
+          ),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTapDown: (_) => _onHoldStart(),
+            onTapUp: (_) => _onHoldEnd(),
+            onTapCancel: _onHoldEnd,
+            child: AnimatedBuilder(
+              animation: _pulse,
+              builder: (_, child) => Transform.scale(
+                scale: _holding ? 1.04 : _scale.value,
+                child: child,
+              ),
+              child: Container(
+                width: buttonSize,
+                height: buttonSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _holding ? const Color(0xFFBE123C) : WearPalette.sos,
+                  boxShadow: [
+                    BoxShadow(
+                      color: WearPalette.sos.withValues(alpha: 0.45),
+                      blurRadius: _holding ? 22 : 12,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.emergency_share_rounded,
+                      size: 27,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _holding ? '$_countdown' : 'SOS',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
                       ),
-                      Container(
-                        width: btnSize,
-                        height: btnSize,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _holding
-                              ? const Color(0xFFB91C1C)
-                              : const Color(0xFFDC2626),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(
-                                0xFFDC2626,
-                              ).withValues(alpha: 0.5),
-                              blurRadius: _holding ? 18 : 8,
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(
-                              Icons.sos_rounded,
-                              size: 26,
-                              color: Colors.white,
-                            ),
-                            Text(
-                              _holding ? '$_countdown' : 'SOS',
-                              style: GoogleFonts.inter(
-                                fontSize: _holding ? 20 : 15,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 2,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-
-            const SizedBox(height: 8),
+          ),
+          const Spacer(),
+          const Text(
+            'Nhà sẽ nhận cảnh báo ngay',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 10, color: WearPalette.faint),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 4),
             Text(
-              '← Vuốt xem cảnh báo →',
-              style: GoogleFonts.inter(fontSize: 8, color: Colors.white24),
+              _error!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10, color: Color(0xFFFCA5A5)),
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 42),
-                child: Text(
-                  _error!,
-                  style: GoogleFonts.inter(
-                    fontSize: 7,
-                    color: const Color(0xFFFCA5A5),
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _loadingView() => Scaffold(
-    backgroundColor: Colors.black,
-    body: Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(
-            width: 36,
-            height: 36,
-            child: CircularProgressIndicator(
-              color: Color(0xFFDC2626),
-              strokeWidth: 3,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Đang gửi...',
-            style: GoogleFonts.inter(fontSize: 11, color: Colors.white60),
-          ),
-        ],
+  Widget _loadingView() {
+    return const WearPage(
+      child: WearEmptyState(
+        icon: Icons.sos_rounded,
+        title: 'Đang gửi SOS',
+        subtitle: 'Chờ trong giây lát',
+        color: WearPalette.sos,
       ),
-    ),
-  );
+    );
+  }
 
-  Widget _sentView() => Scaffold(
-    backgroundColor: Colors.black,
-    body: Center(
+  Widget _sentView() {
+    return WearPage(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.sos_rounded, size: 40, color: Color(0xFFDC2626)),
-          const SizedBox(height: 6),
-          Text(
-            'SOS Đã Gửi!',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
+          const Icon(
+            Icons.emergency_share_rounded,
+            size: 38,
+            color: WearPalette.sos,
+          ),
+          const SizedBox(height: 7),
+          const Text(
+            'SOS đã gửi',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+              color: WearPalette.text,
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            'Gia đình đã được thông báo',
-            style: GoogleFonts.inter(fontSize: 9, color: Colors.white38),
+          const Text(
+            'Gia đình đã được báo',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 10, color: WearPalette.faint),
           ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: _cancelSOS,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFDC2626), width: 1.5),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'Tôi an toàn',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFFDC2626),
-                ),
-              ),
+          const SizedBox(height: 13),
+          WearPillButton(
+            label: 'Tôi an toàn',
+            icon: Icons.check_rounded,
+            color: WearPalette.green,
+            onTap: _confirmSafe,
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              _error!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10, color: Color(0xFFFCA5A5)),
             ),
-          ),
+          ],
         ],
       ),
-    ),
-  );
+    );
+  }
 }

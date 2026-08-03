@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+
 import '../../providers/auth_provider.dart';
 import '../wear_utils.dart';
 
@@ -39,10 +40,8 @@ class _WearLoginScreenState extends State<WearLoginScreen> {
     });
     try {
       await context.read<AuthProvider>().signIn(email, password);
-      // Khi màn này là root child thì `_WearRoot` tự đổi sang WearHomeScreen
-      // nhờ isLoggedIn — không cần pop (canPop = false). Nhưng khi được push
-      // từ màn ghép nối thì root đổi ở BÊN DƯỚI route này, người dùng sẽ kẹt
-      // lại ở form đăng nhập nếu không pop.
+      // Nếu màn đăng nhập được push từ màn ghép nối, pop để WearRoot
+      // phía dưới hiển thị lại Home sau khi trạng thái đăng nhập đổi.
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
       }

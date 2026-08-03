@@ -2,14 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
-import '../wear_utils.dart';
+import '../wear_widgets.dart';
 
-/// Tin nhắn nhanh — CHỈ GỬI, không có ô nhập và không trả lời.
-///
-/// Cố ý bỏ khung chat: gõ phím trên đồng hồ là trải nghiệm tệ, và đọc hội thoại
-/// dài trên màn tròn cũng không dùng được. Ở đây chỉ có vài câu dựng sẵn để báo
-/// nhanh về nhóm gia đình; muốn trò chuyện thì mở điện thoại.
 class WearQuickMessageScreen extends StatefulWidget {
   const WearQuickMessageScreen({super.key});
 
@@ -19,23 +15,42 @@ class WearQuickMessageScreen extends StatefulWidget {
 
 class _WearQuickMessageScreenState extends State<WearQuickMessageScreen> {
   static const _presets = <String>[
-    'Con dang tren duong ve',
-    'Con den noi roi',
-    'Con on, dung lo',
-    'Goi lai cho con nhe',
-    'Con ve tre mot chut',
+    'Đang về nhà',
+    'Đã đến nơi',
+    'Con ổn',
+    'Gọi con nhé',
+    'Về trễ một chút',
   ];
 
   bool _sending = false;
   String? _sentText;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openDefaultChat());
+  }
+
+  Future<void> _openDefaultChat() async {
+    final chat = context.read<ChatProvider>();
+    if (chat.conversationId != null) {
+      await chat.fetchMessages();
+      return;
+    }
+    await chat.openDefaultConversation();
+    chat.startPolling();
+  }
 
   Future<void> _send(String text) async {
     final chat = context.read<ChatProvider>();
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
     HapticFeedback.lightImpact();
+
     try {
-      // Chưa mở hội thoại nào thì lấy nhóm chat chung (BE tự tạo/đồng bộ nhóm
-      // này) làm đích mặc định — trên đồng hồ không có chỗ chọn hội thoại.
       if (chat.conversationId == null) {
         await chat.fetchConversations();
         if (chat.conversations.isNotEmpty) {
@@ -43,12 +58,19 @@ class _WearQuickMessageScreenState extends State<WearQuickMessageScreen> {
         }
       }
       if (chat.conversationId == null) {
-        throw Exception('Chua co hoi thoai');
+        throw Exception('Chưa có hội thoại');
       }
       await chat.sendMessage(text);
-      if (mounted) setState(() => _sentText = text);
-    } catch (_) {
-      if (mounted) setState(() => _sentText = null);
+      if (mounted) {
+        setState(() {
+          _sentText = text;
+          _error = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -56,81 +78,118 @@ class _WearQuickMessageScreenState extends State<WearQuickMessageScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final padding = WearUtils.safePadding(context);
+    final chat = context.watch<ChatProvider>();
+    final myUserId = context.watch<AuthProvider>().user?.id ?? '';
+    final recentMessages = chat.messages.where((m) => !m.isDeleted).take(4);
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(padding.left, 10, padding.right, 22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.bolt_rounded,
-                    size: 14,
-                    color: Colors.white70,
-                  ),
-                  const SizedBox(width: 5),
-                  const Text(
-                    'Nhan nhanh',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
+    return WearPage(
+      scrollable: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          WearHeader(
+            icon: Icons.message_rounded,
+            label: 'Tin nhắn',
+            color: WearPalette.green,
+            trailing: _sending
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: WearPalette.green,
                     ),
+                  )
+                : _sentText == null
+                ? null
+                : const Icon(
+                    Icons.check_circle_rounded,
+                    size: 18,
+                    color: WearPalette.green,
                   ),
-                  const Spacer(),
-                  if (_sentText != null)
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      size: 13,
-                      color: Color(0xFF22C55E),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: ListView.separated(
-                  padding: EdgeInsets.zero,
-                  itemCount: _presets.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 5),
-                  itemBuilder: (_, i) {
-                    final text = _presets[i];
-                    final justSent = _sentText == text;
-                    return GestureDetector(
-                      onTap: _sending ? null : () => _send(text),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
-                        ),
-                        decoration: BoxDecoration(
-                          color: justSent
-                              ? const Color(0xFF14532D)
-                              : const Color(0xFF171717),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Text(
-                          text,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
           ),
-        ),
+          const SizedBox(height: 8),
+          if (_error != null) ...[
+            Text(
+              _error!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: Color(0xFFFCA5A5)),
+            ),
+            const SizedBox(height: 6),
+          ],
+          const WearSectionLabel('Tin mới'),
+          if (chat.loading && chat.messages.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: WearEmptyState(
+                icon: Icons.hourglass_top_rounded,
+                title: 'Đang tải tin nhắn',
+                color: WearPalette.green,
+              ),
+            )
+          else if (recentMessages.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: WearEmptyState(
+                icon: Icons.mark_chat_unread_rounded,
+                title: 'Chưa có tin nhắn',
+                subtitle: 'Tin mới sẽ hiện ở đây',
+                color: WearPalette.faint,
+              ),
+            )
+          else
+            ...recentMessages.map((message) {
+              final mine =
+                  message.senderUserId.isNotEmpty &&
+                  message.senderUserId == myUserId;
+              final sender = mine
+                  ? 'Bạn'
+                  : (message.senderName.isEmpty
+                        ? 'Thành viên'
+                        : message.senderName);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: WearTile(
+                  icon: mine
+                      ? Icons.north_east_rounded
+                      : Icons.south_west_rounded,
+                  title: sender,
+                  subtitle: message.content.isEmpty
+                      ? _messageTypeLabel(message.messageType)
+                      : message.content,
+                  color: mine ? WearPalette.blue : WearPalette.green,
+                  filled: !mine,
+                ),
+              );
+            }),
+          const SizedBox(height: 4),
+          const WearSectionLabel('Trả lời nhanh'),
+          ..._presets.map((text) {
+            final sent = _sentText == text;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: WearTile(
+                icon: sent ? Icons.done_rounded : Icons.send_rounded,
+                title: text,
+                subtitle: sent ? 'Đã gửi' : 'Chạm để gửi',
+                color: sent ? WearPalette.green : WearPalette.blue,
+                filled: sent,
+                onTap: _sending ? null : () => _send(text),
+              ),
+            );
+          }),
+        ],
       ),
     );
+  }
+
+  String _messageTypeLabel(String type) {
+    return switch (type) {
+      'IMAGE' => 'Hình ảnh',
+      'FILE' => 'Tệp đính kèm',
+      'LOCATION' => 'Vị trí',
+      'SOS_QUICK_MESSAGE' => 'Tin SOS',
+      _ => 'Tin nhắn',
+    };
   }
 }
