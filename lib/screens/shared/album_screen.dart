@@ -381,6 +381,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
                             final status =
                                 it['moderationStatus']?.toString() ?? '';
                             final needAction = status != 'SAFE';
+                            final canRetry =
+                                status.toUpperCase() == 'PROCESSING';
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: Column(
@@ -433,6 +435,25 @@ class _AlbumScreenState extends State<AlbumScreen> {
                                               }
                                             },
                                           ),
+                                          if (canRetry) ...[
+                                            const SizedBox(width: 8),
+                                            _queueAction(
+                                              label: 'Thử quét lại',
+                                              color: AppColors.link,
+                                              onTap: () async {
+                                                try {
+                                                  await album.retryModeration(
+                                                    mediaId,
+                                                  );
+                                                  if (ctx.mounted) {
+                                                    setSheet(() {});
+                                                  }
+                                                } catch (e) {
+                                                  _snack(e);
+                                                }
+                                              },
+                                            ),
+                                          ],
                                           const SizedBox(width: 8),
                                         ],
                                       ),

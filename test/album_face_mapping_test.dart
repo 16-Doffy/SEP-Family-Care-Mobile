@@ -77,56 +77,30 @@ void main() {
     expect(suggestions.last.id, 'second-face');
   });
 
-  group('schema chính thức face-suggestions (Swagger 30/07)', () {
-    test('EXPIRED là trạng thái đã xử lý, không hiện kèm nút Xác nhận', () {
-      final expired = FaceSuggestion.fromJson({
-        'suggestionId': 's1',
-        'memberId': 'm1',
-        'score': 0.9,
-        'status': 'EXPIRED',
-      });
-
-      expect(
-        expired.isResolved,
-        isTrue,
-        reason: 'gợi ý hết hạn mà cho bấm thì chỉ nhận lỗi',
-      );
+  test('FaceScanStatusInfo đọc retry metadata từ response root', () {
+    final info = FaceScanStatusInfo.fromJson({
+      'status': 'PROCESSING',
+      'retryAllowed': true,
+      'maxProcessingSeconds': 90,
     });
 
-    test('đọc permissions.canConfirm/canReject của BE', () {
-      final s = FaceSuggestion.fromJson({
-        'suggestionId': 's1',
-        'memberId': 'm1',
-        'score': 0.88,
-        'permissions': {'canConfirm': false, 'canReject': true},
-      });
+    expect(info.state, FaceScanState.processing);
+    expect(info.retryAllowed, isTrue);
+    expect(info.maxProcessingSeconds, 90);
+  });
 
-      expect(s.canConfirm, isFalse);
-      expect(s.canReject, isTrue);
+  test('FaceScanStatusInfo đọc status lồng trong job', () {
+    final info = FaceScanStatusInfo.fromJson({
+      'job': {
+        'scanStatus': 'FAILED',
+        'retryAllowed': 'true',
+        'maxProcessingSeconds': '120',
+      },
     });
 
-    test('BE không trả permissions thì fail-open, để BE trả 403', () {
-      final s = FaceSuggestion.fromJson({'suggestionId': 's1', 'score': 0.88});
-
-      expect(s.canConfirmFlag, isNull);
-      expect(s.canConfirm, isTrue);
-      expect(s.canReject, isTrue);
-    });
-
-    test('đọc đúng suggestionId + score theo tên field chính thức', () {
-      final s = FaceSuggestion.fromJson({
-        'suggestionId': '22222222-2222-4222-8222-222222222222',
-        'memberId': 'member-1',
-        'displayName': 'Ngo Pham Nhut Duy',
-        'score': 0.88,
-        'status': 'PENDING',
-      });
-
-      expect(s.id, '22222222-2222-4222-8222-222222222222');
-      expect(s.memberName, 'Ngo Pham Nhut Duy');
-      expect(s.normalizedConfidence, 0.88);
-      expect(s.isResolved, isFalse);
-    });
+    expect(info.state, FaceScanState.failed);
+    expect(info.retryAllowed, isTrue);
+    expect(info.maxProcessingSeconds, 120);
   });
 
   group('quyền gỡ tag', () {

@@ -294,6 +294,16 @@ class AlbumProvider extends ChangeNotifier {
     await fetchDetail(mediaId);
   }
 
+  /// Tạo moderation job mới cho media bị kẹt PROCESSING quá stale timeout.
+  /// BE tự quyết định đã đủ stale hay chưa và trả lỗi nghiệp vụ nếu chưa đủ.
+  Future<void> retryModeration(String mediaId) async {
+    await ApiClient.instance.post(
+      '/families/$_fid/albums/media/$mediaId/moderation/retry',
+      {},
+    );
+    await fetchDetail(mediaId);
+  }
+
   String _qs(Map<String, dynamic> params) {
     final entries = params.entries.where(
       (e) => e.value != null && e.value.toString().isNotEmpty,

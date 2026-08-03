@@ -131,10 +131,12 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET/PATCH .../moderation` (xem/duyệt tay: `ManualModerationReviewDto {decision: MARK_SAFE | KEEP_FLAGGED, reviewNote}` — cả 2 field bắt buộc) · `POST .../moderation/retry`
 - `GET /albums/moderation` — **hàng đợi kiểm duyệt toàn gia đình** (Manager/Deputy), item kèm `latestModeration {resultStatus, riskScore, summary}` (AI heuristic) + `fileAccess {url}` (signed URL hết hạn). Wire: `fetchModerationQueue` + sheet 🛡️ trên AppBar Album.
 - File URL là **signed URL có hạn** (`expiresInSeconds`) — không cache lâu.
-- **[MỚI 2026-07-27, wire FE] Face Profile validate:** `POST /face-profiles/{memberId}/validate` là multipart field `files` (3–5 ảnh). FE đọc `canEnroll` và `results[]/reasonCode`, chỉ cho đăng ký khi `canEnroll=true`; nếu endpoint chưa bật và trả `404/405/501`, FE fallback sang luồng enroll hiện tại để không chặn vận hành. ⚠️ [VERIFY WITH OFFICIAL SOURCE] Swagger hiện chưa có response DTO/schema cho validate, FE parse phòng thủ theo ghi chú BE.
+- **[MỚI 2026-07-27, wire FE] Face Profile validate:** `POST /face-profiles/{memberId}/validate` là multipart field `files` (3–5 ảnh). FE đọc `canEnroll` và `results[]/reasonCode`, chỉ cho đăng ký khi `canEnroll=true`. Nếu validate trả `404/405/501`, FE khóa enroll và yêu cầu thử lại sau (fail closed đúng contract mới). Swagger hiện chưa có response DTO/schema cho validate; mapping 4 reason code dùng theo hợp đồng BE đã gửi trực tiếp.
 - **[MỚI 2026-07-21, wire FE] Face Profile:** `POST /face-profiles/{memberId}/enroll` là multipart field `files` (Swagger bắt buộc **3–5** ảnh) + `consentConfirmed=true`; `GET /face-profiles/{memberId}` lấy trạng thái; `PATCH .../disable|enable`; `DELETE ...` body `{confirmation: 'DELETE_FACE_PROFILE'}`. UI: Member Detail → Face Profile.
 - **[MỚI 2026-07-21, wire FE] Face Suggestion:** `POST /albums/media/{mediaId}/face-scan {force?}`; `GET .../face-suggestions`; `POST .../{suggestionId}/confirm|reject`. Tag chỉ được tạo qua `confirm`; manual tag độc lập. `album.faceSuggestions` được gate theo subscription khi BE trả featureAccess đầy đủ.
-- **[SỬA 2026-07-28] Face suggestion luôn cần người dùng xác nhận:** FE không tự gọi `confirm` theo confidence. AI chỉ hiển thị gợi ý; chỉ nút **Xác nhận** của người dùng mới tạo tag chính thức, đúng flow nghiệp vụ đã chốt. Swagger vẫn chưa có response schema cho `face-suggestions`, nên tên field `confidence` và enum `status` đang parse phòng thủ; cần BE bổ sung schema/sample thật.
+- **[SỬA 2026-07-28] Face suggestion luôn cần người dùng xác nhận:** FE không tự gọi `confirm` theo confidence. AI chỉ hiển thị gợi ý; chỉ nút **Xác nhận** của người dùng mới tạo tag chính thức, đúng flow nghiệp vụ đã chốt.
+- **[MỚI 2026-07-30] Nhiều khuôn mặt trong một ảnh:** Swagger live đã có `FaceSuggestionsApiResponseDto` và example `data.faces[]`, mỗi face có candidates riêng. FE vẫn hỗ trợ thêm response phẳng để tương thích dữ liệu cũ, giữ ứng viên điểm cao nhất **theo từng face**, hiển thị confidence và yêu cầu user xác nhận trước khi tạo tag.
+- **[SỬA 2026-08-02] Scan retry/rate-limit:** GET trạng thái được parse thêm `retryAllowed` và `maxProcessingSeconds`; khi được phép, FE gọi `POST .../face-scan/retry` thay vì tạo thêm force scan. Lỗi `429 FACE_SCAN_FORCE_RESCAN_RATE_LIMITED` đọc `retryAfterSeconds`, `cooldownSeconds` và header `Retry-After`, khóa nút và đếm ngược. Swagger live vẫn thiếu response schema cho POST scan, GET status và POST retry; parser status vì vậy giữ dạng phòng thủ.
 - **[MỚI 2026-07-28] Gỡ tag — quyền fail-open:** response tag của `GET .../tags` **không** được Swagger document field quyền nào. FE đọc `permissions.canRemove`/`canRemove` nếu có, còn **thiếu thì vẫn cho bấm gỡ** và để BE trả 403 (`AlbumTag.canRemove` = `canRemoveFlag ?? true`). Lý do: tag do AI tự gắn buộc phải gỡ được, nếu default `false` thì BE thiếu field là user mắc kẹt với tag sai. Nếu BE chốt được contract quyền, sửa lại theo BE.
 
 ### Finance — Model & Jars
@@ -150,6 +152,14 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET /api/v1/families/{familyId}/finance/categories` — Danh mục tài chính.
 - `POST /api/v1/families/{familyId}/finance/categories` — Tạo danh mục. Body `CreateFinanceCategoryDto { name, categoryType, essentialType? }`.
   - `categoryType`: `INCOME | EXPENSE` · `essentialType`: `ESSENTIAL | NON_ESSENTIAL | NEUTRAL` (default `NEUTRAL`).
+
+### Finance — Category → Jar Mapping **[MỚI 2026-07-30, wire FE]**
+- `GET /api/v1/families/{familyId}/finance/category-jar-mappings?financeModelId=` — lấy mapping của ACTIVE model hoặc model chỉ định.
+- `POST /api/v1/families/{familyId}/finance/category-jar-mappings` — upsert body `{financeModelId, categoryId, jarId}`.
+- `DELETE /api/v1/families/{familyId}/finance/category-jar-mappings/{mappingId}` — bỏ mapping.
+- UI: Mô hình tài chính → **Gán danh mục vào hũ**. Chỉ map danh mục chi đang hoạt động với hũ active thuộc đúng model.
+- Khi tạo giao dịch, FE ưu tiên gửi `categoryId` và bỏ `jarId`; BE tự gán hũ theo mapping của model ACTIVE. Giao dịch cũ không có mapping giữ nguyên và nằm trong `unmapped`.
+- Swagger live đã có response DTO/example cho GET/POST/DELETE mapping. Parser FE hỗ trợ đúng object lồng `category`, `jar`, `financeModel` và vẫn chịu được field phẳng của dữ liệu cũ.
 
 ### Finance — Spending Support Requests
 - `GET /api/v1/families/{familyId}/finance/support-requests` — Danh sách. Query: `page, limit, status, requesterMemberId, categoryId, fromDate, toDate, mine`.
@@ -172,17 +182,15 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET /api/v1/families/{familyId}/finance/reports/overview` — Báo cáo tổng quan. Query: `periodStart, periodEnd, budgetPlanId, includeAlerts, includeGoals, includeBreakdown`.
 - `GET /api/v1/families/{familyId}/finance/reports/budget-goal` — Báo cáo ngân sách + mục tiêu + cảnh báo. **[wire FE 2026-07-07]** `FinanceReportsScreen` tab "Ngân sách & Mục tiêu".
 - `GET /api/v1/families/{familyId}/finance/reports/non-essential-spending` — Báo cáo chi tiêu không thiết yếu. **[wire FE 2026-07-07]** `FinanceReportsScreen` tab "Chi không thiết yếu".
-  - `[VERIFY]` Response schema của cả 3 report **không được Swagger document** (chỉ có mô tả ngắn) — FE render bằng `JsonReportView` (key-value đệ quy, generic) để không đoán sai tên field. Cần chạy thật với data thật để xác nhận field names, sau đó có thể nâng cấp UI structured hơn.
+- `GET /api/v1/families/{familyId}/finance/reports/jar-target-actual` — so sánh target % và actual % theo hũ; query `periodStart`, `periodEnd`, `financeModelId`. UI: Báo cáo tài chính → tab **Theo hũ**, dịch trạng thái `ON_TRACK | OVER_TARGET | UNDER_TARGET`.
+  - Swagger live đã có `JarTargetActualApiResponseDto`: `period`, `currency`, `financeModel`, `totals`, `items[]`, `unmapped`. FE đã wire UI có cấu trúc từ DTO này, không còn tự tính từ ledger.
+  - Report chỉ tính ledger `ACTIVE`, nhóm cash-out `EXPENSE | SUPPORT | ALLOWANCE | REWARD` trong kỳ. Entry có `jarId` thuộc model cũ/khác model đang báo cáo đi vào `unmapped.legacyJarAmount`, không cộng vào hũ mới.
 - **[FIX FE 2026-07-28] Tên field analytics — đã đoán sai, gây hiện 0đ âm thầm:**
   - `cash-flow-summary` → `data.totals` dùng **`incomeAmount` / `expenseAmount` / `adjustmentAmount` / `netCashFlow` / `netIncludingAdjustments` / `entryCount`** (`CashFlowTotalsResponseDto`), `data.byMonth[]` dùng cùng bộ key + `month: "2026-06"`. FE trước đó đọc `income`/`totalIncome`/`inflow` → luôn 0đ, trong khi `netCashFlow` khớp nên chỉ Net có số ⇒ card "Dòng tiền vào - ra" hiện Vào 0đ / Ra 0đ / Net 50 tỷ.
   - `member-contribution-summary` → `data.members[]` có tên thành viên ở **`member.displayName`** và **`member.user.fullName`** (`MemberContributionSummaryItemResponseDto`), KHÔNG có `memberName` ở cấp ngoài; số tiền là `sharedContribution` / `goalContribution` / `ledgerContributionTotal` / `totalContribution`. FE đọc `item['memberName']` nên mọi dòng rơi về fallback "Thành viên".
   - `category-spending-summary` → `data.byCategory[]` = `{categoryId, name, essentialType, amount}`. Key `name` đã khớp; "Chưa phân loại" là **dữ liệu thật** (ledger entry không có `categoryId`), không phải lỗi parse.
   - **Bài học:** endpoint analytics có schema đầy đủ trong Swagger — phải đọc `components.schemas` thay vì đoán theo tên hợp lý, vì sai tên field không sinh lỗi HTTP nào, chỉ hiện 0.
-- **[MỚI 2026-07-28, wire FE] Phân bổ theo hũ:** `POST /finance/fund-allocations {amount, periodMonth, periodYear, modelId?, note?}` đã được nối tại màn Mô hình tài chính qua nút **Chia quỹ tháng này theo mô hình**. BE trả `409` nếu mô hình/kỳ đã được chia, FE không tự retry để tránh tạo ledger entry trùng. `FinanceSpendingSummaryResponseDto.byJar` vẫn được Swagger ghi là **"Reserved"** (ví dụ `[]`), nên biểu đồ hiện tự tính trong [jar_allocation.dart](lib/utils/jar_allocation.dart): kế hoạch = `thu nhập × allocationPercentage/100`, thực chi = cộng `signedAmount < 0` của ledger entry theo `jarId`.
-  - ⚠️ `GET /finance/jars` trả hũ của **mọi mô hình** cho quản lý (member thường chỉ thấy mô hình ACTIVE) → phải lọc `financeModelId == activeModel.id` trước khi cộng, không thì lẫn hũ của mô hình cũ.
-  - ⚠️ `FinanceProvider.activeModel` fallback về model đầu tiên **kể cả DRAFT** → màn hình phải tự check `model.isActive` trước khi coi là đang áp dụng.
-  - Jar **không có** field số dư (`JarData.balance` đọc `balance`/`currentBalance` đều không có trong schema → luôn 0), nên không dùng được để suy ra thực chi; buộc phải cộng từ ledger entry.
-  - Phần chi **không gán hũ** được hiện thành dòng "Chưa gán hũ" để tổng khớp tổng chi tiêu (entry BE tự tạo như `SUPPORT` khi duyệt xin tiền không có `jarId`).
+- **[MỚI 2026-07-28, wire FE] Phân bổ theo hũ:** `POST /finance/fund-allocations {amount, periodMonth, periodYear, modelId?, note?}` đã được nối tại màn Mô hình tài chính. Dashboard và tab **Theo hũ** nay lấy `GET /reports/jar-target-actual`; file tự tính cũ `jar_allocation.dart` đã bị xóa. Form thu/chi chỉ gửi `categoryId`, không gửi `jarId`, để BE auto-map theo model ACTIVE.
 
 ### Finance — Financial Goals
 - `GET /api/v1/families/{familyId}/finance/financial-goals` — Danh sách. Query: `page, limit, status, relatedJarId, includeProgress`. `status`: `ACTIVE | ACHIEVED | CANCELED | AT_RISK`.
@@ -379,31 +387,8 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 ### CreateFinanceJarDto
 - `financeModelId`: uuid *(required)* · `name` *(required)* · `jarCode` *(required)* · `allocationPercentage`: number *(required, 0–100)* · `description` · `isActive` (default true)
 
-### [2026-07-30] Swagger ĐÃ CÓ schema chính thức — hết phải đoán
-Bản Swagger 30/07 bổ sung DTO đầy đủ cho `face-suggestions`, `jar-target-actual`, `category-jar-mappings`. Các ghi chú "[VERIFY WITH OFFICIAL SOURCE]" ở mục 29/07 bên dưới **đã được chốt**; giữ lại để truy vết lý do FE từng parse phòng thủ.
-
-**Face suggestions — contract chính thức:**
-- `data.faces[]` là contract chính: mỗi face có `faceId`, `detectionId`, `faceIndex`, `boundingBox`, `detectionScore`, `qualityScore`, `status ∈ {MATCHED, UNMATCHED, SUPERSEDED}`, và `candidates[]` riêng. `candidates: []` = phát hiện được mặt nhưng không khớp ai. `data.items[]` là flat list **cũ**, giữ để tương thích.
-- Candidate: `suggestionId`, `memberId`, `displayName`, `avatarUrl`, **`score` thang 0..1**, `secondBestScore`, `scoreMargin`, `status ∈ {PENDING, CONFIRMED, REJECTED, EXPIRED}`, `permissions {canConfirm, canReject}`.
-- **[SỬA 2026-07-30]** FE trước đó thiếu 2 thứ, đã bổ sung:
-  - **`EXPIRED`** không nằm trong `isResolved` → gợi ý hết hạn vẫn hiện kèm nút Xác nhận, bấm vào chỉ nhận lỗi.
-  - **`permissions`** không được đọc → nút Xác nhận/Từ chối vẫn bật kể cả khi BE nói không có quyền. Nay đọc `permissions`, thiếu field thì fail-open (để BE trả 403), giống quyền gỡ tag.
-- BE chỉ tạo **suggestion**; tag chính thức vẫn chỉ sinh khi user bấm ✓ — không đổi.
-
-**Face scan — rate limit & retry (FE CHƯA WIRE):**
-- `POST .../face-scan` khi ép quét lại quá nhiều: **429** + `errorCode/code = FACE_SCAN_FORCE_RESCAN_RATE_LIMITED`, `retryAfterSeconds`, `cooldownSeconds`, header `Retry-After`.
-- **`POST .../face-scan/retry`** *(endpoint mới)* — dùng khi `GET face-scan` trả `retryAllowed = true`; job `PROCESSING/PENDING` chỉ retry được sau `maxProcessingSeconds`.
-- Scan status chính thức: `PENDING, PROCESSING, COMPLETED, FAILED`.
-- ⚠️ FE hiện **chưa** xử lý 429 (hiện lỗi thô, không nói còn bao lâu) và **chưa** gọi endpoint retry.
-
-**Jar target/actual — công thức chính thức:**
-- `totals.trackedAmount = mappedAmount + unmappedAmount`; `targetAmount = trackedAmount × targetPercentage / 100`; `actualPercentage = actualAmount / trackedAmount × 100`; `status`: `ON_TRACK` khi `|variancePercentage| ≤ 5`, `OVER_TARGET` khi `> 5`, còn lại `UNDER_TARGET`.
-- Chỉ tính ledger **ACTIVE**, cash-out types **EXPENSE/SUPPORT/ALLOWANCE/REWARD**, `entryDate >= periodStart` và `< nextUtcDay(periodEnd)`.
-- ⚠️ **Giao dịch mang `jarId` của mô hình CŨ/khác model đang chọn rơi vào `unmapped.legacyJarAmount`, không cộng vào hũ của model mới.** Đây là hành vi **đúng theo spec**, không phải bug — nếu gia đình vừa đổi mô hình thì actual của hũ mới có thể bằng 0 và unmapped rất lớn. Cần đối chiếu `unmapped.legacyJarEntryCount` trước khi kết luận BE tính sai.
-- FE parser đã đọc đúng cả tên chính thức (`items`, `targetPercentage`, `actualAmount`) lẫn biến thể cũ (`byJar`, `allocationPercentage`, `spentAmount`).
-
-### [MỚI 2026-07-29, ĐÃ CHỐT SCHEMA 30/07] Mapping danh mục → hũ + report jar target/actual
-> ⚠️ **[VERIFY WITH OFFICIAL SOURCE]** Nguồn duy nhất hiện tại là **tin BE trên Discord**. Bản OpenAPI được dán kèm bị **cắt giữa** (dừng ở `wearables/{deviceId}/events`) nên **không có DTO nào của 3 endpoint dưới đây được xác nhận** — chưa biết request/response schema, tên field, hay enum. Không code theo trí nhớ; xin Swagger đầy đủ trước khi wire.
+### [HOÀN THÀNH FE 2026-08-02] Mapping danh mục → hũ + report jar target/actual
+Swagger live đã có contract và response example cho mapping/report; source mobile hiện đã wire đủ các endpoint dưới đây.
 
 **BE bổ sung flow mapping `category → jar` theo từng finance model:**
 - `GET /families/{familyId}/finance/category-jar-mappings`
@@ -417,9 +402,10 @@ Bản Swagger 30/07 bổ sung DTO đầy đủ cho `face-suggestions`, `jar-targ
 3. Giao dịch cũ chưa có mapping nằm trong nhóm **`unmapped`**; BE **không sửa lịch sử**.
 4. BE khuyến nghị FE ưu tiên chọn **category** khi nhập thu/chi, để BE auto-map hũ.
 
-**Ảnh hưởng tới code hiện tại (cần xử lý khi wire):**
-- ⚠️ Form ghi thu/chi ở [wallet_screen.dart](lib/screens/parent/wallet_screen.dart) **đang gửi `jarId`** khi user tự chọn hũ (chỉ với khoản chi). Gửi `jarId` sẽ **đè** auto-map của BE → phải chốt: bỏ hẳn picker hũ và để BE map, hay giữ làm "ghi đè thủ công" có nhãn rõ ràng.
-- `GET /finance/reports/jar-target-actual` **thay thế được** phần FE tự tính trong [jar_allocation.dart](lib/utils/jar_allocation.dart) — đây đúng là khoảng trống `byJar` ("Reserved") đã nêu. Khi wire xong nên bỏ phần tự cộng để tránh 2 nguồn số liệu lệch nhau. Lưu ý dòng "Chưa gán hũ" hiện có ứng với nhóm `unmapped` của BE.
+**Trạng thái code hiện tại:**
+- Form ghi thu/chi đã bỏ picker hũ và không gửi `jarId`; category là nguồn để BE tự map.
+- Dashboard và tab **Theo hũ** gọi `GET /finance/reports/jar-target-actual`; phần tự cộng local đã được xóa.
+- Mapping được tải/lưu/xóa theo `financeModelId`, nên đổi 5 hũ ↔ 80/20 không làm mất mapping của model trước.
 
 ### [2026-07-30] Wearable — ghép từ mobile CHƯA cấp được token cho đồng hồ
 - Luồng mới: đồng hồ hiện mã `FCW-XXXXXX`, người dùng nhập mã đó ở **Hồ sơ → Thiết bị đeo → Ghép thiết bị** (`POST /wearables`, mã đi vào `deviceIdentifier`).
@@ -430,7 +416,7 @@ Bản Swagger 30/07 bổ sung DTO đầy đủ cho `face-suggestions`, `jar-targ
 
 ### [MỚI 2026-07-29] Face AI chấm điểm từng khuôn mặt
 - BE nay **kiểm tra từng face trong ảnh** rồi lấy face có điểm cao nhất để gắn thẻ (ví dụ BE đưa: face1 `0.88`, face2 `0.5` → chọn face1).
-- ⚠️ [VERIFY WITH OFFICIAL SOURCE] Ví dụ điểm `0.88`/`0.5` cho thấy **confidence là thang 0..1**, khớp `normalizedConfidence` hiện tại — nhưng Swagger **vẫn chưa có response schema** cho `face-suggestions`, nên tên field và enum `status` vẫn đang parse phòng thủ.
+- Swagger live đã có `FaceSuggestionsApiResponseDto` và example nhiều khuôn mặt. Confidence example dùng thang `0..1`, khớp `normalizedConfidence`; parser vẫn chấp nhận `0..100` để tương thích dữ liệu cũ.
 - Việc BE chọn face điểm cao nhất **không đổi** quy tắc nghiệp vụ đã chốt: tag chính thức chỉ được tạo khi **người dùng bấm Xác nhận**.
 
 ### Hỗ trợ chi tiêu (xin tiền) — tên người gửi & lọc `mine`
@@ -457,7 +443,16 @@ Bản Swagger 30/07 bổ sung DTO đầy đủ cho `face-suggestions`, `jar-targ
 - `GET /finance/fund-allocations` sort **mới nhất trước** theo `createdAt`; filter `modelId`, `periodMonth`, `periodYear` (2 field kỳ phải truyền **cùng nhau**, thiếu một cái là `400`), `page`, `limit`.
 - Ledger entry của chia quỹ có `entryType = ADJUSTMENT` + `sourceType = MODEL_FUND_ALLOCATION`, chỉ để audit. `LedgerEntry.signedAmount` trả **0** cho các entry này — nếu tính như thu nhập thì mỗi lần chia quỹ sẽ làm tổng quỹ phình lên đúng bằng số tiền chia.
 - Handle: `400` model thiếu hũ/tổng tỷ lệ khác 100% (`INVALID_JAR_PERCENTAGE`) hoặc vượt quỹ khả dụng (`INSUFFICIENT_AVAILABLE_FUND`); `404` không có model ACTIVE/modelId sai; `409` kỳ đã chia. `401` thiếu/hết token; `403` `FAMILY_MEMBER` hoặc tài khoản chưa verify (chỉ Manager/Deputy đã verify được chia quỹ + activate + xem lịch sử).
+- Response `201 Created`, envelope `{success, message, data}`; FE render kết quả chính từ `data.items`. `data.entries` là ledger audit.
+- Handle theo code ổn định: `INVALID_FINANCE_MODEL`, `INVALID_JAR_PERCENTAGE`, `INSUFFICIENT_AVAILABLE_FUND`, `NO_ACTIVE_FINANCE_MODEL`, `FUND_ALLOCATION_ALREADY_EXISTS`.
 - FE chỉ chặn `amount` vượt số dư khi đã tải được quỹ khả dụng; BE vẫn phải validate số dư ở server để chống request trực tiếp/race condition.
+- Đây là phân loại nội bộ tiền hiện có. Ledger entry sinh ra có `entryType=ADJUSTMENT`, `sourceType=MODEL_FUND_ALLOCATION`; FE giữ để audit nhưng không cộng/trừ khỏi tổng quỹ.
+
+### Lịch sử chia quỹ — `GET /families/{familyId}/finance/fund-allocations`
+- Filter: `modelId`, cặp `periodMonth + periodYear`, `page`, `limit`.
+- Chỉ `FAMILY_MANAGER` và `DEPUTY_MEMBER`; Member nhận `403`.
+- Mỗi item giữ snapshot model/hũ/tỷ lệ/số tiền tại thời điểm chia, nên FE không dựng lại lịch sử từ cấu hình model hiện tại.
+- Khóa trùng hiện hành: `familyId + periodMonth + periodYear`. Đổi model vẫn không được chia lại cùng kỳ. Toàn bộ thao tác POST chạy atomic; lỗi một ledger entry sẽ rollback toàn bộ.
 
 ### CreateFinanceCategoryDto
 - `name` *(required)* · `categoryType`: `INCOME | EXPENSE` *(required)* · `essentialType`: `ESSENTIAL | NON_ESSENTIAL | NEUTRAL` (default `NEUTRAL`)

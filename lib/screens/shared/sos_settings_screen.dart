@@ -23,8 +23,182 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<SosProvider>().fetchSettings();
+      if (mounted) {
+        final sos = context.read<SosProvider>();
+        sos.fetchSettings();
+        sos.fetchEmergencyContacts();
+      }
     });
+  }
+
+  Future<void> _showContactForm([EmergencyContact? contact]) async {
+    final name = TextEditingController(text: contact?.contactName ?? '');
+    final phone = TextEditingController(text: contact?.phoneNumber ?? '');
+    final relation = TextEditingController(
+      text: contact?.relationshipNote ?? '',
+    );
+    final priority = TextEditingController(
+      text: contact?.priorityOrder?.toString() ?? '',
+    );
+    final formKey = GlobalKey<FormState>();
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          18,
+          20,
+          MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+        ),
+        child: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                contact == null ? 'Thêm liên hệ khẩn cấp' : 'Sửa liên hệ',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: name,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Tên liên hệ'),
+                validator: (v) => v == null || v.trim().isEmpty
+                    ? 'Vui lòng nhập tên liên hệ'
+                    : null,
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: phone,
+                keyboardType: TextInputType.phone,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(labelText: 'Số điện thoại'),
+                validator: (v) => v == null || v.trim().isEmpty
+                    ? 'Vui lòng nhập số điện thoại'
+                    : null,
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: relation,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  labelText: 'Quan hệ/ghi chú (không bắt buộc)',
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: priority,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Thứ tự ưu tiên (từ 1)',
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final value = int.tryParse(v.trim());
+                  return value == null || value < 1
+                      ? 'Thứ tự ưu tiên phải từ 1'
+                      : null;
+                },
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    if (!(formKey.currentState?.validate() ?? false)) return;
+                    final order = priority.text.trim().isEmpty
+                        ? null
+                        : int.parse(priority.text.trim());
+                    try {
+                      final sos = context.read<SosProvider>();
+                      if (contact == null) {
+                        await sos.addEmergencyContact(
+                          contactName: name.text,
+                          phoneNumber: phone.text,
+                          relationshipNote: relation.text,
+                          priorityOrder: order,
+                        );
+                      } else {
+                        await sos.updateEmergencyContact(
+                          contact.id,
+                          contactName: name.text,
+                          phoneNumber: phone.text,
+                          relationshipNote: relation.text,
+                          priorityOrder: order,
+                        );
+                      }
+                      if (sheetContext.mounted) {
+                        Navigator.pop(sheetContext, true);
+                      }
+                    } catch (e) {
+                      if (!sheetContext.mounted) return;
+                      ScaffoldMessenger.of(sheetContext).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            e.toString().replaceFirst('Exception: ', ''),
+                          ),
+                          backgroundColor: AppColors.danger,
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(
+                    contact == null ? 'Thêm liên hệ' : 'Lưu thay đổi',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    name.dispose();
+    phone.dispose();
+    relation.dispose();
+    priority.dispose();
+    if (saved == true && mounted) setState(() {});
+  }
+
+  Future<void> _deleteContact(EmergencyContact contact) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa liên hệ khẩn cấp?'),
+        content: Text('Xóa ${contact.contactName} khỏi danh bạ gia đình.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Không'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await context.read<SosProvider>().deleteEmergencyContact(contact.id);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
   }
 
   Future<void> _toggle(SosSettings next) async {
@@ -112,6 +286,75 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
                       ? (v) => _toggle(s.copyWith(locationRequired: v))
                       : null,
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Danh bạ khẩn cấp',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (canEdit)
+                      IconButton(
+                        tooltip: 'Thêm liên hệ',
+                        onPressed: _showContactForm,
+                        icon: const Icon(Icons.add_circle_outline),
+                      ),
+                  ],
+                ),
+                if (sos.emergencyContacts.isEmpty)
+                  _note('Gia đình chưa có liên hệ khẩn cấp.')
+                else
+                  ...sos.emergencyContacts.map(
+                    (contact) => Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: AppColors.dangerLight,
+                          child: const Icon(
+                            Icons.phone_in_talk_outlined,
+                            color: AppColors.danger,
+                          ),
+                        ),
+                        title: Text(contact.contactName),
+                        subtitle: Text(
+                          [
+                            contact.phoneNumber,
+                            if (contact.relationshipNote?.isNotEmpty == true)
+                              contact.relationshipNote!,
+                            if (contact.priorityOrder != null)
+                              'Ưu tiên ${contact.priorityOrder}',
+                          ].join(' · '),
+                        ),
+                        trailing: canEdit
+                            ? PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _showContactForm(contact);
+                                  } else if (value == 'delete') {
+                                    _deleteContact(contact);
+                                  }
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text('Chỉnh sửa'),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Xóa'),
+                                  ),
+                                ],
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
               ],
             ),
     );

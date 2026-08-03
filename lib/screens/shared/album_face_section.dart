@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/album_face_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
@@ -44,6 +47,10 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
   bool _loading = true;
   bool _busy = false;
   bool _scanWaitingTooLong = false;
+  bool _retryAllowed = false;
+  int? _maxProcessingSeconds;
+  int _cooldownRemaining = 0;
+  Timer? _cooldownTimer;
 
   AlbumFaceProvider get _face => context.read<AlbumFaceProvider>();
 
@@ -63,6 +70,12 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     if (!widget.isImage) {
       if (mounted) setState(() => _loading = false);
@@ -75,21 +88,25 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       return;
     }
     try {
-      var scan = await _face.fetchScanStatus(widget.mediaId);
+      var info = await _face.fetchScanInfo(widget.mediaId);
+      var scan = info.state;
       var sug = await _face.fetchSuggestions(widget.mediaId);
 
       if (_shouldAutoScan(scan, sug)) {
         try {
           await _face.requestScan(widget.mediaId);
           final result = await _pollScanStatus(waitBeforeFirstCheck: true);
-          scan = result.scan;
+          info = result.info;
+          scan = info.state;
           sug = result.suggestions;
-        } catch (_) {
+        } catch (error) {
+          _handleScanError(error, showOtherErrors: false);
           // Keep the manual scan button available if the priority scan fails.
         }
       } else if (scan == FaceScanState.processing && sug.isEmpty) {
         final result = await _pollScanStatus();
-        scan = result.scan;
+        info = result.info;
+        scan = info.state;
         sug = result.suggestions;
       }
 
@@ -98,6 +115,8 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         _scan = sug.isNotEmpty ? FaceScanState.hasSuggestions : scan;
         _suggestions = sug;
         _scanWaitingTooLong = scan == FaceScanState.processing && sug.isEmpty;
+        _retryAllowed = info.retryAllowed;
+        _maxProcessingSeconds = info.maxProcessingSeconds;
         _loading = false;
       });
     } catch (_) {
@@ -112,19 +131,19 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         scan == FaceScanState.notScanned;
   }
 
-  Future<({FaceScanState scan, List<FaceSuggestion> suggestions})>
+  Future<({FaceScanStatusInfo info, List<FaceSuggestion> suggestions})>
   _pollScanStatus({bool waitBeforeFirstCheck = false}) async {
-    var scan = FaceScanState.processing;
+    var info = const FaceScanStatusInfo(state: FaceScanState.processing);
     var suggestions = const <FaceSuggestion>[];
 
     for (var attempt = 0; attempt < 8; attempt++) {
       if (waitBeforeFirstCheck || attempt > 0) {
         await Future.delayed(const Duration(milliseconds: 1500));
       }
-      if (!mounted) return (scan: scan, suggestions: suggestions);
+      if (!mounted) return (info: info, suggestions: suggestions);
 
       try {
-        scan = await _face.fetchScanStatus(widget.mediaId);
+        info = await _face.fetchScanInfo(widget.mediaId);
         suggestions = await _face.fetchSuggestions(widget.mediaId);
       } catch (_) {
         if (attempt == 7) rethrow;
@@ -132,16 +151,24 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       }
 
       if (suggestions.isNotEmpty) {
-        return (scan: FaceScanState.hasSuggestions, suggestions: suggestions);
+        return (
+          info: FaceScanStatusInfo(
+            state: FaceScanState.hasSuggestions,
+            retryAllowed: info.retryAllowed,
+            maxProcessingSeconds: info.maxProcessingSeconds,
+          ),
+          suggestions: suggestions,
+        );
       }
+      final scan = info.state;
       if (scan == FaceScanState.scanned ||
           scan == FaceScanState.noFace ||
           scan == FaceScanState.failed) {
-        return (scan: scan, suggestions: suggestions);
+        return (info: info, suggestions: suggestions);
       }
     }
 
-    return (scan: scan, suggestions: suggestions);
+    return (info: info, suggestions: suggestions);
   }
 
   Future<void> _scanNow() async {
@@ -151,7 +178,9 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     });
     try {
       final isAlreadyProcessing = _scan == FaceScanState.processing;
-      if (!isAlreadyProcessing) {
+      if (_retryAllowed) {
+        await _face.retryScan(widget.mediaId);
+      } else if (!isAlreadyProcessing) {
         await _face.requestScan(
           widget.mediaId,
           force: _scan != FaceScanState.notScanned,
@@ -165,17 +194,51 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       setState(() {
         _scan = result.suggestions.isNotEmpty
             ? FaceScanState.hasSuggestions
-            : result.scan;
+            : result.info.state;
         _suggestions = result.suggestions;
         _scanWaitingTooLong =
-            result.scan == FaceScanState.processing &&
+            result.info.state == FaceScanState.processing &&
             result.suggestions.isEmpty;
+        _retryAllowed = result.info.retryAllowed;
+        _maxProcessingSeconds = result.info.maxProcessingSeconds;
       });
     } catch (e) {
-      _snack(e.toString().replaceFirst('Exception: ', ''));
+      _handleScanError(e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _handleScanError(Object error, {bool showOtherErrors = true}) {
+    if (error is ApiException &&
+        error.code == 'FACE_SCAN_FORCE_RESCAN_RATE_LIMITED') {
+      _startCooldown(error.retryAfterSeconds ?? error.cooldownSeconds ?? 60);
+      return;
+    }
+    if (showOtherErrors) {
+      _snack(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  void _startCooldown(int seconds) {
+    _cooldownTimer?.cancel();
+    setState(() => _cooldownRemaining = seconds.clamp(1, 86400));
+    _snack(
+      'Bạn đã yêu cầu quét lại quá nhiều lần. Vui lòng thử lại sau '
+      '$_cooldownRemaining giây.',
+    );
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldownRemaining <= 1) {
+        timer.cancel();
+        setState(() => _cooldownRemaining = 0);
+      } else {
+        setState(() => _cooldownRemaining--);
+      }
+    });
   }
 
   Future<void> _resolve(FaceSuggestion s, {required bool confirm}) async {
@@ -336,6 +399,19 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 ),
               ),
             ],
+            if (_retryAllowed && !_busy) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Tác vụ quét đã lỗi hoặc xử lý quá lâu'
+                '${_maxProcessingSeconds == null ? '' : ' (giới hạn ${_maxProcessingSeconds}s)'}. '
+                'Bấm “Thử lại tác vụ quét” để tiếp tục mà không tạo yêu cầu trùng.',
+                style: GoogleFonts.inter(
+                  fontSize: 11.5,
+                  height: 1.35,
+                  color: AppColors.danger,
+                ),
+              ),
+            ],
             if (_visibleSuggestions.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
@@ -446,10 +522,14 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         const Spacer(),
         if (widget.isSafe)
           TextButton.icon(
-            onPressed: _busy ? null : _scanNow,
+            onPressed: _busy || _cooldownRemaining > 0 ? null : _scanNow,
             icon: const Icon(Icons.center_focus_strong_rounded, size: 18),
             label: Text(
-              _scan == FaceScanState.processing
+              _cooldownRemaining > 0
+                  ? 'Thử lại sau ${_cooldownRemaining}s'
+                  : _retryAllowed
+                  ? 'Thử lại tác vụ quét'
+                  : _scan == FaceScanState.processing
                   ? 'Kiểm tra trạng thái'
                   : _scan == FaceScanState.notScanned
                   ? 'Quét khuôn mặt'
@@ -501,11 +581,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
           ),
           IconButton(
             tooltip: 'Xác nhận',
-            // BE trả permissions.canConfirm/canReject (Swagger 30/07). Không có
-            // quyền mà vẫn cho bấm thì chỉ nhận 403.
-            onPressed: _busy || !s.canConfirm
-                ? null
-                : () => _resolve(s, confirm: true),
+            onPressed: _busy ? null : () => _resolve(s, confirm: true),
             icon: const Icon(
               Icons.check_circle_rounded,
               color: AppColors.success,
@@ -513,9 +589,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
           ),
           IconButton(
             tooltip: 'Từ chối',
-            onPressed: _busy || !s.canReject
-                ? null
-                : () => _resolve(s, confirm: false),
+            onPressed: _busy ? null : () => _resolve(s, confirm: false),
             icon: const Icon(Icons.cancel_rounded, color: AppColors.textMuted),
           ),
         ],
