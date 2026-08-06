@@ -13,6 +13,15 @@ double? _num(dynamic v) {
   return double.tryParse(v.toString());
 }
 
+/// `null` khi BE không trả field (khác hẳn với `false`) để nơi gọi tự quyết định
+/// fail-open hay fail-closed.
+bool? _boolOrNull(dynamic v) {
+  if (v is bool) return v;
+  if (v == 'true') return true;
+  if (v == 'false') return false;
+  return null;
+}
+
 String _nameFrom(Map<String, dynamic>? map) {
   if (map == null) return '';
   final user =
@@ -108,9 +117,22 @@ class FaceSuggestion {
   final String memberId;
   final String memberName;
   final double? confidence; // 0..1 hoặc 0..100 tùy BE — UI tự chuẩn hóa
-  final String status; // PENDING | CONFIRMED | REJECTED
+  /// Trạng thái của **candidate** (`FaceSuggestionCandidateResponseDto.status`):
+  /// `PENDING | CONFIRMED | REJECTED | EXPIRED`.
+  final String status;
+
+  /// Trạng thái của **khuôn mặt được phát hiện**
+  /// (`DetectedFaceSuggestionResponseDto.status`:
+  /// `MATCHED | UNMATCHED | SUPERSEDED`) — trùng tên `status` với candidate nên
+  /// phải giữ riêng, xem [parseFaceSuggestions].
+  final String detectionStatus;
   final String faceKey;
   final int? faceIndex;
+
+  /// `permissions` của BE. `null` = BE không trả field → cho phép (fail-open,
+  /// để BE trả 403 quyết định), giống quyền gỡ tag ở `AlbumTag`.
+  final bool? canConfirmFlag;
+  final bool? canRejectFlag;
 
   const FaceSuggestion({
     required this.id,
@@ -118,9 +140,15 @@ class FaceSuggestion {
     this.memberName = '',
     this.confidence,
     this.status = 'PENDING',
+    this.detectionStatus = '',
     this.faceKey = '',
     this.faceIndex,
+    this.canConfirmFlag,
+    this.canRejectFlag,
   });
+
+  bool get canConfirm => canConfirmFlag ?? true;
+  bool get canReject => canRejectFlag ?? true;
 
   /// Confidence chuẩn hóa về thang 0..1 (BE có thể trả 0..1 hoặc 0..100).
   double? get normalizedConfidence {
@@ -130,10 +158,11 @@ class FaceSuggestion {
     return v.clamp(0, 1).toDouble();
   }
 
-  /// Gợi ý đã được xử lý (xác nhận / từ chối) thì không còn là việc chờ làm.
-  /// Response schema của face-suggestions vẫn để trống trong Swagger → loại theo
-  /// các trạng thái "đã xử lý" đã biết thay vì chỉ giữ đúng `PENDING`, để status
-  /// lạ vẫn hiện ra (fail-open) như phần còn lại của file.
+  /// Gợi ý đã được xử lý (xác nhận / từ chối / **hết hạn**) thì không còn là việc
+  /// chờ làm. `EXPIRED` là trạng thái chính thức trong Swagger — thiếu nó thì gợi
+  /// ý hết hạn vẫn hiện nút Xác nhận, bấm vào chỉ nhận lỗi. Các biến thể tên khác
+  /// vẫn bắt theo chuỗi con để status lạ/thiếu còn hiện ra (fail-open) như phần
+  /// còn lại của file.
   bool get isResolved {
     final s = status.toUpperCase();
     return s.contains('CONFIRM') ||
@@ -142,8 +171,15 @@ class FaceSuggestion {
         s.contains('TAGGED') ||
         s.contains('REJECT') ||
         s.contains('DECLIN') ||
-        s.contains('DISMISS');
+        s.contains('DISMISS') ||
+        s.contains('EXPIRE');
   }
+
+  /// Khuôn mặt đã bị lần quét mới thay thế (`SUPERSEDED`). Candidate bên trong
+  /// vẫn có thể là `PENDING`, nên phải lọc theo trạng thái khuôn mặt chứ không
+  /// chỉ theo [isResolved] của candidate.
+  bool get isSupersededDetection =>
+      detectionStatus.toUpperCase().contains('SUPERSED');
 
   factory FaceSuggestion.fromJson(Map<String, dynamic> j) {
     final member =
@@ -186,6 +222,9 @@ class FaceSuggestion {
       status: _str(j['status'] ?? j['state']).isEmpty
           ? 'PENDING'
           : _str(j['status'] ?? j['state']),
+      detectionStatus: _str(j['detectionStatus']),
+      canConfirmFlag: _boolOrNull(_map(j['permissions'])?['canConfirm']),
+      canRejectFlag: _boolOrNull(_map(j['permissions'])?['canReject']),
       faceKey: _str(
         j['faceId'] ??
             j['detectedFaceId'] ??
@@ -243,11 +282,21 @@ List<FaceSuggestion> parseFaceSuggestions(dynamic data) {
       flattened.add(face);
       continue;
     }
+    // `DetectedFaceSuggestionResponseDto.status` (MATCHED | UNMATCHED |
+    // SUPERSEDED) trùng tên field với `status` của candidate (PENDING |
+    // CONFIRMED | REJECTED | EXPIRED). Candidate được spread sau nên sẽ đè mất
+    // trạng thái khuôn mặt → tách ra key riêng trước khi ghép, nếu không khuôn
+    // mặt SUPERSEDED (đã bị lần quét mới thay thế) vẫn hiện như gợi ý còn hiệu
+    // lực sau khi force rescan.
+    final detectionStatus = _str(face['detectionStatus'] ?? face['status']);
     for (final candidate in candidates.whereType<Map>()) {
       final merged = <String, dynamic>{
         ...face,
         ...Map<String, dynamic>.from(candidate),
       };
+      if (detectionStatus.isNotEmpty) {
+        merged['detectionStatus'] = detectionStatus;
+      }
       // Không để list lồng nhau bị hiểu nhầm ở bước parse tiếp theo.
       for (final key in const [
         'candidates',
@@ -263,7 +312,9 @@ List<FaceSuggestion> parseFaceSuggestions(dynamic data) {
 
   final parsed = flattened
       .map(FaceSuggestion.fromJson)
-      .where((s) => s.id.isNotEmpty && !s.isResolved)
+      .where(
+        (s) => s.id.isNotEmpty && !s.isResolved && !s.isSupersededDetection,
+      )
       .toList();
   final bestByFace = <String, FaceSuggestion>{};
   final withoutFaceKey = <FaceSuggestion>[];

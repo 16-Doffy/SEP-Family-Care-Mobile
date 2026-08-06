@@ -414,6 +414,14 @@ Swagger live đã có contract và response example cho mapping/report; source m
 - **Cần BE để hoàn thiện** (chưa có trong Swagger): cơ chế đổi mã lấy token, ví dụ đồng hồ `POST /wearables/pair-code {code}` → điện thoại `POST /wearables/{deviceId}/issue-token` → đồng hồ poll `GET /wearables/pair-code/{code}` nhận token. Có hợp đồng này rồi mới bỏ được lối đăng nhập trên đồng hồ.
 - Ghi chú: nhóm `/wearables` **không có** trong `family-care-api.json` của repo (file đã lỗi thời) — chỉ có trong Swagger live.
 
+### [SỬA 2026-08-04] Face suggestions — 3 lệch so với schema chính thức
+Schema chính thức trong OpenAPI: `DetectedFaceSuggestionResponseDto` (`faceId`, `detectionId`, `faceIndex`, `boundingBox`, `detectionScore`, `qualityScore`, **`status: MATCHED | UNMATCHED | SUPERSEDED`**, `candidates[]`) và `FaceSuggestionCandidateResponseDto` (`suggestionId`, `memberId`, `displayName`, `avatarUrl`, `score` 0..1, `secondBestScore`, `scoreMargin`, **`status: PENDING | CONFIRMED | REJECTED | EXPIRED`**, **`permissions { canConfirm, canReject }`** — cả 2 field permissions đều `required`).
+
+- **`EXPIRED` không được tính là đã xử lý** → gợi ý hết hạn vẫn hiện nút Xác nhận, bấm vào chỉ nhận lỗi. Nay `FaceSuggestion.isResolved` bắt thêm `EXPIRE`.
+- **`permissions.canConfirm/canReject` bị bỏ qua hoàn toàn** → nút ✓/✗ luôn bật kể cả khi BE nói không có quyền, bấm là 403. Nay đọc `permissions`; **thiếu field thì fail-open** để BE trả 403 quyết định (giống quyền gỡ tag ở `AlbumTag`).
+- **`status` của khuôn mặt bị `status` của candidate đè.** Hai DTO **trùng tên field `status`** nhưng enum khác nhau; bước làm phẳng `{...face, ...candidate}` spread candidate sau nên mất trạng thái khuôn mặt → khuôn mặt `SUPERSEDED` (đã bị lần force rescan mới thay thế) vẫn hiện như gợi ý còn hiệu lực. Nay tách sang key riêng `detectionStatus` trước khi ghép và lọc bằng `isSupersededDetection`.
+- 3 lệch trên từng được vá ở commit `e580b97` rồi **bị commit đồng bộ main `f947469` ghi đè mất** (kèm cả test). Đã khôi phục + khoá lại bằng 5 test trong `test/album_face_mapping_test.dart` để lần merge sau không im lặng mất nữa.
+
 ### [MỚI 2026-07-29] Face AI chấm điểm từng khuôn mặt
 - BE nay **kiểm tra từng face trong ảnh** rồi lấy face có điểm cao nhất để gắn thẻ (ví dụ BE đưa: face1 `0.88`, face2 `0.5` → chọn face1).
 - Swagger live đã có `FaceSuggestionsApiResponseDto` và example nhiều khuôn mặt. Confidence example dùng thang `0..1`, khớp `normalizedConfidence`; parser vẫn chấp nhận `0..100` để tương thích dữ liệu cũ.

@@ -77,6 +77,101 @@ void main() {
     expect(suggestions.last.id, 'second-face');
   });
 
+  group('schema chính thức face-suggestions (Swagger)', () {
+    test('EXPIRED là trạng thái đã xử lý, không hiện kèm nút Xác nhận', () {
+      final expired = FaceSuggestion.fromJson({
+        'suggestionId': 's1',
+        'memberId': 'm1',
+        'score': 0.9,
+        'status': 'EXPIRED',
+      });
+
+      expect(
+        expired.isResolved,
+        isTrue,
+        reason: 'gợi ý hết hạn mà cho bấm thì chỉ nhận lỗi',
+      );
+    });
+
+    test('đọc permissions.canConfirm/canReject của BE', () {
+      final s = FaceSuggestion.fromJson({
+        'suggestionId': 's1',
+        'memberId': 'm1',
+        'score': 0.88,
+        'permissions': {'canConfirm': false, 'canReject': true},
+      });
+
+      expect(s.canConfirm, isFalse);
+      expect(s.canReject, isTrue);
+    });
+
+    test('BE không trả permissions thì fail-open, để BE trả 403', () {
+      final s = FaceSuggestion.fromJson({
+        'suggestionId': 's1',
+        'memberId': 'm1',
+        'score': 0.88,
+      });
+
+      expect(s.canConfirm, isTrue);
+      expect(s.canReject, isTrue);
+    });
+
+    test('khuôn mặt SUPERSEDED bị loại dù candidate còn PENDING', () {
+      final suggestions = parseFaceSuggestions({
+        'faces': [
+          {
+            'faceId': 'face-cu',
+            'faceIndex': 0,
+            'status': 'SUPERSEDED',
+            'candidates': [
+              {'suggestionId': 'cu', 'memberId': 'm1', 'score': 0.9},
+            ],
+          },
+          {
+            'faceId': 'face-moi',
+            'faceIndex': 0,
+            'status': 'MATCHED',
+            'candidates': [
+              {'suggestionId': 'moi', 'memberId': 'm1', 'score': 0.91},
+            ],
+          },
+        ],
+      });
+
+      expect(
+        suggestions.map((s) => s.id),
+        ['moi'],
+        reason:
+            'khuôn mặt đã bị lần quét mới thay thế thì không còn là việc '
+            'chờ làm; status của candidate không được đè status của khuôn mặt',
+      );
+    });
+
+    test('status của candidate vẫn đọc đúng khi khuôn mặt MATCHED', () {
+      final suggestions = parseFaceSuggestions({
+        'faces': [
+          {
+            'faceId': 'face-1',
+            'status': 'MATCHED',
+            'candidates': [
+              {
+                'suggestionId': 's1',
+                'memberId': 'm1',
+                'score': 0.88,
+                'status': 'PENDING',
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(suggestions, hasLength(1));
+      expect(suggestions.single.status, 'PENDING');
+      expect(suggestions.single.detectionStatus, 'MATCHED');
+      expect(suggestions.single.isSupersededDetection, isFalse);
+    });
+  });
+
   test('FaceScanStatusInfo đọc retry metadata từ response root', () {
     final info = FaceScanStatusInfo.fromJson({
       'status': 'PROCESSING',
