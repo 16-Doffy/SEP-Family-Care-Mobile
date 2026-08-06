@@ -11,11 +11,14 @@ import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/tab_config_provider.dart';
 import '../services/api_client.dart';
+import '../services/fall_detector_service.dart';
 import '../services/local_notification_service.dart';
 import '../services/push_service.dart';
+import '../services/sos_location.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_surface_colors.dart';
 import '../theme/app_ui_tokens.dart';
+import '../widgets/fall_countdown_dialog.dart';
 import 'notification_router.dart';
 
 // Shell dùng chung cho cả 3 role (Manager/Deputy/Member). Mỗi role khai đủ 9
@@ -48,6 +51,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   // cùng một cảnh báo mỗi chu kỳ.
   final Set<String> _notifiedSosIds = {};
   bool _sosSeeded = false;
+  // Phát hiện té ngã (cài đặt `autoCreateAlertFromFall` của BE). Chỉ chạy khi
+  // app ở foreground — xem ghi chú trong FallDetectorService.
+  bool _fallDialogOpen = false;
+  bool _appInForeground = true;
 
   @override
   void initState() {
@@ -76,6 +83,13 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       // được ngay, không chờ.
       final role = context.read<AuthProvider>().user?.role;
       if (role != null) context.read<TabConfigProvider>().load(role);
+      // Cài đặt SOS trước đây chỉ được tải khi mở màn Cài đặt SOS, nên shell
+      // không biết `autoCreateAlertFromFall` có bật hay không. Tải 1 lần ở đây
+      // (và lại khi quay về foreground) — KHÔNG đưa vào chu kỳ poll 15s vì cài
+      // đặt gần như không đổi.
+      context.read<SosProvider>().fetchSettings().then((_) {
+        if (mounted) _syncFallDetector();
+      });
       _refreshLive();
       _startPolling();
     });
@@ -85,6 +99,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
+    FallDetectorService.instance.stop();
     if (ApiClient.instance.onVerificationRequired ==
         _showVerificationRequired) {
       ApiClient.instance.onVerificationRequired = null;
@@ -151,10 +166,20 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Gia tốc kế chỉ đọc khi app ở foreground: ở nền, Android sẽ giới hạn tần
+    // số sensor và ta cũng không dựng được dialog đếm ngược để người dùng huỷ.
+    _appInForeground = state == AppLifecycleState.resumed;
+    if (!_appInForeground) FallDetectorService.instance.stop();
     switch (state) {
       case AppLifecycleState.resumed:
         _refreshLive();
         _startPolling(background: false);
+        // Cài đặt có thể đã bị Trưởng/Phó nhóm đổi từ máy khác trong lúc app ở
+        // nền → tải lại trước khi bật/tắt detector.
+        context.read<SosProvider>().fetchSettings().then((_) {
+          if (mounted) _syncFallDetector();
+        });
+        _syncFallDetector();
       case AppLifecycleState.detached:
         // App đang bị hủy → dừng hẳn.
         _pollTimer?.cancel();
@@ -203,6 +228,67 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         isSos: true,
         payload: 'SOS_ALERT|${a.id}',
       );
+    }
+  }
+
+  // ── Phát hiện té ngã ──────────────────────────────────────────────────────
+  // Bật/tắt theo đúng cài đặt `autoCreateAlertFromFall` của gia đình, gọi lại
+  // từ build() nên tự đồng bộ khi Trưởng/Phó nhóm đổi cài đặt. Idempotent.
+  void _syncFallDetector() {
+    if (!mounted) return;
+    final sos = context.read<SosProvider>();
+    final settings = sos.settings;
+    // Cài đặt chưa tải xong → chưa bật. Đây là nơi fail-closed đúng: bật nhầm
+    // sẽ gửi SOS giả cho cả nhà.
+    final shouldRun =
+        _appInForeground &&
+        settings != null &&
+        settings.isEnabled &&
+        settings.autoCreateAlertFromFall;
+
+    if (shouldRun && !FallDetectorService.instance.isRunning) {
+      FallDetectorService.instance.start(onFall: _onFallDetected);
+    } else if (!shouldRun && FallDetectorService.instance.isRunning) {
+      FallDetectorService.instance.stop();
+    }
+  }
+
+  Future<void> _onFallDetected() async {
+    if (!mounted || _fallDialogOpen) return;
+    final sos = context.read<SosProvider>();
+    // Đang có cảnh báo của chính mình thì không tạo thêm.
+    final myId = context.read<AuthProvider>().user?.id;
+    if (sos.activeAlerts.any((a) => a.isMine(myId))) return;
+
+    _fallDialogOpen = true;
+    try {
+      final send = await showFallCountdownDialog(context);
+      if (!send || !mounted) return;
+      // Dùng chung đường lấy GPS với nút SOS thủ công; không có toạ độ vẫn gửi.
+      final pos = await resolveSosPosition().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => null,
+      );
+      if (!mounted) return;
+      await sos.sendSos(
+        // [VERIFY] `CreateSosAlertDto.sourceType` chỉ có
+        // MOBILE_APP | WEARABLE | SIMULATED_DEVICE — chưa có giá trị cho trigger
+        // tự động, nên nguồn được ghi vào `message`. Xem
+        // DE_XUAT_BE_SOS_FALL_DETECTION_2026-08-04.md.
+        message: 'Phát hiện té ngã từ điện thoại — cần hỗ trợ ngay!',
+        address: sosAddressOf(pos),
+        latitude: pos?.latitude,
+        longitude: pos?.longitude,
+      );
+      if (mounted) _go(3); // chuyển sang tab SOS để theo dõi
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Không gửi được SOS: $e')));
+      }
+    } finally {
+      _fallDialogOpen = false;
     }
   }
 
@@ -293,6 +379,9 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final activeAlerts = context.watch<SosProvider>().activeAlerts;
+    // build() đã watch SosProvider nên đây là chỗ rẻ nhất để đồng bộ phát hiện
+    // té ngã khi Trưởng/Phó nhóm bật/tắt `autoCreateAlertFromFall`.
+    _syncFallDetector();
     final current = widget.navigationShell.currentIndex;
     final role = context.watch<AuthProvider>().user?.role ?? UserRole.member;
     final tabs = context.watch<TabConfigProvider>().tabsFor(role);

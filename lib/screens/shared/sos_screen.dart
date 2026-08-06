@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
+import '../../services/sos_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/json_report_view.dart';
@@ -136,40 +137,9 @@ class _SOSScreenState extends State<SOSScreen>
 
   // ── Get GPS → send SOS ───────────────────────────────────────────────────
 
-  // Nguyên tắc: GPS KHÔNG ĐƯỢC chặn việc gửi SOS — CreateSosAlertDto không
-  // bắt buộc tọa độ. getCurrentPosition trên emulator/fused provider có thể
-  // treo vô hạn chờ fix mới (timeLimit của geolocator không phải lúc nào cũng
-  // nhả) → bọc timeout cứng + fallback getLastKnownPosition.
-  Future<Position?> _getLocation() async {
-    try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.deniedForever ||
-          permission == LocationPermission.denied) {
-        return null;
-      }
-      try {
-        return await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 8),
-          ),
-        ).timeout(const Duration(seconds: 10));
-      } catch (_) {
-        // Không lấy được fix mới trong 10s → dùng vị trí gần nhất đã biết
-        // (trả về ngay, không chờ) — vẫn hơn là không có gì.
-        return await Geolocator.getLastKnownPosition().timeout(
-          const Duration(seconds: 3),
-          onTimeout: () => null,
-        );
-      }
-    } catch (e) {
-      debugPrint('SOSScreen: get GPS location failed: $e');
-      return null;
-    }
-  }
+  // Logic lấy GPS (timeout cứng + fallback getLastKnownPosition) đã chuyển sang
+  // services/sos_location.dart để phát hiện té ngã dùng chung, không nhân bản.
+  Future<Position?> _getLocation() => resolveSosPosition();
 
   Future<void> _triggerSOS() async {
     _countTimer?.cancel();
@@ -194,9 +164,7 @@ class _SOSScreenState extends State<SOSScreen>
     try {
       final alertId = await sosProvider.sendSos(
         message: 'SOS khẩn cấp từ ứng dụng Family Care',
-        address: pos != null
-            ? 'GPS: ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}'
-            : '',
+        address: sosAddressOf(pos),
         latitude: pos?.latitude,
         longitude: pos?.longitude,
       );

@@ -269,8 +269,13 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
                 _tile(
                   icon: Icons.accessibility_new_rounded,
                   title: 'Tự cảnh báo khi phát hiện té ngã',
+                  // Nói rõ giới hạn: chỉ chạy khi app đang mở. Muốn chạy nền
+                  // phải có foreground service — xem
+                  // DE_XUAT_BE_SOS_FALL_DETECTION_2026-08-04.md.
                   subtitle:
-                      'Tự động tạo cảnh báo SOS khi thiết bị nhận thấy cú ngã.',
+                      'Điện thoại dùng gia tốc kế để nhận biết cú ngã, có 10 '
+                      'giây để bạn bấm "Tôi ổn" trước khi gửi. Chỉ hoạt động '
+                      'khi ứng dụng đang mở.',
                   value: s.autoCreateAlertFromFall,
                   onChanged: canEdit
                       ? (v) => _toggle(s.copyWith(autoCreateAlertFromFall: v))
