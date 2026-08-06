@@ -9,8 +9,8 @@ import 'package:sensors_plus/sensors_plus.dart';
 /// Đây là phần hiện thực cho cài đặt **`autoCreateAlertFromFall`** mà BE đã có
 /// sẵn trong `UpdateSosSettingsDto` ("Tự tạo cảnh báo SOS khi thiết bị phát hiện
 /// té ngã"). Trước đây toggle này chỉ được lưu lên server, còn điện thoại không
-/// làm gì cả — chỉ màn `lib/wear/screens/wear_status_screen.dart` có code nhận
-/// biết, mà màn đó lại không còn nơi nào điều hướng tới.
+/// làm gì cả — chỉ một màn trên đồng hồ có code nhận biết, mà màn đó đã mất
+/// đường điều hướng (nay đã xoá, logic được thay bằng chính file này).
 ///
 /// **Không dùng ngưỡng rung đơn thuần.** Đo một cú "rung mạnh" thì đi xe máy
 /// đường xóc hay để điện thoại trong túi lúc chạy cũng vượt ngưỡng. Thay vào đó

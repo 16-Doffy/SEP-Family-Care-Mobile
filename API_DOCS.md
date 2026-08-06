@@ -421,6 +421,13 @@ Swagger live đã có contract và response example cho mapping/report; source m
 - Đề xuất contract đầy đủ (3 endpoint: `pair-code` → `claim-code` → `exchange`, kèm phần "Nên có" về scope token và thu hồi token khi `UNPAIRED`): **`DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md`**.
 - FE đã sửa phần copy sai sự thật trên đồng hồ: **không** còn hướng dẫn "Nhập mã này trên FamilyCare" (mobile không có chỗ nhập vì BE không có endpoint nhận mã). Nút chính giờ là "Đăng nhập trên đồng hồ" — hành động duy nhất chạy được — và sẽ bị xóa khi BE có luồng trên.
 
+### [MỚI 2026-08-04] Wearable sensor events — đủ 5 `eventType`, có lịch sử
+- `CreateSensorEventDto.eventType` enum đầy đủ: `SOS_BUTTON_PRESSED | FALL_DETECTED | HEART_RATE_ABNORMAL | HARD_IMPACT | ABNORMAL_MOVEMENT`. **`HEART_RATE_ABNORMAL` là giá trị BE mới bổ sung** (bản dump 04/08/2026) — đây cũng là thay đổi **duy nhất** giữa 2 bản dump, số path/operation giữ nguyên 223/290.
+- FE trước đây chỉ gửi được 2 loại (`SOS_BUTTON_PRESSED`, `FALL_DETECTED`) bằng 2 nút cứng. Nay màn **Hồ sơ → Thiết bị đeo** có sheet chọn đủ 5 loại, mỗi loại gửi `severity` và `rawValue` hợp nghĩa riêng (`rawValue` là JSON tự do theo mô tả của BE).
+- `GET .../wearables/{deviceId}/events` đã wire ở `WearableProvider.fetchEvents` từ trước nhưng **không nơi nào gọi** — lịch sử sự kiện chưa từng hiển thị. Nay có card "Sự kiện cảm biến gần đây" (10 mục gần nhất, tự tải lại sau khi gửi sự kiện test).
+- `eventType` lạ (BE thêm mới trước khi FE kịp cập nhật) được hiển thị **nguyên mã gốc** thay vì "Không rõ", để còn đối chiếu được.
+- `alertCreated: false` là hành vi hợp lệ — BE chỉ tạo cảnh báo với một số loại/mức độ. UI phân biệt rõ 2 trường hợp thay vì báo "đã gửi" chung chung.
+
 ### [MỚI 2026-08-04] SOS — `autoCreateAlertFromFall` nay đã hoạt động trên điện thoại
 - `UpdateSosSettingsDto.autoCreateAlertFromFall` ("Tự tạo cảnh báo SOS khi thiết bị phát hiện té ngã") **đã có sẵn trong Swagger từ trước**, FE cũng đã parse và có toggle ở màn Cài đặt SOS. Nhưng **trên điện thoại toggle đó không làm gì cả**: chỉ `lib/wear/screens/wear_status_screen.dart` có code nhận biết té ngã, mà màn đó đã không còn nơi nào điều hướng tới sau khi dựng lại giao diện đồng hồ (code chết, `flutter analyze` không bắt được).
 - Nay `lib/services/fall_detector_service.dart` hiện thực trên điện thoại bằng gia tốc kép **rơi tự do → va đập** (không phải ngưỡng rung đơn thuần, vì đi xe máy đường xóc cũng vượt ngưỡng rung). `family_shell` bật/tắt detector theo đúng `isEnabled && autoCreateAlertFromFall`, chỉ khi app ở foreground.

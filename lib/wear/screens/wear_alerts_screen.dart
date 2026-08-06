@@ -1,266 +1,163 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
-import '../wear_utils.dart';
+import '../wear_widgets.dart';
 
-// UC51 — Xem và phản hồi SOS Alert trên đồng hồ
-
+/// UC51 — Xem và phản hồi cảnh báo SOS của người nhà, ngay trên đồng hồ.
+///
+/// Đây là **nơi duy nhất** trên đồng hồ phản hồi được cảnh báo của người khác:
+/// `WearSosScreen` chỉ lo phát SOS của chính mình rồi `confirmSafety`, còn
+/// `WearNotificationsScreen` chỉ hiển thị thông báo chứ không gọi được
+/// `respond`/`resolveAlert`.
+///
+/// Màn này từng mất đường điều hướng sau lần dựng lại giao diện đồng hồ (không
+/// tile nào trỏ tới), thành ra cả UC51 biến mất khỏi đồng hồ mà không ai thấy —
+/// `flutter analyze` không báo, không test nào chạm tới `lib/wear/`.
 class WearAlertsScreen extends StatefulWidget {
   const WearAlertsScreen({super.key});
+
   @override
   State<WearAlertsScreen> createState() => _WearAlertsScreenState();
 }
 
 class _WearAlertsScreenState extends State<WearAlertsScreen> {
+  String? _busyId;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SosProvider>().fetchAlerts();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => context.read<SosProvider>().fetchAlerts(),
+    );
+  }
+
+  Future<void> _run(String alertId, Future<void> Function() action) async {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _busyId = alertId;
+      _error = null;
     });
+    try {
+      await action();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final sos = context.watch<SosProvider>();
-    final alerts = sos.activeAlerts;
-    final hPad = WearUtils.safePadding(context).left;
+    final myId = context.watch<AuthProvider>().user?.id;
+    // Cảnh báo do chính mình phát thì không hiện nút "Đến ngay" — người phát
+    // không tự đi cứu mình. Việc xác nhận an toàn nằm ở màn SOS.
+    final others = sos.activeAlerts.where((a) => !a.isMine(myId)).toList();
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: alerts.isEmpty
-            ? _emptyView(sos)
-            : _listView(context, alerts, hPad, sos),
-      ),
-    );
-  }
-
-  Widget _emptyView(SosProvider sos) => Center(
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(
-          Icons.check_circle_outline_rounded,
-          size: 30,
-          color: Color(0xFF16A34A),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Không có cảnh báo',
-          style: GoogleFonts.inter(fontSize: 10, color: Colors.white54),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () async {
-            await sos.fetchAlerts();
-            HapticFeedback.lightImpact();
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1F2937),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text(
-              'Làm mới',
-              style: GoogleFonts.inter(fontSize: 10, color: Colors.white70),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _listView(
-    BuildContext ctx,
-    List<SosAlert> alerts,
-    double hPad,
-    SosProvider sos,
-  ) {
-    return ListView.builder(
-      padding: EdgeInsets.symmetric(horizontal: hPad, vertical: 8),
-      itemCount: alerts.length + 1,
-      itemBuilder: (_, i) {
-        if (i == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${alerts.length} cảnh báo',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFFDC2626),
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () async {
-                    await sos.fetchAlerts();
-                    HapticFeedback.lightImpact();
-                  },
-                  child: const Icon(
-                    Icons.refresh_rounded,
-                    size: 14,
-                    color: Colors.white38,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        final alert = alerts[i - 1];
-        return _alertCard(ctx, alert, sos);
-      },
-    );
-  }
-
-  Widget _alertCard(BuildContext ctx, SosAlert alert, SosProvider sos) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFDC2626).withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFDC2626).withValues(alpha: 0.4),
-        ),
-      ),
+    return WearPage(
+      scrollable: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.sos_rounded, size: 14, color: Color(0xFFDC2626)),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  alert.senderName,
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+          WearHeader(
+            icon: Icons.emergency_share_rounded,
+            label: 'Cảnh báo',
+            color: WearPalette.sos,
+            trailing: Text(
+              '${others.length}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                color: WearPalette.sos,
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 3),
-          Text(
-            alert.message,
-            style: GoogleFonts.inter(fontSize: 8, color: Colors.white54),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (alert.address.isNotEmpty) ...[
-            const SizedBox(height: 2),
+          const SizedBox(height: 8),
+          if (_error != null) ...[
             Text(
-              alert.address,
-              style: GoogleFonts.inter(fontSize: 7, color: Colors.white30),
-              maxLines: 1,
+              _error!,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: WearPalette.sosSoft),
+            ),
+            const SizedBox(height: 6),
+          ],
+          if (sos.loading && others.isEmpty)
+            const WearEmptyState(
+              icon: Icons.hourglass_top_rounded,
+              title: 'Đang tải cảnh báo',
+              color: WearPalette.sos,
+            )
+          else if (others.isEmpty)
+            const WearEmptyState(
+              icon: Icons.verified_user_rounded,
+              title: 'Cả nhà đang an toàn',
+              subtitle: 'Chưa có cảnh báo nào',
+              color: WearPalette.green,
+            )
+          else
+            ...others.map((alert) => _alertCard(sos, alert)),
+        ],
+      ),
+    );
+  }
+
+  Widget _alertCard(SosProvider sos, SosAlert alert) {
+    final busy = _busyId == alert.id;
+    final canResolve =
+        context.watch<AuthProvider>().user?.canResolveSos == true;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          WearTile(
+            icon: Icons.sos_rounded,
+            title: alert.senderName.isEmpty ? 'Thành viên' : alert.senderName,
+            subtitle: alert.message.isEmpty
+                ? (alert.address.isEmpty ? 'Cần trợ giúp' : alert.address)
+                : alert.message,
+            color: WearPalette.sos,
+            filled: true,
+          ),
+          const SizedBox(height: 6),
+          WearPillButton(
+            label: 'Tôi đang đến',
+            icon: Icons.directions_run_rounded,
+            color: WearPalette.green,
+            loading: busy,
+            onTap: busy
+                ? null
+                : () => _run(
+                    alert.id,
+                    () => sos.respond(
+                      alert.id,
+                      'VIEWED',
+                      message: 'Tôi đang đến',
+                    ),
+                  ),
+          ),
+          // Chỉ Trưởng/Phó nhóm mới đóng được cảnh báo — BE trả 403 cho
+          // thành viên thường (PATCH .../resolve).
+          if (canResolve) ...[
+            const SizedBox(height: 6),
+            WearPillButton(
+              label: 'Đã xử lý xong',
+              icon: Icons.check_rounded,
+              color: WearPalette.faint,
+              outlined: true,
+              onTap: busy
+                  ? null
+                  : () => _run(alert.id, () => sos.resolveAlert(alert.id)),
             ),
           ],
-          const SizedBox(height: 7),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () async {
-                    if (sos.sending) return;
-                    HapticFeedback.mediumImpact();
-                    try {
-                      await sos.respond(
-                        alert.id,
-                        'VIEWED',
-                        message: 'Tôi đang đến',
-                      );
-                    } catch (e) {
-                      if (ctx.mounted) {
-                        ScaffoldMessenger.of(ctx).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              e.toString().replaceFirst('Exception: ', ''),
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                            backgroundColor: const Color(0xFFDC2626),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      }
-                    }
-                  },
-                  child: Container(
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF16A34A),
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      'Đến ngay',
-                      style: GoogleFonts.inter(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              // Chỉ Manager/Deputy được phép resolve (Swagger: PATCH
-              // .../resolve chỉ FAMILY_MANAGER/DEPUTY_MEMBER).
-              if (ctx.watch<AuthProvider>().user?.canResolveSos == true) ...[
-                const SizedBox(width: 5),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () async {
-                      if (sos.sending) return;
-                      HapticFeedback.lightImpact();
-                      try {
-                        await sos.resolveAlert(alert.id);
-                      } catch (e) {
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                e.toString().replaceFirst('Exception: ', ''),
-                                style: const TextStyle(fontSize: 10),
-                              ),
-                              backgroundColor: const Color(0xFFDC2626),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    child: Container(
-                      height: 26,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.white24),
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'Xong',
-                        style: GoogleFonts.inter(
-                          fontSize: 8,
-                          color: Colors.white38,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
         ],
       ),
     );

@@ -22,14 +22,95 @@ class _WearablesScreenState extends State<WearablesScreen> {
     'SIMULATED_DEVICE': 'Thiết bị mô phỏng',
   };
 
+  /// Đủ 5 giá trị `CreateSensorEventDto.eventType` của BE.
+  /// `HEART_RATE_ABNORMAL` là giá trị BE mới bổ sung (bản OpenAPI 04/08/2026);
+  /// trước đó FE mới chỉ gửi được 2 loại.
+  ///
+  /// `rawValue` là JSON tự do ("Số liệu thô từ cảm biến, tùy thiết bị") nên mỗi
+  /// loại gửi đúng số đo có ý nghĩa với nó, thay vì nhồi chung một mẫu.
+  static const _eventTypes = <_SensorEventType>[
+    _SensorEventType(
+      code: 'SOS_BUTTON_PRESSED',
+      label: 'Bấm nút SOS',
+      hint: 'Người đeo chủ động bấm nút khẩn cấp',
+      icon: Icons.sos_rounded,
+      severity: 'CRITICAL',
+      rawValue: {'source': 'wearos-emulator', 'heartRate': 120, 'battery': 86},
+    ),
+    _SensorEventType(
+      code: 'FALL_DETECTED',
+      label: 'Phát hiện té ngã',
+      hint: 'Gia tốc kế thấy rơi tự do rồi va đập',
+      icon: Icons.accessibility_new_rounded,
+      severity: 'HIGH',
+      rawValue: {'source': 'wearos-emulator', 'gForce': 3.2, 'heartRate': 132},
+    ),
+    _SensorEventType(
+      code: 'HEART_RATE_ABNORMAL',
+      label: 'Nhịp tim bất thường',
+      hint: 'Nhịp tim vượt ngoài ngưỡng an toàn',
+      icon: Icons.monitor_heart_rounded,
+      severity: 'HIGH',
+      rawValue: {
+        'source': 'wearos-emulator',
+        'heartRate': 156,
+        'restingHeartRate': 72,
+        'durationSeconds': 180,
+      },
+    ),
+    _SensorEventType(
+      code: 'HARD_IMPACT',
+      label: 'Va đập mạnh',
+      hint: 'Cú va chạm lớn, có thể do tai nạn',
+      icon: Icons.crisis_alert_rounded,
+      severity: 'HIGH',
+      rawValue: {'source': 'wearos-emulator', 'gForce': 6.8, 'heartRate': 141},
+    ),
+    _SensorEventType(
+      code: 'ABNORMAL_MOVEMENT',
+      label: 'Chuyển động bất thường',
+      hint: 'Không cử động lâu, hoặc cử động lạ',
+      icon: Icons.directions_walk_rounded,
+      severity: 'MEDIUM',
+      rawValue: {
+        'source': 'wearos-emulator',
+        'stillSeconds': 900,
+        'heartRate': 58,
+      },
+    ),
+  ];
+
+  // `WearableProvider.fetchEvents` trả thẳng danh sách chứ không giữ state, nên
+  // màn tự giữ. Trước đây hàm này không có nơi nào gọi — lịch sử sự kiện đã
+  // wire ở provider nhưng chưa từng hiển thị.
+  List<WearableEvent> _events = const [];
+  bool _eventsLoading = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      context.read<WearableProvider>().fetchCurrentDevice();
+      final wp = context.read<WearableProvider>();
       context.read<WearQuickMessageProvider>().load();
+      await wp.fetchCurrentDevice();
+      final id = wp.currentDevice?.id;
+      if (id != null && mounted) await _loadEvents(id);
     });
+  }
+
+  Future<void> _loadEvents(String deviceId) async {
+    setState(() => _eventsLoading = true);
+    try {
+      final list = await context.read<WearableProvider>().fetchEvents(deviceId);
+      if (mounted) setState(() => _events = list);
+    } catch (_) {
+      // Lịch sử sự kiện chỉ là thông tin phụ — hỏng thì để trống, không chặn
+      // các thao tác ghép nối/ngắt kết nối phía trên.
+      if (mounted) setState(() => _events = const []);
+    } finally {
+      if (mounted) setState(() => _eventsLoading = false);
+    }
   }
 
   void _snack(Object e, {bool ok = false}) {
@@ -78,13 +159,121 @@ class _WearablesScreenState extends State<WearablesScreen> {
               )
             else if (device == null)
               _notConnectedCard(wp.error)
-            else
+            else ...[
               _connectedCard(device),
+              const SizedBox(height: 12),
+              _eventHistoryCard(device),
+            ],
           ],
         ),
       ),
     );
   }
+
+  Widget _eventHistoryCard(WearableDevice device) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.history_rounded, color: AppColors.link),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Sự kiện cảm biến gần đây',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Tải lại',
+              onPressed: _eventsLoading ? null : () => _loadEvents(device.id),
+              icon: const Icon(Icons.refresh_rounded),
+              color: AppColors.textMuted,
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (_eventsLoading && _events.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_events.isEmpty)
+          Text(
+            'Chưa có sự kiện nào. Dùng "Giả lập sự kiện cảm biến" ở trên để '
+            'thử luồng cảnh báo.',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              height: 1.35,
+              color: AppColors.textSecondary,
+            ),
+          )
+        else
+          ..._events.take(10).map(_eventRow),
+      ],
+    ),
+  );
+
+  Widget _eventRow(WearableEvent e) {
+    final type = _eventTypes.where((t) => t.code == e.eventType).firstOrNull;
+    final color = switch (e.severity.toUpperCase()) {
+      'CRITICAL' => AppColors.danger,
+      'HIGH' => AppColors.danger,
+      'MEDIUM' => AppColors.amberText,
+      _ => AppColors.textMuted,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(type?.icon ?? Icons.sensors_rounded, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  // BE có thể thêm eventType mới trước khi FE kịp cập nhật →
+                  // hiện mã gốc thay vì "Không rõ", để còn đối chiếu được.
+                  type?.label ?? e.eventType,
+                  style: GoogleFonts.inter(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  '${_severityLabel(e.severity)} · ${_fmtTime(e.detectedAt)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _severityLabel(String s) => switch (s.toUpperCase()) {
+    'CRITICAL' => 'Nguy cấp',
+    'HIGH' => 'Cao',
+    'MEDIUM' => 'Trung bình',
+    'LOW' => 'Thấp',
+    _ => s,
+  };
 
   Widget _introCard(WearableDevice? device) => Container(
     padding: const EdgeInsets.all(14),
@@ -236,24 +425,13 @@ class _WearablesScreenState extends State<WearablesScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _testEvent(device, sos: true),
-                icon: const Icon(Icons.sos_rounded, size: 18),
-                label: const Text('Test SOS'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () => _testEvent(device, sos: false),
-                icon: const Icon(Icons.warning_amber_rounded, size: 18),
-                label: const Text('Fall'),
-              ),
-            ),
-          ],
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _pickTestEvent(device),
+            icon: const Icon(Icons.sensors_rounded, size: 18),
+            label: const Text('Giả lập sự kiện cảm biến'),
+          ),
         ),
         const SizedBox(height: 10),
         SizedBox(
@@ -587,21 +765,71 @@ class _WearablesScreenState extends State<WearablesScreen> {
     );
   }
 
-  Future<void> _testEvent(WearableDevice device, {required bool sos}) async {
+  Future<void> _pickTestEvent(WearableDevice device) async {
+    final picked = await showModalBottomSheet<_SensorEventType>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text(
+                'Giả lập sự kiện từ thiết bị đeo',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            ..._eventTypes.map(
+              (e) => ListTile(
+                leading: Icon(e.icon, color: AppColors.danger),
+                title: Text(
+                  e.label,
+                  style: GoogleFonts.inter(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  e.hint,
+                  style: GoogleFonts.inter(fontSize: 12.5),
+                ),
+                onTap: () => Navigator.pop(ctx, e),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    await _testEvent(device, picked);
+  }
+
+  Future<void> _testEvent(WearableDevice device, _SensorEventType type) async {
     try {
       final result = await context.read<WearableProvider>().createEvent(
         device.id,
-        eventType: sos ? 'SOS_BUTTON_PRESSED' : 'FALL_DETECTED',
-        severity: 'HIGH',
-        rawValue: sos
-            ? {'source': 'wearos-emulator', 'heartRate': 120, 'battery': 86}
-            : {'source': 'wearos-emulator', 'gForce': 3.2, 'heartRate': 132},
+        eventType: type.code,
+        severity: type.severity,
+        rawValue: type.rawValue,
       );
+      if (!mounted) return;
+      // Sự kiện vừa gửi phải xuất hiện ngay trong lịch sử bên dưới.
+      await _loadEvents(device.id);
       if (!mounted) return;
       if (result.alertCreated) {
         _showAlertCreated(result.alertId);
       } else {
-        _snack('Đã gửi sự kiện wearable.', ok: true);
+        // alertCreated=false là hành vi hợp lệ: BE chỉ tạo cảnh báo với một số
+        // loại sự kiện / mức độ, không phải mọi sự kiện đều báo động.
+        _snack(
+          'Đã gửi "${type.label}" — BE không tạo cảnh báo cho sự kiện này.',
+          ok: true,
+        );
       }
     } catch (e) {
       _snack(e);
@@ -633,4 +861,23 @@ class _WearablesScreenState extends State<WearablesScreen> {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${two(t.day)}/${two(t.month)} ${two(t.hour)}:${two(t.minute)}';
   }
+}
+
+/// Một loại sự kiện cảm biến của thiết bị đeo, khớp `CreateSensorEventDto`.
+class _SensorEventType {
+  final String code;
+  final String label;
+  final String hint;
+  final IconData icon;
+  final String severity;
+  final Map<String, dynamic> rawValue;
+
+  const _SensorEventType({
+    required this.code,
+    required this.label,
+    required this.hint,
+    required this.icon,
+    required this.severity,
+    required this.rawValue,
+  });
 }

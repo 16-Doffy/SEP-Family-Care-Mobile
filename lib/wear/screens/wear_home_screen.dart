@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../providers/task_provider.dart';
 import '../wear_widgets.dart';
+import 'wear_alerts_screen.dart';
 import 'wear_calendar_screen.dart';
 import 'wear_map_screen.dart';
 import 'wear_notifications_screen.dart';
 import 'wear_quick_message_screen.dart';
 import 'wear_sos_screen.dart';
+import 'wear_status_screen.dart';
 import 'wear_tasks_screen.dart';
 
 class WearHomeScreen extends StatefulWidget {
@@ -49,6 +52,10 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
         .where((e) => e.startTime.isAfter(DateTime.now()))
         .length;
     final unread = context.watch<NotificationProvider>().unreadCount;
+    final myId = context.watch<AuthProvider>().user?.id;
+    final othersInDanger = sos.activeAlerts
+        .where((a) => !a.isMine(myId))
+        .length;
 
     return WearPage(
       scrollable: true,
@@ -74,6 +81,20 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
             ),
             onTap: () => _open(const WearSosScreen()),
           ),
+          // Cảnh báo của NGƯỜI KHÁC — chỉ hiện khi thực sự có, để menu không bị
+          // dài thêm lúc bình thường. Đây là lối duy nhất trên đồng hồ để bấm
+          // "Tôi đang đến" / đóng cảnh báo (UC51).
+          if (othersInDanger > 0) ...[
+            const SizedBox(height: 6),
+            WearTile(
+              icon: Icons.emergency_share_rounded,
+              title: 'Người nhà cần giúp',
+              subtitle: '$othersInDanger cảnh báo đang mở',
+              color: WearPalette.sos,
+              filled: true,
+              onTap: () => _open(const WearAlertsScreen()),
+            ),
+          ],
           const SizedBox(height: 12),
           const WearSectionLabel('Tác vụ nhanh'),
           WearTile(
@@ -116,6 +137,16 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
             subtitle: unread == 0 ? 'Đã đọc hết' : '$unread chưa đọc',
             color: WearPalette.sosSoft,
             onTap: () => _open(const WearNotificationsScreen()),
+          ),
+          const SizedBox(height: 6),
+          // Nơi DUY NHẤT trên đồng hồ có công tắc phát hiện té ngã và nút đăng
+          // xuất — đừng gỡ tile này khỏi menu, màn sẽ thành code chết như trước.
+          WearTile(
+            icon: Icons.watch_rounded,
+            title: 'Trạng thái',
+            subtitle: 'Vị trí, phát hiện té ngã, đăng xuất',
+            color: WearPalette.muted,
+            onTap: () => _open(const WearStatusScreen()),
           ),
         ],
       ),
