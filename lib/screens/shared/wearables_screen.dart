@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/wear_quick_message_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -27,6 +28,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<WearableProvider>().fetchCurrentDevice();
+      context.read<WearQuickMessageProvider>().load();
     });
   }
 
@@ -43,6 +45,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
   @override
   Widget build(BuildContext context) {
     final wp = context.watch<WearableProvider>();
+    final quick = context.watch<WearQuickMessageProvider>();
     final device = wp.currentDevice;
 
     return Scaffold(
@@ -65,6 +68,8 @@ class _WearablesScreenState extends State<WearablesScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             _introCard(device),
+            const SizedBox(height: 12),
+            _quickMessagesCard(quick),
             const SizedBox(height: 12),
             if (wp.loading && device == null)
               const Padding(
@@ -265,6 +270,124 @@ class _WearablesScreenState extends State<WearablesScreen> {
     ),
   );
 
+  Widget _quickMessagesCard(WearQuickMessageProvider quick) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.quickreply_rounded, color: AppColors.link),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Tin nhắn nhanh trên wearable',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Khôi phục mặc định',
+              onPressed: quick.saving ? null : _resetQuickMessages,
+              icon: const Icon(Icons.restart_alt_rounded),
+              color: AppColors.textMuted,
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // KHÔNG hứa là danh sách này sẽ hiện trên đồng hồ: preset lưu bằng
+        // flutter_secure_storage của CHÍNH thiết bị đang chạy app. Đồng hồ là
+        // bản cài riêng, storage riêng → sửa ở đây không đổi được preset bên
+        // đồng hồ. Muốn đồng bộ thật cần Wear Data Layer hoặc BE lưu theo tài
+        // khoản (xem DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md).
+        Text(
+          'Các câu gửi một chạm trong mục Tin nhắn. Danh sách lưu riêng trên '
+          'từng thiết bị — sửa ở đây chỉ đổi cho máy này, đồng hồ cài app '
+          'riêng thì phải chỉnh lại trên đồng hồ.',
+          style: GoogleFonts.inter(
+            fontSize: 12.5,
+            height: 1.35,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (!quick.loaded)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else
+          ...quick.messages.asMap().entries.map((entry) {
+            final index = entry.key;
+            final text = entry.value;
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: context.colors.inputFill,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.progressTrack),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Sửa',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: quick.saving
+                        ? null
+                        : () => _editQuickMessage(index: index, initial: text),
+                    icon: const Icon(Icons.edit_rounded, size: 18),
+                    color: AppColors.link,
+                  ),
+                  IconButton(
+                    tooltip: 'Xóa',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: quick.saving
+                        ? null
+                        : () => _removeQuickMessage(index),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    color: AppColors.danger,
+                  ),
+                ],
+              ),
+            );
+          }),
+        const SizedBox(height: 4),
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: OutlinedButton.icon(
+            onPressed: quick.loaded && quick.canAdd && !quick.saving
+                ? () => _editQuickMessage()
+                : null,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: Text(
+              quick.canAdd ? 'Thêm tin nhắn' : 'Tối đa 5 tin nhắn',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget _statusChip(WearableDevice d) {
     final (label, color) = d.isPaired
         ? ('Đã kết nối', AppColors.success)
@@ -341,6 +464,82 @@ class _WearablesScreenState extends State<WearablesScreen> {
       ],
     ),
   );
+
+  Future<void> _editQuickMessage({int? index, String initial = ''}) async {
+    final controller = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        var canSave = initial.trim().isNotEmpty;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: Text(index == null ? 'Thêm tin nhắn nhanh' : 'Sửa tin nhắn'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: 40,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                hintText: 'Ví dụ: Đang chạy xe',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) {
+                setDialogState(() => canSave = value.trim().isNotEmpty);
+              },
+              onSubmitted: (value) {
+                final text = value.trim();
+                if (text.isNotEmpty) Navigator.pop(ctx, text);
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                onPressed: canSave
+                    ? () => Navigator.pop(ctx, controller.text.trim())
+                    : null,
+                child: const Text('Lưu'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    if (result == null || result.trim().isEmpty || !mounted) return;
+
+    final quick = context.read<WearQuickMessageProvider>();
+    try {
+      if (index == null) {
+        await quick.add(result);
+      } else {
+        await quick.updateAt(index, result);
+      }
+      _snack('Đã lưu tin nhắn nhanh.', ok: true);
+    } catch (e) {
+      _snack(e);
+    }
+  }
+
+  Future<void> _removeQuickMessage(int index) async {
+    try {
+      await context.read<WearQuickMessageProvider>().removeAt(index);
+      _snack('Đã xóa tin nhắn nhanh.', ok: true);
+    } catch (e) {
+      _snack(e);
+    }
+  }
+
+  Future<void> _resetQuickMessages() async {
+    try {
+      await context.read<WearQuickMessageProvider>().reset();
+      _snack('Đã khôi phục tin nhắn nhanh mặc định.', ok: true);
+    } catch (e) {
+      _snack(e);
+    }
+  }
 
   Future<void> _connectSimulator() async {
     try {

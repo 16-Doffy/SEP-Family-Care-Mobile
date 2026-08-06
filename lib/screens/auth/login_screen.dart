@@ -278,7 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       color: Color(0xFF4285F4),
                                     ),
                               label: Text(
-                                'Đăng nhập bằng Google',
+                                'Tiếp tục với Google',
                                 style: GoogleFonts.inter(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,

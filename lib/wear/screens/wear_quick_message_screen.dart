@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/wear_quick_message_provider.dart';
 import '../wear_widgets.dart';
 
 class WearQuickMessageScreen extends StatefulWidget {
@@ -14,14 +15,6 @@ class WearQuickMessageScreen extends StatefulWidget {
 }
 
 class _WearQuickMessageScreenState extends State<WearQuickMessageScreen> {
-  static const _presets = <String>[
-    'Đang về nhà',
-    'Đã đến nơi',
-    'Con ổn',
-    'Gọi con nhé',
-    'Về trễ một chút',
-  ];
-
   bool _sending = false;
   String? _sentText;
   String? _error;
@@ -29,7 +22,10 @@ class _WearQuickMessageScreenState extends State<WearQuickMessageScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _openDefaultChat());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WearQuickMessageProvider>().load();
+      _openDefaultChat();
+    });
   }
 
   Future<void> _openDefaultChat() async {
@@ -79,8 +75,12 @@ class _WearQuickMessageScreenState extends State<WearQuickMessageScreen> {
   @override
   Widget build(BuildContext context) {
     final chat = context.watch<ChatProvider>();
+    final quick = context.watch<WearQuickMessageProvider>();
     final myUserId = context.watch<AuthProvider>().user?.id ?? '';
     final recentMessages = chat.messages.where((m) => !m.isDeleted).take(4);
+    final presets = quick.loaded
+        ? quick.messages
+        : WearQuickMessageProvider.defaultMessages;
 
     return WearPage(
       scrollable: true,
@@ -164,7 +164,7 @@ class _WearQuickMessageScreenState extends State<WearQuickMessageScreen> {
             }),
           const SizedBox(height: 4),
           const WearSectionLabel('Trả lời nhanh'),
-          ..._presets.map((text) {
+          ...presets.map((text) {
             final sent = _sentText == text;
             return Padding(
               padding: const EdgeInsets.only(bottom: 7),

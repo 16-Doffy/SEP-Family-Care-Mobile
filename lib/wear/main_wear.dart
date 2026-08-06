@@ -8,6 +8,7 @@ import '../providers/gps_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/task_provider.dart';
+import '../providers/wear_quick_message_provider.dart';
 import 'wear_root.dart';
 
 void main() {
@@ -22,6 +23,12 @@ void main() {
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => CalendarProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
+        // BẮT BUỘC: WearQuickMessageScreen đọc provider này ngay trong build().
+        // Thiếu ở đây thì chạy `flutter run --target lib/wear/main_wear.dart`
+        // sẽ nổ ProviderNotFoundException khi mở mục "Nhắn nhanh" — mà chạy
+        // entrypoint mặc định lại không lộ, vì main.dart có đăng ký sẵn.
+        // Mọi provider mà màn wear đọc phải khai ở CẢ HAI entrypoint.
+        ChangeNotifierProvider(create: (_) => WearQuickMessageProvider()),
       ],
       child: const WearApp(),
     ),

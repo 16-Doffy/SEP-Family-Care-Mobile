@@ -9,6 +9,7 @@ import 'providers/chat_provider.dart';
 import 'providers/calendar_provider.dart';
 import 'providers/tab_config_provider.dart';
 import 'providers/wearable_provider.dart';
+import 'providers/wear_quick_message_provider.dart';
 import 'providers/album_face_provider.dart';
 import 'providers/money_provider.dart';
 import 'providers/wallet_provider.dart';
@@ -52,6 +53,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => CalendarProvider()),
         ChangeNotifierProvider(create: (_) => TabConfigProvider()),
         ChangeNotifierProvider(create: (_) => WearableProvider()),
+        ChangeNotifierProvider(create: (_) => WearQuickMessageProvider()),
         ChangeNotifierProvider(create: (_) => AlbumFaceProvider()),
       ],
       child: const FamilyCareApp(),

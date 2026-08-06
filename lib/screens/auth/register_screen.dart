@@ -319,7 +319,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   color: Color(0xFF4285F4),
                                 ),
                           label: Text(
-                            'Đăng ký bằng Google',
+                            'Tiếp tục với Google',
                             style: GoogleFonts.inter(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,

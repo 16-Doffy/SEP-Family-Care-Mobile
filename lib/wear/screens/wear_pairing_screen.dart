@@ -81,8 +81,11 @@ class _WearPairingScreenState extends State<WearPairingScreen> {
             ),
           ),
           const SizedBox(height: 5),
+          // KHÔNG hướng dẫn "nhập mã này trên FamilyCare": BE chưa có endpoint
+          // nhận mã ghép nối nên mobile không có chỗ nhập, hướng dẫn như vậy là
+          // sai sự thật. Xem DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md.
           const Text(
-            'Nhập mã này trên FamilyCare',
+            'Đăng nhập trên đồng hồ để dùng tạm',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -119,22 +122,26 @@ class _WearPairingScreenState extends State<WearPairingScreen> {
             ),
           ),
           const SizedBox(height: 9),
+          // Đăng nhập trên đồng hồ là hành động DUY NHẤT hiện chạy được nên phải
+          // là nút chính. Sẽ xóa nút này khi BE có luồng đổi mã lấy token
+          // (DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md), vì rule BE là "wearable
+          // không login bằng email/password".
           WearPillButton(
-            label: 'Đã ghép trên mobile',
-            icon: Icons.sync_rounded,
-            color: WearPalette.green,
-            loading: _checking,
-            onTap: _checkLink,
-          ),
-          const SizedBox(height: 7),
-          WearPillButton(
-            label: 'Đăng nhập tạm',
+            label: 'Đăng nhập trên đồng hồ',
             icon: Icons.login_rounded,
-            color: WearPalette.faint,
-            outlined: true,
+            color: WearPalette.green,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const WearLoginScreen()),
             ),
+          ),
+          const SizedBox(height: 7),
+          WearPillButton(
+            label: 'Kiểm tra lại',
+            icon: Icons.sync_rounded,
+            color: WearPalette.faint,
+            outlined: true,
+            loading: _checking,
+            onTap: _checkLink,
           ),
         ],
       ),
