@@ -390,13 +390,13 @@ class _MessageList extends StatelessWidget {
 /// như không ai dùng vì mở màn ra chỉ thấy ô nhập trống. Bộ gợi ý này chia rõ
 /// hai loại: câu chỉ TRA CỨU (trả lời ngay) và câu khiến AI TẠO đề xuất (phải
 /// bấm xác nhận mới ghi dữ liệu) — để người dùng biết trước điều gì sẽ xảy ra.
-class _PromptGroup {
+class AiPromptGroup {
   final String title;
   final IconData icon;
   final Color color;
   final List<String> prompts;
 
-  const _PromptGroup({
+  const AiPromptGroup({
     required this.title,
     required this.icon,
     required this.color,
@@ -404,13 +404,50 @@ class _PromptGroup {
   });
 }
 
-class _EmptyStateSuggestions extends StatelessWidget {
-  final ValueChanged<String> onPick;
+/// Gợi ý câu hỏi cho màn Trợ lý AI, chia theo quyền của người đang đăng nhập.
+///
+/// Gợi ý phải theo vai trò, không dùng chung một danh sách cứng. Thành viên
+/// thường bị chặn ở sổ quỹ chung (`GET /finance/ledger/entries` trả 403 — đã
+/// chốt là đúng thiết kế) và không có quyền tạo giao dịch, nhiệm vụ hay sự kiện
+/// lịch. Đưa những câu đó vào màn của họ là dẫn thẳng vào ngõ cụt: quan sát
+/// runtime 2026-08-07, Thành viên nhờ ghi khoản chi thì AI trả lời "vui lòng
+/// xác nhận trên ứng dụng" nhưng backend KHÔNG kèm `pendingAction`, nên không
+/// có nút nào để bấm.
+///
+/// `canManageFinance` đúng với Trưởng nhóm và Phó nhóm (`isAdministrative`).
+List<AiPromptGroup> aiPromptGroupsFor({required bool canManageFinance}) {
+  if (!canManageFinance) {
+    return [
+      AiPromptGroup(
+        title: 'Việc của tôi',
+        icon: Icons.checklist_rounded,
+        color: AppColors.link,
+        prompts: [
+          'Tôi còn nhiệm vụ nào chưa hoàn thành?',
+          'Nhiệm vụ nào của tôi sắp tới hạn?',
+          'Tôi được bao nhiêu điểm thưởng tháng này?',
+        ],
+      ),
+      AiPromptGroup(
+        title: 'Chi tiêu của tôi',
+        icon: Icons.savings_outlined,
+        color: AppColors.success,
+        prompts: [
+          'Tháng này tôi đã tiêu bao nhiêu?',
+          'Hạn mức chi tiêu của tôi còn lại bao nhiêu?',
+        ],
+      ),
+      AiPromptGroup(
+        title: 'Lịch gia đình',
+        icon: Icons.event_note_rounded,
+        color: AppColors.calTravel,
+        prompts: ['Tuần này nhà mình có lịch gì?'],
+      ),
+    ];
+  }
 
-  const _EmptyStateSuggestions({required this.onPick});
-
-  static final _groups = <_PromptGroup>[
-    _PromptGroup(
+  return [
+    AiPromptGroup(
       title: 'Tra cứu tài chính',
       icon: Icons.query_stats_rounded,
       color: AppColors.success,
@@ -421,7 +458,18 @@ class _EmptyStateSuggestions extends StatelessWidget {
         'Mục tiêu tiết kiệm của nhà mình còn thiếu bao nhiêu?',
       ],
     ),
-    _PromptGroup(
+    AiPromptGroup(
+      title: 'Mô hình tài chính & ngân sách',
+      icon: Icons.account_balance_rounded,
+      color: AppColors.primary600,
+      prompts: [
+        'Nhà mình đang áp dụng mô hình tài chính nào?',
+        'Hũ nào đang chi vượt mục tiêu?',
+        'Kế hoạch ngân sách tháng này còn lại bao nhiêu?',
+        'Tháng này đã chia quỹ theo mô hình chưa?',
+      ],
+    ),
+    AiPromptGroup(
       title: 'Tra cứu nhiệm vụ & lịch',
       icon: Icons.event_note_rounded,
       color: AppColors.link,
@@ -431,20 +479,30 @@ class _EmptyStateSuggestions extends StatelessWidget {
         'Tuần này nhà mình có lịch gì?',
       ],
     ),
-    _PromptGroup(
+    AiPromptGroup(
       title: 'Nhờ AI tạo (bạn xác nhận rồi mới ghi)',
       icon: Icons.auto_awesome_rounded,
-      color: AppColors.primary600,
+      color: AppColors.calTravel,
       prompts: [
         'Ghi khoản chi 200.000đ tiền ăn uống hôm nay',
         'Ghi khoản thu 5.000.000đ lương tháng này',
         'Tạo nhiệm vụ rửa bát tối nay',
+        'Tạo lịch khám sức khỏe 9h sáng mai',
       ],
     ),
   ];
+}
+
+class _EmptyStateSuggestions extends StatelessWidget {
+  final ValueChanged<String> onPick;
+
+  const _EmptyStateSuggestions({required this.onPick});
 
   @override
   Widget build(BuildContext context) {
+    final canManageFinance =
+        context.watch<AuthProvider>().user?.canManageFinance ?? false;
+    final groups = aiPromptGroupsFor(canManageFinance: canManageFinance);
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       children: [
@@ -477,7 +535,7 @@ class _EmptyStateSuggestions extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 22),
-        for (final group in _groups) ...[
+        for (final group in groups) ...[
           Row(
             children: [
               Icon(group.icon, size: 16, color: group.color),
@@ -535,6 +593,42 @@ class _EmptyStateSuggestions extends StatelessWidget {
             ),
           const SizedBox(height: 12),
         ],
+        // Nói thẳng giới hạn thay vì để người dùng hỏi rồi mới biết mình không
+        // có quyền. Thành viên không thấy nhóm "Nhờ AI tạo" nên phải giải thích
+        // vì sao, nếu không họ tưởng tính năng bị lỗi.
+        if (!canManageFinance)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: context.colors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.colors.divider),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: context.colors.textMuted,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Ghi thu chi vào quỹ chung, tạo nhiệm vụ hay tạo lịch là '
+                    'việc của Trưởng nhóm và Phó nhóm. Bạn vẫn xem được phần '
+                    'của mình và hỏi tôi bất cứ điều gì.',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      height: 1.45,
+                      color: context.colors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -1048,18 +1142,45 @@ class _QuickPrompts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const prompts = [
-      (
-        label: 'Chi tiêu tháng này',
-        prompt: 'Tháng này nhà mình tiêu hết bao nhiêu?',
-      ),
-      (
-        label: 'Tạo giao dịch',
-        prompt: 'Ghi nhận khoản chi 200000 cho ăn uống hôm nay',
-      ),
-      (label: 'Tình hình nhiệm vụ', prompt: 'Tóm tắt nhiệm vụ của gia đình'),
-      (label: 'Lịch tuần này', prompt: 'Tuần này nhà mình có lịch gì?'),
-    ];
+    final canManageFinance =
+        context.watch<AuthProvider>().user?.canManageFinance ?? false;
+    // Cùng lý do với bảng gợi ý ở màn rỗng: Thành viên không có quyền ghi quỹ
+    // chung nên không được mời làm việc đó.
+    final prompts = canManageFinance
+        ? const [
+            (
+              label: 'Chi tiêu tháng này',
+              prompt: 'Tháng này nhà mình tiêu hết bao nhiêu?',
+            ),
+            (
+              label: 'Mô hình đang dùng',
+              prompt: 'Nhà mình đang áp dụng mô hình tài chính nào?',
+            ),
+            (
+              label: 'Hũ vượt mục tiêu',
+              prompt: 'Hũ nào đang chi vượt mục tiêu?',
+            ),
+            (
+              label: 'Tạo giao dịch',
+              prompt: 'Ghi nhận khoản chi 200000 cho ăn uống hôm nay',
+            ),
+            (
+              label: 'Tình hình nhiệm vụ',
+              prompt: 'Tóm tắt nhiệm vụ của gia đình',
+            ),
+            (label: 'Lịch tuần này', prompt: 'Tuần này nhà mình có lịch gì?'),
+          ]
+        : const [
+            (
+              label: 'Nhiệm vụ của tôi',
+              prompt: 'Tôi còn nhiệm vụ nào chưa hoàn thành?',
+            ),
+            (
+              label: 'Chi tiêu của tôi',
+              prompt: 'Tháng này tôi đã tiêu bao nhiêu?',
+            ),
+            (label: 'Lịch tuần này', prompt: 'Tuần này nhà mình có lịch gì?'),
+          ];
     return SizedBox(
       height: 46,
       child: ListView(
