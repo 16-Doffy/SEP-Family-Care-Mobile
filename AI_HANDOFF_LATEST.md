@@ -86,10 +86,12 @@ Test mới: `test/ai_feature_access_test.dart` — 12 test khoá contract tên k
 `actionType`, gồm cả assert "đủ 26 key và mỗi key có nhãn tiếng Việt" để lần sau
 BE đổi enum là test đỏ ngay.
 
-Báo cáo gửi BE: `BAO_CAO_BE_AI_CHATBOT_2026-08-07.md` — 7 mục, quan trọng nhất
-là Swagger không có schema cho `pendingAction` (cả 7 endpoint AI đều thiếu
-response DTO; `POST .../messages` chỉ khai 502/503, `confirm-action` chỉ khai
-409/410) và câu hỏi bảo mật "AI tra cứu theo quyền người hỏi" chưa ai kiểm chứng.
+Đã gửi BE, không lưu thành file trong repo: Swagger không có schema cho
+`pendingAction` — cả 7 endpoint AI đều thiếu response DTO, `POST .../messages`
+chỉ khai 502/503, `confirm-action` chỉ khai 409/410. Kèm câu hỏi bảo mật "AI tra
+cứu dữ liệu theo quyền người hỏi" chưa ai kiểm chứng: Member vốn bị 403 ở
+`GET /finance/ledger/entries` theo đúng thiết kế, nếu AI vẫn trả lời con số đó
+thì AI đang là cửa sau vòng qua RBAC.
 
 ### File tạm không được commit
 
