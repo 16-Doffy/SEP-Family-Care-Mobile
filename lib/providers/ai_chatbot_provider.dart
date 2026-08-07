@@ -5,6 +5,9 @@ import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
 class AiChatbotProvider extends ChangeNotifier {
+  static const _conversationsLimit = 20;
+  static const _messagesLimit = 50;
+
   final List<AiConversation> _conversations = [];
   final List<AiMessage> _messages = [];
   final Set<String> _actionBusy = {};
@@ -17,6 +20,13 @@ class AiChatbotProvider extends ChangeNotifier {
   String? _error;
   FeatureAccess? _featureAccess;
 
+  int _conversationsPage = 1;
+  int? _conversationsTotalPages;
+  bool _loadingMoreConversations = false;
+  int _messagesPage = 1;
+  int? _messagesTotalPages;
+  bool _loadingMoreMessages = false;
+
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   List<AiMessage> get messages => List.unmodifiable(_messages);
   String? get currentConversationId => _currentConversationId;
@@ -25,6 +35,22 @@ class AiChatbotProvider extends ChangeNotifier {
   bool get loadingAccess => _loadingAccess;
   bool get sending => _sending;
   String? get error => _error;
+  bool get loadingMoreConversations => _loadingMoreConversations;
+  bool get loadingMoreMessages => _loadingMoreMessages;
+
+  /// Còn trang sau hay không.
+  ///
+  /// Swagger có `page`/`limit` cho hai endpoint GET nhưng không mô tả khối
+  /// phân trang trong response, nên đọc phòng thủ giống `WalletProvider`: ưu
+  /// tiên `totalPages`/`total`/`hasNext`, không có thì suy từ số bản ghi nhận
+  /// được bằng đúng `limit`.
+  bool get hasMoreConversations => _conversationsTotalPages == null
+      ? _conversations.length >= _conversationsLimit * _conversationsPage
+      : _conversationsPage < _conversationsTotalPages!;
+
+  bool get hasMoreMessages => _messagesTotalPages == null
+      ? _messages.length >= _messagesLimit * _messagesPage
+      : _messagesPage < _messagesTotalPages!;
 
   /// BE chưa trả lời, hoặc trả `featureAccess` rỗng → coi như KHÔNG BIẾT.
   bool get accessUnknown => _featureAccess == null || _featureAccess!.isUnknown;
@@ -61,6 +87,12 @@ class AiChatbotProvider extends ChangeNotifier {
     _loadingMessages = false;
     _loadingAccess = false;
     _sending = false;
+    _conversationsPage = 1;
+    _conversationsTotalPages = null;
+    _loadingMoreConversations = false;
+    _messagesPage = 1;
+    _messagesTotalPages = null;
+    _loadingMoreMessages = false;
     notifyListeners();
   }
 
@@ -116,25 +148,81 @@ class AiChatbotProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchConversations() async {
+  Future<void> fetchConversations({bool refresh = true}) async {
     final fid = ApiClient.instance.familyId;
     if (fid == null) return;
-    _loadingConversations = true;
-    _error = null;
-    notifyListeners();
+    if (refresh) {
+      _loadingConversations = true;
+      _error = null;
+      notifyListeners();
+    }
     try {
+      final page = refresh ? 1 : _conversationsPage + 1;
       final data = await ApiClient.instance.get(
-        '/families/$fid/ai-chatbot/conversations?page=1&limit=20',
+        '/families/$fid/ai-chatbot/conversations'
+        '?page=$page&limit=$_conversationsLimit',
       );
-      _conversations
-        ..clear()
-        ..addAll(_parseList(data).map(AiConversation.fromJson));
+      final parsed = _parseList(data).map(AiConversation.fromJson).toList();
+      if (refresh) {
+        _conversations
+          ..clear()
+          ..addAll(parsed);
+      } else {
+        // Trang sau có thể lặp lại bản ghi nếu người dùng vừa tạo hội thoại
+        // mới làm lệch thứ tự — lọc theo id thay vì nối mù.
+        final seen = _conversations.map((c) => c.id).toSet();
+        _conversations.addAll(parsed.where((c) => !seen.contains(c.id)));
+      }
+      _conversationsPage = page;
+      _conversationsTotalPages = _readTotalPages(
+        data,
+        parsed.length,
+        page,
+        _conversationsLimit,
+      );
     } catch (e) {
       _error = _friendlyError(e);
     } finally {
-      _loadingConversations = false;
+      if (refresh) _loadingConversations = false;
       notifyListeners();
     }
+  }
+
+  /// Tải thêm hội thoại cũ hơn.
+  ///
+  /// Trước 2026-08-07 FE cứng `page=1`, quá 20 hội thoại là không còn đường
+  /// xem lại những cái cũ hơn.
+  Future<void> loadMoreConversations() async {
+    if (_loadingMoreConversations || !hasMoreConversations) return;
+    _loadingMoreConversations = true;
+    notifyListeners();
+    try {
+      await fetchConversations(refresh: false);
+    } finally {
+      _loadingMoreConversations = false;
+      notifyListeners();
+    }
+  }
+
+  /// Đọc tổng số trang từ response.
+  ///
+  /// Swagger khai `page`/`limit` nhưng không mô tả khối phân trang trả về, nên
+  /// thử lần lượt `meta`, `pagination` rồi tới chính gốc response. Không tìm
+  /// thấy gì thì suy từ số bản ghi: nhận về ít hơn `limit` nghĩa là đã hết.
+  int? _readTotalPages(dynamic data, int fetched, int page, int limit) {
+    if (data is! Map) return fetched < limit ? page : null;
+    final meta = data['meta'] is Map
+        ? data['meta'] as Map
+        : data['pagination'] is Map
+        ? data['pagination'] as Map
+        : data;
+    final totalPages = (meta['totalPages'] as num?)?.toInt();
+    if (totalPages != null) return totalPages;
+    final total = (meta['total'] as num?)?.toInt();
+    if (total != null) return (total / limit).ceil().clamp(1, 1 << 30);
+    final hasNext = meta['hasNext'] == true || meta['hasNextPage'] == true;
+    if (hasNext) return null;
+    return fetched < limit ? page : null;
   }
 
   Future<void> selectConversation(String conversationId) async {
@@ -142,30 +230,54 @@ class AiChatbotProvider extends ChangeNotifier {
       return;
     }
     _currentConversationId = conversationId;
+    // Đổi hội thoại thì con trỏ trang của hội thoại cũ không còn nghĩa gì.
+    _messagesPage = 1;
+    _messagesTotalPages = null;
     await fetchMessages();
   }
 
   void startNewConversation() {
     _currentConversationId = null;
     _messages.clear();
+    _messagesPage = 1;
+    _messagesTotalPages = null;
     _error = null;
     notifyListeners();
   }
 
-  Future<void> fetchMessages() async {
+  Future<void> fetchMessages({bool refresh = true}) async {
     final fid = ApiClient.instance.familyId;
     final cid = _currentConversationId;
     if (fid == null || cid == null) return;
-    _loadingMessages = true;
-    _error = null;
-    notifyListeners();
+    if (refresh) {
+      _loadingMessages = true;
+      _error = null;
+      notifyListeners();
+    }
     try {
+      final page = refresh ? 1 : _messagesPage + 1;
       final data = await ApiClient.instance.get(
-        '/families/$fid/ai-chatbot/conversations/$cid/messages?page=1&limit=50',
+        '/families/$fid/ai-chatbot/conversations/$cid/messages'
+        '?page=$page&limit=$_messagesLimit',
       );
-      _messages
-        ..clear()
-        ..addAll(_parseList(data).map(AiMessage.fromJson));
+      final parsed = _parseList(data).map(AiMessage.fromJson).toList();
+      if (refresh) {
+        _messages
+          ..clear()
+          ..addAll(parsed);
+      } else {
+        // Không biết BE sắp xếp mới nhất hay cũ nhất trước (Swagger không nói),
+        // nên gộp theo id rồi sắp lại theo thời gian — đúng ở cả hai chiều.
+        final seen = _messages.map((m) => m.id).toSet();
+        _messages.addAll(parsed.where((m) => !seen.contains(m.id)));
+      }
+      _messagesPage = page;
+      _messagesTotalPages = _readTotalPages(
+        data,
+        parsed.length,
+        page,
+        _messagesLimit,
+      );
       _messages.sort((a, b) {
         final aa = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
         final bb = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -174,7 +286,23 @@ class AiChatbotProvider extends ChangeNotifier {
     } catch (e) {
       _error = _friendlyError(e);
     } finally {
-      _loadingMessages = false;
+      if (refresh) _loadingMessages = false;
+      notifyListeners();
+    }
+  }
+
+  /// Tải thêm tin nhắn của hội thoại đang mở.
+  ///
+  /// Trước 2026-08-07 FE cứng `page=1&limit=50`, hội thoại dài hơn 50 tin là
+  /// mất hẳn phần còn lại, không có đường lấy về.
+  Future<void> loadMoreMessages() async {
+    if (_loadingMoreMessages || !hasMoreMessages) return;
+    _loadingMoreMessages = true;
+    notifyListeners();
+    try {
+      await fetchMessages(refresh: false);
+    } finally {
+      _loadingMoreMessages = false;
       notifyListeners();
     }
   }

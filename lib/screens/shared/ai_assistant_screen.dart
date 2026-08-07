@@ -286,8 +286,18 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                           ? const Center(child: CircularProgressIndicator())
                           : ListView.builder(
                               shrinkWrap: true,
-                              itemCount: ai.conversations.length,
+                              // +1 cho hàng "Tải thêm" ở cuối khi còn trang sau.
+                              itemCount:
+                                  ai.conversations.length +
+                                  (ai.hasMoreConversations ? 1 : 0),
                               itemBuilder: (_, i) {
+                                if (i >= ai.conversations.length) {
+                                  return _LoadMoreTile(
+                                    label: 'Tải thêm hội thoại',
+                                    loading: ai.loadingMoreConversations,
+                                    onTap: ai.loadMoreConversations,
+                                  );
+                                }
                                 final c = ai.conversations[i];
                                 final selected =
                                     c.id == ai.currentConversationId;
@@ -372,13 +382,23 @@ class _MessageList extends StatelessWidget {
     if (messages.isEmpty) {
       return _EmptyStateSuggestions(onPick: onPickPrompt);
     }
+    // Hàng "Tải thêm" nằm trên cùng vì tin cũ hơn thuộc về phía trên.
+    final leading = ai.hasMoreMessages ? 1 : 0;
     return ListView.builder(
       controller: scrollCtrl,
       padding: const EdgeInsets.all(16),
-      itemCount: messages.length + (ai.sending ? 1 : 0),
+      itemCount: leading + messages.length + (ai.sending ? 1 : 0),
       itemBuilder: (_, i) {
-        if (i >= messages.length) return const _TypingBubble();
-        return _MessageBubble(message: messages[i]);
+        if (leading == 1 && i == 0) {
+          return _LoadMoreTile(
+            label: 'Tải thêm tin nhắn',
+            loading: ai.loadingMoreMessages,
+            onTap: ai.loadMoreMessages,
+          );
+        }
+        final index = i - leading;
+        if (index >= messages.length) return const _TypingBubble();
+        return _MessageBubble(message: messages[index]);
       },
     );
   }
@@ -1089,6 +1109,45 @@ class _PendingActionCard extends StatelessWidget {
         () => calendar.fetchEvents(calendarMonthToReload(action.preview)),
       );
     }
+  }
+}
+
+/// Hàng "Tải thêm" dùng chung cho danh sách hội thoại và khung tin nhắn.
+class _LoadMoreTile extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final VoidCallback onTap;
+
+  const _LoadMoreTile({
+    required this.label,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: loading
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : TextButton.icon(
+                onPressed: onTap,
+                icon: const Icon(Icons.history_rounded, size: 16),
+                label: Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+      ),
+    );
   }
 }
 
