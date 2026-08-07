@@ -128,11 +128,32 @@ class AiPendingAction {
     );
   }
 
+  /// Các `actionType` FE biết cách hiển thị preview và refresh sau khi xác nhận.
+  ///
+  /// Swagger KHÔNG có schema cho `pendingAction`, nên danh sách này là suy đoán
+  /// từ mô tả nghiệp vụ của BE, chưa được chốt bằng contract. Mỗi tên có 2–3
+  /// biến thể vì không biết BE chọn cách đặt tên nào. Đừng coi đây là nguồn
+  /// đúng — xem mục "Cần báo BE" trong tài liệu bàn giao.
+  static const knownActionTypes = <String>{
+    'CREATE_LEDGER_ENTRY',
+    'CREATE_TRANSACTION',
+    'FINANCE_LEDGER_CREATE',
+    'CREATE_TASK',
+    'TASK_CREATE',
+    'CREATE_CALENDAR_EVENT',
+    'CALENDAR_EVENT_CREATE',
+  };
+
   bool get isPending {
     if (status.toUpperCase() != 'PENDING') return false;
     final expires = expiresAt;
     return expires == null || expires.isAfter(DateTime.now());
   }
+
+  /// `false` khi BE gửi loại đề xuất FE chưa biết. Nơi gọi phải xử lý phòng thủ
+  /// (nhãn chung + refresh rộng) chứ không được im lặng bỏ qua.
+  bool get isKnownActionType =>
+      knownActionTypes.contains(actionType.toUpperCase());
 
   String get actionLabel => switch (actionType.toUpperCase()) {
     'CREATE_LEDGER_ENTRY' ||

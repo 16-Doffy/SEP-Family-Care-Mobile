@@ -21,14 +21,15 @@ void main() {
       final access = FeatureAccess.fromJson({
         'calendar.enabled': true,
         'calendarReminders': true,
+        // `aiEnabled` là tên FE tự đặt trước đây, không có trong 26 key chính
+        // thức. Giữ làm alias của `ai.assistant` để plan cũ chưa migrate vẫn
+        // đọc được; xem thêm test/ai_feature_access_test.dart.
         'aiEnabled': true,
-        'advancedFinance': true,
       });
 
       expect(access.calendarEnabled, isTrue);
       expect(access.calendarReminders, isTrue);
-      expect(access.aiEnabled, isTrue);
-      expect(access.advancedFinance, isTrue);
+      expect(access.aiAssistant, isTrue);
     });
   });
 }

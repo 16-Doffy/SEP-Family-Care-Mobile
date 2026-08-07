@@ -149,21 +149,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               ? '${(stoMB / 1024).toStringAsFixed(0)} GB'
               : '${stoMB.toStringAsFixed(0)} MB';
           final feat = FeatureAccess.fromJson(p['featureAccess']);
-          // BE mới dùng key lồng như calendar.enabled; helper vẫn hỗ trợ key phẳng cũ.
+          // Duyệt đúng 26 key chính thức BE khai trong Swagger thay vì liệt kê
+          // tay từng tên. Trước đây danh sách này gọi ai.enabled/ai.chatbot/
+          // finance.advanced/reports.advanced/sos.enabled/storage.unlimited —
+          // không key nào tồn tại nên các dòng đó không bao giờ hiện, kể cả gói
+          // trả phí. Đi qua officialKeys thì gõ sai tên là lộ ra ngay lúc build.
           final features = <String>[
             '1|Nhiệm vụ & sổ thu chi cơ bản',
             '1|Chat nhóm & Thông báo',
-            if (feat.calendarEnabled) '1|Lịch',
-            if (feat.calendarReminders) '1|Nhắc lịch',
-            if (feat.calendarRecurringEvents) '1|Sự kiện lặp lại',
-            if (feat.aiEnabled) '1|Tính năng AI',
-            if (feat.advancedFinance) '1|Tài chính nâng cao',
-            if (feat.advancedReports) '1|Báo cáo nâng cao',
-            if (feat.aiChatbot) '1|Trợ lý AI',
-            if (feat.sos) '1|SOS khẩn cấp',
-            if (feat.unlimitedStorage) '1|Lưu trữ không giới hạn',
-            if (feat.maxFamilies != null && feat.maxFamilies != false)
-              '1|Nhiều gia đình',
+            for (final key in FeatureAccess.officialKeys)
+              if (feat.flag(key))
+                '1|${FeatureAccess.officialKeyLabels[key] ?? key}',
           ];
 
           Color color;
