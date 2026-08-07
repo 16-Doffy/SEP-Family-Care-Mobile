@@ -56,6 +56,41 @@ quick message, tasks).
   của Giáp: `fall_detection_test`, `wear_providers_registered_test`,
   `wear_quick_message_provider_test`, `album_face_mapping_test`.
 
+### Trợ lý AI — 4 lỗi FE đã sửa trong ngày
+
+- **Sai tên feature key (lỗi im lặng).** `FeatureAccess` đọc `ai.enabled` và
+  `ai.chatbot`; cả hai KHÔNG nằm trong 26 key chính thức BE khai ở
+  `CreateSubscriptionPlanDto.featureAccess`. `flag()` trả `false` cả khi key
+  không tồn tại, nên dòng "Tính năng AI" và "Trợ lý AI" ở màn Gói đăng ký không
+  bao giờ hiện, kể cả gói trả phí. Đã đổi sang `ai.assistant` (giữ tên cũ làm
+  alias cho plan chưa migrate) và thêm `officialKeys` + `officialKeyLabels` để
+  màn Gói đăng ký duyệt đúng 26 key thay vì liệt kê tay. Bốn key FE tự bịa khác
+  cũng bị bỏ cùng lúc: `finance.advanced`, `reports.advanced`, `sos.enabled`,
+  `storage.unlimited`, `families.max`.
+- **Gate theo gói.** `AiChatbotProvider.bootstrap()` nay gọi
+  `fetchFeatureAccess()` trước; biết chắc gói không có `ai.assistant` thì dừng,
+  không gọi endpoint nào và hiện `_UpgradePanel` (nút "Xem gói đăng ký" chỉ hiện
+  với Manager theo `AppUser.canManageSubscription`). Vẫn **fail-open** khi BE trả
+  `featureAccess` rỗng, theo đúng convention đã ghi trong `feature_access.dart`.
+- **Gợi ý câu hỏi.** Màn rỗng nay là bảng gợi ý ba nhóm: tra cứu tài chính, tra
+  cứu nhiệm vụ & lịch, và nhờ AI tạo (ghi rõ "bạn xác nhận rồi mới ghi"). Dải
+  chip ngang chỉ còn hiện khi hội thoại đã có tin nhắn, không lặp lại ở màn rỗng.
+- **actionType lạ không còn hỏng im lặng.** Trước đây `switch` trong
+  `_confirmAndReload` không có nhánh `default`: BE thêm loại mới thì người dùng
+  bấm xác nhận, BE tạo dữ liệu thật, app không refresh gì — nhìn như không có
+  chuyện gì xảy ra. Nay `AiPendingAction.isKnownActionType` phân biệt được, loại
+  lạ thì refresh cả ba nguồn (task, ví, lịch, mỗi nguồn bọc try riêng để một lỗi
+  không chặn hai nguồn kia) và hiện mã `actionType` thô ngay trên thẻ đề xuất.
+
+Test mới: `test/ai_feature_access_test.dart` — 12 test khoá contract tên key và
+`actionType`, gồm cả assert "đủ 26 key và mỗi key có nhãn tiếng Việt" để lần sau
+BE đổi enum là test đỏ ngay.
+
+Báo cáo gửi BE: `BAO_CAO_BE_AI_CHATBOT_2026-08-07.md` — 7 mục, quan trọng nhất
+là Swagger không có schema cho `pendingAction` (cả 7 endpoint AI đều thiếu
+response DTO; `POST .../messages` chỉ khai 502/503, `confirm-action` chỉ khai
+409/410) và câu hỏi bảo mật "AI tra cứu theo quyền người hỏi" chưa ai kiểm chứng.
+
 ### File tạm không được commit
 
 `.tmp_report_audit/`, `BuildDocx.cs`, `build_report6.ps1` là công cụ dựng báo cáo
