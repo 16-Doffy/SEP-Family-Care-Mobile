@@ -13,6 +13,89 @@ import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/ai_chatbot_icon.dart';
 
+/// Định dạng một field trong `preview` của đề xuất AI để người dùng đọc được.
+///
+/// `preview` là thứ DUY NHẤT người dùng dựa vào để kiểm tra trước khi bấm xác
+/// nhận, nên không được in dữ liệu thô. BE trả thời gian dạng ISO UTC
+/// (`2026-07-25T02:00:00.000Z` = 9h sáng giờ VN) và số tiền dạng số trần. In
+/// nguyên xi thì người dùng thấy chuỗi UTC lệch 7 tiếng so với giờ họ vừa nói
+/// với AI, và con số không có dấu phân cách.
+///
+/// Tách ra top-level để test được — xem
+/// `test/ai_pending_action_contract_test.dart`.
+String formatAiPreviewValue(String key, dynamic value) {
+  if (value == null) return '-';
+  if (value is List) {
+    if (value.isEmpty) return '-';
+    return value.map((e) => formatAiPreviewValue(key, e)).join(', ');
+  }
+  if (value is Map) {
+    // Ưu tiên tên hiển thị nếu BE lồng object thay vì trả chuỗi.
+    final named = value['name'] ?? value['title'] ?? value['fullName'];
+    if (named != null) return named.toString();
+    if (value.isEmpty) return '-';
+    return value.values.take(3).join(' · ');
+  }
+  if (_isMoneyKey(key)) {
+    final amount = value is num
+        ? value.toDouble()
+        : double.tryParse(value.toString());
+    if (amount != null) return _formatPreviewMoney(amount);
+  }
+  if (_isTimeKey(key)) {
+    final parsed = DateTime.tryParse(value.toString());
+    if (parsed != null) return formatAiPreviewDateTime(parsed.toLocal());
+  }
+  return value.toString();
+}
+
+bool _isMoneyKey(String key) => const {
+  'amount',
+  'totalamount',
+  'price',
+  'reward',
+  'rewardamount',
+}.contains(key.toLowerCase());
+
+bool _isTimeKey(String key) => const {
+  'starttime',
+  'endtime',
+  'dueat',
+  'duedate',
+  'entrydate',
+  'date',
+  'remindat',
+}.contains(key.toLowerCase());
+
+String _formatPreviewMoney(double amount) {
+  final grouped = amount.round().toString().replaceAllMapped(
+    RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+    (m) => '${m[1]}.',
+  );
+  return '$grouped ₫';
+}
+
+String formatAiPreviewDateTime(DateTime d) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(d.hour)}:${two(d.minute)} ${two(d.day)}/${two(d.month)}/${d.year}';
+}
+
+/// Tháng cần tải lại sau khi xác nhận đề xuất tạo sự kiện lịch.
+///
+/// `CalendarProvider.fetchEvents` chỉ tải đúng MỘT tháng. Sự kiện AI vừa tạo
+/// không nhất thiết nằm trong tháng hiện tại — "9h sáng mai" vào ngày cuối
+/// tháng là đã sang tháng sau — nên phải lấy tháng từ `startTime` trong
+/// preview, nếu không người dùng xác nhận xong mở lịch ra không thấy gì.
+DateTime calendarMonthToReload(Map<String, dynamic> preview) {
+  for (final key in const ['startTime', 'startAt', 'date', 'endTime']) {
+    final raw = preview[key];
+    if (raw == null) continue;
+    final parsed = DateTime.tryParse(raw.toString());
+    if (parsed != null) return parsed.toLocal();
+  }
+  return DateTime.now();
+}
+
 class AIAssistantScreen extends StatefulWidget {
   const AIAssistantScreen({super.key});
 
@@ -723,19 +806,19 @@ class _PendingActionCard extends StatelessWidget {
     for (final key in keys) {
       if (!preview.containsKey(key) || used.contains(key)) continue;
       used.add(key);
-      rows.add(_previewRow(_label(key), preview[key]));
+      rows.add(_previewRow(key, _label(key), preview[key]));
     }
     if (rows.isEmpty) {
       rows.addAll(
         preview.entries
             .take(6)
-            .map((entry) => _previewRow(_label(entry.key), entry.value)),
+            .map((e) => _previewRow(e.key, _label(e.key), e.value)),
       );
     }
     return rows;
   }
 
-  Widget _previewRow(String label, dynamic value) => Padding(
+  Widget _previewRow(String key, String label, dynamic value) => Padding(
     padding: const EdgeInsets.only(bottom: 4),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -753,7 +836,7 @@ class _PendingActionCard extends StatelessWidget {
         ),
         Expanded(
           child: Text(
-            _formatPreviewValue(value),
+            formatAiPreviewValue(key, value),
             style: GoogleFonts.inter(
               fontSize: 12,
               height: 1.3,
@@ -796,12 +879,6 @@ class _PendingActionCard extends StatelessWidget {
     'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => AppColors.calTravel,
     _ => AppColors.primary600,
   };
-
-  String _formatPreviewValue(dynamic value) {
-    if (value is List) return value.join(', ');
-    if (value is Map) return value.values.take(3).join(' · ');
-    return value?.toString() ?? '-';
-  }
 
   Future<void> _confirmAndReload(BuildContext context) async {
     final ai = context.read<AiChatbotProvider>();
@@ -850,7 +927,10 @@ class _PendingActionCard extends StatelessWidget {
     if (refreshTasks) await guarded('tasks', tasks.fetchTasks);
     if (refreshWallet) await guarded('wallet', wallet.fetchWallets);
     if (refreshCalendar) {
-      await guarded('calendar', () => calendar.fetchEvents(DateTime.now()));
+      await guarded(
+        'calendar',
+        () => calendar.fetchEvents(calendarMonthToReload(action.preview)),
+      );
     }
   }
 }

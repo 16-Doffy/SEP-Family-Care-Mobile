@@ -248,7 +248,13 @@ class AiChatbotProvider extends ChangeNotifier {
       await fetchMessages();
       return true;
     } catch (e) {
-      _error = _friendlyError(e);
+      _error = _friendlyError(e, isAction: true);
+      // 409 (đã xử lý rồi) và 410 (hết hạn) đều nghĩa là trạng thái thật ở
+      // server đã khác cái FE đang vẽ. Không tải lại thì thẻ đề xuất kẹt ở
+      // "Chờ xác nhận" và người dùng bấm mãi cũng chỉ ra đúng lỗi đó.
+      if (e is ApiException && (e.statusCode == 409 || e.statusCode == 410)) {
+        await fetchMessages();
+      }
       return false;
     } finally {
       _actionBusy.remove(messageId);
@@ -291,12 +297,20 @@ class AiChatbotProvider extends ChangeNotifier {
         .toList();
   }
 
-  String _friendlyError(Object error) {
+  /// [isAction] phân biệt lỗi lúc chat với lỗi lúc xác nhận/từ chối đề xuất.
+  ///
+  /// Cùng mã 403 nhưng hai ngữ cảnh khác hẳn nhau: lúc chat là gói cước chưa có
+  /// Trợ lý AI, còn lúc confirm-action là **vai trò của người dùng không được
+  /// phép tạo** dữ liệu đó (BE nói rõ trong contract 2026-08-07). Gộp chung một
+  /// câu thì Member bị từ chối tạo giao dịch lại tưởng phải đi nâng gói.
+  String _friendlyError(Object error, {bool isAction = false}) {
     if (error is ApiException) {
       return switch (error.statusCode) {
+        403 when isAction =>
+          'Bạn không có quyền tạo dữ liệu này. Hãy nhờ Trưởng nhóm thực hiện.',
         403 => 'Bạn chưa có quyền dùng Trợ lý AI trong gói hiện tại.',
         409 => 'Đề xuất này đã được xử lý trước đó.',
-        410 => 'Đề xuất đã hết hạn, vui lòng yêu cầu AI tạo lại.',
+        410 => 'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',
         502 =>
           'AI chưa phản hồi kịp. Tin nhắn đã được lưu, bạn có thể thử lại.',
         503 => 'Trợ lý AI chưa được bật trên server.',

@@ -128,20 +128,28 @@ class AiPendingAction {
     );
   }
 
-  /// Các `actionType` FE biết cách hiển thị preview và refresh sau khi xác nhận.
+  /// Ba `actionType` BE đã chốt bằng tin nhắn contract (bản FE nhận 2026-08-07).
   ///
-  /// Swagger KHÔNG có schema cho `pendingAction`, nên danh sách này là suy đoán
-  /// từ mô tả nghiệp vụ của BE, chưa được chốt bằng contract. Mỗi tên có 2–3
-  /// biến thể vì không biết BE chọn cách đặt tên nào. Đừng coi đây là nguồn
-  /// đúng — xem mục "Cần báo BE" trong tài liệu bàn giao.
-  static const knownActionTypes = <String>{
+  /// Swagger vẫn chưa khai enum này, nên đây là nguồn đúng duy nhất hiện có.
+  static const confirmedActionTypes = <String>{
+    'CREATE_TASK',
     'CREATE_LEDGER_ENTRY',
+    'CREATE_CALENDAR_EVENT',
+  };
+
+  /// Biến thể tên FE từng đoán trước khi BE chốt. Giữ lại vì vô hại và đỡ được
+  /// trường hợp BE đổi quy ước đặt tên; không phải tên chính thức.
+  static const legacyActionTypeAliases = <String>{
     'CREATE_TRANSACTION',
     'FINANCE_LEDGER_CREATE',
-    'CREATE_TASK',
     'TASK_CREATE',
-    'CREATE_CALENDAR_EVENT',
     'CALENDAR_EVENT_CREATE',
+  };
+
+  /// Các `actionType` FE biết cách hiển thị preview và refresh sau khi xác nhận.
+  static const knownActionTypes = <String>{
+    ...confirmedActionTypes,
+    ...legacyActionTypeAliases,
   };
 
   bool get isPending {
