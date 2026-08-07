@@ -94,6 +94,9 @@ class AiMessage {
   );
 }
 
+/// Kết cục của một đề xuất AI. Xem [AiPendingAction.outcome].
+enum AiActionOutcome { pending, completed, rejected, expired, failed }
+
 class AiPendingAction {
   final String messageId;
   final String actionType;
@@ -152,11 +155,38 @@ class AiPendingAction {
     ...legacyActionTypeAliases,
   };
 
-  bool get isPending {
-    if (status.toUpperCase() != 'PENDING') return false;
-    final expires = expiresAt;
-    return expires == null || expires.isAfter(DateTime.now());
+  /// Kết cục của đề xuất.
+  ///
+  /// Phải phân biệt "đã thực hiện xong" với "hết hạn". Trước 2026-08-07 UI chỉ
+  /// hỏi `isPending` rồi gộp cả hai vào một dòng chữ đỏ "Đề xuất đã hết hạn
+  /// hoặc đã được xử lý" — xác nhận thành công vẫn hiện cảnh báo đỏ, người dùng
+  /// tưởng hỏng trong khi giao dịch đã vào sổ. Quan sát runtime trên emulator
+  /// ngày 2026-08-07.
+  AiActionOutcome get outcome {
+    switch (status.toUpperCase()) {
+      case 'REJECTED':
+      case 'CANCELED':
+      case 'CANCELLED':
+      case 'DECLINED':
+        return AiActionOutcome.rejected;
+      case 'EXPIRED':
+        return AiActionOutcome.expired;
+      case 'FAILED':
+      case 'ERROR':
+        return AiActionOutcome.failed;
+      case 'PENDING':
+        final expires = expiresAt;
+        return expires != null && !expires.isAfter(DateTime.now())
+            ? AiActionOutcome.expired
+            : AiActionOutcome.pending;
+      default:
+        // Swagger chưa khai enum status. Mọi giá trị khác PENDING mà không phải
+        // từ chối/hết hạn/lỗi đều coi là đã thực hiện, thay vì mặc định báo đỏ.
+        return AiActionOutcome.completed;
+    }
   }
+
+  bool get isPending => outcome == AiActionOutcome.pending;
 
   /// `false` khi BE gửi loại đề xuất FE chưa biết. Nơi gọi phải xử lý phòng thủ
   /// (nhãn chung + refresh rộng) chứ không được im lặng bỏ qua.

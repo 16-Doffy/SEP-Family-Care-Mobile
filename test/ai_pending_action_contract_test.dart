@@ -72,6 +72,62 @@ void main() {
     });
   });
 
+  group('kết cục đề xuất — xác nhận xong không được báo như lỗi', () {
+    AiPendingAction withStatus(String status, {DateTime? expiresAt}) =>
+        AiPendingAction.fromJson({
+          'messageId': 'm1',
+          'actionType': 'CREATE_LEDGER_ENTRY',
+          'status': status,
+          if (expiresAt != null) 'expiresAt': expiresAt.toIso8601String(),
+        });
+
+    test('xác nhận thành công là completed, không phải expired', () {
+      // Quan sát runtime 2026-08-07: sau confirm-action thành công, thẻ vẫn
+      // hiện chữ đỏ "Đề xuất đã hết hạn hoặc đã được xử lý" vì UI chỉ hỏi
+      // isPending. Status thật BE trả chưa được chốt trong Swagger nên mọi
+      // giá trị kết thúc không-phải-từ-chối đều phải rơi vào completed.
+      for (final status in ['COMPLETED', 'CONFIRMED', 'EXECUTED', 'DONE']) {
+        expect(
+          withStatus(status).outcome,
+          AiActionOutcome.completed,
+          reason: status,
+        );
+      }
+    });
+
+    test('từ chối là rejected, không lẫn với hết hạn', () {
+      for (final status in ['REJECTED', 'CANCELED', 'CANCELLED']) {
+        expect(
+          withStatus(status).outcome,
+          AiActionOutcome.rejected,
+          reason: status,
+        );
+      }
+    });
+
+    test('còn PENDING mà quá expiresAt mới là hết hạn thật', () {
+      final expired = withStatus(
+        'PENDING',
+        expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+      );
+      expect(expired.outcome, AiActionOutcome.expired);
+      expect(expired.isPending, isFalse);
+    });
+
+    test('PENDING còn hạn thì vẫn bấm được', () {
+      final alive = withStatus(
+        'PENDING',
+        expiresAt: DateTime.now().add(const Duration(hours: 2)),
+      );
+      expect(alive.outcome, AiActionOutcome.pending);
+      expect(alive.isPending, isTrue);
+    });
+
+    test('BE báo lỗi thì tách riêng khỏi hết hạn', () {
+      expect(withStatus('FAILED').outcome, AiActionOutcome.failed);
+    });
+  });
+
   group('preview phải đọc được, không in dữ liệu thô', () {
     test(
       'thời gian ISO UTC đổi sang giờ địa phương, không in nguyên chuỗi',

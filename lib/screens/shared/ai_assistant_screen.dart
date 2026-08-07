@@ -726,9 +726,20 @@ class _PendingActionCard extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           if (!action.isPending)
-            Text(
-              'Đề xuất đã hết hạn hoặc đã được xử lý.',
-              style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger),
+            Row(
+              children: [
+                Icon(_outcomeIcon, size: 14, color: _outcomeColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _outcomeMessage,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: _outcomeColor,
+                    ),
+                  ),
+                ),
+              ],
             )
           else
             Row(
@@ -765,8 +776,50 @@ class _PendingActionCard extends StatelessWidget {
     );
   }
 
+  /// Câu trạng thái dưới thẻ. Xác nhận thành công phải nói rõ là **đã xong**,
+  /// không được dùng chung một câu cảnh báo với đề xuất hết hạn.
+  String get _outcomeMessage => switch (action.outcome) {
+    AiActionOutcome.completed => 'Đã thực hiện xong.',
+    AiActionOutcome.rejected => 'Bạn đã từ chối đề xuất này.',
+    AiActionOutcome.expired =>
+      'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',
+    AiActionOutcome.failed => 'Thực hiện đề xuất không thành công.',
+    AiActionOutcome.pending => '',
+  };
+
+  Color get _outcomeColor => switch (action.outcome) {
+    AiActionOutcome.completed => AppColors.success,
+    AiActionOutcome.rejected => AppColors.textMuted,
+    AiActionOutcome.expired || AiActionOutcome.failed => AppColors.danger,
+    AiActionOutcome.pending => AppColors.textSecondary,
+  };
+
+  IconData get _outcomeIcon => switch (action.outcome) {
+    AiActionOutcome.completed => Icons.check_circle_rounded,
+    AiActionOutcome.rejected => Icons.do_not_disturb_on_outlined,
+    AiActionOutcome.expired => Icons.timer_off_outlined,
+    AiActionOutcome.failed => Icons.error_outline_rounded,
+    AiActionOutcome.pending => Icons.schedule_rounded,
+  };
+
   Widget _statusChip(Color color) {
-    final text = action.isPending ? 'Chờ xác nhận' : 'Đã xử lý';
+    final text = switch (action.outcome) {
+      AiActionOutcome.pending => 'Chờ xác nhận',
+      AiActionOutcome.completed => 'Đã thực hiện',
+      AiActionOutcome.rejected => 'Đã từ chối',
+      AiActionOutcome.expired => 'Hết hạn',
+      AiActionOutcome.failed => 'Thất bại',
+    };
+    // Hết hạn/thất bại phải đổi màu chip, không dùng màu của loại đề xuất.
+    final chipColor = switch (action.outcome) {
+      AiActionOutcome.expired || AiActionOutcome.failed => AppColors.danger,
+      AiActionOutcome.rejected => AppColors.textMuted,
+      _ => color,
+    };
+    return _chip(text, chipColor);
+  }
+
+  Widget _chip(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
@@ -786,8 +839,17 @@ class _PendingActionCard extends StatelessWidget {
 
   List<Widget> _previewRows(Map<String, dynamic> preview) {
     final keys = switch (action.actionType.toUpperCase()) {
-      'CREATE_TASK' ||
-      'TASK_CREATE' => ['title', 'description', 'dueAt', 'dueDate', 'assignee'],
+      // `task` là tên field BE thật sự trả cho CREATE_TASK — quan sát runtime
+      // 2026-08-07, không phải `title` như FE đoán ban đầu.
+      'CREATE_TASK' || 'TASK_CREATE' => [
+        'task',
+        'taskTitle',
+        'title',
+        'description',
+        'dueAt',
+        'dueDate',
+        'assignee',
+      ],
       'CREATE_LEDGER_ENTRY' ||
       'CREATE_TRANSACTION' ||
       'FINANCE_LEDGER_CREATE' => [
@@ -853,6 +915,7 @@ class _PendingActionCard extends StatelessWidget {
     'category' || 'categoryName' => 'Danh mục',
     'description' || 'note' => 'Ghi chú',
     'title' => 'Tiêu đề',
+    'task' || 'taskTitle' => 'Nhiệm vụ',
     'startTime' => 'Bắt đầu',
     'endTime' => 'Kết thúc',
     'location' => 'Địa điểm',
