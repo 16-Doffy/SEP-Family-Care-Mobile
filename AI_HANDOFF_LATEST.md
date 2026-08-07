@@ -2,27 +2,42 @@
 
 Last updated: **2026-08-07**
 
-## Snapshot hiện hành 2026-08-07 — Đồng bộ NDuy với main (Wear OS + té ngã + kỳ tháng) và verify toàn bộ
+## Snapshot hiện hành 2026-08-07 — Trợ lý AI hoàn chỉnh, vá rò rỉ dữ liệu giữa hai tài khoản, đã merge lên main
 
 > Snapshot này mới hơn toàn bộ phần 2026-08-04 bên dưới. Khi có mâu thuẫn,
 > dùng trạng thái ở đây và source hiện tại.
 
-### Trạng thái Git sau khi đồng bộ
+### Trạng thái Git chốt cuối ngày
 
-- `origin/main` và `origin/giap` cùng đứng tại `2171854` — Giáp đã merge xong
-  nhánh của mình lên main, **không còn nhánh rẽ nào cần xử lý trước khi push**.
-- `NDuy` trước đồng bộ: `a677f89`, behind main 12 commit, ahead 0 → đã
-  `git merge --ff-only origin/main` thành công, **không có merge commit thừa,
-  không conflict, không mất code**.
-- Thay đổi cục bộ duy nhất (`AI_HANDOFF_LATEST.md`) được stash trước khi kéo và
-  pop lại sau đó — pop sạch, không conflict.
-- Nhánh `main` local còn một commit docs cũ `96ed358` đi lệch khỏi `origin/main`.
-  Đã đối chiếu: nội dung `AI_HANDOFF_LATEST.md` của nó **giống hệt** bản trên
-  `origin/main`, còn `API_DOCS.md` thì `origin/main` là **tập cha** (nhiều hơn 29
-  dòng). Nghĩa là commit này đã bị thay thế hoàn toàn, reset `main` local về
-  `origin/main` **không làm mất nội dung nào**.
+- **`NDuy` = `main` = `origin/NDuy` = `origin/main` = `b77d7e2`.** Đã merge
+  fast-forward, không có merge commit thừa, `git diff main NDuy` rỗng hoàn toàn.
+- `origin/giap` còn ở `0a41e32`, **đi sau main 8 commit**. Cần báo Giáp
+  `git merge origin/main` sớm: 8 commit này chạm `lib/services/api_client.dart`
+  và **17 file provider**, để lâu là conflict dồn.
+- Mốc cứu hộ: tag `backup/main-before-merge-20260807` trỏ `0a41e32`; nhánh
+  `backup/ai-before-reword-20260807` giữ bản trước khi viết lại lời commit.
+- Đã verify 5 commit của Giáp còn nguyên trong main bằng `merge-base
+  --is-ancestor` (nén logo, SOS qua wearable event, ngắt kết nối thiết bị đeo,
+  test mapping).
 
-### 12 commit kéo từ main về (việc của Giáp, FE nay đã có trên NDuy)
+### 8 commit của phiên này (đã lên main)
+
+```
+b77d7e2  fix(bảo mật): dọn nốt 17 provider còn giữ dữ liệu tài khoản cũ
+e5aeb22  feat(trợ lý AI): tải thêm hội thoại và tin nhắn cũ
+57c5f8c  fix(trợ lý AI): đỡ đúng hình dạng response BE mô tả
+92cea20  feat(trợ lý AI): gợi ý câu hỏi theo vai trò + nhóm mô hình tài chính
+7c58bfa  fix(bảo mật): dọn dữ liệu phiên cũ khi đổi tài khoản
+46c12fe  chore(tài liệu): bỏ file báo cáo BE khỏi repo
+932c63b  fix(trợ lý AI): thẻ đề xuất phân biệt đã thực hiện / từ chối / hết hạn
+f4b37bb  fix(trợ lý AI): định dạng tiền và giờ, sửa 403/409/410, reload đúng tháng
+```
+
+Lưu ý quy trình: **không commit tài liệu báo cáo BE vào repo nữa** (đã gỡ
+`BAO_CAO_BE_AI_CHATBOT_2026-08-07.md` ở `46c12fe`). Nội dung gửi BE để trong
+tin nhắn, chỉ tóm tắt lại trong tài liệu bàn giao này.
+
+### 12 commit kéo từ main về đầu phiên (việc của Giáp)
 
 - `2171854` — thiết bị đeo: đủ 5 loại sự kiện cảm biến, nối lại 2 màn đồng hồ bị
   mất lối vào.
@@ -47,16 +62,56 @@ Tổng: 54 file, +6741 / −1809 dòng. File mới đáng chú ý:
 `lib/wear/wear_widgets.dart` cùng 5 màn Wear mới (calendar, map, notifications,
 quick message, tasks).
 
-### Verification 2026-08-07 (chạy trên codebase đã đồng bộ)
+### Verification cuối phiên (chạy trên đúng cây đã lên main)
 
-- `flutter analyze --no-fatal-infos`: **0 error, 0 warning**, còn 20 info-lint có
-  sẵn từ trước (null-aware, `use_build_context_synchronously`, `curly_braces`,
-  `Radio.groupValue` deprecated) — không phát sinh mới sau merge.
-- `flutter test` toàn bộ: **160/160 PASS**, tăng từ 109 test nhờ 4 bộ test mới
-  của Giáp: `fall_detection_test`, `wear_providers_registered_test`,
-  `wear_quick_message_provider_test`, `album_face_mapping_test`.
+- `flutter analyze --no-fatal-infos`: **0 error, 0 warning**, còn đúng 20
+  info-lint có sẵn từ trước — không phát sinh mới.
+- `flutter test`: **252/252 PASS** (đầu phiên 160). 6 bộ test mới của phiên này:
+  `ai_feature_access_test`, `ai_pending_action_contract_test`,
+  `ai_send_response_test`, `ai_prompt_role_test`, `ai_pagination_test`,
+  `ai_session_reset_test`, `session_reset_registered_test`.
+- Lưu ý khi format: **đừng chạy `dart format lib/providers/`** trên cả thư mục.
+  Một số file (nhất là `chat_provider.dart`) chưa theo style hiện hành, format
+  cả thư mục sinh ra 200+ dòng nhiễu không liên quan. Chỉ format file mình sửa.
 
-### Trợ lý AI — 4 lỗi FE đã sửa trong ngày
+### 🔴 Rò rỉ dữ liệu giữa hai tài khoản — nghiêm trọng nhất phiên này
+
+Phát hiện khi chạy thật, không đọc code nào ra được.
+
+**Tái hiện:** đăng nhập Trưởng nhóm → chat AI về tài chính → đăng xuất → đăng
+nhập Thành viên trên cùng máy → mở Trợ lý AI → **hiện nguyên hội thoại của
+Trưởng nhóm**, gồm số liệu chi tiêu và sự kiện lịch.
+
+**Backend KHÔNG sai.** Danh sách hội thoại trả về cho Thành viên là **rỗng**,
+đúng như Swagger mô tả. Rò rỉ hoàn toàn ở app: 21 provider khai ở app scope
+trong `main.dart` sống suốt vòng đời ứng dụng, còn `logout()` chỉ xóa token và
+thông tin đăng nhập, không đụng dữ liệu provider đang giữ trong RAM.
+
+**Cách sửa:** `ApiClient.clearSession()` là điểm nghẽn duy nhất của cả ba đường
+kết thúc phiên (bấm đăng xuất, phiên hết hạn, bị buộc đăng xuất khi 401). Thêm
+danh sách listener ở cấp static, `clearSession` gọi hết khi chạy. Danh sách cố
+tình **không** bị `clearSession` xóa — provider đăng ký một lần lúc khởi tạo,
+phải còn hiệu lực cho mọi lần đăng xuất sau. Một listener ném lỗi không chặn các
+listener còn lại.
+
+**18 provider** đã có `resetForNewSession()` và tự đăng ký trong constructor.
+Ba cái có tài nguyên sống được xử lý riêng, không chỉ xóa field:
+
+- `NotificationProvider` gọi `stopRealtime()` ngắt socket trước — giữ kết nối
+  của tài khoản cũ thì tài khoản mới nhận thông báo không phải của mình.
+- `ChatProvider` dùng lại `clear()` sẵn có, hàm này dừng luôn timer polling.
+- `SosProvider` xóa cả cảnh báo, danh bạ khẩn cấp và cài đặt.
+
+**Cố ý KHÔNG dọn 4 cái:** `AuthProvider` (chính nó quản phiên), và
+`ThemeModeController` / `TabConfigProvider` / `WearQuickMessageProvider` — tùy
+chọn giao diện của **máy**, không phải dữ liệu gia đình, đổi tài khoản vẫn giữ
+là đúng mong đợi.
+
+Test canh gác `test/session_reset_registered_test.dart` quét `main.dart`, đối
+chiếu từng provider với file nguồn, đỏ ngay nếu thiếu đăng ký hoặc thiếu hàm
+reset. Thêm provider mới mà quên dọn là biết liền.
+
+### Trợ lý AI — 8 lỗi FE đã sửa trong ngày
 
 - **Sai tên feature key (lỗi im lặng).** `FeatureAccess` đọc `ai.enabled` và
   `ai.chatbot`; cả hai KHÔNG nằm trong 26 key chính thức BE khai ở
@@ -72,9 +127,61 @@ quick message, tasks).
   không gọi endpoint nào và hiện `_UpgradePanel` (nút "Xem gói đăng ký" chỉ hiện
   với Manager theo `AppUser.canManageSubscription`). Vẫn **fail-open** khi BE trả
   `featureAccess` rỗng, theo đúng convention đã ghi trong `feature_access.dart`.
-- **Gợi ý câu hỏi.** Màn rỗng nay là bảng gợi ý ba nhóm: tra cứu tài chính, tra
-  cứu nhiệm vụ & lịch, và nhờ AI tạo (ghi rõ "bạn xác nhận rồi mới ghi"). Dải
-  chip ngang chỉ còn hiện khi hội thoại đã có tin nhắn, không lặp lại ở màn rỗng.
+- **Gợi ý câu hỏi, chia theo vai trò.** Màn rỗng trước đây chỉ có hai dòng chữ,
+  người dùng không biết hỏi gì nên phần hỏi đáp gần như không ai dùng dù đã chạy
+  được từ lâu. Nay là bảng gợi ý, và **phân nhánh theo `AppUser.canManageFinance`**
+  (đúng với Trưởng nhóm + Phó nhóm):
+  - Quản lý: 4 nhóm — tra cứu tài chính, **mô hình tài chính & ngân sách** (mô
+    hình đang áp dụng, hũ vượt mục tiêu, ngân sách còn lại, đã chia quỹ chưa),
+    tra cứu nhiệm vụ & lịch, và nhờ AI tạo.
+  - Thành viên: 3 nhóm đúng phạm vi — việc của tôi, chi tiêu của tôi, lịch gia
+    đình. **Không có nhóm "Nhờ AI tạo"**, vì Thành viên không có quyền
+    `canManageFinance` / `canManageTasks` / `canManageCalendar`; mời họ làm là
+    dẫn thẳng vào ngõ cụt của BE (xem mục "Cần báo BE" #1). Có thêm dòng giải
+    thích để họ không tưởng app lỗi.
+  - Mọi câu của Thành viên dùng ngôi "tôi" thay vì "nhà mình" — giảm bớt lỗi
+    đại từ trong câu trả lời của AI (mục "Cần báo BE" #6).
+  - Dải chip ngang cũng đổi theo vai trò, chỉ hiện khi hội thoại đã có tin nhắn.
+  - Danh sách tách ra hàm top-level `aiPromptGroupsFor()` để khóa được bằng test.
+
+- **`preview` in dữ liệu thô ra cho người dùng đối chiếu.** `preview` là thứ
+  DUY NHẤT người dùng nhìn trước khi bấm xác nhận, nhưng đang in nguyên value:
+  người nói "9h sáng mai" mà thẻ hiện `2026-08-08T02:00:00.000Z` (lệch 7 tiếng,
+  không đọc nổi), tiền hiện `200000` không dấu phân cách. Nay có
+  `formatAiPreviewValue`: giờ → `09:00 08/08/2026` theo giờ máy, tiền →
+  `200.000 ₫`, object lồng lấy `name`/`title`, null và mảng rỗng thành dấu gạch.
+
+- **`403` lúc xác nhận báo sai nguyên nhân.** BE nói rõ 403 ở `confirm-action`
+  nghĩa là **vai trò** không được phép tạo, nhưng FE dùng chung câu với 403 lúc
+  chat nên hiện "Bạn chưa có quyền dùng Trợ lý AI trong gói hiện tại" — Thành
+  viên bị từ chối lại tưởng phải đi nâng gói. Đã tách theo ngữ cảnh bằng cờ
+  `isAction`.
+
+- **Thẻ kẹt ở "Chờ xác nhận" sau `409`/`410`.** Hai mã này đều nghĩa là trạng
+  thái thật ở server đã khác cái FE đang vẽ, nhưng FE chỉ hiện lỗi mà không tải
+  lại, nên bấm mãi cũng ra đúng lỗi đó. Nay tự `fetchMessages()`.
+
+- **Reload lịch sai tháng.** `CalendarProvider.fetchEvents` chỉ tải đúng MỘT
+  tháng, FE lại luôn truyền tháng hiện tại — sự kiện "9h sáng mai" vào ngày cuối
+  tháng đã sang tháng sau, xác nhận xong mở lịch không thấy gì. Nay
+  `calendarMonthToReload()` lấy tháng từ `startTime` trong preview.
+
+- **Xác nhận thành công vẫn hiện cảnh báo đỏ.** Giao dịch đã vào sổ, quỹ đã trừ,
+  mà thẻ hiện dòng đỏ "Đề xuất đã hết hạn hoặc đã được xử lý" — vì UI chỉ hỏi
+  `isPending` rồi gộp mọi trạng thái kết thúc vào một câu. Nay có
+  `AiActionOutcome` gồm `pending / completed / rejected / expired / failed`;
+  Swagger chưa khai enum `status` nên mọi giá trị kết thúc không phải từ
+  chối/hết hạn/lỗi đều coi là **đã thực hiện**, thay vì mặc định báo đỏ. Chỉ còn
+  `PENDING` quá `expiresAt` mới là hết hạn thật.
+
+- **Phân trang bị kẹt ở trang đầu.** Swagger khai `page`/`limit` cho hai endpoint
+  GET nhưng FE cứng `page=1`: quá 20 hội thoại hoặc quá 50 tin nhắn là mất hẳn
+  phần còn lại. Nay có `loadMoreConversations()` / `loadMoreMessages()` theo đúng
+  pattern `fetchMoreEntries()` của `WalletProvider`, kèm hàng "Tải thêm". Gộp
+  trang sau **theo id** thay vì nối mù; tin nhắn gộp xong sắp lại theo thời gian
+  nên đúng dù BE trả mới-nhất-trước hay cũ-nhất-trước (Swagger không nói).
+
+
 - **actionType lạ không còn hỏng im lặng.** Trước đây `switch` trong
   `_confirmAndReload` không có nhánh `default`: BE thêm loại mới thì người dùng
   bấm xác nhận, BE tạo dữ liệu thật, app không refresh gì — nhìn như không có
@@ -82,16 +189,102 @@ quick message, tasks).
   lạ thì refresh cả ba nguồn (task, ví, lịch, mỗi nguồn bọc try riêng để một lỗi
   không chặn hai nguồn kia) và hiện mã `actionType` thô ngay trên thẻ đề xuất.
 
-Test mới: `test/ai_feature_access_test.dart` — 12 test khoá contract tên key và
-`actionType`, gồm cả assert "đủ 26 key và mỗi key có nhãn tiếng Việt" để lần sau
-BE đổi enum là test đỏ ngay.
+### Đối chiếu contract BE — đã khớp đủ
 
-Đã gửi BE, không lưu thành file trong repo: Swagger không có schema cho
-`pendingAction` — cả 7 endpoint AI đều thiếu response DTO, `POST .../messages`
-chỉ khai 502/503, `confirm-action` chỉ khai 409/410. Kèm câu hỏi bảo mật "AI tra
-cứu dữ liệu theo quyền người hỏi" chưa ai kiểm chứng: Member vốn bị 403 ở
-`GET /finance/ledger/entries` theo đúng thiết kế, nếu AI vẫn trả lời con số đó
-thì AI đang là cửa sau vòng qua RBAC.
+BE chốt hỗ trợ 3 `actionType`: `CREATE_TASK`, `CREATE_LEDGER_ENTRY`,
+`CREATE_CALENDAR_EVENT`. Đã soi từng dòng yêu cầu với code:
+
+- **7/7 operation AI Chatbot trong Swagger đều đã gán**, hai chiều đều sạch:
+  không endpoint nào bị bỏ quên, FE cũng không gọi endpoint AI nào ngoài Swagger.
+  Ngoài 7 cái đó provider chỉ gọi thêm `GET /families/{id}/subscription` để gate
+  theo gói.
+- `ApiClient` bóc envelope `{success, data}`, nên `data['pendingAction']` đọc
+  đúng tầng như ví dụ BE gửi.
+- Reload sau confirm đúng yêu cầu: nhiệm vụ → `fetchTasks()`; giao dịch →
+  `fetchWallets()` (kéo cả overview, summary, entries, jars, report); lịch →
+  `fetchEvents()` theo tháng của `startTime`.
+- Không tự tạo dữ liệu từ `preview` — `_confirmAndReload` chỉ gọi `fetch*`.
+- **Lệch có chủ ý:** BE ghi nhãn "Xác nhận tạo **công việc**", FE dùng "Tạo
+  **nhiệm vụ**" cho khớp từ ngữ toàn app (tab dưới, "Nhiệm vụ hôm nay"…).
+
+Hai lỗ hổng phát hiện ở vòng đối chiếu cuối, đã sửa ở `57c5f8c`:
+
+1. **Response chỉ có `pendingAction` thì thẻ bị nuốt mất.** Ví dụ trong contract
+   của BE chứa đúng một khối `pendingAction`, không kèm `aiMessage`/`message`/
+   `content`. Code cũ chỉ biết *gắn* đề xuất vào bong bóng có sẵn → rẽ hết nhánh
+   rồi thoát, người dùng gửi tin xong màn hình trống trơn. Nay có nhánh cuối tự
+   dựng bong bóng mang đề xuất.
+2. **Lớp chống rò rỉ đặt sai chỗ** (do chính commit trước gây ra): phép kiểm nằm
+   trong `fetchConversations()`, mà `sendMessage()` cũng gọi hàm đó — hội thoại
+   vừa tạo chưa lọt vào 20 bản ghi đầu là **xóa sạch tin vừa gửi**. Đã chuyển
+   sang `bootstrap()`.
+
+### Kiểm thử runtime trên emulator (gia đình NDuy)
+
+Chạy thật, không suy luận. Tài khoản Trưởng nhóm và Thành viên đều đã thử.
+
+| Nhánh | Bằng chứng |
+|---|---|
+| Gate theo gói | BE trả **đủ 26 key chính thức**, `ai.assistant: true` |
+| Hỏi đáp | AI trả đúng số liệu gia đình |
+| `CREATE_LEDGER_ENTRY` | quỹ **50.000.000 → 49.800.000 đ** |
+| `CREATE_TASK` | tạo + từ chối đều đúng |
+| `CREATE_CALENDAR_EVENT` | thẻ hiện `09:00 08/08/2026`, có push "Sự kiện lịch mới" |
+| Đổi tài khoản | sau fix: Thành viên thấy màn rỗng sạch, không còn dấu vết |
+| Gợi ý theo vai trò | đã xem tận mắt cả hai vai trò |
+| Ngắt socket khi đăng xuất | log `NotifSocket: disconnected`, không provider nào ném lỗi |
+
+**✅ Câu hỏi bảo mật RBAC đã có đáp án — BE làm đúng, bỏ khỏi danh sách lo ngại.**
+Cùng câu "Tháng này nhà mình đã chi bao nhiêu?": Trưởng nhóm nhận **200.000đ**,
+Thành viên nhận **0đ**. AI scope theo quyền người hỏi, không có cửa sau vòng qua
+phân quyền.
+
+**Chưa test được:** `403` khi Thành viên xác nhận đề xuất (BE không phát thẻ cho
+Thành viên — xem mục #1 dưới); `409`/`410` (không kích được từ UI, cần đợi hết
+hạn hoặc thao tác phía server). Logic hai mã này đã có unit test phủ nhưng
+**chưa xác minh runtime** — đừng ghi là đã test.
+
+### 📋 Cần báo BE — 6 mục, đã gửi 2026-08-07
+
+Cả 6 đều là **chất lượng contract và hành vi**, không có endpoint nào thiếu.
+Phía FE đã làm hết phần làm được cho từng mục.
+
+1. **[Cần sửa] Thành viên nhờ AI ghi thu chi bị vào ngõ cụt.** AI trả lời "Tôi
+   đã ghi nhận khoản chi 200.000 VND… Vui lòng xác nhận trên ứng dụng nhé!"
+   nhưng response **không kèm `pendingAction`** → không có nút nào để bấm. Cùng
+   câu đó với Trưởng nhóm thì có thẻ đầy đủ. Đề nghị: hoặc vẫn trả
+   `pendingAction` rồi để `confirm-action` ném 403, hoặc sửa câu trả lời thành
+   "bạn không có quyền ghi khoản chi, hãy nhờ Trưởng nhóm".
+2. **[Cần sửa] Swagger thiếu response schema cho cả 7 endpoint AI Chatbot.**
+   `POST .../messages` chỉ khai **502 và 503**, không khai response thành công;
+   `confirm-action` chỉ khai **409 và 410**. `components.schemas` chỉ có 2 DTO
+   request. Đề nghị bổ sung response DTO và khai `actionType` thành **enum**.
+3. **[Xác nhận] `status` của `pendingAction` sau confirm là giá trị gì?** FE
+   đang đoán phòng thủ.
+4. **[Xác nhận] `expiresAt` có đúng ISO UTC không?** Ledger và support request
+   trước giờ vẫn trả wall-clock local rồi gắn `Z`; nếu `expiresAt` cũng vậy thì
+   FE tính lệch 7 tiếng.
+5. **[Xác nhận] 3 key gói cước chưa có endpoint:** `ai.financeSummary`,
+   `ai.taskSummary`, `ai.savingSuggestions` có trong enum `featureAccess` nhưng
+   không tìm thấy API nào. Là endpoint riêng, hay chỉ là cờ điều khiển bên trong
+   chatbot?
+6. **[Góp ý] Câu trả lời cho Thành viên dùng sai đại từ.** AI đáp "nhà mình chưa
+   có chi tiêu nào" trong khi đang trả lời phạm vi **cá nhân**. FE **không sửa
+   được**: response không có field nào cho biết câu trả lời thuộc phạm vi nào,
+   và cùng câu đó với Trưởng nhóm lại đúng. Đây là prompt phía BE.
+
+### Việc tiếp theo đề xuất
+
+1. **Báo Giáp `git merge origin/main`** — nhánh `giap` đi sau 8 commit, trong đó
+   có thay đổi ở `api_client.dart` và 17 provider. Để lâu là conflict dồn.
+2. Theo dõi 6 mục đã gửi BE, ưu tiên #1 (Thành viên vào ngõ cụt) và #2 (thiếu
+   response schema). Khi BE trả lời #3 thì thu hẹp `AiActionOutcome` cho khớp
+   enum thật thay vì đoán phòng thủ.
+3. Test nốt `403`/`409`/`410` runtime khi BE sửa xong #1.
+4. Module AI **không còn việc FE nào nợ**. Việc tiếp theo nên quay lại các mục
+   treo từ trước: test quyền chia quỹ theo `FAMILY_MANAGER`/`DEPUTY_MEMBER`/
+   `FAMILY_MEMBER`, retest 9 mục Finance QA, và runtime verify Face scan khi job
+   kẹt.
 
 ### File tạm không được commit
 
@@ -183,10 +376,10 @@ docx cục bộ, cố ý để untracked. Đừng `git add -A` mà không lọc.
   retry metadata, multi-face, mapping lồng, response chính xác của
   `jar-target-actual`, history allocation và ADJUSTMENT trung tính với số dư.
 
-## Snapshot hiện hành 2026-07-29 — Face AI, giao dịch theo hũ và lịch sử chia quỹ
+## Snapshot 2026-07-29 — Face AI, giao dịch theo hũ và lịch sử chia quỹ
 
-> Đây là snapshot ưu tiên để tiếp tục làm việc. Các snapshot bên dưới là lịch
-> sử và có thể chứa commit, API contract hoặc `[VERIFY]` đã lỗi thời.
+> Đây là snapshot LỊCH SỬ. Snapshot ưu tiên nằm ở đầu tài liệu (2026-08-07).
+> Phần dưới đây có thể chứa commit, API contract hoặc `[VERIFY]` đã lỗi thời.
 
 ### Git / nhánh
 
