@@ -36,7 +36,33 @@ class AiChatbotProvider extends ChangeNotifier {
   /// màn mời nâng cấp, thay vì bấm vào rồi mới ăn 403 từ BE.
   bool get canUseAssistant => accessUnknown || _featureAccess!.aiAssistant;
 
+  AiChatbotProvider() {
+    // Tự đăng ký dọn khi phiên kết thúc, thay vì trông chờ màn Đăng xuất nhớ
+    // gọi. Có 3 đường gọi clearSession (bấm đăng xuất, session hết hạn, buộc
+    // đăng xuất khi 401) — đăng ký ở đây thì cả ba đều được dọn.
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
   bool isActionBusy(String messageId) => _actionBusy.contains(messageId);
+
+  /// Xóa sạch dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này sống ở app scope nên không bị hủy khi đổi tài khoản. Không
+  /// dọn thì tài khoản đăng nhập sau mở màn Trợ lý AI ra là thấy nguyên hội
+  /// thoại của người trước.
+  void resetForNewSession() {
+    _conversations.clear();
+    _messages.clear();
+    _actionBusy.clear();
+    _currentConversationId = null;
+    _featureAccess = null;
+    _error = null;
+    _loadingConversations = false;
+    _loadingMessages = false;
+    _loadingAccess = false;
+    _sending = false;
+    notifyListeners();
+  }
 
   Future<void> bootstrap() async {
     await fetchFeatureAccess();
@@ -91,6 +117,15 @@ class AiChatbotProvider extends ChangeNotifier {
       _conversations
         ..clear()
         ..addAll(_parseList(data).map(AiConversation.fromJson));
+      // Hội thoại đang mở không còn thuộc danh sách server trả về thì tin nhắn
+      // đang hiển thị không phải của người dùng này — xóa ngay. Lớp phòng thủ
+      // thứ hai sau resetForNewSession, phòng khi state cũ lọt qua bằng đường
+      // khác (đổi gia đình, khôi phục phiên, hoặc hội thoại bị xóa nơi khác).
+      final current = _currentConversationId;
+      if (current != null && !_conversations.any((c) => c.id == current)) {
+        _currentConversationId = null;
+        _messages.clear();
+      }
     } catch (e) {
       _error = _friendlyError(e);
     } finally {

@@ -59,6 +59,23 @@ class ApiClient {
   /// `https://api.familycare-digital.com`.
   static String get origin => _kBase.replaceFirst(RegExp(r'/api/v\d+$'), '');
 
+  /// Provider đăng ký để được dọn dữ liệu khi phiên kết thúc.
+  ///
+  /// Xóa token thôi là CHƯA đủ: các provider ở app scope (`main.dart`) sống
+  /// suốt vòng đời app, nên dữ liệu của tài khoản trước vẫn nằm trong RAM và
+  /// hiện ra cho tài khoản đăng nhập sau. Quan sát runtime 2026-08-07: đăng
+  /// xuất Trưởng nhóm, đăng nhập Thành viên, màn Trợ lý AI vẫn hiện nguyên
+  /// hội thoại của Trưởng nhóm — dù backend trả danh sách hội thoại RỖNG cho
+  /// Thành viên (backend đúng, rò rỉ nằm ở phía app).
+  ///
+  /// Danh sách này ở cấp static và KHÔNG bị [clearSession] xóa: provider đăng
+  /// ký một lần lúc khởi tạo và phải còn hiệu lực cho mọi lần đăng xuất sau.
+  static final List<void Function()> _sessionResetListeners = [];
+
+  static void addSessionResetListener(void Function() onReset) {
+    _sessionResetListeners.add(onReset);
+  }
+
   /// Xóa toàn bộ session data — gọi khi logout hoặc session expired
   void clearSession() {
     _token = null;
@@ -67,6 +84,15 @@ class ApiClient {
     onTokenRotated = null;
     onSessionExpired = null;
     onVerificationRequired = null;
+    for (final onReset in _sessionResetListeners) {
+      // Một provider dọn lỗi không được chặn các provider còn lại — sót một
+      // cái là rò dữ liệu tài khoản cũ sang tài khoản mới.
+      try {
+        onReset();
+      } catch (e) {
+        debugPrint('ApiClient: session reset listener lỗi: $e');
+      }
+    }
   }
 
   String familyPath(String subPath) {
