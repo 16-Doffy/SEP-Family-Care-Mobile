@@ -1,8 +1,5 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
@@ -17,36 +14,14 @@ class WearPairingScreen extends StatefulWidget {
 }
 
 class _WearPairingScreenState extends State<WearPairingScreen> {
-  static const _storage = FlutterSecureStorage();
-  static const _deviceCodeKey = 'wear_device_pairing_code';
-
-  String? _deviceCode;
+  // Trước đây màn này tự sinh mã `FCW-XXXXXX` lưu vào secure storage riêng và
+  // hiện to giữa màn hình. Đã bỏ vì hai lý do:
+  //  1. Mã đó KHÔNG BAO GIỜ được gửi lên server — không endpoint nào nhận nó,
+  //     nên người dùng đi tìm chỗ nhập không tồn tại.
+  //  2. Định danh thiết bị nay do `WearableProvider.deviceIdentifier()` quản lý
+  //     (mã cố định theo từng bản cài, dùng cho `PairWearableDto`), tránh hai
+  //     cơ chế song song cho cùng một khái niệm.
   bool _checking = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDeviceCode();
-  }
-
-  Future<void> _loadDeviceCode() async {
-    var code = await _storage.read(key: _deviceCodeKey);
-    if (code == null || code.isEmpty) {
-      code = _newDeviceCode();
-      await _storage.write(key: _deviceCodeKey, value: code);
-    }
-    if (mounted) setState(() => _deviceCode = code);
-  }
-
-  String _newDeviceCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final rnd = Random(DateTime.now().microsecondsSinceEpoch);
-    final body = List.generate(
-      6,
-      (_) => chars[rnd.nextInt(chars.length)],
-    ).join();
-    return 'FCW-$body';
-  }
 
   Future<void> _checkLink() async {
     HapticFeedback.lightImpact();
@@ -60,8 +35,6 @@ class _WearPairingScreenState extends State<WearPairingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final code = _deviceCode ?? 'FCW-...';
-
     return WearPage(
       scrollable: true,
       child: Column(
@@ -81,67 +54,66 @@ class _WearPairingScreenState extends State<WearPairingScreen> {
             ),
           ),
           const SizedBox(height: 5),
-          // KHÔNG hướng dẫn "nhập mã này trên FamilyCare": BE chưa có endpoint
-          // nhận mã ghép nối nên mobile không có chỗ nhập, hướng dẫn như vậy là
-          // sai sự thật. Xem DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md.
+          // Luồng CHÍNH THỨC (nhóm đã chốt): liên kết đồng hồ ↔ điện thoại bằng
+          // token, đồng hồ KHÔNG đăng nhập bằng email/mật khẩu. Nút đăng nhập
+          // bên dưới chỉ là đường phụ và sẽ bị xóa khi BE cấp 3 endpoint
+          // pair-code → claim-code → exchange (DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md).
           const Text(
-            'Đăng nhập trên đồng hồ để dùng tạm',
+            'Đồng hồ sẽ tự nhận quyền từ điện thoại đã đăng nhập',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 8.5, color: WearPalette.faint),
           ),
           const SizedBox(height: 10),
+          // Không hiện mã thiết bị: mã cũ sinh cục bộ và chưa từng được gửi lên
+          // server, hiện ra chỉ khiến người dùng đi tìm chỗ nhập không tồn tại.
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
             decoration: BoxDecoration(
               color: WearPalette.surface,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: WearPalette.line),
             ),
-            child: Column(
+            child: const Column(
               children: [
-                const Text(
-                  'Mã thiết bị',
-                  style: TextStyle(fontSize: 7.5, color: WearPalette.faint),
+                Icon(
+                  Icons.hourglass_top_rounded,
+                  size: 14,
+                  color: WearPalette.amber,
                 ),
-                const SizedBox(height: 3),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    code,
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w900,
-                      color: WearPalette.text,
-                    ),
-                  ),
+                SizedBox(height: 3),
+                Text(
+                  'Liên kết từ điện thoại: máy chủ chưa hỗ trợ',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 8, color: WearPalette.faint),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 9),
-          // Đăng nhập trên đồng hồ là hành động DUY NHẤT hiện chạy được nên phải
-          // là nút chính. Sẽ xóa nút này khi BE có luồng đổi mã lấy token
-          // (DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md), vì rule BE là "wearable
-          // không login bằng email/password".
           WearPillButton(
-            label: 'Đăng nhập trên đồng hồ',
-            icon: Icons.login_rounded,
+            label: 'Kiểm tra liên kết',
+            icon: Icons.sync_rounded,
             color: WearPalette.green,
+            loading: _checking,
+            onTap: _checkLink,
+          ),
+          const SizedBox(height: 7),
+          // ĐƯỜNG PHỤ, cố ý để mờ và ở dưới: nhóm đã chốt token là luồng chính,
+          // gõ email/mật khẩu trên đồng hồ chỉ là tạm. Xóa nút này ngay khi BE
+          // có luồng đổi mã lấy token.
+          WearPillButton(
+            label: 'Đăng nhập tạm',
+            icon: Icons.login_rounded,
+            color: WearPalette.faint,
+            outlined: true,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(builder: (_) => const WearLoginScreen()),
             ),
-          ),
-          const SizedBox(height: 7),
-          WearPillButton(
-            label: 'Kiểm tra lại',
-            icon: Icons.sync_rounded,
-            color: WearPalette.faint,
-            outlined: true,
-            loading: _checking,
-            onTap: _checkLink,
           ),
         ],
       ),

@@ -3,6 +3,16 @@
 Ngày: **2026-08-04** · Người soạn: FE Mobile (nhánh `giap`)
 Gửi: team Backend
 
+> **[CẬP NHẬT 07/08/2026 — nhóm đã chốt]** Liên kết đồng hồ ↔ điện thoại **bằng
+> token là luồng CHÍNH THỨC**. Việc gõ email/mật khẩu trên đồng hồ **chỉ là
+> đường phụ tạm thời** và sẽ bị xóa khỏi app ngay khi 3 endpoint ở mục 2 sẵn
+> sàng. Vì vậy mục 2 không còn là "nên có" — nó là **đường đi chính của tính
+> năng**, và hiện đang là thứ duy nhất chặn.
+>
+> FE đã điều chỉnh màn ghép nối trên đồng hồ cho khớp thứ tự ưu tiên này: luồng
+> liên kết từ điện thoại là thông điệp chính (kèm trạng thái "máy chủ chưa hỗ
+> trợ"), nút "Đăng nhập tạm" bị hạ xuống dạng phụ, viền mờ, nằm dưới cùng.
+
 ## 1. Vấn đề
 
 Rule BE đã chốt:

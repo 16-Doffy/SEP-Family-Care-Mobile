@@ -13,6 +13,7 @@ import 'wear_calendar_screen.dart';
 import 'wear_map_screen.dart';
 import 'wear_notifications_screen.dart';
 import 'wear_quick_message_screen.dart';
+import 'wear_sensor_sos_screen.dart';
 import 'wear_sos_screen.dart';
 import 'wear_status_screen.dart';
 import 'wear_tasks_screen.dart';
@@ -95,6 +96,16 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
               onTap: () => _open(const WearAlertsScreen()),
             ),
           ],
+          const SizedBox(height: 6),
+          // SOS tự động từ cảm biến (té ngã, nhịp tim) — đi qua endpoint
+          // wearable event theo spec Wear OS, khác với nút SOS thủ công ở trên.
+          WearTile(
+            icon: Icons.sensors_rounded,
+            title: 'Cảm biến SOS',
+            subtitle: 'Té ngã, nhịp tim bất thường',
+            color: WearPalette.amber,
+            onTap: () => _open(const WearSensorSosScreen()),
+          ),
           const SizedBox(height: 12),
           const WearSectionLabel('Tác vụ nhanh'),
           WearTile(

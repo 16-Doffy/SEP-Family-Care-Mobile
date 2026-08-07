@@ -414,6 +414,15 @@ Swagger live đã có contract và response example cho mapping/report; source m
 - **Cần BE để hoàn thiện** (chưa có trong Swagger): cơ chế đổi mã lấy token, ví dụ đồng hồ `POST /wearables/pair-code {code}` → điện thoại `POST /wearables/{deviceId}/issue-token` → đồng hồ poll `GET /wearables/pair-code/{code}` nhận token. Có hợp đồng này rồi mới bỏ được lối đăng nhập trên đồng hồ.
 - Ghi chú: nhóm `/wearables` **không có** trong `family-care-api.json` của repo (file đã lỗi thời) — chỉ có trong Swagger live.
 
+#### [CHỐT 2026-08-07] Token là luồng chính thức, đăng nhập trên đồng hồ chỉ là đường phụ
+- Nhóm đã thống nhất: **liên kết đồng hồ ↔ điện thoại bằng token là luồng chính thức**; gõ email/mật khẩu trên đồng hồ **chỉ là tạm** và **sẽ bị xóa** khi BE có 3 endpoint `pair-code` → `claim-code` → `exchange`.
+- Do đó `DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md` không còn là "nên có" — đó là **đường đi chính của tính năng**, và hiện là thứ **duy nhất** chặn app đồng hồ.
+- FE đã chỉnh màn ghép nối cho khớp thứ tự ưu tiên: thông điệp chính là liên kết từ điện thoại (kèm trạng thái "máy chủ chưa hỗ trợ"), nút **"Đăng nhập tạm"** hạ xuống dạng phụ/viền mờ ở dưới cùng.
+- Đã bỏ hẳn cơ chế sinh mã `FCW-XXXXXX` cục bộ ở màn đồng hồ: mã đó **chưa từng được gửi lên server** và tạo ra hai cơ chế song song cho cùng một khái niệm. Định danh thiết bị nay do **`WearableProvider.deviceIdentifier()`** quản lý một chỗ (mã cố định theo từng bản cài, dùng cho `PairWearableDto.deviceIdentifier`).
+- ⚠️ Phân biệt hai luồng khác nhau, đừng lẫn:
+  - **Ghép wearable qua mobile** (`POST /families/{familyId}/wearables`) — đã chạy, `deviceIdentifier` là định danh máy do app tự gửi, **không phải mã người dùng gõ tay**.
+  - **Cấp token cho app trên đồng hồ** — chưa có endpoint nào, đây mới là phần còn thiếu.
+
 #### [CẬP NHẬT 2026-08-04] Đã đối chiếu với OpenAPI mới — vẫn thiếu, đã có đề xuất BE
 - `family-care-api.json` nay là bản mới (**223 path / 290 operation**) và **đã có** nhóm wearable: `GET /wearables/me`, `GET|POST /families/{familyId}/wearables`, `PATCH|DELETE /families/{familyId}/wearables/{deviceId}`, `GET|POST /families/{familyId}/wearables/{deviceId}/events`. Ghi chú "không có trong dump" ở trên **đã lỗi thời**.
 - Enum đã chốt: `deviceType` `SMARTWATCH | GPS_TRACKER | BLE_DEVICE | SIMULATED_DEVICE`; `pairingStatus` `PAIRED | UNPAIRED | LOST`. `PairWearableDto.deviceIdentifier` unique trong 1 family; `ownerMemberId` chỉ Manager/Deputy. Response `SosWearableDeviceResponseDto`.
@@ -436,6 +445,34 @@ Sửa phụ đi kèm:
 - `deviceIdentifier` sinh riêng từng máy và lưu cố định, thay hằng số `wearos-emulator-001` dùng chung — `PairWearableDto` mô tả identifier "unique within a family". Mã cố định theo bản cài nên vẫn thoả "ghép lại cùng identifier thì pair lại record cũ".
 
 Chi tiết: `DE_XUAT_BE_WEARABLE_UNPAIR_2026-08-06.md`. **Không cần BE thay đổi gì.**
+
+### [SPEC 2026-08-04] Wear OS Flow — SOS tự động PHẢI đi qua wearable event
+Nguồn: Discord *Những chiến binh làm đồ án* → `#chuc-nang-moi` → thread **"Flow của Wearable Device SOS mới"**, tin của Nhật ngày 04/08/2026.
+
+> **Wear OS không gọi trực tiếp `/sos/alerts` cho 2 case auto-detection.** Wear OS gọi `POST /families/{familyId}/wearables/{deviceId}/events`. BE tự quyết định tạo SOS, **chống duplicate** nếu user đang có SOS active.
+> - `HEART_RATE_ABNORMAL` → auto tạo SOS.
+> - `FALL_DETECTED` → **chỉ** auto tạo SOS nếu `autoCreateAlertFromFall = true`.
+
+Đây là điểm dễ làm sai nhất: gọi thẳng `/sos/alerts` vẫn "chạy được" nên không ai phát hiện, nhưng **mất chống trùng của BE** và **bỏ qua luôn cài đặt `autoCreateAlertFromFall`**.
+
+**Luồng màn hình theo spec:**
+1. Màn chính đồng hồ: trạng thái **"An toàn"**, nút chính **SOS**, kèm nút giả lập (té ngã / nhịp tim cao / nhịp tim thấp).
+2. Khi phát hiện → màn cảnh báo: tiêu đề + số đo (vd `142 bpm`) + câu hỏi, **tự gửi SOS sau 20 giây**, hai nút `[Con ổn]` / `[Gửi SOS]` (nhịp tim dùng nhãn `[Đã ổn]`).
+3. `Con ổn` → đóng cảnh báo, **không gọi API tạo SOS**.
+4. `Gửi SOS` hoặc hết đếm ngược → gọi wearable event.
+5. Sau response → màn **"Đã gửi SOS / Đang thông báo cho người thân"** + `[Hủy báo động]`.
+6. Mobile người thân: **không cần flow mới**, chỉ hiển thị theo `alert.message`.
+
+**`rawValue` đúng theo ví dụ của spec:**
+- `FALL_DETECTED` — `{ gForce: 3.2, stillSeconds: 8, source: "wear_os_emulator" }`, `severity: HIGH`
+- `HEART_RATE_ABNORMAL` (cao) — `{ heartRate: 142, thresholdHigh: 130, durationSeconds: 30, source: "wear_os_emulator" }`, spec **không** ghi `severity`
+- ⚠️ `[VERIFY]` nhịp tim **thấp** không có trong spec — FE tạm dùng `{ heartRate: 38, thresholdLow: 50, ... }`, `thresholdLow` là suy ra đối xứng, cần BE xác nhận tên field.
+
+**FE đã làm (2026-08-07):** `lib/wear/screens/wear_sensor_sos_screen.dart` — có **cả cảm biến thật** (gia tốc kế qua `FallDetectorService`) **lẫn 3 nút giả lập** (máy ảo không có cảm biến thật, và demo cần bấm ra kết quả ngay). Đếm ngược đúng 20s. `[Hủy báo động]` dùng **`confirm-safety`** chứ không dùng `cancel` — Swagger giới hạn `cancel` cho Trưởng/Phó nhóm, người đeo thường chỉ là thành viên.
+
+**Phụ thuộc cần biết:** đồng hồ cần `deviceId` để gửi event → tài khoản **phải đã ghép wearable từ điện thoại trước**. Chưa ghép thì màn hiện "Chưa ghép thiết bị" và khoá các nút.
+
+**Khác biệt với phát hiện té ngã trên điện thoại:** bản trên điện thoại (`family_shell` + `fall_detector_service`) vẫn gọi `/sos/alerts` với `sourceType: MOBILE_APP` — **không mâu thuẫn**, vì spec này chỉ nói về Wear OS và điện thoại không có `deviceId` wearable.
 
 ### [MỚI 2026-08-04] Wearable sensor events — đủ 5 `eventType`, có lịch sử
 - `CreateSensorEventDto.eventType` enum đầy đủ: `SOS_BUTTON_PRESSED | FALL_DETECTED | HEART_RATE_ABNORMAL | HARD_IMPACT | ABNORMAL_MOVEMENT`. **`HEART_RATE_ABNORMAL` là giá trị BE mới bổ sung** (bản dump 04/08/2026) — đây cũng là thay đổi **duy nhất** giữa 2 bản dump, số path/operation giữ nguyên 223/290.

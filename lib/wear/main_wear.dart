@@ -9,6 +9,7 @@ import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/wear_quick_message_provider.dart';
+import '../providers/wearable_provider.dart';
 import 'wear_root.dart';
 
 void main() {
@@ -29,6 +30,8 @@ void main() {
         // entrypoint mặc định lại không lộ, vì main.dart có đăng ký sẵn.
         // Mọi provider mà màn wear đọc phải khai ở CẢ HAI entrypoint.
         ChangeNotifierProvider(create: (_) => WearQuickMessageProvider()),
+        // Cần cho WearSensorSosScreen: lấy deviceId để gửi sự kiện cảm biến.
+        ChangeNotifierProvider(create: (_) => WearableProvider()),
       ],
       child: const WearApp(),
     ),
