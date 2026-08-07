@@ -177,6 +177,22 @@ class ChatConversation {
 }
 
 class ChatProvider extends ChangeNotifier {
+  ChatProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    // clear() đã dừng timer polling và xóa hội thoại, tin nhắn.
+    clear();
+    notifyListeners();
+  }
+
   List<ChatConversation> _conversations = [];
   ChatConversation? _active;
   List<ChatMessage> _messages = []; // DESC — mới nhất index 0 (ListView reverse)

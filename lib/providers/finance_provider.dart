@@ -871,6 +871,28 @@ class SurplusAvailability {
 // ════════════════════════════════════════════════════════════════════════
 
 class FinanceProvider extends ChangeNotifier {
+  FinanceProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    models = [];
+    jars = [];
+    categories = [];
+    budgetPlans = [];
+    goals = [];
+    monthlyFinance = null;
+    loading = false;
+    error = null;
+    notifyListeners();
+  }
+
   List<FinanceModel> models = [];
   List<FinanceJar> jars = [];
   List<FinanceCategory> categories = [];

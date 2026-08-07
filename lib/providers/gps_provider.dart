@@ -59,6 +59,26 @@ class LocationShare {
 }
 
 class GpsProvider extends ChangeNotifier {
+  GpsProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    _shares = [];
+    _loading = false;
+    _busy = false;
+    _error = null;
+    _sharingUnavailable = false;
+    _mySharing = false;
+    notifyListeners();
+  }
+
   List<LocationShare> _shares = [];
   bool _loading = false;
   bool _busy = false;

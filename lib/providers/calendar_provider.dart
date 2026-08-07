@@ -153,6 +153,25 @@ class FamilyCalendarEvent {
 }
 
 class CalendarProvider extends ChangeNotifier {
+  CalendarProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    events = [];
+    featureAccess = null;
+    loading = false;
+    error = null;
+    _lastMonth = null;
+    notifyListeners();
+  }
+
   List<FamilyCalendarEvent> events = [];
   FeatureAccess? featureAccess;
   bool loading = false;

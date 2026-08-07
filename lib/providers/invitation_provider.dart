@@ -59,6 +59,24 @@ List<Map<String, dynamic>> _list(dynamic data) {
 /// Provider for the current BE flow: invite code -> join request -> manager
 /// decision. The retired email/token invitation APIs are intentionally absent.
 class InvitationProvider extends ChangeNotifier {
+  InvitationProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    joinRequests = [];
+    myJoinRequests = [];
+    loading = false;
+    error = null;
+    notifyListeners();
+  }
+
   List<JoinRequest> joinRequests = [];
   List<JoinRequest> myJoinRequests = [];
   bool loading = false;

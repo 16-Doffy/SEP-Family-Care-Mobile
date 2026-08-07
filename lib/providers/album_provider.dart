@@ -5,6 +5,31 @@ import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
 class AlbumProvider extends ChangeNotifier {
+  AlbumProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    _items.clear();
+    _loading = false;
+    _loadingMore = false;
+    _uploading = false;
+    _error = null;
+    _page = 1;
+    _totalPages = null;
+    _mediaType = null;
+    _moderationStatus = null;
+    // Quyền gói về "chưa biết" để fail-open, không áp quyền gia đình cũ.
+    _featureAccess = null;
+    notifyListeners();
+  }
+
   final List<AlbumMedia> _items = [];
   bool _loading = false;
   bool _loadingMore = false;

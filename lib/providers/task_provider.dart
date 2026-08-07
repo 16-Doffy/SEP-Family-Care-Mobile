@@ -34,6 +34,7 @@ class RewardSetting {
   final String rewardType; // MONEY_RECORD | POINT | OTHER
   final double rewardAmount;
   final String? rewardDescription;
+
   /// `CreateRewardSettingDto.autoCreateSettlement` có **default `true`** trong
   /// Swagger → BE không trả field thì phải hiểu là BẬT, không phải tắt. Đọc
   /// `== true` như trước sẽ báo sai là đang tắt tự tạo settlement.
@@ -156,8 +157,7 @@ class FamilyTask {
       priority: _str(j['priority']) ?? 'MEDIUM',
       status: _str(j['status']) ?? 'ACTIVE',
       dueAt: _date(j['dueAt']),
-      createdByMemberId:
-          _str(j['createdByMemberId']) ?? _str(creator['id']),
+      createdByMemberId: _str(j['createdByMemberId']) ?? _str(creator['id']),
       createdByName:
           _str(creatorUser['fullName']) ??
           _str(creator['displayName']) ??
@@ -469,6 +469,29 @@ class TaskUnavailability {
 // ════════════════════════════════════════════════════════════════════════
 
 class TaskProvider extends ChangeNotifier {
+  TaskProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    tasks = [];
+    categories = [];
+    myAssignments = [];
+    _assignmentsByTask.clear();
+    rewardSettlements = [];
+    rewardDisputes = [];
+    unavailabilities = [];
+    loading = false;
+    error = null;
+    notifyListeners();
+  }
+
   List<FamilyTask> tasks = [];
   List<TaskCategory> categories = [];
   List<TaskAssignment> myAssignments = [];

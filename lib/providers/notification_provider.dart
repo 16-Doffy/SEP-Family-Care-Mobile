@@ -53,6 +53,26 @@ class AppNotification {
 }
 
 class NotificationProvider extends ChangeNotifier {
+  NotificationProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    // Ngắt socket trước: giữ kết nối của tài khoản cũ là tài khoản mới nhận
+    // thông báo không phải của mình.
+    stopRealtime();
+    _notifications = [];
+    _loading = false;
+    _error = null;
+    notifyListeners();
+  }
+
   List<AppNotification> _notifications = [];
   bool _loading = false;
   String? _error;

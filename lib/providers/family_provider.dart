@@ -101,6 +101,24 @@ class FamilyMember {
 }
 
 class FamilyProvider extends ChangeNotifier {
+  FamilyProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    _members = [];
+    _familyName = '';
+    _loading = false;
+    _error = null;
+    notifyListeners();
+  }
+
   List<FamilyMember> _members = [];
   String _familyName = '';
   bool _loading = false;

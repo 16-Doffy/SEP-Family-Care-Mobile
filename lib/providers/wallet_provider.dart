@@ -148,6 +148,36 @@ class OverviewData {
 }
 
 class WalletProvider extends ChangeNotifier {
+  WalletProvider() {
+    ApiClient.addSessionResetListener(resetForNewSession);
+  }
+
+  /// Xóa dữ liệu của tài khoản vừa đăng xuất.
+  ///
+  /// Provider này nằm ở app scope (`main.dart`) nên sống suốt vòng đời ứng
+  /// dụng, không bị hủy khi đổi tài khoản. Không dọn thì người đăng nhập sau
+  /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
+  /// [ApiClient.addSessionResetListener].
+  void resetForNewSession() {
+    _period = FinancePeriod.current();
+    _familyOverview = null;
+    _entries = [];
+    _jars = [];
+    _loading = false;
+    _error = null;
+    _monthlyIncome = 0;
+    _monthlyExpense = 0;
+    _report = null;
+    _financeSummary = null;
+    _cashFlowSummary = null;
+    _categorySpendingSummary = null;
+    _memberContributionSummary = null;
+    _entriesPage = 1;
+    _entriesTotalPages = null;
+    _loadingMoreEntries = false;
+    notifyListeners();
+  }
+
   /// Kỳ đang xem. Giữ ở provider chứ không ở screen: mọi mutation (ghi/sửa/xóa
   /// giao dịch) đều gọi lại `fetchWallets()` không tham số, nếu kỳ nằm ở screen
   /// thì sau mỗi lần ghi màn sẽ âm thầm nhảy về tháng hiện tại.
