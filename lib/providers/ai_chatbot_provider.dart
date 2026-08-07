@@ -70,6 +70,18 @@ class AiChatbotProvider extends ChangeNotifier {
     // chỉ tổ hiện banner đỏ thay vì lời mời nâng gói.
     if (!canUseAssistant) return;
     await fetchConversations();
+    // Lớp phòng thủ thứ hai sau resetForNewSession: vào lại màn mà hội thoại
+    // đang mở không còn thuộc danh sách server trả về thì tin nhắn đang giữ
+    // không phải của người dùng này — xóa ngay.
+    //
+    // Chỉ kiểm ở bootstrap, KHÔNG kiểm trong fetchConversations. `sendMessage`
+    // cũng gọi fetchConversations; đặt ở đó thì hội thoại vừa tạo mà chưa lọt
+    // vào 20 bản ghi đầu sẽ làm xóa sạch tin nhắn người dùng vừa gửi.
+    final current = _currentConversationId;
+    if (current != null && !_conversations.any((c) => c.id == current)) {
+      _currentConversationId = null;
+      _messages.clear();
+    }
     if (_conversations.isNotEmpty && _currentConversationId == null) {
       await selectConversation(_conversations.first.id);
     }
@@ -117,15 +129,6 @@ class AiChatbotProvider extends ChangeNotifier {
       _conversations
         ..clear()
         ..addAll(_parseList(data).map(AiConversation.fromJson));
-      // Hội thoại đang mở không còn thuộc danh sách server trả về thì tin nhắn
-      // đang hiển thị không phải của người dùng này — xóa ngay. Lớp phòng thủ
-      // thứ hai sau resetForNewSession, phòng khi state cũ lọt qua bằng đường
-      // khác (đổi gia đình, khôi phục phiên, hoặc hội thoại bị xóa nơi khác).
-      final current = _currentConversationId;
-      if (current != null && !_conversations.any((c) => c.id == current)) {
-        _currentConversationId = null;
-        _messages.clear();
-      }
     } catch (e) {
       _error = _friendlyError(e);
     } finally {
@@ -297,6 +300,10 @@ class AiChatbotProvider extends ChangeNotifier {
     }
   }
 
+  @visibleForTesting
+  void appendSendResponse(Map<String, dynamic> data) =>
+      _appendSendResponse(data);
+
   void _appendSendResponse(Map<String, dynamic> data) {
     final rawAction = data['pendingAction'];
     final pendingAction = rawAction is Map
@@ -315,6 +322,19 @@ class AiChatbotProvider extends ChangeNotifier {
       _messages.add(ai);
     } else if (data['content'] != null) {
       _messages.add(AiMessage.fromJson(data, pendingAction: pendingAction));
+    } else if (pendingAction != null) {
+      // Ví dụ trong contract BE gửi chỉ có đúng `pendingAction`, không kèm câu
+      // trả lời nào. Không đỡ ca này thì đề xuất bị nuốt mất: người dùng gửi
+      // tin xong màn hình không hiện gì, dù server đã tạo đề xuất chờ xác nhận.
+      _messages.add(
+        AiMessage(
+          id: pendingAction.messageId,
+          senderType: 'AI',
+          content: 'Tôi đã chuẩn bị một đề xuất, bạn xem và xác nhận giúp nhé.',
+          createdAt: DateTime.now(),
+          pendingAction: pendingAction,
+        ),
+      );
     }
   }
 
