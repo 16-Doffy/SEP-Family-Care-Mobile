@@ -245,47 +245,55 @@ Thành viên — xem mục #1 dưới); `409`/`410` (không kích được từ 
 hạn hoặc thao tác phía server). Logic hai mã này đã có unit test phủ nhưng
 **chưa xác minh runtime** — đừng ghi là đã test.
 
-### 📋 Cần báo BE — 6 mục, đã gửi 2026-08-07
+### 📋 BE phản hồi AI Chatbot — 14:15, 2026-08-07
 
-Cả 6 đều là **chất lượng contract và hành vi**, không có endpoint nào thiếu.
-Phía FE đã làm hết phần làm được cho từng mục.
+BE đã trả lời đầy đủ 6 mục FE gửi trước đó. Cập nhật này thay thế mục "Cần báo BE"
+trước đây.
 
-1. **[Cần sửa] Thành viên nhờ AI ghi thu chi bị vào ngõ cụt.** AI trả lời "Tôi
-   đã ghi nhận khoản chi 200.000 VND… Vui lòng xác nhận trên ứng dụng nhé!"
-   nhưng response **không kèm `pendingAction`** → không có nút nào để bấm. Cùng
-   câu đó với Trưởng nhóm thì có thẻ đầy đủ. Đề nghị: hoặc vẫn trả
-   `pendingAction` rồi để `confirm-action` ném 403, hoặc sửa câu trả lời thành
-   "bạn không có quyền ghi khoản chi, hãy nhờ Trưởng nhóm".
-2. **[Cần sửa] Swagger thiếu response schema cho cả 7 endpoint AI Chatbot.**
-   `POST .../messages` chỉ khai **502 và 503**, không khai response thành công;
-   `confirm-action` chỉ khai **409 và 410**. `components.schemas` chỉ có 2 DTO
-   request. Đề nghị bổ sung response DTO và khai `actionType` thành **enum**.
-3. **[Xác nhận] `status` của `pendingAction` sau confirm là giá trị gì?** FE
-   đang đoán phòng thủ.
-4. **[Xác nhận] `expiresAt` có đúng ISO UTC không?** Ledger và support request
-   trước giờ vẫn trả wall-clock local rồi gắn `Z`; nếu `expiresAt` cũng vậy thì
-   FE tính lệch 7 tiếng.
-5. **[Xác nhận] 3 key gói cước chưa có endpoint:** `ai.financeSummary`,
-   `ai.taskSummary`, `ai.savingSuggestions` có trong enum `featureAccess` nhưng
-   không tìm thấy API nào. Là endpoint riêng, hay chỉ là cờ điều khiển bên trong
-   chatbot?
-6. **[Góp ý] Câu trả lời cho Thành viên dùng sai đại từ.** AI đáp "nhà mình chưa
-   có chi tiêu nào" trong khi đang trả lời phạm vi **cá nhân**. FE **không sửa
-   được**: response không có field nào cho biết câu trả lời thuộc phạm vi nào,
-   và cùng câu đó với Trưởng nhóm lại đúng. Đây là prompt phía BE.
+1. **Member ghi thu/chi không có `pendingAction` — chốt hướng (b).**
+   BE sẽ sửa prompt/guard để AI trả lời rõ: *"bạn không có quyền ghi khoản chi,
+   hãy nhờ Trưởng nhóm/Phó nhóm"*. Không tạo `pendingAction` giả rồi để
+   `confirm-action` trả 403. Lý do: BE hiện chỉ cấp tool `propose_create_ledger_entry`
+   cho `FAMILY_MANAGER` và `DEPUTY_MEMBER`; `FAMILY_MEMBER` không nhận write tool.
+   FE không cần tự dựng nút xác nhận cho Member.
+2. **OpenAPI mới đã bổ sung response schema cho AI Chatbot.**
+   Bản API mới 2026-08-07 đã thêm response DTO cho các endpoint AI, đặc biệt các field:
+   `pendingAction`, `actionType`, `status`, `preview`, `expiresAt`, `result`.
+   `actionType` chính thức là enum:
+   `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`.
+3. **`pendingAction.status` chính thức chỉ có 4 giá trị.**
+   BE hiện có đúng: `PENDING`, `CONFIRMED`, `REJECTED`, `EXPIRED`.
+   Sau confirm thành công: `CONFIRMED`; reject: `REJECTED`; hết hạn: `EXPIRED`.
+   Chưa có `CANCELED` hoặc `FAILED` trong BE hiện tại. FE hiện vẫn parse phòng thủ
+   thêm vài trạng thái cũ/giả định để không vỡ nếu dữ liệu legacy hoặc BE mở rộng sau.
+4. **`expiresAt` là ISO UTC chuẩn.**
+   BE tạo bằng `new Date(...).toISOString()`, có đuôi `Z`; interceptor không convert
+   timezone. FE có thể tính countdown/hết hạn theo UTC bình thường.
+5. **`ai.financeSummary`, `ai.taskSummary`, `ai.savingSuggestions` trước mắt là feature flags.**
+   Chưa có endpoint riêng và cũng chưa guard vào AI Chatbot. BE đề xuất chốt với FE:
+   tạm xem đây là cờ điều khiển hành vi bên trong chatbot/tool access. Nếu cần khóa
+   theo gói, BE sẽ thêm guard/logic ở AI tools sau.
+6. **Wording theo vai trò — BE đồng ý sửa.**
+   Với `FAMILY_MEMBER`, AI nên nói theo phạm vi cá nhân: *"bạn chưa có chi tiêu nào"*
+   hoặc *"mình chỉ xem được dữ liệu cá nhân của bạn"*. Chỉ `FAMILY_MANAGER` /
+   `DEPUTY_MEMBER` mới dùng *"gia đình/nhà mình"*.
 
 ### Việc tiếp theo đề xuất
 
-1. **Báo Giáp `git merge origin/main`** — nhánh `giap` đi sau 8 commit, trong đó
-   có thay đổi ở `api_client.dart` và 17 provider. Để lâu là conflict dồn.
-2. Theo dõi 6 mục đã gửi BE, ưu tiên #1 (Thành viên vào ngõ cụt) và #2 (thiếu
-   response schema). Khi BE trả lời #3 thì thu hẹp `AiActionOutcome` cho khớp
-   enum thật thay vì đoán phòng thủ.
-3. Test nốt `403`/`409`/`410` runtime khi BE sửa xong #1.
-4. Module AI **không còn việc FE nào nợ**. Việc tiếp theo nên quay lại các mục
-   treo từ trước: test quyền chia quỹ theo `FAMILY_MANAGER`/`DEPUTY_MEMBER`/
-   `FAMILY_MEMBER`, retest 9 mục Finance QA, và runtime verify Face scan khi job
-   kẹt.
+1. Theo dõi BE cập nhật prompt/guard cho Member không có quyền ghi thu chi. Sau khi BE
+   sửa, test lại câu: *"Ghi nhận khoản chi 200.000 cho ăn uống hôm nay"* bằng tài
+   khoản `FAMILY_MEMBER` — kỳ vọng **không có thẻ xác nhận** và câu trả lời nói rõ
+   cần nhờ Trưởng nhóm/Phó nhóm.
+2. Đối chiếu parser `AiMessage` / `AiPendingAction` với response DTO mới trong OpenAPI
+   2026-08-07 trước khi chốt commit; hiện test contract đã khóa 3 `actionType` và 4 `status`.
+3. Vì Swagger đã có enum `status`, có thể thu hẹp UI outcome theo 4 trạng thái thật:
+   `PENDING`, `CONFIRMED`, `REJECTED`, `EXPIRED`. Chưa cần làm ngay vì parser hiện
+   đang phòng thủ và không gây lỗi.
+4. Test runtime `409`/`410` của `confirm-action` khi có điều kiện tái hiện. Logic hai
+   mã này đã có unit test phủ nhưng **chưa xác minh runtime**.
+5. Module AI không còn việc FE lớn nào nợ. Việc tiếp theo nên quay lại các mục treo từ
+   trước: test quyền chia quỹ theo `FAMILY_MANAGER`/`DEPUTY_MEMBER`/`FAMILY_MEMBER`,
+   retest 9 mục Finance QA, và runtime verify Face scan khi job kẹt.
 
 ### File tạm không được commit
 
