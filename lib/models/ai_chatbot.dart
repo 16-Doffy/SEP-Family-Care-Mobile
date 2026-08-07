@@ -19,8 +19,12 @@ class AiConversation {
         json['conversationTitle'] ?? json['title'] ?? json['conversationName'],
         fallback: 'Cuộc trò chuyện mới',
       ),
+      // `AiConversationLastMessageResponseDto` dùng tên `messageContent`, KHÔNG
+      // phải `content` như `AiMessageResponseDto`. Đọc sai tên thì dòng xem
+      // trước dưới mỗi hội thoại trống trơn — lỗi im lặng, không exception.
+      // Giữ `content` làm alias phòng dữ liệu cũ.
       lastMessage: rawLast is Map
-          ? _str(rawLast['content'], fallback: '')
+          ? _str(rawLast['messageContent'] ?? rawLast['content'], fallback: '')
           : _str(rawLast, fallback: ''),
       createdAt: _date(json['createdAt'] ?? json['updatedAt']),
     );

@@ -387,11 +387,24 @@ FE đã ẩn sẵn các gợi ý tạo dữ liệu với Thành viên (`aiPrompt
 BE cũng chưa guard chúng — FE không gate theo ba key này, chỉ đọc để hiển thị
 quyền lợi ở màn Gói đăng ký.
 
-**⚠️ Còn thiếu phía Swagger:** cả 7 endpoint **chưa có response DTO**.
-`POST .../messages` chỉ khai 502/503, `confirm-action` chỉ khai 409/410, và
-không có schema nào cho `pendingAction`. BE đã đồng ý bổ sung. Cho tới lúc đó,
-mục này là nguồn đúng duy nhất; test khoá contract nằm ở
-`test/ai_pending_action_contract_test.dart`.
+**✅ Swagger đã có response DTO đầy đủ (bản dump 2026-08-07).** `POST .../messages`
+nay khai cả `200`. Các schema chính thức:
+
+- `AiActionType` (enum) — đúng 3 giá trị, khớp `AiPendingAction.confirmedActionTypes`.
+- `AiActionStatus` (enum) — đúng 4 giá trị, khớp `AiPendingAction.confirmedStatuses`.
+- `AiPendingActionResponseDto` — `messageId`, `actionType`, `status`, `preview`, `expiresAt` (bắt buộc) + `result` (tuỳ chọn, `AiActionResultResponseDto { id }`).
+- `AiMessageResponseDto` — `id`, `senderType`, `content`, `relatedModule` (nullable), `createdAt`, `pendingAction` (nullable). **Mỗi tin nhắn trong lịch sử có thể tự mang `pendingAction`**, không chỉ response lúc gửi.
+- `AiSendMessageDataResponseDto` — `{ userMessage, aiMessage, pendingAction }`, cả ba bắt buộc, `pendingAction` nullable.
+- `AiConfirmActionDataResponseDto` — `{ actionType, result }` · `AiRejectActionDataResponseDto` — `{ actionType }`. FE bỏ qua body này và refetch messages.
+- Hai endpoint list dùng `{ items, meta }` với `PaginationMetaResponseDto { page, limit, total, totalPages }` — khớp parser phân trang của FE.
+
+**⚠️ Bẫy tên field:** `AiConversationLastMessageResponseDto` dùng
+**`messageContent`**, KHÔNG phải `content` như `AiMessageResponseDto`. FE từng
+đọc nhầm `content` khiến dòng xem trước dưới mỗi hội thoại **trống trơn** — lỗi
+im lặng, không exception. Đã sửa, khoá bằng `test/ai_conversation_mapping_test.dart`.
+
+Test khoá contract: `test/ai_pending_action_contract_test.dart`,
+`test/ai_send_response_test.dart`, `test/ai_conversation_mapping_test.dart`.
 
 ### Subscription Plans (public/subscriber)
 - `GET /api/v1/subscription-plans` — Danh sách gói active (cho subscriber).
