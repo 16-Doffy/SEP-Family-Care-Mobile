@@ -9,10 +9,10 @@ Last updated: **2026-08-07**
 
 ### Trạng thái Git chốt cuối ngày
 
-- **`NDuy` = `main` = `origin/NDuy` = `origin/main` = `b77d7e2`.** Đã merge
+- **`NDuy` = `main` = `origin/NDuy` = `origin/main` = `9dda7be`.** Đã merge
   fast-forward, không có merge commit thừa, `git diff main NDuy` rỗng hoàn toàn.
-- `origin/giap` còn ở `0a41e32`, **đi sau main 8 commit**. Cần báo Giáp
-  `git merge origin/main` sớm: 8 commit này chạm `lib/services/api_client.dart`
+- `origin/giap` còn ở `0a41e32`, **đi sau main 9 commit**. Cần báo Giáp
+  `git merge origin/main` sớm: 9 commit này chạm `lib/services/api_client.dart`
   và **17 file provider**, để lâu là conflict dồn.
 - Mốc cứu hộ: tag `backup/main-before-merge-20260807` trỏ `0a41e32`; nhánh
   `backup/ai-before-reword-20260807` giữ bản trước khi viết lại lời commit.
@@ -20,9 +20,10 @@ Last updated: **2026-08-07**
   --is-ancestor` (nén logo, SOS qua wearable event, ngắt kết nối thiết bị đeo,
   test mapping).
 
-### 8 commit của phiên này (đã lên main)
+### 9 commit của phiên này (đã lên main)
 
 ```
+9dda7be  docs(bàn giao): chốt trạng thái phiên Trợ lý AI và rò rỉ dữ liệu
 b77d7e2  fix(bảo mật): dọn nốt 17 provider còn giữ dữ liệu tài khoản cũ
 e5aeb22  feat(trợ lý AI): tải thêm hội thoại và tin nhắn cũ
 57c5f8c  fix(trợ lý AI): đỡ đúng hình dạng response BE mô tả
