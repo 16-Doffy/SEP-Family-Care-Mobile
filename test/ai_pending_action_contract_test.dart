@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:family_care/models/ai_chatbot.dart';
 import 'package:family_care/screens/shared/ai_assistant_screen.dart';
 
-/// Khóa contract `pendingAction` theo tin nhắn BE gửi ngày 2026-08-07.
-/// Swagger vẫn chưa khai schema cho nó, nên test này là chỗ duy nhất ghi lại
-/// hình dạng đã thống nhất — BE đổi là test đỏ.
+/// Khóa contract `pendingAction` theo OpenAPI 2026-08-07 và tin nhắn BE cùng ngày.
+/// Nếu BE đổi `AiPendingActionResponseDto`, `AiActionType` hoặc `AiActionStatus`
+/// thì test này phải đỏ để FE đối chiếu lại.
 void main() {
   // Payload lấy nguyên văn từ ví dụ BE gửi.
   const beExample = {

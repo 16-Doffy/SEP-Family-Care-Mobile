@@ -131,9 +131,7 @@ class AiPendingAction {
     );
   }
 
-  /// Ba `actionType` BE đã chốt bằng tin nhắn contract (bản FE nhận 2026-08-07).
-  ///
-  /// Swagger vẫn chưa khai enum này, nên đây là nguồn đúng duy nhất hiện có.
+  /// Ba `actionType` chính thức trong `AiActionType` của OpenAPI 2026-08-07.
   static const confirmedActionTypes = <String>{
     'CREATE_TASK',
     'CREATE_LEDGER_ENTRY',
@@ -156,6 +154,11 @@ class AiPendingAction {
   };
 
   /// Kết cục của đề xuất.
+  ///
+  /// BE chốt ngày 2026-08-07: status chính thức hiện có đúng 4 giá trị
+  /// `PENDING | CONFIRMED | REJECTED | EXPIRED`. Các nhánh `CANCELED`,
+  /// `FAILED` bên dưới chỉ là parser phòng thủ cho dữ liệu legacy hoặc mở rộng
+  /// về sau, không phải contract BE hiện tại.
   ///
   /// Phải phân biệt "đã thực hiện xong" với "hết hạn". Trước 2026-08-07 UI chỉ
   /// hỏi `isPending` rồi gộp cả hai vào một dòng chữ đỏ "Đề xuất đã hết hạn
@@ -180,8 +183,8 @@ class AiPendingAction {
             ? AiActionOutcome.expired
             : AiActionOutcome.pending;
       default:
-        // Swagger chưa khai enum status. Mọi giá trị khác PENDING mà không phải
-        // từ chối/hết hạn/lỗi đều coi là đã thực hiện, thay vì mặc định báo đỏ.
+        // CONFIRMED rơi vào đây. Nếu BE thêm status hoàn tất mới, vẫn coi là đã
+        // thực hiện thay vì mặc định báo lỗi đỏ.
         return AiActionOutcome.completed;
     }
   }
