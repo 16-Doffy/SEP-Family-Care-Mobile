@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/ai_chatbot.dart';
 import '../../providers/ai_chatbot_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -45,6 +46,12 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     _inputCtrl.clear();
     await context.read<AiChatbotProvider>().sendMessage(text);
     _scrollToBottom();
+  }
+
+  Future<void> _sendPrompt(String prompt) async {
+    if (context.read<AiChatbotProvider>().sending) return;
+    _inputCtrl.text = prompt;
+    await _send();
   }
 
   void _scrollToBottom() {
@@ -127,19 +134,30 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
           body: Column(
             children: [
               Divider(height: 1, color: context.colors.divider),
-              if (ai.error != null) _ErrorBanner(message: ai.error!),
-              Expanded(child: _MessageList(scrollCtrl: _scrollCtrl)),
-              _QuickPrompts(
-                onPick: (prompt) {
-                  _inputCtrl.text = prompt;
-                  _send();
-                },
-              ),
-              _Composer(
-                controller: _inputCtrl,
-                sending: ai.sending,
-                onSend: _send,
-              ),
+              if (ai.loadingAccess && ai.messages.isEmpty)
+                const Expanded(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (!ai.canUseAssistant)
+                // Đã biết chắc gói không có ai.assistant → chặn tại đây, không
+                // gọi API để rồi hiện banner đỏ 403.
+                const Expanded(child: _UpgradePanel())
+              else ...[
+                if (ai.error != null) _ErrorBanner(message: ai.error!),
+                Expanded(
+                  child: _MessageList(
+                    scrollCtrl: _scrollCtrl,
+                    onPickPrompt: _sendPrompt,
+                  ),
+                ),
+                // Màn rỗng đã có bảng gợi ý đầy đủ, không cần lặp lại dải chip.
+                if (ai.messages.isNotEmpty) _QuickPrompts(onPick: _sendPrompt),
+                _Composer(
+                  controller: _inputCtrl,
+                  sending: ai.sending,
+                  onSend: _send,
+                ),
+              ],
             ],
           ),
         );
@@ -257,8 +275,9 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
 class _MessageList extends StatelessWidget {
   final ScrollController scrollCtrl;
+  final ValueChanged<String> onPickPrompt;
 
-  const _MessageList({required this.scrollCtrl});
+  const _MessageList({required this.scrollCtrl, required this.onPickPrompt});
 
   @override
   Widget build(BuildContext context) {
@@ -268,37 +287,7 @@ class _MessageList extends StatelessWidget {
     }
     final messages = ai.messages;
     if (messages.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const AiChatbotIcon(size: 72),
-              const SizedBox(height: 14),
-              Text(
-                'Xin chào, tôi là trợ lý FamilyCare.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: context.colors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Bạn có thể hỏi về chi tiêu, nhiệm vụ, lịch gia đình hoặc nhờ tôi tạo đề xuất để xác nhận.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  height: 1.45,
-                  color: context.colors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      return _EmptyStateSuggestions(onPick: onPickPrompt);
     }
     return ListView.builder(
       controller: scrollCtrl,
@@ -308,6 +297,219 @@ class _MessageList extends StatelessWidget {
         if (i >= messages.length) return const _TypingBubble();
         return _MessageBubble(message: messages[i]);
       },
+    );
+  }
+}
+
+/// Nhóm gợi ý cho màn rỗng.
+///
+/// Phần hỏi đáp tra cứu dữ liệu gia đình vốn đã chạy được đầu-cuối, nhưng hầu
+/// như không ai dùng vì mở màn ra chỉ thấy ô nhập trống. Bộ gợi ý này chia rõ
+/// hai loại: câu chỉ TRA CỨU (trả lời ngay) và câu khiến AI TẠO đề xuất (phải
+/// bấm xác nhận mới ghi dữ liệu) — để người dùng biết trước điều gì sẽ xảy ra.
+class _PromptGroup {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final List<String> prompts;
+
+  const _PromptGroup({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.prompts,
+  });
+}
+
+class _EmptyStateSuggestions extends StatelessWidget {
+  final ValueChanged<String> onPick;
+
+  const _EmptyStateSuggestions({required this.onPick});
+
+  static final _groups = <_PromptGroup>[
+    _PromptGroup(
+      title: 'Tra cứu tài chính',
+      icon: Icons.query_stats_rounded,
+      color: AppColors.success,
+      prompts: [
+        'Tháng này nhà mình đã chi bao nhiêu?',
+        'Khoản chi lớn nhất tháng này là gì?',
+        'So sánh chi tiêu tháng này với tháng trước',
+        'Mục tiêu tiết kiệm của nhà mình còn thiếu bao nhiêu?',
+      ],
+    ),
+    _PromptGroup(
+      title: 'Tra cứu nhiệm vụ & lịch',
+      icon: Icons.event_note_rounded,
+      color: AppColors.link,
+      prompts: [
+        'Ai đang còn nhiệm vụ chưa hoàn thành?',
+        'Nhiệm vụ nào sắp tới hạn?',
+        'Tuần này nhà mình có lịch gì?',
+      ],
+    ),
+    _PromptGroup(
+      title: 'Nhờ AI tạo (bạn xác nhận rồi mới ghi)',
+      icon: Icons.auto_awesome_rounded,
+      color: AppColors.primary600,
+      prompts: [
+        'Ghi khoản chi 200.000đ tiền ăn uống hôm nay',
+        'Ghi khoản thu 5.000.000đ lương tháng này',
+        'Tạo nhiệm vụ rửa bát tối nay',
+      ],
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      children: [
+        Center(
+          child: Column(
+            children: [
+              const AiChatbotIcon(size: 64),
+              const SizedBox(height: 12),
+              Text(
+                'Xin chào, tôi là trợ lý FamilyCare.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: context.colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Tôi trả lời dựa trên dữ liệu gia đình bạn được phép xem. '
+                'Thử một câu bên dưới, hoặc gõ câu của bạn.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: context.colors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+        for (final group in _groups) ...[
+          Row(
+            children: [
+              Icon(group.icon, size: 16, color: group.color),
+              const SizedBox(width: 6),
+              Text(
+                group.title,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: group.color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final prompt in group.prompts)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => onPick(prompt),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.colors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: context.colors.divider),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          prompt,
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            height: 1.35,
+                            color: context.colors.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.north_east_rounded,
+                        size: 14,
+                        color: context.colors.textMuted,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+        ],
+      ],
+    );
+  }
+}
+
+/// Hiện khi BE đã nói rõ gói không có `ai.assistant`.
+class _UpgradePanel extends StatelessWidget {
+  const _UpgradePanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final canManage =
+        context.read<AuthProvider>().user?.canManageSubscription ?? false;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 56,
+              color: context.colors.textMuted,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Gói hiện tại chưa có Trợ lý AI',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: context.colors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              canManage
+                  ? 'Nâng gói đăng ký để hỏi đáp về chi tiêu, nhiệm vụ và lịch '
+                        'gia đình bằng ngôn ngữ tự nhiên.'
+                  : 'Trưởng nhóm gia đình có thể nâng gói để mở tính năng này.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                height: 1.45,
+                color: context.colors.textSecondary,
+              ),
+            ),
+            if (canManage) ...[
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: () => context.push('/manager/subscription'),
+                icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+                label: const Text('Xem gói đăng ký'),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -406,13 +608,30 @@ class _PendingActionCard extends StatelessWidget {
               Icon(_actionIcon, size: 18, color: color),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  action.actionLabel,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: color,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      action.actionLabel,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                      ),
+                    ),
+                    // Loại đề xuất FE chưa biết thì hiện luôn mã BE gửi. Nếu
+                    // không, mọi tên lạ đều rơi vào nhãn chung "Thực hiện đề
+                    // xuất" và không ai biết BE vừa gửi cái gì.
+                    if (!action.isKnownActionType &&
+                        action.actionType.isNotEmpty)
+                      Text(
+                        action.actionType,
+                        style: GoogleFonts.robotoMono(
+                          fontSize: 10,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               _statusChip(color),
@@ -591,24 +810,47 @@ class _PendingActionCard extends StatelessWidget {
     final calendar = context.read<CalendarProvider>();
     final ok = await ai.confirmAction(messageId);
     if (!ok) return;
-    try {
-      switch (action.actionType.toUpperCase()) {
-        case 'CREATE_TASK':
-        case 'TASK_CREATE':
-          await tasks.fetchTasks();
-          break;
-        case 'CREATE_LEDGER_ENTRY':
-        case 'CREATE_TRANSACTION':
-        case 'FINANCE_LEDGER_CREATE':
-          await wallet.fetchWallets();
-          break;
-        case 'CREATE_CALENDAR_EVENT':
-        case 'CALENDAR_EVENT_CREATE':
-          await calendar.fetchEvents(DateTime.now());
-          break;
+
+    // BE tạo dữ liệu thật rồi, giờ phải kéo lại màn tương ứng. Nếu BE thêm một
+    // actionType mới mà FE chưa biết thì KHÔNG được bỏ qua: người dùng bấm xác
+    // nhận, BE tạo thật, mà app không đổi gì thì nhìn như chẳng có chuyện gì
+    // xảy ra. Trường hợp đó refresh cả ba nguồn — tốn thêm vài request nhưng
+    // không bao giờ hiện dữ liệu cũ.
+    final type = action.actionType.toUpperCase();
+    final refreshTasks =
+        !action.isKnownActionType ||
+        const {'CREATE_TASK', 'TASK_CREATE'}.contains(type);
+    final refreshWallet =
+        !action.isKnownActionType ||
+        const {
+          'CREATE_LEDGER_ENTRY',
+          'CREATE_TRANSACTION',
+          'FINANCE_LEDGER_CREATE',
+        }.contains(type);
+    final refreshCalendar =
+        !action.isKnownActionType ||
+        const {'CREATE_CALENDAR_EVENT', 'CALENDAR_EVENT_CREATE'}.contains(type);
+
+    if (!action.isKnownActionType) {
+      debugPrint(
+        'AIAssistantScreen: actionType lạ "${action.actionType}" — '
+        'refresh toàn bộ. Cần bổ sung vào AiPendingAction.knownActionTypes.',
+      );
+    }
+
+    Future<void> guarded(String what, Future<void> Function() run) async {
+      try {
+        await run();
+      } catch (e) {
+        // Một nguồn lỗi không được chặn hai nguồn còn lại.
+        debugPrint('AIAssistantScreen: refresh $what sau xác nhận lỗi: $e');
       }
-    } catch (e) {
-      debugPrint('AIAssistantScreen: reload after confirm failed: $e');
+    }
+
+    if (refreshTasks) await guarded('tasks', tasks.fetchTasks);
+    if (refreshWallet) await guarded('wallet', wallet.fetchWallets);
+    if (refreshCalendar) {
+      await guarded('calendar', () => calendar.fetchEvents(DateTime.now()));
     }
   }
 }

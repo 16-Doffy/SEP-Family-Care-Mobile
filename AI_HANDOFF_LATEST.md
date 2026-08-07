@@ -1,11 +1,135 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-02**
+Last updated: **2026-08-07**
 
-## Snapshot hiện hành 2026-08-02 — đồng bộ main, Finance model/hũ và Face scan
+## Snapshot hiện hành 2026-08-07 — Đồng bộ NDuy với main (Wear OS + té ngã + kỳ tháng) và verify toàn bộ
 
-> Snapshot này mới hơn toàn bộ phần 2026-07-29 bên dưới. Khi có mâu thuẫn,
+> Snapshot này mới hơn toàn bộ phần 2026-08-04 bên dưới. Khi có mâu thuẫn,
 > dùng trạng thái ở đây và source hiện tại.
+
+### Trạng thái Git sau khi đồng bộ
+
+- `origin/main` và `origin/giap` cùng đứng tại `2171854` — Giáp đã merge xong
+  nhánh của mình lên main, **không còn nhánh rẽ nào cần xử lý trước khi push**.
+- `NDuy` trước đồng bộ: `a677f89`, behind main 12 commit, ahead 0 → đã
+  `git merge --ff-only origin/main` thành công, **không có merge commit thừa,
+  không conflict, không mất code**.
+- Thay đổi cục bộ duy nhất (`AI_HANDOFF_LATEST.md`) được stash trước khi kéo và
+  pop lại sau đó — pop sạch, không conflict.
+- Nhánh `main` local còn một commit docs cũ `96ed358` đi lệch khỏi `origin/main`.
+  Đã đối chiếu: nội dung `AI_HANDOFF_LATEST.md` của nó **giống hệt** bản trên
+  `origin/main`, còn `API_DOCS.md` thì `origin/main` là **tập cha** (nhiều hơn 29
+  dòng). Nghĩa là commit này đã bị thay thế hoàn toàn, reset `main` local về
+  `origin/main` **không làm mất nội dung nào**.
+
+### 12 commit kéo từ main về (việc của Giáp, FE nay đã có trên NDuy)
+
+- `2171854` — thiết bị đeo: đủ 5 loại sự kiện cảm biến, nối lại 2 màn đồng hồ bị
+  mất lối vào.
+- `2057edd` — thiết bị đeo: tin nhắn nhanh sửa được, vá provider thiếu ở
+  entrypoint đồng hồ.
+- `883a81b` — SOS: tự tạo cảnh báo khi điện thoại phát hiện té ngã.
+- `ef28135` — khuôn mặt: khôi phục 3 lệch schema `face-suggestions` bị merge ghi
+  đè trước đó.
+- `c52f62b` — tài chính: xem và thao tác theo kỳ tháng, không còn kẹt ở tháng
+  hiện tại.
+- `e9532cf` — thiết bị đeo: ghép nối theo contract mới, một tài khoản một thiết bị.
+- `7b9605f`, `e580b97` — hoàn thiện giao diện Wear OS và SOS gửi từ đồng hồ.
+- `8e574d5` — Android: thêm biểu tượng tròn cho launcher.
+- `bc624b2` — docs: thêm `CLAUDE.md`, bản dump Swagger mới, phân tích tiến trình FE.
+- `13ea351`, `f947469` — các commit đồng bộ main ↔ giap.
+
+Tổng: 54 file, +6741 / −1809 dòng. File mới đáng chú ý:
+`lib/services/fall_detector_service.dart`, `lib/services/sos_location.dart`,
+`lib/models/finance_period.dart`, `lib/widgets/month_switcher.dart`,
+`lib/widgets/month_start_checklist.dart`, `lib/widgets/fall_countdown_dialog.dart`,
+`lib/providers/wear_quick_message_provider.dart`, `lib/wear/wear_root.dart`,
+`lib/wear/wear_widgets.dart` cùng 5 màn Wear mới (calendar, map, notifications,
+quick message, tasks).
+
+### Verification 2026-08-07 (chạy trên codebase đã đồng bộ)
+
+- `flutter analyze --no-fatal-infos`: **0 error, 0 warning**, còn 20 info-lint có
+  sẵn từ trước (null-aware, `use_build_context_synchronously`, `curly_braces`,
+  `Radio.groupValue` deprecated) — không phát sinh mới sau merge.
+- `flutter test` toàn bộ: **160/160 PASS**, tăng từ 109 test nhờ 4 bộ test mới
+  của Giáp: `fall_detection_test`, `wear_providers_registered_test`,
+  `wear_quick_message_provider_test`, `album_face_mapping_test`.
+
+### Trợ lý AI — 4 lỗi FE đã sửa trong ngày
+
+- **Sai tên feature key (lỗi im lặng).** `FeatureAccess` đọc `ai.enabled` và
+  `ai.chatbot`; cả hai KHÔNG nằm trong 26 key chính thức BE khai ở
+  `CreateSubscriptionPlanDto.featureAccess`. `flag()` trả `false` cả khi key
+  không tồn tại, nên dòng "Tính năng AI" và "Trợ lý AI" ở màn Gói đăng ký không
+  bao giờ hiện, kể cả gói trả phí. Đã đổi sang `ai.assistant` (giữ tên cũ làm
+  alias cho plan chưa migrate) và thêm `officialKeys` + `officialKeyLabels` để
+  màn Gói đăng ký duyệt đúng 26 key thay vì liệt kê tay. Bốn key FE tự bịa khác
+  cũng bị bỏ cùng lúc: `finance.advanced`, `reports.advanced`, `sos.enabled`,
+  `storage.unlimited`, `families.max`.
+- **Gate theo gói.** `AiChatbotProvider.bootstrap()` nay gọi
+  `fetchFeatureAccess()` trước; biết chắc gói không có `ai.assistant` thì dừng,
+  không gọi endpoint nào và hiện `_UpgradePanel` (nút "Xem gói đăng ký" chỉ hiện
+  với Manager theo `AppUser.canManageSubscription`). Vẫn **fail-open** khi BE trả
+  `featureAccess` rỗng, theo đúng convention đã ghi trong `feature_access.dart`.
+- **Gợi ý câu hỏi.** Màn rỗng nay là bảng gợi ý ba nhóm: tra cứu tài chính, tra
+  cứu nhiệm vụ & lịch, và nhờ AI tạo (ghi rõ "bạn xác nhận rồi mới ghi"). Dải
+  chip ngang chỉ còn hiện khi hội thoại đã có tin nhắn, không lặp lại ở màn rỗng.
+- **actionType lạ không còn hỏng im lặng.** Trước đây `switch` trong
+  `_confirmAndReload` không có nhánh `default`: BE thêm loại mới thì người dùng
+  bấm xác nhận, BE tạo dữ liệu thật, app không refresh gì — nhìn như không có
+  chuyện gì xảy ra. Nay `AiPendingAction.isKnownActionType` phân biệt được, loại
+  lạ thì refresh cả ba nguồn (task, ví, lịch, mỗi nguồn bọc try riêng để một lỗi
+  không chặn hai nguồn kia) và hiện mã `actionType` thô ngay trên thẻ đề xuất.
+
+Test mới: `test/ai_feature_access_test.dart` — 12 test khoá contract tên key và
+`actionType`, gồm cả assert "đủ 26 key và mỗi key có nhãn tiếng Việt" để lần sau
+BE đổi enum là test đỏ ngay.
+
+Báo cáo gửi BE: `BAO_CAO_BE_AI_CHATBOT_2026-08-07.md` — 7 mục, quan trọng nhất
+là Swagger không có schema cho `pendingAction` (cả 7 endpoint AI đều thiếu
+response DTO; `POST .../messages` chỉ khai 502/503, `confirm-action` chỉ khai
+409/410) và câu hỏi bảo mật "AI tra cứu theo quyền người hỏi" chưa ai kiểm chứng.
+
+### File tạm không được commit
+
+`.tmp_report_audit/`, `BuildDocx.cs`, `build_report6.ps1` là công cụ dựng báo cáo
+docx cục bộ, cố ý để untracked. Đừng `git add -A` mà không lọc.
+
+## Snapshot 2026-08-04 — Hoàn thành Sơ đồ Tổng thể Use Case Diagram (96 UCs / 8 Subsystems / 4 Actors / 4 External Systems)
+
+### Use Case Diagram Tổng thể (`D:\Downloads\usecase-diagram (1).drawio`)
+
+- **Trạng thái**: Đã hoàn thành 100%, được kiểm tra và thẩm định chi tiết cấu trúc XML.
+- **4 Human Actors**:
+  - `Guest` (Khách / Người dùng mới)
+  - `Family Manager` (Trưởng nhóm gia đình)
+  - `Family Member` (Thành viên gia đình)
+  - `System Admin` (Quản trị viên hệ thống Web Admin)
+- **4 External Systems**:
+  - `AI Service` (Trợ lý AI Chatbot & AI Face Tags)
+  - `Payment Gateway` (Cổng thanh toán gói cước)
+  - `Notification Service` (Dịch vụ thông báo đẩy FCM)
+  - `Wearable / GPS Device` (Đồng hồ thông minh & Định vị GPS)
+- **72 Use Cases đại diện (Bao phủ trọn vẹn 100% tất cả 96 Use Cases thuộc 8 Subsystems)**:
+  1. `1. Authentication & Workspace Setup` (UC09-UC13, UC69)
+  2. `2. Family & Permission Management` (UC14-UC20)
+  3. `3. Finance, Budget & Family Fund` (UC21-UC36, UC76-UC78, UC82-UC96)
+  4. `4. Task & Reward Management` (UC37-UC49)
+  5. `5. SOS, Safety & Wearable Tracking` (UC50-UC59, UC79-UC81)
+  6. `6. Album & AI Face Classification` (UC72-UC75)
+  7. `7. Communication, Calendar & AI Assistant` (UC60-UC68, UC70-UC71)
+  8. `8. Admin System Management` (UC01-UC08)
+- **Chuẩn đồ họa & Kết nối UML**:
+  - 85 đường nối (`connectors`).
+  - Mũi tên nét đứt `<<include>>`: chỉ từ Use Case gốc sang Use Case dịch vụ/bắt buộc.
+  - Mũi tên nét đứt `<<extend>>`: chỉ từ Use Case phụ/tùy chọn về Use Case chính.
+  - Dây nét liền không mũi tên nối từ Actor vào Use Case.
+- **Lưu ý hoàn thiện UI trước khi xuất file**:
+  - Đã nhắc người dùng chỉnh nhẹ typo `Famlily member` ➔ `Family Member`.
+  - Làm sạch các thẻ ngắt dòng HTML `<br/>` trong tên hình bầu dục để khi export PNG/PDF hiển thị đẹp nhất.
+
+## Snapshot 2026-08-02 — đồng bộ main, Finance model/hũ và Face scan
 
 ### Git / phạm vi thay đổi
 

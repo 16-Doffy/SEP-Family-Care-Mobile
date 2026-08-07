@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/ai_chatbot.dart';
+import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
 class AiChatbotProvider extends ChangeNotifier {
@@ -11,23 +12,69 @@ class AiChatbotProvider extends ChangeNotifier {
   String? _currentConversationId;
   bool _loadingConversations = false;
   bool _loadingMessages = false;
+  bool _loadingAccess = false;
   bool _sending = false;
   String? _error;
+  FeatureAccess? _featureAccess;
 
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   List<AiMessage> get messages => List.unmodifiable(_messages);
   String? get currentConversationId => _currentConversationId;
   bool get loadingConversations => _loadingConversations;
   bool get loadingMessages => _loadingMessages;
+  bool get loadingAccess => _loadingAccess;
   bool get sending => _sending;
   String? get error => _error;
+
+  /// BE chưa trả lời, hoặc trả `featureAccess` rỗng → coi như KHÔNG BIẾT.
+  bool get accessUnknown => _featureAccess == null || _featureAccess!.isUnknown;
+
+  /// Gói có Trợ lý AI hay không.
+  ///
+  /// Fail-open khi chưa biết: map rỗng mà coi là cấm thì chặn nhầm cả gói vốn
+  /// có quyền. Khi đã biết chắc là `false` thì chặn tại FE để người dùng thấy
+  /// màn mời nâng cấp, thay vì bấm vào rồi mới ăn 403 từ BE.
+  bool get canUseAssistant => accessUnknown || _featureAccess!.aiAssistant;
 
   bool isActionBusy(String messageId) => _actionBusy.contains(messageId);
 
   Future<void> bootstrap() async {
+    await fetchFeatureAccess();
+    // Gói không có quyền thì đừng gọi tiếp — mọi endpoint ai-chatbot đều 403,
+    // chỉ tổ hiện banner đỏ thay vì lời mời nâng gói.
+    if (!canUseAssistant) return;
     await fetchConversations();
     if (_conversations.isNotEmpty && _currentConversationId == null) {
       await selectConversation(_conversations.first.id);
+    }
+  }
+
+  Future<void> fetchFeatureAccess() async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) return;
+    _loadingAccess = true;
+    notifyListeners();
+    try {
+      final data = await ApiClient.instance.get('/families/$fid/subscription');
+      final plan = data is Map && data['plan'] is Map
+          ? Map<String, dynamic>.from(data['plan'] as Map)
+          : const <String, dynamic>{};
+      final access = data is Map
+          ? data['featureAccess'] ?? plan['featureAccess']
+          : plan['featureAccess'];
+      _featureAccess = FeatureAccess.fromJson(access);
+      // flag() trả false cả khi key không tồn tại, nên "gói không có quyền" và
+      // "FE gõ sai tên key" nhìn giống hệt nhau nếu không log raw ra đây.
+      debugPrint(
+        'AiChatbotProvider: featureAccess=${_featureAccess!.raw} '
+        '(unknown=${_featureAccess!.isUnknown}) → assistant=$canUseAssistant',
+      );
+    } catch (e) {
+      // Không đọc được gói thì giữ trạng thái "không biết" và fail-open.
+      debugPrint('AiChatbotProvider: fetchFeatureAccess failed: $e');
+    } finally {
+      _loadingAccess = false;
+      notifyListeners();
     }
   }
 
