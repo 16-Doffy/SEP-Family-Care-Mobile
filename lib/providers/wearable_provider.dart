@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../services/api_client.dart';
 
@@ -138,8 +141,43 @@ class WearableProvider extends ChangeNotifier {
 
   String? get _fid => ApiClient.instance.familyId;
 
+  /// Chỉ dùng khi BE trả 409 mà **không kèm message** — không được đè lên
+  /// message thật của BE (trước đây mọi 409 đều bị thay bằng câu cứng, nên
+  /// không ai đọc được BE thực sự báo gì).
+  ///
+  /// Quy tắc BE: **một tài khoản chỉ được có một wearable đang PAIRED**. Bản ghi
+  /// `UNPAIRED` **không** chiếm chỗ — BE xác nhận ghép lại cùng
+  /// `deviceIdentifier` cũ sẽ pair lại chính record đó, còn identifier mới thì
+  /// tạo record mới. Vì vậy 409 nghĩa là **thực sự vẫn còn một record PAIRED**,
+  /// tức lần gỡ trước chưa thành công trên server.
   static const duplicateWearableMessage =
-      'Tài khoản này đã kết nối một wearable. Vui lòng ngắt kết nối thiết bị hiện tại trước.';
+      'Tài khoản này vẫn còn một wearable đang kết nối trên máy chủ. '
+      'Hãy ngắt kết nối thiết bị đó rồi thử lại.';
+
+  static const _storage = FlutterSecureStorage();
+  static const _identifierKey = 'wearable_device_identifier';
+
+  /// Mã định danh **riêng cho từng bản cài app**, tạo một lần rồi giữ nguyên.
+  ///
+  /// `PairWearableDto.deviceIdentifier` được BE mô tả là "unique within a
+  /// family", trong khi FE trước đây gửi hằng số `wearos-emulator-001` cho mọi
+  /// máy. Đây **không phải** nguyên nhân của lỗi 409 hiện tại (nguyên nhân là
+  /// quy tắc một-tài-khoản-một-wearable, xem [duplicateWearableMessage]), nhưng
+  /// hai máy trong cùng một gia đình mà gửi trùng identifier là sai contract —
+  /// giữ mã riêng để không đụng ràng buộc đó về sau.
+  static Future<String> deviceIdentifier() async {
+    final saved = await _storage.read(key: _identifierKey);
+    if (saved != null && saved.isNotEmpty) return saved;
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    final rnd = Random.secure();
+    final suffix = List.generate(
+      10,
+      (_) => chars[rnd.nextInt(chars.length)],
+    ).join();
+    final id = 'familycare-$suffix';
+    await _storage.write(key: _identifierKey, value: id);
+    return id;
+  }
 
   static List<Map<String, dynamic>> _list(dynamic data) {
     final raw = data is List
@@ -219,7 +257,11 @@ class WearableProvider extends ChangeNotifier {
       notifyListeners();
       return _currentDevice;
     } on ApiException catch (e) {
-      if (e.statusCode == 409) throw Exception(duplicateWearableMessage);
+      // Giữ message thật của BE (ApiClient.toString() trả đúng message BE, đã
+      // là tiếng Việt) — chỉ thay khi BE không nói gì.
+      if (e.statusCode == 409 && e.message.trim().isEmpty) {
+        throw Exception(duplicateWearableMessage);
+      }
       rethrow;
     }
   }
@@ -235,7 +277,10 @@ class WearableProvider extends ChangeNotifier {
     if (fid == null) throw Exception('Chưa có gia đình');
     final prev = _currentDevice;
     final cleanDeviceName = deviceName?.trim();
-    if (prev != null && prev.id == deviceId) {
+    // Cập nhật lạc quan chỉ dành cho các thay đổi nhẹ (đổi tên, bật/tắt GPS/SOS).
+    // Với gỡ ghép nối thì KHÔNG: đây là thao tác mà việc hiển thị sai trạng thái
+    // khiến người dùng kẹt (tưởng đã gỡ, ghép lại thì 409).
+    if (pairingStatus != 'UNPAIRED' && prev != null && prev.id == deviceId) {
       _currentDevice = WearableDevice.fromJson({
         ...prev.raw,
         'deviceId': prev.id,
@@ -254,9 +299,22 @@ class WearableProvider extends ChangeNotifier {
             'sosEnabled': ?sosEnabled,
             'pairingStatus': ?pairingStatus,
           });
-      _currentDevice = pairingStatus == 'UNPAIRED' ? null : _deviceFrom(data);
-      if (_currentDevice == null && pairingStatus != 'UNPAIRED') {
+      if (pairingStatus == 'UNPAIRED') {
+        // KHÔNG tự kết luận "đã gỡ" từ phía client. Trước đây dòng này gán thẳng
+        // `_currentDevice = null` theo trạng thái ĐƯỢC YÊU CẦU, bỏ qua response
+        // của BE — nên nếu PATCH không thực sự áp dụng thì UI vẫn hiện "Chưa kết
+        // nối" trong khi BE còn record PAIRED, và lần ghép sau nhận 409 mà người
+        // dùng không hiểu vì sao. Lấy GET /wearables/me làm nguồn sự thật.
         await fetchCurrentDevice();
+        if (_currentDevice != null && _currentDevice!.isPaired) {
+          throw Exception(
+            'Máy chủ vẫn ghi nhận thiết bị đang kết nối. Chưa gỡ được, '
+            'vui lòng thử lại.',
+          );
+        }
+      } else {
+        _currentDevice = _deviceFrom(data);
+        if (_currentDevice == null) await fetchCurrentDevice();
       }
       notifyListeners();
     } catch (e) {

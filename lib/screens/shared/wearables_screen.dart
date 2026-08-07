@@ -85,6 +85,8 @@ class _WearablesScreenState extends State<WearablesScreen> {
   // wire ở provider nhưng chưa từng hiển thị.
   List<WearableEvent> _events = const [];
   bool _eventsLoading = false;
+  List<WearableDevice> _familyDevices = const [];
+  bool _familyLoading = false;
 
   @override
   void initState() {
@@ -94,8 +96,12 @@ class _WearablesScreenState extends State<WearablesScreen> {
       final wp = context.read<WearableProvider>();
       context.read<WearQuickMessageProvider>().load();
       await wp.fetchCurrentDevice();
+      if (!mounted) return;
       final id = wp.currentDevice?.id;
-      if (id != null && mounted) await _loadEvents(id);
+      if (id != null) await _loadEvents(id);
+      // Luôn tải danh sách cả nhà: đây là chỗ duy nhất nhìn thấy bản ghi cũ
+      // đang chặn ghép nối (GET /wearables/me chỉ trả bản ghi đang PAIRED).
+      if (mounted) await _loadFamilyDevices();
     });
   }
 
@@ -164,6 +170,8 @@ class _WearablesScreenState extends State<WearablesScreen> {
               const SizedBox(height: 12),
               _eventHistoryCard(device),
             ],
+            const SizedBox(height: 12),
+            _familyDevicesCard(),
           ],
         ),
       ),
@@ -721,26 +729,195 @@ class _WearablesScreenState extends State<WearablesScreen> {
 
   Future<void> _connectSimulator() async {
     try {
+      // KHÔNG hardcode identifier: BE yêu cầu duy nhất trong gia đình, mà bản
+      // ghi cũ không bị xoá khi ngắt kết nối → ghép lại luôn đụng 409.
+      final identifier = await WearableProvider.deviceIdentifier();
+      if (!mounted) return;
       await context.read<WearableProvider>().pairDevice(
         deviceName: 'Wear OS Simulator',
         deviceType: 'SIMULATED_DEVICE',
-        deviceIdentifier: 'wearos-emulator-001',
+        deviceIdentifier: identifier,
         gpsEnabled: true,
         sosEnabled: true,
       );
+      if (!mounted) return;
       _snack('Wearable simulator đã được kết nối.', ok: true);
+    } catch (e) {
+      // 409 thường do bản ghi cũ còn nằm trong gia đình → mở luôn danh sách để
+      // người dùng xoá, thay vì báo lỗi rồi bỏ mặc.
+      _snack(e);
+      await _loadFamilyDevices();
+    }
+  }
+
+  Future<void> _loadFamilyDevices() async {
+    setState(() => _familyLoading = true);
+    try {
+      final list = await context.read<WearableProvider>().fetchFamilyDevices();
+      if (mounted) setState(() => _familyDevices = list);
+    } catch (_) {
+      if (mounted) setState(() => _familyDevices = const []);
+    } finally {
+      if (mounted) setState(() => _familyLoading = false);
+    }
+  }
+
+  Future<void> _confirmRemove(WearableDevice d) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xoá hẳn bản ghi thiết bị?'),
+        content: Text(
+          'Xoá "${d.deviceName}" (${d.deviceIdentifier}) khỏi gia đình. Khác '
+          'với "Ngắt kết nối" — thao tác này xoá hẳn bản ghi, giải phóng chỗ '
+          'wearable của tài khoản để ghép nối lại được.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Xoá hẳn'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await context.read<WearableProvider>().removeDevice(d.id);
+      if (!mounted) return;
+      _snack('Đã xoá bản ghi thiết bị.', ok: true);
+      await context.read<WearableProvider>().fetchCurrentDevice();
+      if (mounted) await _loadFamilyDevices();
     } catch (e) {
       _snack(e);
     }
   }
 
+  Widget _familyDevicesCard() => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.devices_other_rounded, color: AppColors.link),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Thiết bị đeo của gia đình',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Tải lại',
+              onPressed: _familyLoading ? null : _loadFamilyDevices,
+              icon: const Icon(Icons.refresh_rounded),
+              color: AppColors.textMuted,
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Mỗi tài khoản chỉ được có một wearable đang kết nối. Bản ghi UNPAIRED '
+          'không chiếm chỗ — ghép lại cùng mã thiết bị cũ sẽ dùng lại đúng bản '
+          'ghi đó. Danh sách này để đối chiếu trạng thái thật trên máy chủ.',
+          style: GoogleFonts.inter(
+            fontSize: 12.5,
+            height: 1.35,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (_familyLoading && _familyDevices.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_familyDevices.isEmpty)
+          Text(
+            'Chưa tải, hoặc gia đình chưa có bản ghi thiết bị nào.',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              color: AppColors.textMuted,
+            ),
+          )
+        else
+          ..._familyDevices.map(
+            (d) => Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    d.isPaired ? Icons.watch_rounded : Icons.watch_off_rounded,
+                    size: 20,
+                    color: d.isPaired ? AppColors.success : AppColors.textMuted,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          d.deviceName.isEmpty ? 'Thiết bị' : d.deviceName,
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          '${d.pairingStatus} · ${d.deviceIdentifier}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Xoá hẳn',
+                    onPressed: () => _confirmRemove(d),
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    color: AppColors.danger,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+
+  /// Ngắt kết nối = `PATCH pairingStatus=UNPAIRED`, giữ lại bản ghi và lịch sử
+  /// sự kiện. Bản ghi UNPAIRED không chiếm chỗ wearable của tài khoản, nên đây
+  /// là thao tác đủ để ghép thiết bị khác — không cần xoá hẳn.
+  ///
+  /// Chỉ báo thành công **sau khi** provider đã xác minh lại bằng
+  /// `GET /wearables/me`; nếu máy chủ vẫn còn thiết bị PAIRED thì ném lỗi.
   void _confirmUnpair(WearableDevice device) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Ngắt kết nối wearable?'),
         content: Text(
-          'Ngắt kết nối "${device.deviceName}" khỏi tài khoản này?',
+          'Ngắt kết nối "${device.deviceName}" khỏi tài khoản này. Bản ghi và '
+          'lịch sử sự kiện vẫn được giữ; ghép lại cùng mã thiết bị sẽ dùng lại '
+          'đúng bản ghi đó.',
         ),
         actions: [
           TextButton(
@@ -753,7 +930,9 @@ class _WearablesScreenState extends State<WearablesScreen> {
               Navigator.pop(ctx);
               try {
                 await context.read<WearableProvider>().unpairDevice(device.id);
+                if (!mounted) return;
                 _snack('Đã ngắt kết nối wearable.', ok: true);
+                await _loadFamilyDevices();
               } catch (e) {
                 _snack(e);
               }

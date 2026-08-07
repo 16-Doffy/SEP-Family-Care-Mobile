@@ -421,6 +421,22 @@ Swagger live đã có contract và response example cho mapping/report; source m
 - Đề xuất contract đầy đủ (3 endpoint: `pair-code` → `claim-code` → `exchange`, kèm phần "Nên có" về scope token và thu hồi token khi `UNPAIRED`): **`DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md`**.
 - FE đã sửa phần copy sai sự thật trên đồng hồ: **không** còn hướng dẫn "Nhập mã này trên FamilyCare" (mobile không có chỗ nhập vì BE không có endpoint nhận mã). Nút chính giờ là "Đăng nhập trên đồng hồ" — hành động duy nhất chạy được — và sẽ bị xóa khi BE có luồng trên.
 
+### [BUG FE 2026-08-06] Ngắt kết nối wearable báo thành công khống → ghép lại 409
+**Hành vi BE đã được xác nhận là đúng, đây là lỗi FE.** Quy tắc: một tài khoản chỉ được có một wearable **đang PAIRED**. Bản ghi `UNPAIRED` **không** chiếm chỗ — ghép lại cùng `deviceIdentifier` cũ thì BE pair lại chính record đó; identifier mới thì tạo record mới miễn là user không còn wearable PAIRED. Vì vậy **409 nghĩa là thực sự vẫn còn record PAIRED**.
+
+Hai lỗi trong `WearableProvider.updateDevice()` khiến UI nói khác server:
+1. **Cập nhật lạc quan trước khi gửi request** — ghi `_currentDevice` rồi `notifyListeners()` **trước** khi gọi PATCH, nên màn hình đổi sang "Chưa kết nối" ngay lập tức.
+2. **Bỏ qua response khi gỡ** — `_currentDevice = pairingStatus == 'UNPAIRED' ? null : _deviceFrom(data)` gán thẳng `null` theo trạng thái *được yêu cầu*, không đọc dữ liệu BE trả về. PATCH không áp dụng được thì FE vẫn báo đã gỡ.
+
+**Đã sửa** theo đúng khuyến nghị của BE — chỉ báo success sau khi `GET /wearables/me` xác nhận: khi `pairingStatus == 'UNPAIRED'`, gọi lại `fetchCurrentDevice()` và **ném lỗi** nếu server vẫn còn thiết bị `PAIRED`. Bỏ cập nhật lạc quan cho riêng thao tác gỡ (giữ cho đổi tên / bật-tắt GPS-SOS).
+
+Sửa phụ đi kèm:
+- Không còn đè message thật của BE khi 409 — trước đây **mọi** 409 bị thay bằng một câu cứng của FE, chính điều này che mất chẩn đoán.
+- Thêm card **"Thiết bị đeo của gia đình"** (`GET /families/{familyId}/wearables`, + `DELETE` khi cần dọn) để đối chiếu trạng thái thật; hai API này đã wire ở provider từ trước nhưng **không màn nào gọi**.
+- `deviceIdentifier` sinh riêng từng máy và lưu cố định, thay hằng số `wearos-emulator-001` dùng chung — `PairWearableDto` mô tả identifier "unique within a family". Mã cố định theo bản cài nên vẫn thoả "ghép lại cùng identifier thì pair lại record cũ".
+
+Chi tiết: `DE_XUAT_BE_WEARABLE_UNPAIR_2026-08-06.md`. **Không cần BE thay đổi gì.**
+
 ### [MỚI 2026-08-04] Wearable sensor events — đủ 5 `eventType`, có lịch sử
 - `CreateSensorEventDto.eventType` enum đầy đủ: `SOS_BUTTON_PRESSED | FALL_DETECTED | HEART_RATE_ABNORMAL | HARD_IMPACT | ABNORMAL_MOVEMENT`. **`HEART_RATE_ABNORMAL` là giá trị BE mới bổ sung** (bản dump 04/08/2026) — đây cũng là thay đổi **duy nhất** giữa 2 bản dump, số path/operation giữ nguyên 223/290.
 - FE trước đây chỉ gửi được 2 loại (`SOS_BUTTON_PRESSED`, `FALL_DETECTED`) bằng 2 nút cứng. Nay màn **Hồ sơ → Thiết bị đeo** có sheet chọn đủ 5 loại, mỗi loại gửi `severity` và `rawValue` hợp nghĩa riêng (`rawValue` là JSON tự do theo mô tả của BE).
