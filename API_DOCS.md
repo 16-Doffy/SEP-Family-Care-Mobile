@@ -341,6 +341,58 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET .../tasks/reward-disputes/{disputeId}` — Chi tiết. Provider method có sẵn, chưa có UI gọi (còn dư).
 - `PATCH .../tasks/reward-disputes/{disputeId}/resolve` — Xử lý tranh chấp. Body `ResolveRewardDisputeDto { action }` (`action`: `ACCEPT_DISPUTE | REJECT_DISPUTE`). **[wire FE 2026-07-08]** — trước đó FE gửi sai body `{ resolutionNote }`, đã sửa; dialog đổi từ ghi chú tự do sang 2 nút Chấp nhận/Từ chối.
 
+### AI Chatbot — **[contract BE chốt 2026-08-07, FE wire đủ 7/7]**
+
+7 operation, FE gọi đủ cả 7 trong `ai_chatbot_provider.dart`, không gọi endpoint
+AI nào ngoài Swagger.
+
+- `POST /api/v1/families/{familyId}/ai-chatbot/conversations` — tạo hội thoại. Body `CreateAiConversationDto { title? }` (bỏ trống thì BE tự đặt theo tin đầu, max 120 ký tự).
+- `GET /api/v1/families/{familyId}/ai-chatbot/conversations?page=&limit=` — chỉ trả hội thoại **của chính thành viên hiện tại**. Đã verify runtime: Thành viên nhận danh sách rỗng khi chưa có hội thoại nào, không thấy hội thoại của Trưởng nhóm.
+- `GET /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}/messages?page=&limit=` — lịch sử tin nhắn.
+- `POST /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}/messages` — gửi tin. Body `SendAiMessageDto { content }` (required, max 2000). FE để timeout 30s vì AI trả chậm.
+- `POST .../messages/{messageId}/confirm-action` — xác nhận đề xuất, BE mới thực sự ghi dữ liệu.
+- `POST .../messages/{messageId}/reject-action` — từ chối đề xuất.
+- `DELETE /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}` — xóa hội thoại kèm toàn bộ tin nhắn.
+
+**`pendingAction` — chỉ hiện thẻ xác nhận khi response CÓ khối này.**
+
+```jsonc
+{
+  "pendingAction": {
+    "messageId": "ai-message-id",
+    "actionType": "CREATE_CALENDAR_EVENT",
+    "preview": { "title": "...", "startTime": "...", "location": "..." },
+    "expiresAt": "2026-08-07T12:15:00.000Z"
+  }
+}
+```
+
+- `actionType` chính thức, **đúng 3 giá trị**: `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`.
+- `status` chính thức, **đúng 4 giá trị**: `PENDING` → `CONFIRMED` (confirm thành công) / `REJECTED` (người dùng từ chối) / `EXPIRED` (quá hạn). **Không có `CANCELED` hay `FAILED`.**
+- Sau confirm thành công, status lưu trên tin nhắn AI gốc là `CONFIRMED` và **`result.id` là id bản ghi vừa tạo** (FE hiện chưa dùng field này — có thể dùng sau để deep-link tới bản ghi).
+- `expiresAt` là **ISO UTC thật** sinh bằng `Date.toISOString()`, có đuôi `Z`, interceptor **không** convert timezone. FE tính countdown theo UTC bình thường — khác với ledger/support request vốn trả wall-clock local rồi gắn `Z`.
+- Field `preview` của `CREATE_TASK` dùng tên **`task`** (không phải `title`) — quan sát runtime 2026-08-07.
+- Lỗi: `403` không có quyền tạo · `409` đề xuất đã xử lý rồi · `410` hết hạn, phải chat lại để AI tạo đề xuất mới.
+- Sau confirm thành công phải reload đúng module: task → danh sách nhiệm vụ · ledger → finance ledger/overview · calendar → sự kiện lịch (**theo tháng của `startTime`**, không phải tháng hiện tại).
+- FE **không** được tự tạo dữ liệu từ `preview`; `preview` chỉ để người dùng đối chiếu.
+
+**Phân quyền (BE chốt 2026-08-07):** thao tác ghi tài chính `CREATE_LEDGER_ENTRY`
+chỉ mở cho `FAMILY_MANAGER` và `DEPUTY_MEMBER`. Thành viên thường **không nhận
+`pendingAction`**; BE trả câu trả lời thường giải thích nên nhờ Trưởng/Phó nhóm.
+FE đã ẩn sẵn các gợi ý tạo dữ liệu với Thành viên (`aiPromptGroupsFor`).
+
+**Feature flag:** `ai.assistant` là key gate màn Trợ lý AI. Ba key
+`ai.financeSummary`, `ai.taskSummary`, `ai.savingSuggestions` hiện **chỉ là cờ
+điều khiển hành vi bên trong chatbot/tool access, KHÔNG phải endpoint riêng** và
+BE cũng chưa guard chúng — FE không gate theo ba key này, chỉ đọc để hiển thị
+quyền lợi ở màn Gói đăng ký.
+
+**⚠️ Còn thiếu phía Swagger:** cả 7 endpoint **chưa có response DTO**.
+`POST .../messages` chỉ khai 502/503, `confirm-action` chỉ khai 409/410, và
+không có schema nào cho `pendingAction`. BE đã đồng ý bổ sung. Cho tới lúc đó,
+mục này là nguồn đúng duy nhất; test khoá contract nằm ở
+`test/ai_pending_action_contract_test.dart`.
+
 ### Subscription Plans (public/subscriber)
 - `GET /api/v1/subscription-plans` — Danh sách gói active (cho subscriber).
 

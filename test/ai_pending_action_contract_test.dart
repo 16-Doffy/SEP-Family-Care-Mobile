@@ -81,6 +81,55 @@ void main() {
           if (expiresAt != null) 'expiresAt': expiresAt.toIso8601String(),
         });
 
+    test('đúng 4 status BE đã chốt, mỗi cái ra một kết cục riêng', () {
+      // Contract BE 2026-08-07: PENDING → CONFIRMED / REJECTED / EXPIRED.
+      // BE nói rõ chưa có CANCELED và FAILED.
+      expect(AiPendingAction.confirmedStatuses, {
+        'PENDING',
+        'CONFIRMED',
+        'REJECTED',
+        'EXPIRED',
+      });
+      expect(
+        withStatus(
+          'PENDING',
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+        ).outcome,
+        AiActionOutcome.pending,
+      );
+      expect(withStatus('CONFIRMED').outcome, AiActionOutcome.completed);
+      expect(withStatus('REJECTED').outcome, AiActionOutcome.rejected);
+      expect(withStatus('EXPIRED').outcome, AiActionOutcome.expired);
+    });
+
+    test('expiresAt là ISO UTC thật, so sánh không lệch múi giờ', () {
+      // BE xác nhận expiresAt sinh bằng Date.toISOString(), có đuôi Z, và
+      // interceptor KHÔNG convert timezone — khác ledger vốn trả wall-clock
+      // local rồi gắn Z. Nên so trực tiếp với thời điểm hiện tại là đúng.
+      final future = AiPendingAction.fromJson({
+        'messageId': 'm1',
+        'actionType': 'CREATE_TASK',
+        'status': 'PENDING',
+        'expiresAt': DateTime.now()
+            .toUtc()
+            .add(const Duration(hours: 2))
+            .toIso8601String(),
+      });
+      expect(future.expiresAt!.isUtc, isTrue);
+      expect(future.outcome, AiActionOutcome.pending);
+
+      final past = AiPendingAction.fromJson({
+        'messageId': 'm1',
+        'actionType': 'CREATE_TASK',
+        'status': 'PENDING',
+        'expiresAt': DateTime.now()
+            .toUtc()
+            .subtract(const Duration(hours: 2))
+            .toIso8601String(),
+      });
+      expect(past.outcome, AiActionOutcome.expired);
+    });
+
     test('xác nhận thành công là completed, không phải expired', () {
       // Quan sát runtime 2026-08-07: sau confirm-action thành công, thẻ vẫn
       // hiện chữ đỏ "Đề xuất đã hết hạn hoặc đã được xử lý" vì UI chỉ hỏi

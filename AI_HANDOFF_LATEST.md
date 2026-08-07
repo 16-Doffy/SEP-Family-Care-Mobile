@@ -245,7 +245,28 @@ Thành viên — xem mục #1 dưới); `409`/`410` (không kích được từ 
 hạn hoặc thao tác phía server). Logic hai mã này đã có unit test phủ nhưng
 **chưa xác minh runtime** — đừng ghi là đã test.
 
-### 📋 Cần báo BE — 6 mục, đã gửi 2026-08-07
+### ✅ BE đã trả lời đủ 6 mục (2026-08-07) — contract chốt
+
+BE phản hồi bằng văn bản, đã ghi vào `API_DOCS.md` mục **AI Chatbot**. Tóm tắt
+và việc FE phải làm:
+
+| Mục | BE trả lời | FE phải làm |
+|---|---|---|
+| 1. Member ghi thu chi | Chọn hướng (b): sửa prompt để AI **không** nói "vui lòng xác nhận" khi không có `pendingAction`. `CREATE_LEDGER_ENTRY` chỉ mở cho `FAMILY_MANAGER` + `DEPUTY_MEMBER` | **Không** — FE đã ẩn sẵn gợi ý tạo dữ liệu với Thành viên |
+| 2. Swagger thiếu schema | Đồng ý bổ sung response DTO cho cả 7 endpoint + khai enum `actionType` | **Không** — chờ BE ship, test đã khoá contract |
+| 3. `status` chính thức | Đúng **4 giá trị**: `PENDING`, `CONFIRMED`, `REJECTED`, `EXPIRED`. **Chưa có `CANCELED`/`FAILED`** | Đã siết `AiPendingAction.confirmedStatuses` + test |
+| 4. `expiresAt` | **Có, ISO UTC thật** (`Date.toISOString()`, đuôi `Z`), interceptor không convert timezone | **Không** — FE parse đúng sẵn, đã thêm test khẳng định |
+| 5. Ba key AI phụ | Chỉ là **cờ điều khiển hành vi trong chatbot**, không phải endpoint riêng, BE cũng chưa guard | **Không gate theo ba key này**, chỉ đọc để hiển thị quyền lợi gói |
+| 6. Đại từ trong câu trả lời | Đồng ý sửa: Member → "bạn", Manager/Deputy → "gia đình" | **Không** — thuộc prompt BE |
+
+**Field mới BE nhắc tới:** sau confirm thành công, `result.id` là id bản ghi vừa
+tạo. FE **hiện chưa parse** field này (không cần, vì đã refetch messages). Có thể
+dùng sau để deep-link tới bản ghi vừa tạo — chưa làm, đừng tưởng là đã có.
+
+**Còn nợ, chưa đổi:** `403`/`409`/`410` vẫn **chưa xác minh runtime**. Mục 1 và 2
+phải chờ BE ship xong mới test lại được.
+
+### 📋 Nội dung 6 mục đã gửi BE (giữ lại để đối chiếu)
 
 Cả 6 đều là **chất lượng contract và hành vi**, không có endpoint nào thiếu.
 Phía FE đã làm hết phần làm được cho từng mục.

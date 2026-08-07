@@ -155,6 +155,18 @@ class AiPendingAction {
     ...legacyActionTypeAliases,
   };
 
+  /// Bốn `status` BE đã chốt bằng văn bản contract (2026-08-07).
+  ///
+  /// `PENDING` → `CONFIRMED` (confirm thành công) / `REJECTED` (người dùng từ
+  /// chối) / `EXPIRED` (quá hạn). BE nói rõ **chưa có `CANCELED` và `FAILED`**.
+  /// Swagger vẫn chưa khai enum này nên đây là nguồn đúng duy nhất.
+  static const confirmedStatuses = <String>{
+    'PENDING',
+    'CONFIRMED',
+    'REJECTED',
+    'EXPIRED',
+  };
+
   /// Kết cục của đề xuất.
   ///
   /// Phải phân biệt "đã thực hiện xong" với "hết hạn". Trước 2026-08-07 UI chỉ
@@ -162,26 +174,31 @@ class AiPendingAction {
   /// hoặc đã được xử lý" — xác nhận thành công vẫn hiện cảnh báo đỏ, người dùng
   /// tưởng hỏng trong khi giao dịch đã vào sổ. Quan sát runtime trên emulator
   /// ngày 2026-08-07.
+  ///
+  /// Các nhánh ngoài [confirmedStatuses] (`CANCELED`, `FAILED`…) giữ lại làm
+  /// lớp phòng thủ phòng khi BE thêm status mới, hiện KHÔNG bao giờ chạy.
   AiActionOutcome get outcome {
     switch (status.toUpperCase()) {
       case 'REJECTED':
-      case 'CANCELED':
-      case 'CANCELLED':
-      case 'DECLINED':
+      case 'CANCELED': // ngoài contract — phòng thủ
+      case 'CANCELLED': // ngoài contract — phòng thủ
+      case 'DECLINED': // ngoài contract — phòng thủ
         return AiActionOutcome.rejected;
       case 'EXPIRED':
         return AiActionOutcome.expired;
-      case 'FAILED':
-      case 'ERROR':
+      case 'FAILED': // ngoài contract — phòng thủ
+      case 'ERROR': // ngoài contract — phòng thủ
         return AiActionOutcome.failed;
       case 'PENDING':
         final expires = expiresAt;
         return expires != null && !expires.isAfter(DateTime.now())
             ? AiActionOutcome.expired
             : AiActionOutcome.pending;
+      case 'CONFIRMED':
+        return AiActionOutcome.completed;
       default:
-        // Swagger chưa khai enum status. Mọi giá trị khác PENDING mà không phải
-        // từ chối/hết hạn/lỗi đều coi là đã thực hiện, thay vì mặc định báo đỏ.
+        // Status lạ vẫn coi là đã thực hiện thay vì mặc định báo đỏ: BE chỉ đổi
+        // status khỏi PENDING sau khi đã ghi dữ liệu thật.
         return AiActionOutcome.completed;
     }
   }
