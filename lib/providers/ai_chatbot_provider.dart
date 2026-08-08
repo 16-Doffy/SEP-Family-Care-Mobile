@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/ai_chatbot.dart';
@@ -27,6 +29,20 @@ class AiChatbotProvider extends ChangeNotifier {
   int? _messagesTotalPages;
   bool _loadingMoreMessages = false;
 
+  AiDailyBrief? _dailyBrief;
+  bool _dailyBriefDismissed = false;
+
+  /// Id hội thoại vừa `DELETE` xong, lọc khỏi ĐÚNG một lần `fetchConversations`
+  /// kế tiếp.
+  ///
+  /// Báo lỗi runtime 2026-08-08: xóa hội thoại xong, back ra rồi quay lại vẫn
+  /// còn thấy nó. Nghi vấn hợp lý nhất không cần giả lập lại được: DELETE trả
+  /// 200 nhưng GET danh sách ngay sau đó đọc dữ liệu chưa kịp đồng bộ (đọc
+  /// từ read-replica/cache trễ hơn write) — id vừa xóa vẫn có trong response.
+  /// Lọc cứng ở FE cho lần refetch ngay sau xóa để không phụ thuộc BE đồng bộ
+  /// kịp trong khoảng thời gian đó.
+  String? _justDeletedConversationId;
+
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   List<AiMessage> get messages => List.unmodifiable(_messages);
   String? get currentConversationId => _currentConversationId;
@@ -37,6 +53,10 @@ class AiChatbotProvider extends ChangeNotifier {
   String? get error => _error;
   bool get loadingMoreConversations => _loadingMoreConversations;
   bool get loadingMoreMessages => _loadingMoreMessages;
+
+  /// `null` khi BE chưa bật Sprint 2 cho gia đình này, hoặc gọi lỗi — tính
+  /// năng phụ, không được chặn khung chat chính vì thiếu nó.
+  AiDailyBrief? get dailyBrief => _dailyBriefDismissed ? null : _dailyBrief;
 
   /// Còn trang sau hay không.
   ///
@@ -93,6 +113,9 @@ class AiChatbotProvider extends ChangeNotifier {
     _messagesPage = 1;
     _messagesTotalPages = null;
     _loadingMoreMessages = false;
+    _dailyBrief = null;
+    _dailyBriefDismissed = false;
+    _justDeletedConversationId = null;
     notifyListeners();
   }
 
@@ -102,6 +125,8 @@ class AiChatbotProvider extends ChangeNotifier {
     // chỉ tổ hiện banner đỏ thay vì lời mời nâng gói.
     if (!canUseAssistant) return;
     await fetchConversations();
+    // Tính năng phụ Sprint 2, không chặn hiển thị hội thoại nếu lỗi/chưa bật.
+    unawaited(fetchDailyBrief());
     // Lớp phòng thủ thứ hai sau resetForNewSession: vào lại màn mà hội thoại
     // đang mở không còn thuộc danh sách server trả về thì tin nhắn đang giữ
     // không phải của người dùng này — xóa ngay.
@@ -117,6 +142,36 @@ class AiChatbotProvider extends ChangeNotifier {
     if (_conversations.isNotEmpty && _currentConversationId == null) {
       await selectConversation(_conversations.first.id);
     }
+  }
+
+  /// "Tổng quan hôm nay" — Sprint 2, BE nói rõ FE không bắt buộc làm ngay.
+  ///
+  /// Tính năng phụ, cố tình KHÔNG set [_error]: gia đình chưa được BE bật
+  /// Sprint 2 sẽ nhận 404/500 ở đây, không được để lỗi đó hiện thành banner đỏ
+  /// che mất khung chat chính vẫn đang hoạt động bình thường.
+  Future<void> fetchDailyBrief() async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) return;
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$fid/ai-chatbot/daily-brief',
+      );
+      _dailyBrief = data is Map
+          ? AiDailyBrief.fromJson(Map<String, dynamic>.from(data))
+          : null;
+      _dailyBriefDismissed = false;
+    } catch (e) {
+      debugPrint('AiChatbotProvider: fetchDailyBrief bỏ qua lỗi: $e');
+      _dailyBrief = null;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  void dismissDailyBrief() {
+    if (_dailyBriefDismissed) return;
+    _dailyBriefDismissed = true;
+    notifyListeners();
   }
 
   Future<void> fetchFeatureAccess() async {
@@ -162,7 +217,16 @@ class AiChatbotProvider extends ChangeNotifier {
         '/families/$fid/ai-chatbot/conversations'
         '?page=$page&limit=$_conversationsLimit',
       );
-      final parsed = _parseList(data).map(AiConversation.fromJson).toList();
+      var parsed = _parseList(data).map(AiConversation.fromJson).toList();
+      final justDeleted = _justDeletedConversationId;
+      if (justDeleted != null) {
+        // Chỉ lọc đúng một lần — nếu BE thật sự chưa đồng bộ kịp và người
+        // dùng bấm tải lại lần nữa sau đó, phải tin response mới nhất, không
+        // lọc mãi mãi (nếu không sẽ không bao giờ thấy lại hội thoại trùng id
+        // này, dù đó là điều gần như không xảy ra vì id không tái sử dụng).
+        parsed = parsed.where((c) => c.id != justDeleted).toList();
+        _justDeletedConversationId = null;
+      }
       if (refresh) {
         _conversations
           ..clear()
@@ -366,8 +430,14 @@ class AiChatbotProvider extends ChangeNotifier {
     await ApiClient.instance.delete(
       '/families/$fid/ai-chatbot/conversations/$cid',
     );
+    // Xóa ngay khỏi danh sách đang có trong RAM — không đợi fetchConversations
+    // mới thấy hội thoại biến mất. Đồng thời đánh dấu để lọc khỏi lần refetch
+    // kế tiếp phòng BE chưa kịp đồng bộ (xem [_justDeletedConversationId]).
+    _conversations.removeWhere((c) => c.id == cid);
+    _justDeletedConversationId = cid;
     _currentConversationId = null;
     _messages.clear();
+    notifyListeners();
     await fetchConversations();
     if (_conversations.isNotEmpty) {
       await selectConversation(_conversations.first.id);

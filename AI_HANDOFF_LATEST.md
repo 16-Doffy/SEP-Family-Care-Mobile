@@ -1,11 +1,100 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-07**
+Last updated: **2026-08-08**
 
-## Snapshot hiện hành 2026-08-07 — Trợ lý AI hoàn chỉnh, vá rò rỉ dữ liệu giữa hai tài khoản, đã merge lên main
+## Snapshot hiện hành 2026-08-08 — Trợ lý AI render theo `uiHints` (BE Sprint 2)
 
-> Snapshot này mới hơn toàn bộ phần 2026-08-04 bên dưới. Khi có mâu thuẫn,
+> Snapshot này mới hơn toàn bộ phần 2026-08-07 bên dưới. Khi có mâu thuẫn,
 > dùng trạng thái ở đây và source hiện tại.
+
+### BE nâng cấp AI Chatbot lên Sprint 2 — đổi cách render, không đổi endpoint
+
+BE gửi contract mới: mỗi `aiMessage` giờ có thêm khối `uiHints` chỉ định RÕ
+cách hiển thị (`displayStyle`), thay cho việc FE tự đoán qua `actionType`/chữ
+trong `content` như trước. Quy tắc BE nhắc đi nhắc lại: **không được đoán qua
+nội dung chữ** — mọi quyết định render phải dựa vào `uiHints` và
+`pendingAction` (cấu trúc). Cùng một màn `AIAssistantScreen`, cùng endpoint
+gửi/confirm/reject — chỉ đổi phần hiển thị.
+
+5 `displayStyle`: `TEXT` (bubble chữ như cũ), `INSIGHT_CARD` (phân tích/gợi ý,
+có quick-action chip), `ACTION_CARD` (thẻ xác nhận — thay `_PendingActionCard`
+cũ), `PERMISSION_NOTICE` (không đủ quyền, không nút), `RESULT_CARD` (kết quả
+sau khi confirm).
+
+**Tương thích ngược:** tin nhắn cũ (trước Sprint 2, hoặc BE tạm không gửi
+`uiHints`) suy `effectiveDisplayStyle` theo CẤU TRÚC đã có sẵn — có
+`pendingAction` → `actionCard`, không có → `text`. Đúng hành vi cũ 100%, không
+đoán qua `content`.
+
+**Model** (`lib/models/ai_chatbot.dart`): thêm `AiDisplayStyle`,
+`AiQuickAction`, `AiMessageUiHints`, `AiActionField`, `AiActionUiHints`,
+`AiDailyBrief`. `AiMessage` thêm `uiHints` + `effectiveDisplayStyle`.
+`AiPendingAction` thêm `uiHints` + `displayTitle` + `displayFields` (ưu tiên
+`uiHints.fields`, rơi về `preview` cũ khi rỗng/thiếu). Toàn bộ API cũ
+(`actionLabel`, `isPending`, `outcome`, `preview`, `messageId`, `status`,
+`confirmedActionTypes`, `confirmedStatuses`) **giữ nguyên không đổi** — đã
+verify bằng cách chạy lại nguyên vẹn 2 file test của Giáp
+(`ai_pending_action_mapping_test.dart`) và 4 file test cũ của mình, không sửa
+dòng nào trong đó.
+
+**UI** (`lib/screens/shared/ai_assistant_screen.dart`): `_MessageBubble` switch
+theo `effectiveDisplayStyle` ra 5 widget con (`_TextBubble`, `_InsightCard`,
+`_ActionCardWithIntro` + `_PendingActionCard`, `_PermissionNoticeCard`,
+`_ResultCard`). Logic chọn field/nhãn theo `actionType` (`_previewRows`,
+`_label` cũ) đã dời nguyên vẹn vào model (`AiPendingAction._fieldsFromLegacyPreview`),
+không đổi nội dung bảng nhãn. `_QuickActionChips` dùng chung cho mọi style có
+`uiHints.quickActions`, bấm gửi `prompt` (không gửi `label`).
+
+**Daily Brief** (tùy chọn, BE nói "FE không bắt buộc làm ngay"): thêm
+`AiChatbotProvider.fetchDailyBrief()` gọi
+`GET /families/{id}/ai-chatbot/daily-brief`, lỗi/404 thì bỏ qua lặng lẽ
+(không set `_error`, không che khung chat chính). BE không cho tên field con
+cụ thể (task/calendar/finance/insights) nên render `raw` qua `JsonReportView`
+có sẵn — đúng quy ước repo cho response chưa rõ schema (CLAUDE.md Rule 4),
+không đoán tên field. `suggestedPrompts` tách riêng thành chip vì BE có nói rõ
+hình dạng.
+
+**[VERIFY chưa làm]** Nút "Sửa" (`editActionLabel`) — BE cho nhãn nhưng KHÔNG
+nói cơ chế/endpoint. Tạm xử lý: bấm nút gọi `rejectAction` (endpoint đã có),
+chưa tự điền lại composer. Đây là suy luận tạm, cần hỏi lại BE nếu sai — xem
+comment tại `_PendingActionCard._handleEdit`.
+
+### Bug lệch giờ + xóa hội thoại — báo cáo từ user 2026-08-08, đã xử lý 1/2
+
+Kèm 2 bug user báo bằng ảnh chụp thật, không liên quan Sprint 2:
+
+1. **Lịch sử ví lộn xộn khi có nhiều lần chia quỹ khác nhau** — ĐÃ SỬA. Nguyên
+   nhân: `WalletProvider._entries` không hề sort, thứ tự phụ thuộc hoàn toàn
+   BE trả về; các entry chia quỹ cùng `entryDate` (ngày cuối kỳ) nhưng khác
+   lần tạo bị xen kẽ lộn xộn. BE có field `createdAt` riêng (khác `entryDate`)
+   mà FE chưa từng đọc. Đã thêm `LedgerEntry.createdAt` + sort `_entries` theo
+   `createdAt` giảm dần (dùng `createdAt`, rơi về `entryDate` nếu thiếu).
+2. **Xóa hội thoại AI xong quay lại vẫn còn thấy, màn hình "nhảy liên tục"** —
+   **chỉ sửa được nửa vế đầu, KHÔNG suy đoán tiếp vế sau vì thiếu bằng
+   chứng.** `deleteCurrentConversation()` giờ xóa ngay khỏi `_conversations`
+   trong RAM (không đợi refetch) và lọc cứng id vừa xóa khỏi ĐÚNG một lần
+   `fetchConversations` kế tiếp — phòng ca hợp lý nhất không cần giả lập lại
+   được: `DELETE` trả 200 nhưng `GET` danh sách ngay sau đó đọc dữ liệu chưa
+   kịp đồng bộ. **"Màn hình nhảy liên tục" CHƯA chẩn đoán được** — không đủ
+   bằng chứng để sửa mà không đoán mò (có thể là mở màn AI hai lần liên tiếp
+   tạo hai `_AIAssistantScreenState` cùng gọi `bootstrap()` trên một provider
+   dùng chung, có thể là nguyên nhân khác). Cần user mô tả rõ hơn "nhảy" là gì
+   (chuyển màn, giật hình, cuộn nhảy vị trí?) hoặc quay video khi tái hiện
+   được, vì từ giờ chị không tự mở emulator kiểm tra nữa.
+
+### Quy trình mới từ 2026-08-08
+
+Chị (Claude) chỉ code + fix, KHÔNG tự mở emulator thao tác kiểm tra nữa (tốn
+quota/thời gian). Người dùng tự test runtime. Verify trong phiên này chỉ có
+`flutter analyze` (0 error/warning) + `flutter test` (289/289 pass, tăng từ
+265 nhờ 24 test mới: `ai_ui_hints_test.dart` 20 test, `ai_daily_brief_test.dart`
+4 test) — **chưa verify runtime cho bất kỳ thay đổi nào trong snapshot này**,
+người dùng cần tự test theo checklist BE đã gửi (10 mục, đặc biệt #1 chat
+thường, #2 insight card, #4-6 action card 3 loại, #7 permission notice, #9
+không đoán content, #10 reload lịch sử vẫn giữ pendingAction) cộng 2 bug lệch
+giờ/xóa hội thoại ở trên.
+
+## Snapshot 2026-08-07 — Trợ lý AI hoàn chỉnh, vá rò rỉ dữ liệu giữa hai tài khoản, đã merge lên main
 
 ### Trạng thái Git chốt cuối ngày
 

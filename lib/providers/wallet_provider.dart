@@ -43,6 +43,14 @@ class LedgerEntry {
   final String description;
   final String? note;
   final String entryDate;
+
+  /// Thời điểm bản ghi được tạo trên server — KHÁC `entryDate` với giao dịch
+  /// chia quỹ theo mô hình: `entryDate` luôn là ngày cuối kỳ (vd 31/08 00:00,
+  /// giống hệt nhau cho mọi hũ trong cùng một lần chia), còn `createdAt` mới
+  /// là lúc thao tác thật sự xảy ra. Sort theo `entryDate` không phân biệt
+  /// được các lần chia quỹ khác nhau — phải dùng `createdAt` mới đúng thứ tự
+  /// "mới nhất lên đầu". Xem `WalletProvider._fetchEntries`.
+  final String createdAt;
   final String? categoryName;
   final String? categoryId;
 
@@ -60,6 +68,7 @@ class LedgerEntry {
     required this.description,
     this.note,
     required this.entryDate,
+    this.createdAt = '',
     this.categoryName,
     this.categoryId,
     this.jarId,
@@ -100,6 +109,7 @@ class LedgerEntry {
       note: json['note']?.toString(),
       entryDate:
           json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
+      createdAt: json['createdAt']?.toString() ?? '',
       categoryName: cat?['name']?.toString(),
       categoryId: json['categoryId']?.toString() ?? cat?['id']?.toString(),
       jarId: json['jarId']?.toString() ?? jar?['id']?.toString(),
@@ -407,6 +417,22 @@ class WalletProvider extends ChangeNotifier {
       } else {
         _entries.addAll(parsed);
       }
+      // BE trả theo thứ tự riêng, không đảm bảo mới nhất trước — quan sát
+      // thật: nhiều lần chia quỹ khác nhau xen kẽ lộn xộn trong Lịch sử vì
+      // cùng entryDate (ngày cuối kỳ) nhưng khác lần tạo. Sort lại theo
+      // createdAt mới đúng "mới nhất lên đầu"; DateTime.compareTo so đúng
+      // theo thời điểm tuyệt đối bất kể chuỗi gốc là UTC hay naive, nên không
+      // cần .toLocal() ở đây — chỉ hiển thị mới cần.
+      _entries.sort((a, b) {
+        final da = DateTime.tryParse(
+          a.createdAt.isNotEmpty ? a.createdAt : a.entryDate,
+        );
+        final db = DateTime.tryParse(
+          b.createdAt.isNotEmpty ? b.createdAt : b.entryDate,
+        );
+        if (da == null || db == null) return 0;
+        return db.compareTo(da);
+      });
       _entriesPage = nextPage;
       _entriesTotalPages = _readTotalPages(data, parsed.length);
     } catch (e) {
