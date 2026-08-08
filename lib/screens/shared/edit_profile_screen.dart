@@ -47,6 +47,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _incomeCtrl = TextEditingController();
   final _expenseCtrl = TextEditingController();
   final _sharedCtrl = TextEditingController();
+  // BE đã hỗ trợ sẵn actualIncome/actualPersonalExpense/actualSharedContribution
+  // qua cùng endpoint monthly-finances/me (xem family-care-api.json), nhưng màn
+  // này trước đây chỉ khai "dự kiến" — thành viên không có chỗ nào ghi số đã
+  // tiêu/thu thực tế trong tháng. Thêm 3 field "thực tế" đi kèm.
+  final _actualIncomeCtrl = TextEditingController();
+  final _actualExpenseCtrl = TextEditingController();
+  final _actualSharedCtrl = TextEditingController();
 
   bool _savingFinance = false;
   bool _savingProfile = false;
@@ -88,6 +95,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           _sharedCtrl.text = _formatInputMoney(
             monthly.expectedSharedContribution,
           );
+          _actualIncomeCtrl.text = _formatInputMoney(monthly.actualIncome);
+          _actualExpenseCtrl.text = _formatInputMoney(
+            monthly.actualPersonalExpense,
+          );
+          _actualSharedCtrl.text = _formatInputMoney(
+            monthly.actualSharedContribution,
+          );
           _incomeShared = monthly.incomeVisibility == 'FAMILY';
           _expenseShared = monthly.expenseVisibility == 'FAMILY';
         }
@@ -103,6 +117,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _incomeCtrl.dispose();
     _expenseCtrl.dispose();
     _sharedCtrl.dispose();
+    _actualIncomeCtrl.dispose();
+    _actualExpenseCtrl.dispose();
+    _actualSharedCtrl.dispose();
     super.dispose();
   }
 
@@ -111,7 +128,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final income = _parseOptionalMoney(_incomeCtrl.text);
     final expense = _parseOptionalMoney(_expenseCtrl.text);
     final shared = _parseOptionalMoney(_sharedCtrl.text);
-    if (income == null && expense == null && shared == null) {
+    final actualIncome = _parseOptionalMoney(_actualIncomeCtrl.text);
+    final actualExpense = _parseOptionalMoney(_actualExpenseCtrl.text);
+    final actualShared = _parseOptionalMoney(_actualSharedCtrl.text);
+    if (income == null &&
+        expense == null &&
+        shared == null &&
+        actualIncome == null &&
+        actualExpense == null &&
+        actualShared == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Nhập ít nhất một giá trị tài chính'),
@@ -125,8 +150,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     try {
       await context.read<FinanceProvider>().upsertMonthlyFinance(
         expectedIncome: income,
+        actualIncome: actualIncome,
         expectedPersonalExpense: expense,
+        actualPersonalExpense: actualExpense,
         expectedSharedContribution: shared,
+        actualSharedContribution: actualShared,
         incomeVisibility: _incomeShared ? 'FAMILY' : 'PRIVATE',
         expenseVisibility: _expenseShared ? 'FAMILY' : 'PRIVATE',
       );
@@ -348,7 +376,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Dùng để tính ngân sách gia đình. Trưởng/Phó nhóm có thể xem nếu bạn chọn "Chia sẻ".',
+                            'Dùng để tính ngân sách gia đình. Trưởng/Phó nhóm có thể xem nếu bạn chọn "Chia sẻ". Số "thực tế" bạn có thể cập nhật lại bất cứ lúc nào trong tháng.',
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               color: const Color(0xFF92400E),
@@ -371,6 +399,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           ThousandsSeparatorInputFormatter(),
                         ],
                       ),
+                      _inputField(
+                        ctrl: _actualIncomeCtrl,
+                        label: 'Thu nhập thực tế / tháng (₫)',
+                        hint: 'VD: 9.500.000',
+                        icon: Icons.trending_up_rounded,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: const [
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                      ),
                       _visibilitySwitch(
                         label: 'Chia sẻ thu nhập với Trưởng/Phó nhóm',
                         value: _incomeShared,
@@ -387,6 +425,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           ThousandsSeparatorInputFormatter(),
                         ],
                       ),
+                      _inputField(
+                        ctrl: _actualExpenseCtrl,
+                        label: 'Chi tiêu cá nhân thực tế / tháng (₫)',
+                        hint: 'VD: 2.700.000',
+                        icon: Icons.trending_down_rounded,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: const [
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                      ),
                       _visibilitySwitch(
                         label: 'Chia sẻ chi tiêu với Trưởng/Phó nhóm',
                         value: _expenseShared,
@@ -396,6 +444,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       _inputField(
                         ctrl: _sharedCtrl,
                         label: 'Đóng góp chung dự kiến / tháng (₫)',
+                        hint: 'VD: 1.000.000',
+                        icon: Icons.savings_outlined,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: const [
+                          ThousandsSeparatorInputFormatter(),
+                        ],
+                      ),
+                      _inputField(
+                        ctrl: _actualSharedCtrl,
+                        label: 'Đóng góp chung thực tế / tháng (₫)',
                         hint: 'VD: 1.000.000',
                         icon: Icons.savings_outlined,
                         keyboardType: TextInputType.number,

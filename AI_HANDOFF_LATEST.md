@@ -2,6 +2,32 @@
 
 Last updated: **2026-08-08**
 
+## Thiếu chỗ ghi thu/chi "thực tế" hàng tháng — báo cáo 2026-08-08, ĐÃ LÀM
+
+User hỏi: nhìn màn Ví Member (`child_wallet_screen.dart`) thì Member ghi
+thu/chi ở đâu? Rà lại toàn màn thì thấy Member chỉ có 3 việc: khai báo
+**dự kiến** (một lần), "Xin tiền từ Trưởng/Phó nhóm", và xem lịch sử (bị chặn
+403 với sổ quỹ chung) — **không có chỗ nào ghi số đã thu/chi thực tế**, nên
+"Đã tiêu tháng này" luôn là 0đ.
+
+Đối chiếu `family-care-api.json`: BE **đã có sẵn** `actualIncome`,
+`actualPersonalExpense`, `actualSharedContribution` trong cùng
+`CreateMemberMonthlyFinanceDto`/`UpdateMemberMonthlyFinanceDto` mà FE đang
+dùng cho "dự kiến" (`POST`/`PUT .../finance/monthly-finances/me`).
+`FinanceProvider.upsertMonthlyFinance()` (`lib/providers/finance_provider.dart:1517`)
+**đã nhận đủ 3 tham số này từ trước** — chỉ riêng
+`edit_profile_screen.dart` chưa từng có ô nhập cho chúng. Đây không phải BE
+thiếu, mà là FE chưa làm nốt UI cho field BE đã hỗ trợ.
+
+Đã thêm 3 ô "thực tế" đi kèm ngay sau mỗi ô "dự kiến" tương ứng (Thu nhập /
+Chi tiêu cá nhân / Đóng góp chung) trong `edit_profile_screen.dart`, dùng
+chung nút "Lưu tài chính tháng" hiện có — không cần route/API mới. Ghi chú
+trong banner: có thể cập nhật lại số "thực tế" bất cứ lúc nào trong tháng.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime — nhờ user tự test: Hồ sơ → Tài chính tháng → nhập số "thực tế" →
+Lưu → quay lại Ví xem "Đã tiêu tháng này" có đúng số vừa nhập không.
+
 ## Bug checklist "Bắt đầu tháng" không tự tick sau khi khai báo — báo cáo 2026-08-08, ĐÃ SỬA
 
 User (Member) khai báo thu nhập/hạn mức ở "Chỉnh sửa hồ sơ" → bấm "Lưu tài
