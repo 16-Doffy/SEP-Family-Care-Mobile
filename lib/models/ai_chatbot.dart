@@ -99,9 +99,24 @@ class AiMessage {
   /// có field này. Suy theo CẤU TRÚC đã có sẵn (có/không có `pendingAction`),
   /// KHÔNG đoán qua chữ trong `content` — giữ đúng hành vi hiển thị cũ cho dữ
   /// liệu cũ, không phá test/màn hình đang chạy đúng.
-  AiDisplayStyle get effectiveDisplayStyle =>
-      uiHints?.displayStyle ??
-      (pendingAction != null ? AiDisplayStyle.actionCard : AiDisplayStyle.text);
+  AiDisplayStyle get effectiveDisplayStyle {
+    // Đề xuất ĐÃ XỬ LÝ (từ chối/xác nhận/hết hạn) phải luôn hiện đúng thẻ
+    // xác nhận (có banner kết quả — "Bạn đã từ chối...", "Đã thực hiện
+    // xong"...), bất kể `uiHints.displayStyle` nói gì. Quan sát thật
+    // 2026-08-09: bấm "Hủy đề xuất" xong, BE trả lại CHÍNH tin nhắn đó với
+    // `uiHints.displayStyle = INSIGHT_CARD` (nội dung chữ vẫn y hệt lúc chưa
+    // xử lý, "xin xác nhận trên ứng dụng") — theo đúng `displayStyle` thì
+    // FE vẽ ra card phân tích chung chung, MẤT LUÔN banner "đã từ chối",
+    // người dùng tưởng đề xuất còn treo dù đã xử lý xong. `pendingAction`
+    // vẫn còn dữ liệu status thật (REJECTED/CONFIRMED/EXPIRED) — dùng nó ưu
+    // tiên hơn hint hiển thị, vẫn là quyết định theo CẤU TRÚC (không phải
+    // đoán qua content) nên không vi phạm yêu cầu BE.
+    if (pendingAction != null && !pendingAction!.isPending) {
+      return AiDisplayStyle.actionCard;
+    }
+    return uiHints?.displayStyle ??
+        (pendingAction != null ? AiDisplayStyle.actionCard : AiDisplayStyle.text);
+  }
 
   AiMessage copyWith({AiPendingAction? pendingAction}) => AiMessage(
     id: id,

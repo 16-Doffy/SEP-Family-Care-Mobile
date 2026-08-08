@@ -91,6 +91,55 @@ void main() {
       });
       expect(withAction.effectiveDisplayStyle, AiDisplayStyle.actionCard);
     });
+
+    test(
+      'đề xuất ĐÃ TỪ CHỐI vẫn phải hiện actionCard (banner kết quả) dù BE đổi '
+      'uiHints.displayStyle sang kiểu khác — quan sát thật 2026-08-09: bấm '
+      'Hủy đề xuất xong, BE trả lại tin nhắn đó với displayStyle=INSIGHT_CARD '
+      'và content vẫn y hệt lúc chưa xử lý, mất luôn banner "đã từ chối"',
+      () {
+        final rejected = AiMessage.fromJson({
+          'id': 'm1',
+          'senderType': 'AI',
+          'content': 'Xin vui lòng xác nhận trên ứng dụng để hoàn tất!',
+          'uiHints': {'displayStyle': 'INSIGHT_CARD'},
+          'pendingAction': {
+            'actionType': 'CREATE_LEDGER_ENTRY',
+            'status': 'REJECTED',
+          },
+        });
+        expect(rejected.effectiveDisplayStyle, AiDisplayStyle.actionCard);
+      },
+    );
+
+    test('đề xuất ĐÃ XÁC NHẬN cũng ưu tiên actionCard hơn uiHints', () {
+      final confirmed = AiMessage.fromJson({
+        'id': 'm1',
+        'senderType': 'AI',
+        'content': 'Đã ghi sổ.',
+        'uiHints': {'displayStyle': 'TEXT'},
+        'pendingAction': {
+          'actionType': 'CREATE_LEDGER_ENTRY',
+          'status': 'CONFIRMED',
+        },
+      });
+      expect(confirmed.effectiveDisplayStyle, AiDisplayStyle.actionCard);
+    });
+
+    test('đề xuất còn PENDING thì vẫn tôn trọng uiHints như cũ (không đổi '
+        'hành vi bình thường)', () {
+      final pending = AiMessage.fromJson({
+        'id': 'm1',
+        'senderType': 'AI',
+        'content': 'x',
+        'uiHints': {'displayStyle': 'INSIGHT_CARD'},
+        'pendingAction': {
+          'actionType': 'CREATE_LEDGER_ENTRY',
+          'status': 'PENDING',
+        },
+      });
+      expect(pending.effectiveDisplayStyle, AiDisplayStyle.insightCard);
+    });
   });
 
   group('Test #9 của BE — không được đoán qua chữ trong content', () {

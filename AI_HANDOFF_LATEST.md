@@ -2,6 +2,43 @@
 
 Last updated: **2026-08-09**
 
+## Bug mất banner "đã từ chối" sau khi Hủy đề xuất — báo cáo 2026-08-09, ĐÃ SỬA (FE) + có phần cần báo BE
+
+User test Manager: tạo đề xuất ghi khoản chi 500k → bấm "Hủy đề xuất" → tin
+nhắn đó đổi từ thẻ `ACTION_CARD` (có banner "Bạn đã từ chối đề xuất này")
+sang một thẻ "Phân tích tài chính" (`INSIGHT_CARD`) hoàn toàn chung chung,
+nội dung chữ vẫn y hệt lúc CHƯA xử lý ("xin vui lòng xác nhận trên ứng
+dụng") — nhìn như đề xuất chưa hề bị hủy, dù bấm hủy có tác dụng thật ở BE
+(verify riêng: nhiệm vụ "Đưa con đi chợ" bị hủy trước đó vẫn hiện đúng "Đã
+hủy" trong danh sách nhiệm vụ thật).
+
+Nguyên nhân xác định qua code: khi `fetchMessages()` chạy lại sau
+`rejectAction`, BE trả về CHÍNH tin nhắn đó với `uiHints.displayStyle` đổi
+thành `INSIGHT_CARD` (không còn `ACTION_CARD` như lúc khởi tạo), trong khi
+`pendingAction.status` vẫn có giá trị thật (`REJECTED`). `effectiveDisplayStyle`
+cũ ưu tiên `uiHints.displayStyle` tuyệt đối nên vẽ theo `INSIGHT_CARD`, bỏ
+qua hẳn banner kết quả.
+
+**Đã sửa ở FE**: `AiMessage.effectiveDisplayStyle` — khi `pendingAction` đã
+có kết quả (không còn `PENDING`, tức `REJECTED`/`CONFIRMED`/`EXPIRED`/
+`FAILED`), LUÔN vẽ `actionCard` để hiện đúng banner kết quả, bất kể
+`uiHints.displayStyle` nói gì. Vẫn quyết định theo dữ liệu cấu trúc
+(`pendingAction.status`), không đoán qua `content`, nên không vi phạm yêu
+cầu BE "không đoán qua content". Còn `PENDING` thì hành vi cũ giữ nguyên
+(tôn trọng `uiHints` như thường). Thêm 3 test khóa hành vi này trong
+`test/ai_ui_hints_test.dart`.
+
+**[Cần báo BE]** Vẫn nên hỏi BE vì sao sau khi resolve một đề xuất
+(confirm/reject), response tiếp theo cho tin nhắn đó lại đổi
+`uiHints.displayStyle` sang kiểu khác (mất ý nghĩa ban đầu) mà KHÔNG cập
+nhật lại nội dung `content` cho khớp trạng thái mới (vẫn nói "xin xác nhận"
+dù đã xử lý xong) — FE đã tự vá ở lớp hiển thị, nhưng nội dung chữ do BE
+sinh ra bên trong card vẫn có thể gây hiểu lầm nếu nơi khác hiển thị `content`
+thô (ví dụ preview thông báo/lịch sử ngoài màn chat).
+
+Verify: `flutter analyze` 0 error, `flutter test` 293/293 pass (thêm 3 test
+mới). Chưa verify runtime.
+
 ## Bug màn Trợ lý AI load trắng giữa chừng — báo cáo 2026-08-09, ĐÃ SỬA
 
 User báo: mở Trợ lý AI, thấy Daily Brief đàng hoàng, sau đó **màn trắng trơn
