@@ -446,6 +446,57 @@ class AiChatbotProvider extends ChangeNotifier {
     return _handleAction(messageId, confirm: false);
   }
 
+  bool isStepBusy(String messageId, int actionIndex) =>
+      _actionBusy.contains('$messageId#$actionIndex');
+
+  /// Xác nhận/từ chối MỘT bước trong kế hoạch nhiều bước (`ACTION_PLAN_CARD`,
+  /// BE Sprint 3 2026-08-09). Endpoint confirm do BE xác nhận nguyên văn;
+  /// endpoint reject BE gửi bị cắt dòng giữa chừng, chỉ đoán được đúng theo
+  /// quy ước đối xứng với confirm (`/actions/:actionIndex/reject`) — CHƯA
+  /// được BE xác nhận chữ-chữ, đánh `[VERIFY]`.
+  Future<bool> confirmStep(String messageId, int actionIndex) async =>
+      _handleStepAction(messageId, actionIndex, confirm: true);
+
+  Future<bool> rejectStep(String messageId, int actionIndex) async =>
+      _handleStepAction(messageId, actionIndex, confirm: false);
+
+  Future<bool> _handleStepAction(
+    String messageId,
+    int actionIndex, {
+    required bool confirm,
+  }) async {
+    final fid = ApiClient.instance.familyId;
+    final cid = _currentConversationId;
+    final busyKey = '$messageId#$actionIndex';
+    if (fid == null || cid == null || _actionBusy.contains(busyKey)) {
+      return false;
+    }
+    _actionBusy.add(busyKey);
+    _error = null;
+    notifyListeners();
+    try {
+      // [VERIFY] "reject" là suy đoán theo đối xứng với "confirm" — BE cắt
+      // dòng giữa chừng lúc gửi path này, chưa xác nhận nguyên văn.
+      final action = confirm ? 'confirm' : 'reject';
+      await ApiClient.instance.post(
+        '/families/$fid/ai-chatbot/conversations/$cid/messages/$messageId'
+        '/actions/$actionIndex/$action',
+        {},
+      );
+      await fetchMessages();
+      return true;
+    } catch (e) {
+      _error = _friendlyError(e, isAction: true);
+      if (e is ApiException && (e.statusCode == 409 || e.statusCode == 410)) {
+        await fetchMessages();
+      }
+      return false;
+    } finally {
+      _actionBusy.remove(busyKey);
+      notifyListeners();
+    }
+  }
+
   Future<void> deleteCurrentConversation() async {
     final fid = ApiClient.instance.familyId;
     final cid = _currentConversationId;
@@ -553,7 +604,7 @@ class AiChatbotProvider extends ChangeNotifier {
           senderType: 'AI',
           content: 'Tôi đã chuẩn bị một đề xuất, bạn xem và xác nhận giúp nhé.',
           createdAt: DateTime.now(),
-          pendingAction: pendingAction,
+          pendingActions: [pendingAction],
         ),
       );
     }

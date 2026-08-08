@@ -975,6 +975,7 @@ class _MessageBubble extends StatelessWidget {
         content: message.content,
       ),
       AiDisplayStyle.resultCard => _ResultCard(message: message),
+      AiDisplayStyle.actionPlanCard => _ActionPlanCard(message: message),
       AiDisplayStyle.actionCard when message.pendingAction != null =>
         _ActionCardWithIntro(message: message),
       // ACTION_CARD mà thiếu pendingAction không nên xảy ra theo contract —
@@ -1318,6 +1319,39 @@ class _ResultCard extends StatelessWidget {
   );
 }
 
+/// `ACTION_PLAN_CARD` — kế hoạch nhiều bước (BE Sprint 3, 2026-08-09). Mỗi
+/// bước là một phần tử `message.pendingActions[n]`; tái dùng nguyên
+/// `_PendingActionCard` cho từng bước (đã có `stepIndex` để gọi đúng
+/// endpoint theo bước: `confirmStep`/`rejectStep`) thay vì viết lại UI thẻ.
+class _ActionPlanCard extends StatelessWidget {
+  final AiMessage message;
+
+  const _ActionPlanCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = message.pendingActions;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (message.content.trim().isNotEmpty)
+          _TextBubble(text: message.content, isMe: false),
+        // Không nên xảy ra theo contract (BE nói ACTION_PLAN_CARD luôn kèm
+        // pendingActions[]) — phòng thủ, đừng vẽ khung rỗng nếu thiếu.
+        for (final step in steps)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _PendingActionCard(
+              messageId: step.messageId.isNotEmpty ? step.messageId : message.id,
+              action: step,
+              stepIndex: step.actionIndex,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Bong bóng lời giới thiệu của AI (`message.content`) + thẻ xác nhận bên
 /// dưới — giữ đúng bố cục cũ (`ACTION_CARD` luôn có một câu dẫn của AI trước
 /// khi tới thẻ).
@@ -1347,12 +1381,25 @@ class _PendingActionCard extends StatelessWidget {
   final String messageId;
   final AiPendingAction action;
 
-  const _PendingActionCard({required this.messageId, required this.action});
+  /// Khác `null` khi thẻ này là MỘT BƯỚC trong kế hoạch nhiều bước
+  /// (`ACTION_PLAN_CARD`, BE Sprint 3 2026-08-09) — khi đó Xác nhận/Hủy phải
+  /// gọi endpoint theo `actionIndex` (`confirmStep`/`rejectStep`) thay vì
+  /// theo message (`confirmAction`/`rejectAction`). `null` = hành vi cũ y
+  /// nguyên, dùng cho thẻ hành động đơn lẻ.
+  final int? stepIndex;
+
+  const _PendingActionCard({
+    required this.messageId,
+    required this.action,
+    this.stepIndex,
+  });
 
   @override
   Widget build(BuildContext context) {
     final ai = context.watch<AiChatbotProvider>();
-    final busy = ai.isActionBusy(messageId);
+    final busy = stepIndex != null
+        ? ai.isStepBusy(messageId, stepIndex!)
+        : ai.isActionBusy(messageId);
     final enabled = action.isPending && !busy;
     final color = _actionColor;
     return Container(
@@ -1440,9 +1487,14 @@ class _PendingActionCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: enabled
-                        ? () => context.read<AiChatbotProvider>().rejectAction(
-                            messageId,
-                          )
+                        ? () {
+                            final provider = context.read<AiChatbotProvider>();
+                            if (stepIndex != null) {
+                              provider.rejectStep(messageId, stepIndex!);
+                            } else {
+                              provider.rejectAction(messageId);
+                            }
+                          }
                         : null,
                     child: Text(action.uiHints?.secondaryActionLabel ?? 'Hủy'),
                   ),
@@ -1489,7 +1541,11 @@ class _PendingActionCard extends StatelessWidget {
 
   Future<void> _handleEdit(BuildContext context) async {
     final ai = context.read<AiChatbotProvider>();
-    await ai.rejectAction(messageId);
+    if (stepIndex != null) {
+      await ai.rejectStep(messageId, stepIndex!);
+    } else {
+      await ai.rejectAction(messageId);
+    }
   }
 
   /// Câu trạng thái dưới thẻ. Xác nhận thành công phải nói rõ là **đã xong**,
@@ -1611,7 +1667,9 @@ class _PendingActionCard extends StatelessWidget {
     final tasks = context.read<TaskProvider>();
     final wallet = context.read<WalletProvider>();
     final calendar = context.read<CalendarProvider>();
-    final ok = await ai.confirmAction(messageId);
+    final ok = stepIndex != null
+        ? await ai.confirmStep(messageId, stepIndex!)
+        : await ai.confirmAction(messageId);
     if (!ok) return;
 
     // BE tạo dữ liệu thật rồi, giờ phải kéo lại màn tương ứng. Nếu BE thêm một

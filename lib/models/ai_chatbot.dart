@@ -37,7 +37,13 @@ class AiMessage {
   final String content;
   final String? relatedModule;
   final DateTime? createdAt;
-  final AiPendingAction? pendingAction;
+
+  /// BE Sprint 3 (2026-08-09): một message có thể có NHIỀU đề xuất
+  /// (`pendingActions[]`, hiển thị dạng `ACTION_PLAN_CARD`). Trước đó chỉ có
+  /// đúng một (`pendingAction` số ít) — BE nói rõ `pendingAction` giờ là
+  /// alias của `pendingActions[0]` để không vỡ FE cũ, nên lưu MỘT nguồn dữ
+  /// liệu duy nhất ở đây, `pendingAction` bên dưới chỉ là getter đọc lại.
+  final List<AiPendingAction> pendingActions;
   final AiMessageUiHints? uiHints;
   final bool isLocal;
 
@@ -47,25 +53,48 @@ class AiMessage {
     required this.content,
     this.relatedModule,
     this.createdAt,
-    this.pendingAction,
+    this.pendingActions = const [],
     this.uiHints,
     this.isLocal = false,
   });
+
+  /// Tương thích ngược: mọi chỗ gọi cũ (`message.pendingAction`) tiếp tục
+  /// chạy đúng như trước Sprint 3, đọc thẳng phần tử đầu của `pendingActions`.
+  AiPendingAction? get pendingAction =>
+      pendingActions.isEmpty ? null : pendingActions.first;
 
   factory AiMessage.fromJson(
     Map<String, dynamic> json, {
     AiPendingAction? pendingAction,
   }) {
     final id = _str(json['id'] ?? json['messageId']);
-    final rawAction = json['pendingAction'];
-    final parsedAction =
-        pendingAction ??
-        (rawAction is Map
-            ? AiPendingAction.fromJson(
+    final rawActions = json['pendingActions'];
+    List<AiPendingAction> parsedActions;
+    if (pendingAction != null) {
+      // Test/nơi gọi cũ tự dựng sẵn một AiPendingAction và truyền tay vào —
+      // giữ nguyên hành vi trước Sprint 3, bỏ qua JSON.
+      parsedActions = [pendingAction];
+    } else if (rawActions is List && rawActions.isNotEmpty) {
+      parsedActions = [
+        for (var i = 0; i < rawActions.length; i++)
+          if (rawActions[i] is Map)
+            AiPendingAction.fromJson(
+              Map<String, dynamic>.from(rawActions[i] as Map),
+              fallbackMessageId: id,
+              indexOverride: i,
+            ),
+      ];
+    } else {
+      final rawAction = json['pendingAction'];
+      parsedActions = rawAction is Map
+          ? [
+              AiPendingAction.fromJson(
                 Map<String, dynamic>.from(rawAction),
                 fallbackMessageId: id,
-              )
-            : null);
+              ),
+            ]
+          : const [];
+    }
     final rawHints = json['uiHints'];
     return AiMessage(
       id: id,
@@ -73,7 +102,7 @@ class AiMessage {
       content: _str(json['content'] ?? json['message']),
       relatedModule: json['relatedModule']?.toString(),
       createdAt: _date(json['createdAt']),
-      pendingAction: parsedAction,
+      pendingActions: parsedActions,
       uiHints: rawHints is Map
           ? AiMessageUiHints.fromJson(Map<String, dynamic>.from(rawHints))
           : null,
@@ -100,6 +129,14 @@ class AiMessage {
   /// KHÔNG đoán qua chữ trong `content` — giữ đúng hành vi hiển thị cũ cho dữ
   /// liệu cũ, không phá test/màn hình đang chạy đúng.
   AiDisplayStyle get effectiveDisplayStyle {
+    // BE chỉ định rõ ràng đây là kế hoạch nhiều bước (Sprint 3) — ưu tiên
+    // kiểm tra trước tiên, vì widget kế hoạch tự lo hiển thị trạng thái
+    // riêng của TỪNG bước (mỗi `pendingActions[n]` có `status` riêng), không
+    // áp dụng cùng một quy tắc "đã xử lý thì ép về actionCard" như action
+    // đơn lẻ bên dưới.
+    if (uiHints?.displayStyle == AiDisplayStyle.actionPlanCard) {
+      return AiDisplayStyle.actionPlanCard;
+    }
     // Đề xuất ĐÃ XỬ LÝ (từ chối/xác nhận/hết hạn) phải luôn hiện đúng thẻ
     // xác nhận (có banner kết quả — "Bạn đã từ chối...", "Đã thực hiện
     // xong"...), bất kể `uiHints.displayStyle` nói gì. Quan sát thật
@@ -118,13 +155,15 @@ class AiMessage {
         (pendingAction != null ? AiDisplayStyle.actionCard : AiDisplayStyle.text);
   }
 
+  // Chữ ký giữ nguyên (nhận 1 AiPendingAction, không phải List) để không phá
+  // nơi gọi cũ — bên trong quy về pendingActions theo đúng ngữ nghĩa mới.
   AiMessage copyWith({AiPendingAction? pendingAction}) => AiMessage(
     id: id,
     senderType: senderType,
     content: content,
     relatedModule: relatedModule,
     createdAt: createdAt,
-    pendingAction: pendingAction ?? this.pendingAction,
+    pendingActions: pendingAction != null ? [pendingAction] : pendingActions,
     uiHints: uiHints,
     isLocal: isLocal,
   );
@@ -135,7 +174,16 @@ class AiMessage {
 /// Thay hoàn toàn cách cũ (FE tự đoán qua `actionType`/chữ trong `content`).
 /// BE nhắc đi nhắc lại: mọi quyết định render phải dựa vào `uiHints` và
 /// `pendingAction`, không được suy qua nội dung chữ.
-enum AiDisplayStyle { text, insightCard, actionCard, permissionNotice, resultCard }
+enum AiDisplayStyle {
+  text,
+  insightCard,
+  actionCard,
+  permissionNotice,
+  resultCard,
+  // BE Sprint 3 (2026-08-09): kế hoạch nhiều bước, mỗi bước là 1 phần tử
+  // `pendingActions[]` thay vì 1 `pendingAction` duy nhất.
+  actionPlanCard,
+}
 
 AiDisplayStyle? _parseDisplayStyle(dynamic value) {
   switch (value?.toString().toUpperCase()) {
@@ -149,6 +197,8 @@ AiDisplayStyle? _parseDisplayStyle(dynamic value) {
       return AiDisplayStyle.permissionNotice;
     case 'RESULT_CARD':
       return AiDisplayStyle.resultCard;
+    case 'ACTION_PLAN_CARD':
+      return AiDisplayStyle.actionPlanCard;
     default:
       // Thiếu hoặc lạ — để nơi gọi (AiMessage.effectiveDisplayStyle) tự suy
       // theo pendingAction, không mặc định liều một kiểu cụ thể ở đây.
@@ -306,6 +356,12 @@ class AiPendingAction {
   final DateTime? expiresAt;
   final AiActionUiHints? uiHints;
 
+  /// Vị trí trong `pendingActions[]` của message (BE Sprint 3, 2026-08-09).
+  /// Dùng làm tham số bắt buộc cho 2 endpoint confirm/reject-theo-step mới.
+  /// Mặc định 0 vì trước Sprint 3 chỉ có đúng một action (`pendingAction`
+  /// số ít, không có `actionIndex`), tương thích ngược tự nhiên.
+  final int actionIndex;
+
   const AiPendingAction({
     required this.messageId,
     required this.actionType,
@@ -313,11 +369,13 @@ class AiPendingAction {
     required this.preview,
     this.expiresAt,
     this.uiHints,
+    this.actionIndex = 0,
   });
 
   factory AiPendingAction.fromJson(
     Map<String, dynamic> json, {
     String? fallbackMessageId,
+    int? indexOverride,
   }) {
     final rawPreview = json['preview'] ?? json['payload'] ?? json['data'];
     final rawHints = json['uiHints'];
@@ -335,6 +393,13 @@ class AiPendingAction {
       uiHints: rawHints is Map
           ? AiActionUiHints.fromJson(Map<String, dynamic>.from(rawHints))
           : null,
+      // `indexOverride` áp dụng khi phần tử này đến từ vị trí thứ n của
+      // `pendingActions[]` mà tự thân JSON không có field `actionIndex` (BE
+      // có thể không lặp lại field này trong từng phần tử mảng — dùng thẳng
+      // vị trí mảng làm actionIndex). JSON tự có `actionIndex` (BE gửi rõ)
+      // thì ưu tiên đọc trực tiếp.
+      actionIndex:
+          (json['actionIndex'] as num?)?.toInt() ?? indexOverride ?? 0,
     );
   }
 

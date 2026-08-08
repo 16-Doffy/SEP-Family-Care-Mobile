@@ -365,6 +365,28 @@ AI nào ngoài Swagger.
 - `POST .../messages/{messageId}/reject-action` — từ chối đề xuất.
 - `DELETE /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}` — xóa hội thoại kèm toàn bộ tin nhắn.
 
+**Sprint 3 (2026-08-09, backward-compatible — BE xác nhận endpoint cũ ở trên
+giữ nguyên, FE không bắt buộc đổi flow ngay):** một `aiMessage` giờ có thể có
+NHIỀU đề xuất cùng lúc trong `pendingActions[]` (kế hoạch nhiều bước),
+`pendingAction` (số ít) **vẫn còn, là alias của `pendingActions[0]`**. Nếu
+`aiMessage.uiHints.displayStyle === "ACTION_PLAN_CARD"` thì render card kế
+hoạch nhiều bước, mỗi phần tử `pendingActions[n]` có thêm `actionIndex` (vị
+trí bước) để xác nhận/từ chối RIÊNG từng bước, khác hẳn 2 endpoint cũ vốn
+thao tác theo `messageId` (chỉ áp dụng khi action đơn lẻ, không phải plan):
+
+- `POST .../messages/{messageId}/actions/{actionIndex}/confirm` — xác nhận
+  một bước. **BE xác nhận nguyên văn.**
+- `POST .../messages/{messageId}/actions/{actionIndex}/reject` — từ chối một
+  bước. **`[VERIFY]` — BE gửi tin nhắn bị cắt dòng đúng chỗ path này, đoạn
+  cuối chỉ suy đoán theo quy ước đối xứng với `confirm` ở trên, CHƯA được BE
+  xác nhận nguyên văn. Cần hỏi lại BE xác nhận đúng đuôi path.**
+
+FE đã wire ở `AiChatbotProvider.confirmStep`/`rejectStep`,
+`_ActionPlanCard`/`_PendingActionCard(stepIndex: ...)` trong
+`ai_assistant_screen.dart`. `AiPendingAction.actionIndex` mặc định `0` nếu
+JSON không có field này (tương thích action đơn lẻ trước Sprint 3, luôn được
+coi là "bước 0" duy nhất).
+
 **`pendingAction` — chỉ hiện thẻ xác nhận khi response CÓ khối này.**
 
 ```jsonc

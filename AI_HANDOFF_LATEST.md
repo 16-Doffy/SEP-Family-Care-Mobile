@@ -2,6 +2,63 @@
 
 Last updated: **2026-08-09**
 
+## BE Sprint 3 — kế hoạch nhiều bước `ACTION_PLAN_CARD` — ĐÃ WIRE (2026-08-09)
+
+BE nâng cấp AI Chatbot lên Sprint 3, **backward-compatible**, endpoint cũ
+(gửi chat, `confirm-action`, `reject-action`) giữ nguyên. Điểm mới: một
+`aiMessage` có thể có nhiều đề xuất trong `pendingActions[]` thay vì đúng một
+`pendingAction`; BE nói rõ `pendingAction` (số ít) **vẫn còn, là alias của
+`pendingActions[0]`**. Khi `uiHints.displayStyle === "ACTION_PLAN_CARD"` thì
+render card kế hoạch nhiều bước, mỗi bước có `actionIndex` riêng, xác
+nhận/từ chối qua 2 endpoint mới theo bước (khác endpoint cũ theo message).
+
+**Model (`lib/models/ai_chatbot.dart`):**
+- `AiMessage.pendingAction` (field) → đổi thành **getter** đọc
+  `pendingActions.first` — giữ nguyên 100% API đọc cũ (`message.pendingAction`
+  chạy y hệt mọi nơi, không sửa gì ở `ai_assistant_screen.dart` cho các case
+  action đơn lẻ), chỉ đổi cách LƯU trữ nội bộ.
+- `AiMessage.pendingActions` (mới, `List<AiPendingAction>`) — parse từ
+  `pendingActions[]` nếu BE gửi; nếu không, tự bọc `pendingAction` số ít
+  thành list 1 phần tử (tương thích dữ liệu cũ hoàn toàn, có test khóa).
+- `AiPendingAction.actionIndex` (mới, mặc định `0`) — ưu tiên đọc trực tiếp
+  từ JSON nếu BE gửi, không thì lấy theo VỊ TRÍ trong mảng `pendingActions[]`.
+- `AiDisplayStyle.actionPlanCard` (mới, map từ `ACTION_PLAN_CARD`).
+  `effectiveDisplayStyle` kiểm tra style này TRƯỚC quy tắc "action đã xử lý
+  thì ép actionCard" (quy tắc đó chỉ áp dụng action đơn lẻ, không áp dụng
+  plan — mỗi bước tự có banner trạng thái riêng qua chính
+  `_PendingActionCard` được tái dùng).
+- `copyWith({pendingAction})` giữ nguyên chữ ký cũ (không ai gọi ngoài code
+  hiện tại, nhưng vẫn không đổi để phòng ngừa), chuyển đổi nội bộ sang
+  `pendingActions`.
+
+**Provider (`lib/providers/ai_chatbot_provider.dart`):**
+- `confirmStep(messageId, actionIndex)` / `rejectStep(messageId, actionIndex)`
+  gọi 2 endpoint mới. `isStepBusy(messageId, actionIndex)` — key riêng
+  `'$messageId#$actionIndex'`, không đụng `_actionBusy` của action đơn lẻ.
+- **`[VERIFY]`** endpoint reject-theo-step: BE gửi tin nhắn bị cắt dòng đúng
+  chỗ path này (`.../actions/:actionIndex/` rồi dừng) — FE tạm dùng `reject`
+  theo đối xứng với `confirm`, **chưa được BE xác nhận nguyên văn**. Cần hỏi
+  lại BE xác nhận đúng đuôi path trước khi coi đây là chốt cuối cùng.
+
+**UI (`lib/screens/shared/ai_assistant_screen.dart`):**
+- `_ActionPlanCard` (mới) — render `message.content` (nếu có) + lặp qua
+  `message.pendingActions`, mỗi bước là một `_PendingActionCard` (tái dùng
+  nguyên, không viết lại UI thẻ).
+- `_PendingActionCard` thêm field `stepIndex` (mặc định `null` = hành vi cũ y
+  nguyên cho action đơn lẻ). Khác `null` thì Xác nhận/Hủy/nút "Sửa" gọi
+  `confirmStep`/`rejectStep` thay vì `confirmAction`/`rejectAction`, và
+  `busy` đọc từ `isStepBusy` thay vì `isActionBusy`.
+- `_MessageBubble` thêm case `AiDisplayStyle.actionPlanCard => _ActionPlanCard(...)`.
+
+**Test mới:** `test/ai_action_plan_test.dart` (8 test) — khóa parse
+`pendingActions[]`/`actionIndex`/`ACTION_PLAN_CARD`, và khóa riêng hành vi CŨ
+(message chỉ có `pendingAction` số ít, hoặc không có gì) không bị đổi.
+
+Verify: `flutter analyze` 0 error, `flutter test` 301/301 pass. Chưa verify
+runtime (chưa có ví dụ `ACTION_PLAN_CARD` thật từ BE để test) — nhờ user tự
+test khi BE trả về plan nhiều bước thật, đặc biệt xác nhận lại endpoint
+reject-theo-step có đúng `/reject` không.
+
 ## Bug mất banner "đã từ chối" sau khi Hủy đề xuất — báo cáo 2026-08-09, ĐÃ SỬA (FE) + có phần cần báo BE
 
 User test Manager: tạo đề xuất ghi khoản chi 500k → bấm "Hủy đề xuất" → tin
