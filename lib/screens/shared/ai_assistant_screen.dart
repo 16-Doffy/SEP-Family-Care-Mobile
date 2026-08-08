@@ -381,44 +381,52 @@ class _MessageList extends StatelessWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
-    Widget body;
     final messages = ai.messages;
     if (messages.isEmpty) {
-      body = _EmptyStateSuggestions(onPick: onPickPrompt);
-    } else {
-      // Hàng "Tải thêm" nằm trên cùng vì tin cũ hơn thuộc về phía trên.
-      final leading = ai.hasMoreMessages ? 1 : 0;
-      body = ListView.builder(
-        controller: scrollCtrl,
-        padding: const EdgeInsets.all(16),
-        itemCount: leading + messages.length + (ai.sending ? 1 : 0),
-        itemBuilder: (_, i) {
-          if (leading == 1 && i == 0) {
-            return _LoadMoreTile(
-              label: 'Tải thêm tin nhắn',
-              loading: ai.loadingMoreMessages,
-              onTap: ai.loadMoreMessages,
-            );
-          }
-          final index = i - leading;
-          if (index >= messages.length) return const _TypingBubble();
-          return _MessageBubble(
-            message: messages[index],
-            onPickPrompt: onPickPrompt,
-          );
-        },
-      );
+      return _EmptyStateSuggestions(onPick: onPickPrompt, dailyBrief: brief);
     }
 
-    if (brief == null) return body;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: _DailyBriefCard(brief: brief, onPick: onPickPrompt),
-        ),
-        Expanded(child: body),
-      ],
+    // Daily Brief và hàng "Tải thêm" đều nằm TRONG danh sách cuộn được, không
+    // phải sibling cố định của nó.
+    //
+    // Bug thật đã gặp: từng đặt `_DailyBriefCard` làm phần tử cố định phía
+    // trên `Expanded(child: ListView)` trong một `Column`. Nội dung Daily
+    // Brief (JsonReportView đệ quy nhiều nhóm: Family/Scope/Task/Calendar/
+    // Finance…) cao hơn hẳn một bubble chat thường, và phần tử cố định trong
+    // `Column` không tự co khi thiếu chỗ — Flutter báo tràn layout (vạch
+    // vàng-đen "RenderFlex overflowed") ngay khi nội dung dài hơn khoảng trống
+    // còn lại phía trên composer. Đưa thẳng vào làm item đầu của
+    // `ListView.builder` thì nó cuộn được như mọi item khác, không bao giờ
+    // tràn nữa — đúng cách `_LoadMoreTile` đã làm từ trước.
+    final leadingBrief = brief != null ? 1 : 0;
+    final leadingLoadMore = ai.hasMoreMessages ? 1 : 0;
+    final leading = leadingBrief + leadingLoadMore;
+    return ListView.builder(
+      controller: scrollCtrl,
+      padding: const EdgeInsets.all(16),
+      itemCount: leading + messages.length + (ai.sending ? 1 : 0),
+      itemBuilder: (_, i) {
+        if (brief != null && i == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _DailyBriefCard(brief: brief, onPick: onPickPrompt),
+          );
+        }
+        final afterBrief = i - leadingBrief;
+        if (leadingLoadMore == 1 && afterBrief == 0) {
+          return _LoadMoreTile(
+            label: 'Tải thêm tin nhắn',
+            loading: ai.loadingMoreMessages,
+            onTap: ai.loadMoreMessages,
+          );
+        }
+        final index = afterBrief - leadingLoadMore;
+        if (index >= messages.length) return const _TypingBubble();
+        return _MessageBubble(
+          message: messages[index],
+          onPickPrompt: onPickPrompt,
+        );
+      },
     );
   }
 }
@@ -599,17 +607,27 @@ List<AiPromptGroup> aiPromptGroupsFor({required bool canManageFinance}) {
 
 class _EmptyStateSuggestions extends StatelessWidget {
   final ValueChanged<String> onPick;
+  final AiDailyBrief? dailyBrief;
 
-  const _EmptyStateSuggestions({required this.onPick});
+  const _EmptyStateSuggestions({required this.onPick, this.dailyBrief});
 
   @override
   Widget build(BuildContext context) {
     final canManageFinance =
         context.watch<AuthProvider>().user?.canManageFinance ?? false;
     final groups = aiPromptGroupsFor(canManageFinance: canManageFinance);
+    final brief = dailyBrief;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       children: [
+        // `ListView` này vốn đã cuộn được — Daily Brief nằm ngay trong danh
+        // sách children như mọi mục khác, không phải sibling cố định, nên
+        // không có nguy cơ tràn layout dù nội dung có dài (xem bug đã sửa ở
+        // `_MessageList`, cùng nguyên nhân, khác chỗ đặt).
+        if (brief != null) ...[
+          _DailyBriefCard(brief: brief, onPick: onPick),
+          const SizedBox(height: 16),
+        ],
         Center(
           child: Column(
             children: [

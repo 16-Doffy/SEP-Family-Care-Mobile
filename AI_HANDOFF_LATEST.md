@@ -82,6 +82,32 @@ Kèm 2 bug user báo bằng ảnh chụp thật, không liên quan Sprint 2:
    (chuyển màn, giật hình, cuộn nhảy vị trí?) hoặc quay video khi tái hiện
    được, vì từ giờ chị không tự mở emulator kiểm tra nữa.
 
+### Bug overflow Daily Brief — báo cáo từ user 2026-08-08, ĐÃ SỬA
+
+User gửi ảnh chụp `RenderFlex overflowed by 993 pixels` ngay trên card "Tổng
+quan hôm nay" vừa thêm ở trên. Nguyên nhân: `_MessageList.build()` bọc danh
+sách tin nhắn trong `Column` với `_DailyBriefCard` là con **không co giãn**
+(non-flex) nằm cố định phía trên `Expanded(child: <danh sách cuộn>)`. Dữ liệu
+Daily Brief thật từ BE (nhóm Family/Scope/Task/Calendar/Finance qua
+`JsonReportView`) cao hơn nhiều so với chỗ còn lại, mà `Column` không thể co
+nhỏ một con non-flex lại — tràn layout. `_EmptyStateSuggestions` không dính
+lỗi này vì đã render trong `ListView` sẵn.
+
+Sửa: bỏ hẳn khung `Column`/`Expanded` trong `_MessageList`, đưa
+`_DailyBriefCard` thành phần tử đầu tiên (index 0) của chính
+`ListView.builder` — cùng kiểu "leading item" đã dùng cho `_LoadMoreTile`
+(biến đếm `leadingBrief`/`leadingLoadMore`/`leading`). Card giờ cuộn được
+cùng danh sách tin nhắn thay vì chiếm không gian cố định. Sửa null-check tại
+điểm gọi `_DailyBriefCard(brief: brief, ...)` từ `if (leadingBrief == 1 && i
+== 0)` sang `if (brief != null && i == 0)` để Dart tự promote `brief` về
+non-null (check `leadingBrief` — một biến int khác dẫn xuất từ `brief` — không
+đủ để analyzer suy ra `brief` non-null tại điểm dùng).
+
+Verify: `flutter analyze` (0 error, kể cả file này) + `flutter test`
+(289/289 pass, không có test riêng cho path overflow này vì đây là lỗi layout
+runtime, không phải logic parse — đúng theo quy trình mới, chưa mở emulator
+kiểm tra lại bằng mắt, nhờ user tự xác nhận card cuộn mượt, không tràn nữa).
+
 ### Quy trình mới từ 2026-08-08
 
 Chị (Claude) chỉ code + fix, KHÔNG tự mở emulator thao tác kiểm tra nữa (tốn
