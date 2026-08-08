@@ -67,7 +67,7 @@ void main() {
       }).actionLabel;
 
       expect(labelOf('CREATE_TASK'), 'Tạo nhiệm vụ');
-      expect(labelOf('CREATE_LEDGER_ENTRY'), 'Tạo giao dịch');
+      expect(labelOf('CREATE_LEDGER_ENTRY'), 'Tạo thu/chi');
       expect(labelOf('CREATE_CALENDAR_EVENT'), 'Tạo sự kiện lịch');
     });
   });

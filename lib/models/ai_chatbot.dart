@@ -220,7 +220,7 @@ class AiPendingAction {
   String get actionLabel => switch (actionType.toUpperCase()) {
     'CREATE_LEDGER_ENTRY' ||
     'CREATE_TRANSACTION' ||
-    'FINANCE_LEDGER_CREATE' => 'Tạo giao dịch',
+    'FINANCE_LEDGER_CREATE' => 'Tạo thu/chi',
     'CREATE_TASK' || 'TASK_CREATE' => 'Tạo nhiệm vụ',
     'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => 'Tạo sự kiện lịch',
     _ => 'Thực hiện đề xuất',

@@ -1220,7 +1220,7 @@ class _QuickPrompts extends StatelessWidget {
               prompt: 'Hũ nào đang chi vượt mục tiêu?',
             ),
             (
-              label: 'Tạo giao dịch',
+              label: 'Tạo thu/chi',
               prompt: 'Ghi nhận khoản chi 200000 cho ăn uống hôm nay',
             ),
             (
