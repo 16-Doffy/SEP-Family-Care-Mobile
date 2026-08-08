@@ -2,6 +2,31 @@
 
 Last updated: **2026-08-08**
 
+## Bug checklist "Bắt đầu tháng" không tự tick sau khi khai báo — báo cáo 2026-08-08, ĐÃ SỬA
+
+User (Member) khai báo thu nhập/hạn mức ở "Chỉnh sửa hồ sơ" → bấm "Lưu tài
+chính tháng" → quay lại màn Ví. Số liệu "Hạn mức tháng" đã đúng (lấy dữ liệu
+mới), nhưng mục "Khai báo thu nhập & hạn mức" trong `MonthStartChecklist`
+(`lib/widgets/month_start_checklist.dart`) vẫn hiện chưa tick (vòng tròn
+rỗng), như thể chưa khai báo gì.
+
+Nguyên nhân: mục này điều hướng bằng `context.push('/profile/edit')`.
+go_router `push` KHÔNG dispose lại `_MonthStartChecklistState` của màn Ví khi
+pop về — `_load()` (gọi `fetchMonthlyFinanceFor` để tính `_declared`) chỉ chạy
+đúng 1 lần ở `initState`, không có gì kích hoạt chạy lại sau khi quay về từ
+màn khai báo. Đây là bug FE thuần túy, không liên quan BE.
+
+Sửa: đổi `onTap` của mục này thành `async`, `await context.push(...)` rồi gọi
+lại `_load()` ngay khi quay về (path chỉ có đúng 1 nơi gọi
+`/profile/edit` từ widget này, không cần `RouteObserver` phức tạp). Áp dụng
+chung cho cả màn Ví Member (`child_wallet_screen.dart`) và Manager
+(`wallet_screen.dart`) vì dùng chung 1 widget `MonthStartChecklist`.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime — nhờ user tự test lại đúng luồng: từ màn Ví bấm vào mục "Khai báo
+thu nhập & hạn mức" → sửa số → Lưu → quay lại xem có tự tick "Đã khai báo"
+ngay không.
+
 ## Snapshot hiện hành 2026-08-08 — Trợ lý AI render theo `uiHints` (BE Sprint 2)
 
 > Snapshot này mới hơn toàn bộ phần 2026-08-07 bên dưới. Khi có mâu thuẫn,
