@@ -2,6 +2,35 @@
 
 Last updated: **2026-08-08**
 
+## Script test Member — 3 bug UX cuộn + 1 nghi vấn BE — 2026-08-08, ĐÃ SỬA 2/3 FE
+
+Chạy script test 14 bước cho vai trò Member, phát hiện:
+
+1. **[ĐÃ SỬA]** Bấm icon ☀️ hiện lại Daily Brief xong tự cuộn lên đầu trang —
+   đúng ý "xem" nhưng UX bất tiện: xem xong lại phải tự kéo xuống mới về được
+   đoạn chat đang dở, trong khi thoát màn/mở lại thì mặc định vẫn đứng ở
+   cuối. Đổi thành **không đổi vị trí cuộn** khi bấm ☀️ — chỉ bỏ ẩn rồi báo
+   bằng SnackBar ("Đã hiện lại... kéo lên đầu để xem"), người dùng tự kéo lên
+   xem khi muốn.
+2. **[ĐÃ SỬA]** Gửi tin nhắn đầu tiên từ màn trống (chưa có hội thoại) —
+   thay vì tự nhảy xuống tin nhắn vừa trả lời thì đứng nguyên ở đầu trang,
+   phải kéo xuống mới thấy. Nguyên nhân: gửi tin đầu tiên chuyển
+   `_MessageList` từ `_EmptyStateSuggestions` (ListView riêng, KHÔNG gắn
+   `_scrollCtrl`) sang `ListView.builder` thật (mới gắn `_scrollCtrl`) —
+   `Future.delayed(80ms)` cũ có thể chạy đúng lúc controller chưa kịp gắn vào
+   Scrollable mới nên `animateTo` không có tác dụng. Đổi
+   `_scrollToBottom()`/mọi chỗ tương tự sang `addPostFrameCallback` (đợi đúng
+   sau khi frame build/layout xong) thay vì đoán một mốc thời gian cố định.
+3. **[Cần hỏi BE]** Member không thấy card "Tổng quan hôm nay" (Manager có).
+   FE không hề gate tính năng này theo role (`fetchDailyBrief()` gọi y hệt
+   cho mọi role trong `bootstrap()`) — nên nhiều khả năng
+   `GET /ai-chatbot/daily-brief` trả về khác cho Member (404/rỗng/lỗi âm
+   thầm). Cần BE xác nhận endpoint này có áp dụng cho vai trò Member không,
+   và nếu không áp dụng thì trả về gì để FE phân biệt "chưa bật" với "lỗi".
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime.
+
 ## Daily Brief: xem lại sau khi đóng + sửa giờ thô + làm nổi bật tiêu đề nhóm — 2026-08-08, ĐÃ LÀM
 
 User hỏi cách xem lại card "Tổng quan hôm nay" sau khi đã bấm X đóng (trước đó

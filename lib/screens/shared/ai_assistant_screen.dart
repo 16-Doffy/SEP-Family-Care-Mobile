@@ -162,8 +162,17 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     await _send();
   }
 
+  // Gửi tin nhắn ĐẦU TIÊN của hội thoại chuyển `_MessageList` từ
+  // `_EmptyStateSuggestions` (ListView riêng, không gắn `_scrollCtrl`) sang
+  // `ListView.builder` thật (mới gắn `_scrollCtrl`) — quan sát thật
+  // 2026-08-08: `Future.delayed(80ms)` cũ chạy đúng lúc controller chưa kịp
+  // gắn vào Scrollable mới, `animateTo` chạy trên vị trí cũ nên không cuộn
+  // được, người dùng thấy màn đứng ở đầu trang dù đã có tin nhắn mới.
+  // `addPostFrameCallback` đợi đúng sau khi frame build/layout xong (controller
+  // đã chắc chắn gắn vào Scrollable hiện tại) thay vì đoán một mốc thời gian
+  // cố định — đúng cả với chuyển tiếp state lẫn tin nhắn giữa hội thoại dài.
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 80), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollCtrl.hasClients) return;
       _scrollCtrl.animateTo(
         _scrollCtrl.position.maxScrollExtent,
@@ -173,25 +182,20 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     });
   }
 
-  void _scrollToTop() {
-    Future.delayed(const Duration(milliseconds: 80), () {
-      if (!_scrollCtrl.hasClients) return;
-      _scrollCtrl.animateTo(
-        0,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOut,
-      );
-    });
-  }
-
-  // Trước đây bấm X đóng Daily Brief xong không còn cách nào xem lại ngoài
-  // thoát hẳn màn rồi mở lại (bootstrap() mới tải lại). `showDailyBrief()`
-  // dùng lại dữ liệu đã có trong bộ nhớ nên hiện lại ngay không cần gọi API,
-  // rồi cuộn lên đầu vì card luôn là item đầu tiên của danh sách.
+  // Trước đây bấm ☀️ xong tự cuộn lên đầu để "xem" Daily Brief — đúng ý muốn
+  // ban đầu nhưng UX bất tiện thật: xem xong lại phải tự kéo xuống mới về
+  // được đoạn chat đang dở, trong khi thoát màn rồi mở lại thì mặc định vẫn
+  // đứng ở cuối (đúng ý hơn). Đổi thành KHÔNG đổi vị trí cuộn — chỉ bỏ ẩn rồi
+  // báo bằng SnackBar, người dùng tự kéo lên xem khi muốn, không bị kéo đi
+  // khỏi chỗ đang đọc.
   Future<void> _showDailyBriefAgain() async {
     await context.read<AiChatbotProvider>().showDailyBrief();
     if (!mounted) return;
-    _scrollToTop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Đã hiện lại "Tổng quan hôm nay" — kéo lên đầu để xem'),
+      ),
+    );
   }
 
   @override
