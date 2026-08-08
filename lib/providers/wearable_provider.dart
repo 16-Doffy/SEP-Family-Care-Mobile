@@ -1,7 +1,4 @@
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../services/api_client.dart';
 
@@ -87,14 +84,14 @@ class WearableEvent {
   const WearableEvent({
     required this.id,
     required this.eventType,
-    this.severity = 'LOW',
+    this.severity = '',
     this.detectedAt,
   });
 
   factory WearableEvent.fromJson(Map<String, dynamic> j) => WearableEvent(
     id: _str(j['eventId'] ?? j['id']),
     eventType: _str(j['eventType']),
-    severity: _str(j['severity']).isEmpty ? 'LOW' : _str(j['severity']),
+    severity: _str(j['severity']),
     detectedAt: _date(j['detectedAt'] ?? j['createdAt']),
   );
 }
@@ -112,6 +109,10 @@ class WearableEventResult {
     this.raw = const {},
   });
 
+  /// BE chốt 2026-08-07: khi chống duplicate SOS active, response có thể trả
+  /// `alertCreated=false` nhưng `alertId` là cảnh báo SOS active hiện có.
+  bool get hasActiveAlert => alertCreated || alertId != null;
+
   factory WearableEventResult.fromJson(Map<String, dynamic> j) {
     final rawEvent = j['event'];
     return WearableEventResult(
@@ -123,6 +124,42 @@ class WearableEventResult {
       raw: j,
     );
   }
+}
+
+class WearableActivation {
+  final String sessionId;
+  final String code;
+  final String status;
+  final DateTime? expiresAt;
+  final String? familyId;
+  final String? deviceId;
+  final Map<String, dynamic> raw;
+
+  const WearableActivation({
+    required this.sessionId,
+    required this.code,
+    required this.status,
+    this.expiresAt,
+    this.familyId,
+    this.deviceId,
+    this.raw = const {},
+  });
+
+  bool get isPending => status.toUpperCase() == 'PENDING';
+  bool get isPaired => status.toUpperCase() == 'PAIRED';
+  bool get isClaimed => status.toUpperCase() == 'CLAIMED';
+  bool get isExpired => status.toUpperCase() == 'EXPIRED';
+
+  factory WearableActivation.fromJson(Map<String, dynamic> j) =>
+      WearableActivation(
+        sessionId: _str(j['sessionId']),
+        code: _str(j['code']),
+        status: _str(j['status']).isEmpty ? 'PENDING' : _str(j['status']),
+        expiresAt: _date(j['expiresAt']),
+        familyId: _str(j['familyId']).isEmpty ? null : _str(j['familyId']),
+        deviceId: _str(j['deviceId']).isEmpty ? null : _str(j['deviceId']),
+        raw: j,
+      );
 }
 
 class WearableProvider extends ChangeNotifier {
@@ -172,31 +209,6 @@ class WearableProvider extends ChangeNotifier {
       'Tài khoản này vẫn còn một wearable đang kết nối trên máy chủ. '
       'Hãy ngắt kết nối thiết bị đó rồi thử lại.';
 
-  static const _storage = FlutterSecureStorage();
-  static const _identifierKey = 'wearable_device_identifier';
-
-  /// Mã định danh **riêng cho từng bản cài app**, tạo một lần rồi giữ nguyên.
-  ///
-  /// `PairWearableDto.deviceIdentifier` được BE mô tả là "unique within a
-  /// family", trong khi FE trước đây gửi hằng số `wearos-emulator-001` cho mọi
-  /// máy. Đây **không phải** nguyên nhân của lỗi 409 hiện tại (nguyên nhân là
-  /// quy tắc một-tài-khoản-một-wearable, xem [duplicateWearableMessage]), nhưng
-  /// hai máy trong cùng một gia đình mà gửi trùng identifier là sai contract —
-  /// giữ mã riêng để không đụng ràng buộc đó về sau.
-  static Future<String> deviceIdentifier() async {
-    final saved = await _storage.read(key: _identifierKey);
-    if (saved != null && saved.isNotEmpty) return saved;
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    final rnd = Random.secure();
-    final suffix = List.generate(
-      10,
-      (_) => chars[rnd.nextInt(chars.length)],
-    ).join();
-    final id = 'familycare-$suffix';
-    await _storage.write(key: _identifierKey, value: id);
-    return id;
-  }
-
   static List<Map<String, dynamic>> _list(dynamic data) {
     final raw = data is List
         ? data
@@ -238,6 +250,24 @@ class WearableProvider extends ChangeNotifier {
   }
 
   Future<void> fetchDevices() => fetchCurrentDevice();
+
+  Future<WearableActivation> createActivation({
+    String deviceName = 'Wear OS Watch',
+    String deviceType = 'SMARTWATCH',
+  }) async {
+    final data = await ApiClient.instance.post('/wearable-activations', {
+      'deviceName': deviceName,
+      'deviceType': deviceType,
+    });
+    return WearableActivation.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  Future<WearableActivation> fetchActivationStatus(String sessionId) async {
+    final data = await ApiClient.instance.get(
+      '/wearable-activations/$sessionId',
+    );
+    return WearableActivation.fromJson(Map<String, dynamic>.from(data as Map));
+  }
 
   Future<List<WearableDevice>> fetchFamilyDevices() async {
     final fid = _fid;

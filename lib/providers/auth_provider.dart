@@ -79,6 +79,18 @@ class AuthProvider extends ChangeNotifier {
     await _applySession(data);
   }
 
+  /// Wear OS claim token sau khi mobile đã pair mã FCW qua
+  /// `POST /families/{familyId}/wearables`.
+  Future<void> claimWearableActivation(String sessionId) async {
+    final clean = sessionId.trim();
+    if (clean.isEmpty) throw Exception('Thiếu phiên ghép đồng hồ.');
+    final data = await ApiClient.instance.post(
+      '/wearable-activations/$clean/claim',
+      {},
+    );
+    await _applySession(data);
+  }
+
   // POST /auth/firebase — đăng nhập bằng Google qua Firebase ID token.
   // Trả về `true` nếu đăng nhập thành công, `false` nếu user tự hủy chọn tài
   // khoản (để UI không hiện lỗi). Ném lỗi cho các trường hợp thật (401/403/503).

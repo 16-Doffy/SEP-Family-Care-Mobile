@@ -70,9 +70,8 @@ extension _TriggerSpec on _Trigger {
     _Trigger.heartLow => Icons.heart_broken_rounded,
   };
 
-  /// `rawValue` bám đúng ví dụ trong spec.
-  /// ⚠️ [VERIFY] Case nhịp tim **thấp** không có trong spec — `thresholdLow` là
-  /// FE suy ra đối xứng với `thresholdHigh`, cần BE xác nhận tên field.
+  /// `rawValue` bám đúng ví dụ trong spec. BE đã xác nhận `thresholdLow` hợp lệ
+  /// cho case nhịp tim thấp và `HEART_RATE_ABNORMAL` tự tạo SOS.
   Map<String, dynamic> get rawValue => switch (this) {
     _Trigger.fall => {
       'gForce': 3.2,
@@ -396,18 +395,22 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
 
   // ── Màn đã gửi ───────────────────────────────────────────────────────────
   Widget _sentView() {
+    final hasAlert = _alertCreated || _alertId != null;
+    final reusedActiveAlert = !_alertCreated && _alertId != null;
     return WearPage(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            _alertCreated ? Icons.campaign_rounded : Icons.done_all_rounded,
+            hasAlert ? Icons.campaign_rounded : Icons.done_all_rounded,
             size: 26,
-            color: _alertCreated ? WearPalette.sos : WearPalette.green,
+            color: hasAlert ? WearPalette.sos : WearPalette.green,
           ),
           const SizedBox(height: 6),
           Text(
-            _alertCreated ? 'Đã gửi SOS' : 'Đã gửi sự kiện',
+            hasAlert
+                ? (reusedActiveAlert ? 'SOS đang hoạt động' : 'Đã gửi SOS')
+                : 'Đã gửi sự kiện',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -418,10 +421,12 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            _alertCreated
-                ? 'Đang thông báo cho người thân'
+            hasAlert
+                ? (reusedActiveAlert
+                      ? 'BE ghi nhận SOS active hiện có'
+                      : 'Đang thông báo cho người thân')
                 // alertCreated=false là hợp lệ: BE chỉ tạo cảnh báo với một số
-                // loại/cài đặt (té ngã cần autoCreateAlertFromFall = true).
+                // loại/cài đặt. Nếu chống duplicate, BE vẫn trả alertId active.
                 : 'Máy chủ không tạo cảnh báo cho sự kiện này',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -440,10 +445,10 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
           ],
           const SizedBox(height: 10),
           WearPillButton(
-            label: _alertCreated ? 'Hủy báo động' : 'Xong',
-            icon: _alertCreated ? Icons.close_rounded : Icons.check_rounded,
-            color: _alertCreated ? WearPalette.faint : WearPalette.green,
-            outlined: _alertCreated,
+            label: hasAlert ? 'Hủy báo động' : 'Xong',
+            icon: hasAlert ? Icons.close_rounded : Icons.check_rounded,
+            color: hasAlert ? WearPalette.faint : WearPalette.green,
+            outlined: hasAlert,
             loading: _sending,
             onTap: _sending ? null : _cancelAlert,
           ),

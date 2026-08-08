@@ -5,11 +5,9 @@ import 'package:family_care/models/ai_chatbot.dart';
 /// Khoá contract parse của `AiPendingAction` — đề xuất hành động ghi của trợ lý
 /// AI (tạo giao dịch / nhiệm vụ / sự kiện lịch).
 ///
-/// ⚠️ [VERIFY WITH OFFICIAL SOURCE] Swagger **không có response schema** cho
-/// `pendingAction`; endpoint chỉ mô tả bằng lời: *"Nếu AI đề xuất hành động ghi,
-/// response chứa `pendingAction` — client gọi confirm-action để thực hiện."*
-/// Vì vậy parser đọc phòng thủ nhiều tên field khả dĩ, và các test dưới đây ghi
-/// lại hành vi đang có để khi BE chốt schema thì thấy ngay chỗ lệch.
+/// OpenAPI 2026-08-07 đã có `AiPendingActionResponseDto`, `AiActionType` và
+/// `AiActionStatus`. Parser vẫn đọc phòng thủ vài tên field legacy để không vỡ
+/// nếu gặp dữ liệu cũ, còn các test dưới đây khóa contract chính thức.
 ///
 /// Điểm quan trọng nhất: `isPending` là thứ quyết định có hiện nút xác nhận hay
 /// không. Sai chỗ này thì người dùng bấm vào chỉ nhận 409 (đã xử lý) hoặc 410

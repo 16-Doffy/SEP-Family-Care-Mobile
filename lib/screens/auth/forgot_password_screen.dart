@@ -166,6 +166,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           height: 1.45,
                         ),
                       ),
+                      if (_codeSent) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Nếu tài khoản được tạo bằng Google, hãy quay lại và chọn “Tiếp tục với Google” vì hệ thống sẽ không gửi OTP đặt mật khẩu.',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 18),
 
                       if (!_codeSent)

@@ -437,7 +437,7 @@ else SizedBox.shrink(),
 
 > ⚠️ 2026-06-24: BE hiện chỉ có secure token (64 ký tự hex, KHÔNG phải UUID), **không có endpoint nhận
 > mã 6 ký tự** ở dưới. Tab "Mã số" trong design này chưa làm được cho tới khi BE thêm endpoint tương
-> ứng — xem `BE_API_REQUESTS.md` mục Invite Management. `InviteMemberScreen`/`JoinFamilyScreen` thực tế
+> ứng. `InviteMemberScreen`/`JoinFamilyScreen` thực tế
 > hiện chỉ hỗ trợ Link (token 64-hex, dán tay/clipboard). Lưu ý: token (dùng cho `claim`) khác với
 > `invitation.id` (UUID, dùng cho `approve`/`reject`).
 

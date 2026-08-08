@@ -24,6 +24,54 @@ void main() {
     'updatedAt': '2026-08-06T10:00:00.000Z',
   };
 
+  group('WearableActivation — mã FCW do BE cấp cho đồng hồ', () {
+    test('đọc sessionId, code, status và expiresAt từ OpenAPI mới', () {
+      final a = WearableActivation.fromJson({
+        'sessionId': 'activation-session-1',
+        'code': 'FCW-8SRERK',
+        'status': 'PENDING',
+        'expiresAt': '2030-08-07T12:00:00.000Z',
+      });
+
+      expect(a.sessionId, 'activation-session-1');
+      expect(a.code, 'FCW-8SRERK');
+      expect(a.status, 'PENDING');
+      expect(a.isPending, isTrue);
+      expect(a.expiresAt, isNotNull);
+    });
+
+    test('PAIRED là trạng thái watch được claim token', () {
+      final a = WearableActivation.fromJson({
+        'sessionId': 's1',
+        'code': 'FCW-8SRERK',
+        'status': 'PAIRED',
+      });
+
+      expect(a.isPaired, isTrue);
+      expect(a.isExpired, isFalse);
+    });
+
+    test('chỉ status EXPIRED từ BE mới được xem là hết hạn', () {
+      expect(
+        WearableActivation.fromJson({
+          'sessionId': 's1',
+          'code': 'FCW-8SRERK',
+          'status': 'EXPIRED',
+        }).isExpired,
+        isTrue,
+      );
+      expect(
+        WearableActivation.fromJson({
+          'sessionId': 's1',
+          'code': 'FCW-8SRERK',
+          'status': 'PENDING',
+          'expiresAt': '2000-01-01T00:00:00.000Z',
+        }).isExpired,
+        isFalse,
+      );
+    });
+  });
+
   group('WearableDevice — schema chính thức', () {
     test('đọc đủ field của SosWearableDeviceResponseDto', () {
       final d = WearableDevice.fromJson(paired());
@@ -170,13 +218,21 @@ void main() {
       expect(e.detectedAt, isNotNull);
     });
 
-    test('thiếu severity thì mặc định LOW', () {
+    test('severity null/thiếu thì để rỗng vì BE cho phép không phân loại', () {
       expect(
         WearableEvent.fromJson({
           'id': 'e',
           'eventType': 'FALL_DETECTED',
         }).severity,
-        'LOW',
+        isEmpty,
+      );
+      expect(
+        WearableEvent.fromJson({
+          'id': 'e',
+          'eventType': 'HEART_RATE_ABNORMAL',
+          'severity': null,
+        }).severity,
+        isEmpty,
       );
     });
 
@@ -212,6 +268,20 @@ void main() {
         });
         expect(r.alertCreated, isFalse);
         expect(r.alertId, isNull);
+      },
+    );
+
+    test(
+      'duplicate active SOS: alertCreated=false nhưng alertId vẫn là alert đang active',
+      () {
+        final r = WearableEventResult.fromJson({
+          'event': {'id': 'e1', 'eventType': 'HEART_RATE_ABNORMAL'},
+          'alertId': 'active-alert-1',
+          'alertCreated': false,
+        });
+        expect(r.alertCreated, isFalse);
+        expect(r.alertId, 'active-alert-1');
+        expect(r.hasActiveAlert, isTrue);
       },
     );
 

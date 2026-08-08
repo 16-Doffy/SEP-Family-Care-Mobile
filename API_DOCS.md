@@ -3,6 +3,17 @@
 **Swagger UI:** https://api.familycare-digital.com/api/docs
 **Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-28 bằng `familycare-swagger-2026-07-28.json`**. FE wiring audit lại sau khi đồng bộ `origin/main` tại `e5aa216`.
 
+> ### 🔄 Cập nhật API mới (2026-08-07) — **226 paths / 293 operations / 248 schemas**
+> So với bản `223 paths / 290 operations / 245 schemas`, BE đã bổ sung **Wearable Activation**:
+> - `POST /wearable-activations`: Wear OS tạo `sessionId` bí mật và `code` công khai `FCW-XXXXXX`.
+> - `GET /wearable-activations/{sessionId}`: Wear OS poll trạng thái `PENDING | PAIRED | CLAIMED | EXPIRED`.
+> - `POST /wearable-activations/{sessionId}/claim`: Wear OS claim `accessToken`, `refreshToken`, `user` sau khi mobile pair mã.
+>
+> Bản ngay trước đó cũng đã bổ sung **25 response/schema**:
+> - **AI Chatbot**: có DTO chính thức cho conversations, messages, send message, confirm/reject action, delete conversation; thêm enum `AiActionType` (`CREATE_LEDGER_ENTRY | CREATE_TASK | CREATE_CALENDAR_EVENT`) và `AiActionStatus` (`PENDING | CONFIRMED | REJECTED | EXPIRED`).
+> - **Wearable sensor event**: `POST /families/{familyId}/wearables/{deviceId}/events` có `WearableEventIngestApiResponseDto`, gồm `event`, `alertCreated`, `alertId`; duplicate active SOS trả `alertCreated=false` và `alertId` là SOS active hiện có.
+> - **Wearable error codes** đã được document trong response lỗi: `WEARABLE_ALREADY_PAIRED`, `DEVICE_IDENTIFIER_TAKEN`, `WEARABLE_NOT_PAIRED`, `INVALID_SENSOR_EVENT_TYPE`, `INVALID_SENSOR_EVENT_PAYLOAD`.
+
 > ### 🔄 Cập nhật Tuần 10 (2026-07-23) — swagger **216 paths / 281 operations**
 > Kể từ snapshot 07/11 (147 paths), BE đã ship nhiều module; FE đã wire phần lớn:
 > - **Calendar** (5): events CRUD + `respond` + `reminder` — ✅ wire.
@@ -16,7 +27,7 @@
 > - 🆕 **`POST /families/{familyId}/transfer-ownership`** `{ targetUserId, confirm }` — Trao quyền Trưởng nhóm (FAMILY_MANAGER only) — ✅ wire (`member_detail_screen`, 2026-07-23).
 >
 > **Chưa có:** `GET /finance/monthly-finances/me/history` (biểu đồ member đang loop từng tháng). `PATCH /auth/me` và `PATCH /families/{familyId}/members/{userId}/role` đã có trong Swagger 28/07 và đã wire FE.
-> **Cần verify hành vi BE (không thấy trong DTO):** duyệt support-request có tự trừ quỹ + bump `expectedPersonalExpense`? Income có tự vào quỹ? (xem `DE_XUAT_BE_LUONG_TAI_CHINH_2026-07-22.md`).
+> **Cần verify hành vi BE (không thấy trong DTO):** duyệt support-request có tự trừ quỹ + bump `expectedPersonalExpense`? Income có tự vào quỹ?
 
 > ⚠️ **Swagger 07/11 vs 07/07 — +29 path**:
 > - **+25 path `/admin/*`** (audit-logs, backups, docker infra, revenue, provisioning, restores, system health...) → **Admin Web, NGOÀI phạm vi FE Mobile**.
@@ -472,28 +483,27 @@ Swagger live đã có contract và response example cho mapping/report; source m
 - Dashboard và tab **Theo hũ** gọi `GET /finance/reports/jar-target-actual`; phần tự cộng local đã được xóa.
 - Mapping được tải/lưu/xóa theo `financeModelId`, nên đổi 5 hũ ↔ 80/20 không làm mất mapping của model trước.
 
-### [2026-07-30] Wearable — ghép từ mobile CHƯA cấp được token cho đồng hồ
-- Luồng mới: đồng hồ hiện mã `FCW-XXXXXX`, người dùng nhập mã đó ở **Hồ sơ → Thiết bị đeo → Ghép thiết bị** (`POST /wearables`, mã đi vào `deviceIdentifier`).
-- ⚠️ **Mã này chỉ là identifier hiển thị.** Nó được sinh **cục bộ trên đồng hồ** bằng `Random` và **không được gửi lên BE từ phía đồng hồ**. Sau khi điện thoại ghép xong, đồng hồ **vẫn không có access token**: `tryRestoreSession()` đọc secure storage của chính đồng hồ (rỗng), và **không có** MethodChannel / Wearable Data Layer nào đồng bộ token phone→watch.
-- Vì vậy màn ghép nối giữ lại lối **"Đăng nhập trên đồng hồ"** (`WearLoginScreen`). Bỏ lối này đi thì đồng hồ kẹt vĩnh viễn ở màn ghép — đã xảy ra một lần và không bị `flutter build`/test bắt được (không có test nào chạm luồng wear).
-- **Cần BE để hoàn thiện** (chưa có trong Swagger): cơ chế đổi mã lấy token, ví dụ đồng hồ `POST /wearables/pair-code {code}` → điện thoại `POST /wearables/{deviceId}/issue-token` → đồng hồ poll `GET /wearables/pair-code/{code}` nhận token. Có hợp đồng này rồi mới bỏ được lối đăng nhập trên đồng hồ.
-- Ghi chú: nhóm `/wearables` **không có** trong `family-care-api.json` của repo (file đã lỗi thời) — chỉ có trong Swagger live.
-
-#### [CHỐT 2026-08-07] Token là luồng chính thức, đăng nhập trên đồng hồ chỉ là đường phụ
-- Nhóm đã thống nhất: **liên kết đồng hồ ↔ điện thoại bằng token là luồng chính thức**; gõ email/mật khẩu trên đồng hồ **chỉ là tạm** và **sẽ bị xóa** khi BE có 3 endpoint `pair-code` → `claim-code` → `exchange`.
-- Do đó `DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md` không còn là "nên có" — đó là **đường đi chính của tính năng**, và hiện là thứ **duy nhất** chặn app đồng hồ.
-- FE đã chỉnh màn ghép nối cho khớp thứ tự ưu tiên: thông điệp chính là liên kết từ điện thoại (kèm trạng thái "máy chủ chưa hỗ trợ"), nút **"Đăng nhập tạm"** hạ xuống dạng phụ/viền mờ ở dưới cùng.
-- Đã bỏ hẳn cơ chế sinh mã `FCW-XXXXXX` cục bộ ở màn đồng hồ: mã đó **chưa từng được gửi lên server** và tạo ra hai cơ chế song song cho cùng một khái niệm. Định danh thiết bị nay do **`WearableProvider.deviceIdentifier()`** quản lý một chỗ (mã cố định theo từng bản cài, dùng cho `PairWearableDto.deviceIdentifier`).
-- ⚠️ Phân biệt hai luồng khác nhau, đừng lẫn:
-  - **Ghép wearable qua mobile** (`POST /families/{familyId}/wearables`) — đã chạy, `deviceIdentifier` là định danh máy do app tự gửi, **không phải mã người dùng gõ tay**.
-  - **Cấp token cho app trên đồng hồ** — chưa có endpoint nào, đây mới là phần còn thiếu.
-
-#### [CẬP NHẬT 2026-08-04] Đã đối chiếu với OpenAPI mới — vẫn thiếu, đã có đề xuất BE
-- `family-care-api.json` nay là bản mới (**223 path / 290 operation**) và **đã có** nhóm wearable: `GET /wearables/me`, `GET|POST /families/{familyId}/wearables`, `PATCH|DELETE /families/{familyId}/wearables/{deviceId}`, `GET|POST /families/{familyId}/wearables/{deviceId}/events`. Ghi chú "không có trong dump" ở trên **đã lỗi thời**.
+### [CHỐT BE 2026-08-07] Wearable pairing + activation — mã `FCW` do BE cấp
+- Wear OS gọi `POST /wearable-activations` để lấy `sessionId` bí mật và `code` công khai, ví dụ `FCW-8SRERK`.
+- Mobile FE cho user nhập `code` này rồi gọi endpoint pair hiện có; với endpoint pair, `code` chính là `deviceIdentifier`:
+  ```http
+  POST /api/v1/families/{familyId}/wearables
+  ```
+  ```json
+  {
+    "deviceName": "Wear OS",
+    "deviceType": "SMARTWATCH",
+    "deviceIdentifier": "FCW-8SRERK"
+  }
+  ```
+- `GET /api/v1/wearables/me` **chỉ** dùng để check user hiện có wearable đang `PAIRED` chưa. Nếu trả `null`, mobile phải cho user nhập mã đang hiện trên đồng hồ.
+- Sau khi mobile pair xong, Wear OS poll `GET /wearable-activations/{sessionId}` tới khi `status=PAIRED`, rồi gọi `POST /wearable-activations/{sessionId}/claim` để nhận `accessToken`, `refreshToken`, `user`.
+- FE coi `status=EXPIRED` từ BE là nguồn sự thật duy nhất để hết hạn mã; không tự so `expiresAt` với giờ máy vì emulator Wear OS có thể lệch thời gian.
 - Enum đã chốt: `deviceType` `SMARTWATCH | GPS_TRACKER | BLE_DEVICE | SIMULATED_DEVICE`; `pairingStatus` `PAIRED | UNPAIRED | LOST`. `PairWearableDto.deviceIdentifier` unique trong 1 family; `ownerMemberId` chỉ Manager/Deputy. Response `SosWearableDeviceResponseDto`.
-- **Vẫn KHÔNG có endpoint cấp token cho đồng hồ** trong cả 290 operation — cả 9 endpoint wearable/device đều yêu cầu caller đã là user đã đăng nhập; `POST|DELETE /devices/tokens` là FCM, không phải auth. Nên kết luận "đồng hồ không lấy được token" ở trên **vẫn đúng**.
-- Đề xuất contract đầy đủ (3 endpoint: `pair-code` → `claim-code` → `exchange`, kèm phần "Nên có" về scope token và thu hồi token khi `UNPAIRED`): **`DE_XUAT_BE_WEARABLE_TOKEN_2026-08-04.md`**.
-- FE đã sửa phần copy sai sự thật trên đồng hồ: **không** còn hướng dẫn "Nhập mã này trên FamilyCare" (mobile không có chỗ nhập vì BE không có endpoint nhận mã). Nút chính giờ là "Đăng nhập trên đồng hồ" — hành động duy nhất chạy được — và sẽ bị xóa khi BE có luồng trên.
+- Nếu `deviceIdentifier` đã được pair bởi user khác trong family, BE trả `409 DEVICE_IDENTIFIER_TAKEN`.
+- Nếu tài khoản đã có wearable `PAIRED`, BE trả `409 WEARABLE_ALREADY_PAIRED`.
+- Unpair: `PATCH /families/{familyId}/wearables/{deviceId}` body `{ "pairingStatus": "UNPAIRED" }`, sau đó FE phải verify lại bằng `GET /wearables/me`.
+- **FE đã chỉnh (2026-08-07):** app đồng hồ không tự sinh mã nữa; lấy mã từ BE activation, mobile mở dialog nhập mã và gửi `deviceType: SMARTWATCH`. Mobile chỉ cảnh báo mềm nếu mã không giống dạng `FCW-XXXXXX`; không khóa cứng regex vì BE mới cam kết non-empty + max 100. Không còn tự ghép mobile bằng mã `familycare-*`/`SIMULATED_DEVICE`.
 
 ### [BUG FE 2026-08-06] Ngắt kết nối wearable báo thành công khống → ghép lại 409
 **Hành vi BE đã được xác nhận là đúng, đây là lỗi FE.** Quy tắc: một tài khoản chỉ được có một wearable **đang PAIRED**. Bản ghi `UNPAIRED` **không** chiếm chỗ — ghép lại cùng `deviceIdentifier` cũ thì BE pair lại chính record đó; identifier mới thì tạo record mới miễn là user không còn wearable PAIRED. Vì vậy **409 nghĩa là thực sự vẫn còn record PAIRED**.
@@ -511,7 +521,7 @@ Sửa phụ đi kèm:
 
 Chi tiết: `DE_XUAT_BE_WEARABLE_UNPAIR_2026-08-06.md`. **Không cần BE thay đổi gì.**
 
-### [SPEC 2026-08-04] Wear OS Flow — SOS tự động PHẢI đi qua wearable event
+### [SPEC 2026-08-04 + CHỐT BE 2026-08-07] Wear OS Flow — SOS tự động PHẢI đi qua wearable event
 Nguồn: Discord *Những chiến binh làm đồ án* → `#chuc-nang-moi` → thread **"Flow của Wearable Device SOS mới"**, tin của Nhật ngày 04/08/2026.
 
 > **Wear OS không gọi trực tiếp `/sos/alerts` cho 2 case auto-detection.** Wear OS gọi `POST /families/{familyId}/wearables/{deviceId}/events`. BE tự quyết định tạo SOS, **chống duplicate** nếu user đang có SOS active.
@@ -528,10 +538,49 @@ Nguồn: Discord *Những chiến binh làm đồ án* → `#chuc-nang-moi` → 
 5. Sau response → màn **"Đã gửi SOS / Đang thông báo cho người thân"** + `[Hủy báo động]`.
 6. Mobile người thân: **không cần flow mới**, chỉ hiển thị theo `alert.message`.
 
-**`rawValue` đúng theo ví dụ của spec:**
+**`rawValue` đã chốt:**
 - `FALL_DETECTED` — `{ gForce: 3.2, stillSeconds: 8, source: "wear_os_emulator" }`, `severity: HIGH`
-- `HEART_RATE_ABNORMAL` (cao) — `{ heartRate: 142, thresholdHigh: 130, durationSeconds: 30, source: "wear_os_emulator" }`, spec **không** ghi `severity`
-- ⚠️ `[VERIFY]` nhịp tim **thấp** không có trong spec — FE tạm dùng `{ heartRate: 38, thresholdLow: 50, ... }`, `thresholdLow` là suy ra đối xứng, cần BE xác nhận tên field.
+- `HEART_RATE_ABNORMAL` (cao) — `{ heartRate: 142, thresholdHigh: 130, durationSeconds: 30, source: "wear_os_emulator" }`
+- `HEART_RATE_ABNORMAL` (thấp) — `{ heartRate: 38, thresholdLow: 50, durationSeconds: 30, source: "wear_os_emulator" }`; BE đã xác nhận `thresholdLow` hợp lệ.
+
+**Response `POST .../wearables/{deviceId}/events` đã có DTO/schema:**
+
+```json
+{
+  "event": {
+    "id": "sensor-event-id",
+    "deviceId": "wearable-device-id",
+    "eventType": "HEART_RATE_ABNORMAL",
+    "rawValue": {
+      "heartRate": 38,
+      "thresholdLow": 50,
+      "durationSeconds": 30
+    },
+    "severity": null,
+    "detectedAt": "2026-08-07T12:00:00.000Z",
+    "createdSosAlertId": null,
+    "createdAt": "2026-08-07T12:00:00.000Z"
+  },
+  "alertId": "sos-alert-id-or-null",
+  "alertCreated": true
+}
+```
+
+- Đồng hồ **bắt buộc đã paired** trước khi gửi event; unpaired trả `WEARABLE_NOT_PAIRED`.
+- Nếu owner đã có SOS `ACTIVE`, BE **không tạo thêm alert**: `alertCreated=false`, `alertId` là SOS active hiện có.
+- `alert.message` cho SOS do wearable tạo là **BE sinh**; mobile chỉ hiển thị theo message này.
+
+**Rule auto-create SOS đã chốt:**
+
+| Event | Hành vi BE |
+|---|---|
+| `SOS_BUTTON_PRESSED` | Auto tạo SOS |
+| `HEART_RATE_ABNORMAL` | Auto tạo SOS |
+| `FALL_DETECTED` | Auto tạo SOS chỉ khi family setting `autoCreateAlertFromFall=true` |
+| `HARD_IMPACT` | Chỉ ghi event |
+| `ABNORMAL_MOVEMENT` | Chỉ ghi event |
+
+**Error code wearable đã chốt:** response lỗi có cả `code` và `errorCode` trong standard error envelope: `WEARABLE_ALREADY_PAIRED`, `DEVICE_IDENTIFIER_TAKEN`, `WEARABLE_NOT_PAIRED`, `INVALID_SENSOR_EVENT_TYPE`, `INVALID_SENSOR_EVENT_PAYLOAD`.
 
 **FE đã làm (2026-08-07):** `lib/wear/screens/wear_sensor_sos_screen.dart` — có **cả cảm biến thật** (gia tốc kế qua `FallDetectorService`) **lẫn 3 nút giả lập** (máy ảo không có cảm biến thật, và demo cần bấm ra kết quả ngay). Đếm ngược đúng 20s. `[Hủy báo động]` dùng **`confirm-safety`** chứ không dùng `cancel` — Swagger giới hạn `cancel` cho Trưởng/Phó nhóm, người đeo thường chỉ là thành viên.
 
@@ -544,7 +593,7 @@ Nguồn: Discord *Những chiến binh làm đồ án* → `#chuc-nang-moi` → 
 - FE trước đây chỉ gửi được 2 loại (`SOS_BUTTON_PRESSED`, `FALL_DETECTED`) bằng 2 nút cứng. Nay màn **Hồ sơ → Thiết bị đeo** có sheet chọn đủ 5 loại, mỗi loại gửi `severity` và `rawValue` hợp nghĩa riêng (`rawValue` là JSON tự do theo mô tả của BE).
 - `GET .../wearables/{deviceId}/events` đã wire ở `WearableProvider.fetchEvents` từ trước nhưng **không nơi nào gọi** — lịch sử sự kiện chưa từng hiển thị. Nay có card "Sự kiện cảm biến gần đây" (10 mục gần nhất, tự tải lại sau khi gửi sự kiện test).
 - `eventType` lạ (BE thêm mới trước khi FE kịp cập nhật) được hiển thị **nguyên mã gốc** thay vì "Không rõ", để còn đối chiếu được.
-- `alertCreated: false` là hành vi hợp lệ — BE chỉ tạo cảnh báo với một số loại/mức độ. UI phân biệt rõ 2 trường hợp thay vì báo "đã gửi" chung chung.
+- `alertCreated: false` là hành vi hợp lệ — BE chỉ tạo cảnh báo với một số loại/mức độ, hoặc chống duplicate khi đã có SOS active. Nếu duplicate active SOS, BE vẫn trả `alertId` hiện có; UI phải coi đây là đang có alert để người đeo có thể xác nhận an toàn.
 
 ### [MỚI 2026-08-04] SOS — `autoCreateAlertFromFall` nay đã hoạt động trên điện thoại
 - `UpdateSosSettingsDto.autoCreateAlertFromFall` ("Tự tạo cảnh báo SOS khi thiết bị phát hiện té ngã") **đã có sẵn trong Swagger từ trước**, FE cũng đã parse và có toggle ở màn Cài đặt SOS. Nhưng **trên điện thoại toggle đó không làm gì cả**: chỉ `lib/wear/screens/wear_status_screen.dart` có code nhận biết té ngã, mà màn đó đã không còn nơi nào điều hướng tới sau khi dựng lại giao diện đồng hồ (code chết, `flutter analyze` không bắt được).

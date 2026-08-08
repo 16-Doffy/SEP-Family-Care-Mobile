@@ -7,7 +7,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// **Giới hạn quan trọng:** đây KHÔNG phải push. Nó chỉ chạy khi **tiến
 /// trình app còn sống** (đang mở, hoặc vừa ẩn xuống nền). **App bị tắt hẳn thì
 /// không nhận được gì** — muốn vậy phải có FCM (`firebase_messaging` +
-/// `POST /devices/tokens`), xem KE_HOACH_NOTIFICATIONS_REALTIME.md.
+/// `POST /devices/tokens`) — xem `PushService`.
 ///
 /// Dùng 2 channel để SOS nổi bật hơn thông báo thường (Android cho phép user
 /// chỉnh riêng từng channel).

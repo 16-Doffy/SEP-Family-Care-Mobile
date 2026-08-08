@@ -227,7 +227,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   // POST /families/{id}/subscription/checkout — body { planCode } trả về
   // link Stripe Checkout, mở bằng trình duyệt ngoài để hoàn tất thanh toán.
   // BE redirect lại app qua deep link sau khi Stripe xử lý xong (ngoài scope
-  // màn này — xem mục Subscription/Stripe trong BE_API_REQUESTS.md).
+  // màn này).
   //
   // Response checkout chưa có schema công khai trên Swagger — field chứa
   // URL được đoán theo convention phổ biến (`checkoutUrl`/`url`), thử nhiều

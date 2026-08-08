@@ -63,7 +63,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ApiClient.instance.onVerificationRequired = _showVerificationRequired;
       // Notification hệ thống (khay + chuông). Chỉ chạy khi tiến trình app còn
-      // sống — app tắt hẳn vẫn cần FCM, xem KE_HOACH_NOTIFICATIONS_REALTIME.md.
+      // sống — app tắt hẳn vẫn cần FCM (xem PushService).
       LocalNotificationService.instance
         ..onTapPayload = _onNotificationTapPayload
         ..init();

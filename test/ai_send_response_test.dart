@@ -3,9 +3,9 @@ import 'package:family_care/providers/ai_chatbot_provider.dart';
 
 /// Đọc response của `POST .../ai-chatbot/conversations/:id/messages`.
 ///
-/// Swagger không khai response schema cho endpoint này (chỉ có 502 và 503), nên
-/// hình dạng duy nhất được chốt là ví dụ backend gửi trong tin nhắn contract.
-/// Ví dụ đó chỉ có đúng `pendingAction`, không kèm câu trả lời nào.
+/// OpenAPI 2026-08-07 đã khai `AiSendMessageApiResponseDto`. Test này giữ lại
+/// case response chỉ có `pendingAction`, không kèm câu trả lời, vì đây từng là
+/// chỗ UI nuốt mất thẻ xác nhận.
 void main() {
   group('response chỉ có pendingAction', () {
     test('vẫn hiện thẻ đề xuất, không nuốt mất', () {

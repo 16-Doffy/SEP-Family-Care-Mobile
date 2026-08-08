@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/wear_quick_message_provider.dart';
 import '../../providers/wearable_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
@@ -280,7 +281,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
     'HIGH' => 'Cao',
     'MEDIUM' => 'Trung bình',
     'LOW' => 'Thấp',
-    _ => s,
+    _ => 'Không phân loại',
   };
 
   Widget _introCard(WearableDevice? device) => Container(
@@ -314,7 +315,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Mobile app đang đăng nhập thay mặt user để kết nối thiết bị. Mỗi tài khoản chỉ có một wearable đang kết nối.',
+                'Mở app trên đồng hồ để xem mã FCW, rồi nhập mã đó ở đây. Mỗi tài khoản chỉ có một wearable đang kết nối.',
                 style: GoogleFonts.inter(
                   fontSize: 12.5,
                   height: 1.35,
@@ -367,7 +368,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
           height: 48,
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.link),
-            onPressed: _connectSimulator,
+            onPressed: _connectWearable,
             icon: const Icon(Icons.link_rounded, color: Colors.white),
             label: Text(
               'Kết nối wearable',
@@ -727,27 +728,125 @@ class _WearablesScreenState extends State<WearablesScreen> {
     }
   }
 
-  Future<void> _connectSimulator() async {
+  String _normalizeWearCode(String value) {
+    final raw = value.trim().toUpperCase().replaceAll(RegExp(r'\s+'), '');
+    if (raw.length == 6 && !raw.startsWith('FCW-')) return 'FCW-$raw';
+    if (raw.startsWith('FCW') && !raw.startsWith('FCW-') && raw.length > 3) {
+      return 'FCW-${raw.substring(3)}';
+    }
+    return raw;
+  }
+
+  Future<String?> _askWearCode() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        var canSave = false;
+        var looksLikeWearCode = true;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Nhập mã trên đồng hồ'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(
+                    hintText: 'Ví dụ: FCW-8SRERK',
+                    helperText: 'Mở app đồng hồ để xem mã ghép nối.',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    final code = _normalizeWearCode(value);
+                    setDialogState(() {
+                      canSave = _canSubmitWearCode(code);
+                      looksLikeWearCode =
+                          code.isEmpty || _looksLikeWearCode(code);
+                    });
+                  },
+                  onSubmitted: (value) {
+                    final code = _normalizeWearCode(value);
+                    if (_canSubmitWearCode(code)) Navigator.pop(ctx, code);
+                  },
+                ),
+                if (canSave && !looksLikeWearCode) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Mã này không giống dạng FCW-8SRERK hiện tại, nhưng vẫn có thể gửi để server kiểm tra.',
+                    style: TextStyle(fontSize: 12, color: Colors.orange),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                onPressed: canSave
+                    ? () => Navigator.pop(
+                        ctx,
+                        _normalizeWearCode(controller.text),
+                      )
+                    : null,
+                child: const Text('Kết nối'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _connectWearable() async {
+    final identifier = await _askWearCode();
+    if (identifier == null || identifier.isEmpty || !mounted) return;
     try {
-      // KHÔNG hardcode identifier: BE yêu cầu duy nhất trong gia đình, mà bản
-      // ghi cũ không bị xoá khi ngắt kết nối → ghép lại luôn đụng 409.
-      final identifier = await WearableProvider.deviceIdentifier();
-      if (!mounted) return;
       await context.read<WearableProvider>().pairDevice(
-        deviceName: 'Wear OS Simulator',
-        deviceType: 'SIMULATED_DEVICE',
+        deviceName: 'Wear OS',
+        deviceType: 'SMARTWATCH',
         deviceIdentifier: identifier,
         gpsEnabled: true,
         sosEnabled: true,
       );
       if (!mounted) return;
-      _snack('Wearable simulator đã được kết nối.', ok: true);
+      _snack('Đã kết nối đồng hồ.', ok: true);
+    } on ApiException catch (e) {
+      _snack(_wearablePairErrorMessage(e));
+      await _loadFamilyDevices();
     } catch (e) {
       // 409 thường do bản ghi cũ còn nằm trong gia đình → mở luôn danh sách để
       // người dùng xoá, thay vì báo lỗi rồi bỏ mặc.
       _snack(e);
       await _loadFamilyDevices();
     }
+  }
+
+  bool _canSubmitWearCode(String value) =>
+      value.trim().isNotEmpty && value.length <= 100;
+
+  bool _looksLikeWearCode(String value) =>
+      RegExp(r'^FCW-[A-Z0-9]{6}$').hasMatch(value);
+
+  String _wearablePairErrorMessage(ApiException e) {
+    final code = e.code?.toUpperCase();
+    if (code == 'WEARABLE_ALREADY_PAIRED') {
+      return 'Tài khoản này đã có wearable đang kết nối. Hãy ngắt thiết bị hiện tại rồi thử lại.';
+    }
+    if (code == 'DEVICE_IDENTIFIER_TAKEN') {
+      return 'Mã đồng hồ này đã thuộc về thành viên khác trong gia đình. Cần xoá hẳn bản ghi cũ rồi ghép lại.';
+    }
+    if (e.statusCode == 409 && e.message.trim().isEmpty) {
+      return WearableProvider.duplicateWearableMessage;
+    }
+    return e.message;
   }
 
   Future<void> _loadFamilyDevices() async {
