@@ -208,6 +208,23 @@ void main() {
       );
     });
 
+    test(
+      'key lạ (uiHints.fields do BE tự đặt) nhưng giá trị là ISO datetime vẫn được đổi giờ local',
+      () {
+        // Quan sát thật 2026-08-08: thẻ sự kiện lịch từ `uiHints.fields` dùng
+        // key khác `startTime`/`endTime` cứng ("Bắt đầu"/"Kết thúc" hiện
+        // nguyên văn `2026-08-09T09:00:00+07:00"). Nhận theo HÌNH DẠNG chuỗi,
+        // không phụ thuộc tên key, để không phải đoán trước mọi tên field BE
+        // có thể đặt.
+        final shown = formatAiPreviewValue(
+          'start',
+          '2026-08-09T09:00:00+07:00',
+        );
+        expect(shown, isNot(contains('T')));
+        expect(shown, isNot(contains('+07:00')));
+      },
+    );
+
     test('BE lồng object thì lấy tên hiển thị thay vì đổ cả map', () {
       expect(
         formatAiPreviewValue('assignee', {'id': 'uuid-1', 'name': 'Minh'}),

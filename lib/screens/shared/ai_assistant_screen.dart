@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -47,8 +49,24 @@ String formatAiPreviewValue(String key, dynamic value) {
     final parsed = DateTime.tryParse(value.toString());
     if (parsed != null) return formatAiPreviewDateTime(parsed.toLocal());
   }
+  // `uiHints.fields` (Sprint 2) dùng key tự do do BE đặt (`start`, `end`...),
+  // không chắc lúc nào cũng khớp bộ khóa cứng ở `_isTimeKey` — quan sát thật
+  // 2026-08-08: field "Bắt đầu"/"Kết thúc" của sự kiện lịch hiện nguyên văn
+  // `2026-08-09T09:00:00+07:00` vì key không nằm trong danh sách trên. Nhận
+  // diện thêm theo HÌNH DẠNG giá trị (chuỗi ISO 8601 đủ giờ phút) bất kể key
+  // là gì — an toàn vì tiêu đề/địa điểm dạng chữ thường không khớp định dạng
+  // này nên không bị định dạng nhầm.
+  if (value is String && _looksLikeIsoDateTime(value)) {
+    final parsed = DateTime.tryParse(value);
+    if (parsed != null) return formatAiPreviewDateTime(parsed.toLocal());
+  }
   return value.toString();
 }
+
+final _isoDateTimePattern = RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}');
+
+bool _looksLikeIsoDateTime(String value) =>
+    _isoDateTimePattern.hasMatch(value);
 
 bool _isMoneyKey(String key) => const {
   'amount',
@@ -385,7 +403,13 @@ class _MessageList extends StatelessWidget {
   Widget build(BuildContext context) {
     final ai = context.watch<AiChatbotProvider>();
     final brief = ai.dailyBrief;
-    if (ai.loadingMessages) {
+    // Chỉ chặn cả màn bằng spinner khi CHƯA có gì để xem (tải lần đầu). Xác
+    // nhận/từ chối đề xuất gọi `fetchMessages()` để làm mới trạng thái —
+    // trước đây điều kiện này không loại trừ trường hợp đã có `messages`,
+    // nên mỗi lần bấm Xác nhận/Hủy, `ListView.builder` bị thay hẳn bằng
+    // `Center` rồi dựng lại — mất luôn vị trí cuộn cũ, người dùng thấy đoạn
+    // chat "nhảy" về đầu trang dù không hề cuộn.
+    if (ai.loadingMessages && ai.messages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -510,6 +534,22 @@ class _DailyBriefCard extends StatelessWidget {
 /// như không ai dùng vì mở màn ra chỉ thấy ô nhập trống. Bộ gợi ý này chia rõ
 /// hai loại: câu chỉ TRA CỨU (trả lời ngay) và câu khiến AI TẠO đề xuất (phải
 /// bấm xác nhận mới ghi dữ liệu) — để người dùng biết trước điều gì sẽ xảy ra.
+/// Câu gợi ý "nhờ AI ghi khoản chi" trước đây cố định `200.000đ tiền ăn uống`
+/// — bấm hoài chỉ tạo đúng một khoản y hệt, test không thấy AI xử lý số/danh
+/// mục khác nhau thế nào. Random một câu trong vài mẫu thực tế mỗi lần dựng
+/// widget để mỗi lần mở màn/mỗi lần thấy chip là một khoản chi khác nhau.
+const _expensePromptSamples = [
+  'Ghi khoản chi 45.000đ tiền cà phê sáng nay',
+  'Ghi khoản chi 120.000đ tiền chợ hôm nay',
+  'Ghi khoản chi 60.000đ tiền xăng xe hôm nay',
+  'Ghi khoản chi 250.000đ tiền sửa xe tuần này',
+  'Ghi khoản chi 85.000đ tiền ăn trưa hôm nay',
+  'Ghi khoản chi 500.000đ tiền học phí tháng này',
+];
+
+String _randomExpensePrompt() =>
+    _expensePromptSamples[Random().nextInt(_expensePromptSamples.length)];
+
 class AiPromptGroup {
   final String title;
   final IconData icon;
@@ -604,7 +644,7 @@ List<AiPromptGroup> aiPromptGroupsFor({required bool canManageFinance}) {
       icon: Icons.auto_awesome_rounded,
       color: AppColors.calTravel,
       prompts: [
-        'Ghi khoản chi 200.000đ tiền ăn uống hôm nay',
+        _randomExpensePrompt(),
         'Ghi khoản thu 5.000.000đ lương tháng này',
         'Tạo nhiệm vụ rửa bát tối nay',
         'Tạo lịch khám sức khỏe 9h sáng mai',
@@ -941,6 +981,48 @@ class _MessageBubble extends StatelessWidget {
 }
 
 /// Bubble chữ thường — dùng cho `TEXT` và cho tin nhắn của người dùng.
+/// AI trả nguyên văn markdown `**chữ đậm**` để nhấn tiêu đề/số liệu (ví dụ
+/// `**Nhận định:**`, `**Đề xuất:**`). Trước đây vẽ bằng `Text` trơn nên người
+/// dùng thấy cả cặp dấu `**` xấu xí thay vì chữ đậm. Không kéo cả thư viện
+/// markdown chỉ để bôi đậm — parse tối thiểu bằng regex, phần nằm giữa
+/// `**...**` in đậm + tô màu nổi bật, phần còn lại giữ nguyên.
+class _AiRichText extends StatelessWidget {
+  final String text;
+  final TextStyle style;
+  final Color boldColor;
+
+  const _AiRichText({
+    required this.text,
+    required this.style,
+    required this.boldColor,
+  });
+
+  static final _boldPattern = RegExp(r'\*\*(.+?)\*\*');
+
+  @override
+  Widget build(BuildContext context) {
+    if (!text.contains('**')) return Text(text, style: style);
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    for (final match in _boldPattern.allMatches(text)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: match.group(1),
+          style: style.copyWith(fontWeight: FontWeight.w800, color: boldColor),
+        ),
+      );
+      cursor = match.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+    return Text.rich(TextSpan(style: style, children: spans));
+  }
+}
+
 class _TextBubble extends StatelessWidget {
   final String text;
   final bool isMe;
@@ -971,13 +1053,14 @@ class _TextBubble extends StatelessWidget {
           ),
         ],
       ),
-      child: Text(
-        text,
+      child: _AiRichText(
+        text: text,
         style: GoogleFonts.inter(
           fontSize: 15,
           height: 1.35,
           color: isMe ? Colors.white : context.colors.textPrimary,
         ),
+        boldColor: isMe ? Colors.white : AppColors.primary600,
       ),
     );
   }
@@ -1049,13 +1132,14 @@ class _InsightCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            message.content,
+          _AiRichText(
+            text: message.content,
             style: GoogleFonts.inter(
               fontSize: 14,
               height: 1.4,
               color: context.colors.textPrimary,
             ),
+            boldColor: color,
           ),
         ],
       ),
@@ -1093,13 +1177,14 @@ class _PermissionNoticeCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              content,
+            child: _AiRichText(
+              text: content,
               style: GoogleFonts.inter(
                 fontSize: 13.5,
                 height: 1.4,
                 color: context.colors.textSecondary,
               ),
+              boldColor: context.colors.textPrimary,
             ),
           ),
         ],
@@ -1154,13 +1239,14 @@ class _ResultCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            message.content,
+          _AiRichText(
+            text: message.content,
             style: GoogleFonts.inter(
               fontSize: 14,
               height: 1.4,
               color: context.colors.textPrimary,
             ),
+            boldColor: AppColors.success,
           ),
           if (fields.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -1635,7 +1721,7 @@ class _QuickPrompts extends StatelessWidget {
     // Cùng lý do với bảng gợi ý ở màn rỗng: Thành viên không có quyền ghi quỹ
     // chung nên không được mời làm việc đó.
     final prompts = canManageFinance
-        ? const [
+        ? [
             (
               label: 'Chi tiêu tháng này',
               prompt: 'Tháng này nhà mình tiêu hết bao nhiêu?',
@@ -1648,10 +1734,7 @@ class _QuickPrompts extends StatelessWidget {
               label: 'Hũ vượt mục tiêu',
               prompt: 'Hũ nào đang chi vượt mục tiêu?',
             ),
-            (
-              label: 'Tạo thu/chi',
-              prompt: 'Ghi nhận khoản chi 200000 cho ăn uống hôm nay',
-            ),
+            (label: 'Tạo thu/chi', prompt: _randomExpensePrompt()),
             (
               label: 'Tình hình nhiệm vụ',
               prompt: 'Tóm tắt nhiệm vụ của gia đình',

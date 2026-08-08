@@ -128,6 +128,68 @@ Verify: `flutter analyze` 0 error, `flutter test` 289/289 pass. Chưa xác nhậ
 runtime — nhờ user tự test lại bước "mở Trợ lý AI" và "chuyển hội thoại từ
 danh sách" xem có nhảy thẳng xuống tin nhắn gần nhất không.
 
+### 4 bug UX/UI từ ảnh chụp test thật — báo cáo từ user 2026-08-08, ĐÃ SỬA
+
+User gửi 18 ảnh chụp test thật (Manager) + 4 yêu cầu cụ thể:
+
+1. **Bấm Xác nhận/Hủy đề xuất thì đoạn chat nhảy lên đầu trang** — ĐÃ SỬA.
+   Nguyên nhân: `_MessageList.build()` có `if (ai.loadingMessages) return
+   Center(...)` KHÔNG loại trừ trường hợp đã có `messages`. `_handleAction`
+   (confirm/reject) gọi `fetchMessages()` để làm mới trạng thái, hàm này bật
+   `loadingMessages = true` trong lúc chờ — mỗi lần bấm nút, `ListView.builder`
+   bị thay hẳn bằng `Center` rồi dựng lại **mất luôn vị trí cuộn cũ**. Sửa
+   thành chỉ chặn cả màn bằng spinner khi `messages.isEmpty` (tải lần đầu
+   thật sự), còn lại giữ nguyên `ListView` khi làm mới.
+2. **Ví dụ "tạo khoản chi" luôn set cứng 200.000đ tiền ăn uống** — ĐÃ SỬA.
+   Đây không phải AI tự chọn số tiền — là câu gợi ý mẫu (quick prompt) FE
+   hard-code y hệt ở 2 chỗ (`aiPromptGroupsFor` nhóm "Nhờ AI tạo" + chip
+   "Tạo thu/chi" dưới composer), bấm hoài ra đúng một khoản. Đổi thành random
+   1 trong 6 mẫu chi tiêu khác nhau (số tiền + danh mục khác nhau) mỗi lần
+   dựng widget — `_randomExpensePrompt()`.
+3. **Chữ `**in đậm**` hiện nguyên cặp dấu `**` xấu** — ĐÃ SỬA. BE trả nguyên
+   văn markdown để nhấn tiêu đề (`**Nhận định:**`, `**Đề xuất:**`...) nhưng
+   FE vẽ bằng `Text` trơn nên hiện cả dấu sao. Thêm `_AiRichText` (regex tối
+   thiểu, không kéo thư viện markdown) — phần giữa `**...**` in đậm + tô màu
+   theo ngữ cảnh (chip primary cho bong bóng chữ, màu icon card cho insight/
+   permission/result). Áp dụng ở cả 4 nơi hiện `content` thô: `_TextBubble`,
+   `_InsightCard`, `_PermissionNoticeCard`, `_ResultCard`.
+4. **Phát hiện thêm khi rà ảnh (không nằm trong 3 yêu cầu trên nhưng cùng
+   nhóm UX)**: field "Bắt đầu"/"Kết thúc" của thẻ tạo sự kiện lịch hiện
+   nguyên văn `2026-08-09T09:00:00+07:00` thay vì giờ đọc được — ĐÃ SỬA.
+   `uiHints.fields` (Sprint 2) dùng key tự do do BE đặt, không khớp bộ khóa
+   cứng của `_isTimeKey` (`startTime`/`endTime`...). Thêm nhận diện theo HÌNH
+   DẠNG giá trị (chuỗi khớp `\d{4}-\d{2}-\d{2}T\d{2}:\d{2}`) bất kể tên key —
+   an toàn vì tiêu đề/địa điểm dạng chữ không khớp định dạng này nên không bị
+   format nhầm. Thêm test trong `ai_pending_action_contract_test.dart`.
+
+**[Cần báo BE — chưa/không thể sửa ở FE]**
+- Ảnh lúc 10:28 (nhờ Manager "Ghi nhận khoản chi 200000 cho ăn uống hôm nay"):
+  AI trả lời dạng thẻ "Phân tích tài chính" với nội dung "Tôi đã tạo đề xuất
+  ghi nhận khoản chi... Xin vui lòng xác nhận trên ứng dụng để hoàn tất!"
+  nhưng **không kèm `pendingAction`** — không có nút nào để bấm, y hệt lỗi đã
+  từng báo cho trường hợp Thành viên (2026-08-07), nay xảy ra cả với Manager
+  có đủ quyền. Cần BE xác nhận vì sao AI hứa "xác nhận trên ứng dụng" mà
+  không gửi kèm `pendingAction`.
+- Ảnh 22:12 xuất hiện `actionType` mới `CREATE_BUDGET_PLAN` (thẻ "Tạo kế
+  hoạch ngân sách") — chưa nằm trong 3 loại đã chốt trước đó
+  (`CREATE_TASK`/`CREATE_LEDGER_ENTRY`/`CREATE_CALENDAR_EVENT`). Card vẫn
+  hiển thị đúng nhờ đọc `uiHints.fields` (không phụ thuộc bảng cứng), nhưng
+  FE chưa biết refresh màn nào tương ứng sau khi xác nhận (hiện rơi vào
+  nhánh "actionType lạ → refresh cả Task+Wallet+Calendar" mang tính phòng
+  thủ, không có màn "Kế hoạch ngân sách" nào được refresh riêng). Cần BE xác
+  nhận đây có phải actionType chính thức mới không, và có màn/API tương ứng
+  nào ở FE cần biết để refresh.
+- Quan sát chưa chắc chắn, CHƯA sửa vì không đủ bằng chứng lặp lại: một tin
+  nhắn người dùng hiện dạng "phân tích tài chínhphân tích tài chính" (dính
+  liền, không dấu cách) trong 1 bong bóng chat — nghi do bấm rất nhanh 2 lần
+  liên tiếp vào cùng một chip gợi ý trong lúc `sending` chưa kịp bật, nhưng
+  chưa tái hiện lại được để chẩn đoán chắc chắn. Em gặp lại thì mô tả rõ thao
+  tác bấm (đơn/đúp) giúp chị.
+
+Verify: `flutter analyze` 0 error. `flutter test` 290/290 pass (thêm 1 test
+mới cho fix #4 ở `ai_pending_action_contract_test.dart`). Chưa verify runtime
+bất kỳ ý nào — nhờ user tự test lại theo script mới gửi kèm.
+
 ### Quy trình mới từ 2026-08-08
 
 Chị (Claude) chỉ code + fix, KHÔNG tự mở emulator thao tác kiểm tra nữa (tốn
