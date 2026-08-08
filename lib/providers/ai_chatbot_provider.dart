@@ -490,7 +490,10 @@ class AiChatbotProvider extends ChangeNotifier {
     if (error is ApiException) {
       return switch (error.statusCode) {
         403 when isAction =>
-          'Bạn không có quyền tạo dữ liệu này. Hãy nhờ Trưởng nhóm thực hiện.',
+          // Contract 2026-08-07: propose_create_ledger_entry mở cho CẢ
+          // FAMILY_MANAGER và DEPUTY_MEMBER, không riêng Trưởng nhóm.
+          'Bạn không có quyền tạo dữ liệu này. Hãy nhờ Trưởng nhóm hoặc Phó '
+              'nhóm thực hiện.',
         403 => 'Bạn chưa có quyền dùng Trợ lý AI trong gói hiện tại.',
         409 => 'Đề xuất này đã được xử lý trước đó.',
         410 => 'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',

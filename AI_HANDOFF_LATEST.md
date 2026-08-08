@@ -269,6 +269,28 @@ phải chờ BE ship xong mới test lại được. Khi test lại mục 1, dù
 `FAMILY_MEMBER` — kỳ vọng **không có thẻ xác nhận**, câu trả lời nói rõ cần nhờ
 Trưởng nhóm/Phó nhóm.
 
+### Audit contract AI Chatbot lần 2 — BE gửi kèm file contract chính thức
+
+BE gửi thêm file `AI Chatbot contract` (markdown, có mục Pending action /
+Permission behavior / Feature flags) xác nhận lại đúng 6 mục ở trên. Đọc lại
+toàn bộ `ai_chatbot.dart` + `ai_chatbot_provider.dart` (full file, không phải
+đoạn trích) để đối chiếu — **hầu hết đã đúng từ các lần audit trước**, không
+có gì bị merge với Giáp làm lệch:
+
+- `actionType` (3 giá trị), `status` (4 giá trị, không `CANCELED`/`FAILED`),
+  `expiresAt` parse UTC không cắt `Z`, card chỉ hiện khi có `pendingAction`,
+  reload đúng module, 409/410 tự đồng bộ lại thẻ, 3 key gói cước không gate
+  màn AI — **tất cả khớp contract, không sửa gì**.
+- Sửa đúng 1 chỗ: câu báo lỗi `403` lúc `confirm-action` trong
+  `_friendlyError` chỉ nhắc "Trưởng nhóm", thiếu "Phó nhóm" — trong khi
+  contract nói rõ `propose_create_ledger_entry` mở cho **cả**
+  `FAMILY_MANAGER` **và** `DEPUTY_MEMBER`. Màn rỗng của Thành viên
+  (`ai_assistant_screen.dart`) đã viết đúng "Trưởng nhóm và Phó nhóm" từ
+  trước — chỉ riêng câu lỗi này bị sót. Đã sửa.
+- Xác nhận lại: vấn đề chính (Member không nên nhận `pendingAction`) là lỗi
+  **prompt/guard phía BE**, không phải chỗ nào FE sửa được — FE đã đúng sẵn
+  (không có `pendingAction` thì không hiện thẻ).
+
 ### 📋 Nội dung 6 mục đã gửi BE (giữ lại để đối chiếu)
 
 ### File tạm không được commit
