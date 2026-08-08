@@ -381,7 +381,8 @@ AI nào ngoài Swagger.
 - `actionType` chính thức, **đúng 3 giá trị**: `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`.
 - `status` chính thức, **đúng 4 giá trị**: `PENDING` → `CONFIRMED` (confirm thành công) / `REJECTED` (người dùng từ chối) / `EXPIRED` (quá hạn). **Không có `CANCELED` hay `FAILED`.**
 - Sau confirm thành công, status lưu trên tin nhắn AI gốc là `CONFIRMED` và **`result.id` là id bản ghi vừa tạo** (FE hiện chưa dùng field này — có thể dùng sau để deep-link tới bản ghi).
-- `expiresAt` là **ISO UTC thật** sinh bằng `Date.toISOString()`, có đuôi `Z`, interceptor **không** convert timezone. FE tính countdown theo UTC bình thường — khác với ledger/support request vốn trả wall-clock local rồi gắn `Z`.
+- `expiresAt` là **ISO UTC thật** sinh bằng `Date.toISOString()`, có đuôi `Z`, interceptor **không** convert timezone. FE tính countdown theo UTC bình thường.
+- **Cập nhật 2026-08-07:** `entryDate` của Ledger **cũng là UTC thật**, không còn phải wall-clock local gắn `Z` như ghi nhận trước đây. Verify runtime: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC), sổ thu chi từng hiện `13:18` — lộ ra `WalletProvider.displayEntryDate` tự cắt `Z` rồi đọc số UTC như giờ local, lỗi FE đã sửa (không phải BE). **Support request chưa verify lại** — nếu đụng tới thì phải test runtime riêng, không suy diễn theo ledger.
 - Field `preview` của `CREATE_TASK` dùng tên **`task`** (không phải `title`) — quan sát runtime 2026-08-07.
 - Lỗi: `403` không có quyền tạo · `409` đề xuất đã xử lý rồi · `410` hết hạn, phải chat lại để AI tạo đề xuất mới.
 - Sau confirm thành công phải reload đúng module: task → danh sách nhiệm vụ · ledger → finance ledger/overview · calendar → sự kiện lịch (**theo tháng của `startTime`**, không phải tháng hiện tại).

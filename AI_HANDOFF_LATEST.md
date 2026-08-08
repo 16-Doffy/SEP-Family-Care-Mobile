@@ -293,6 +293,43 @@ có gì bị merge với Giáp làm lệch:
 
 ### 📋 Nội dung 6 mục đã gửi BE (giữ lại để đối chiếu)
 
+### 🔴 Bug lệch giờ 7 tiếng ở sổ thu chi — phát hiện khi verify giao dịch AI tạo
+
+Không liên quan module AI, nhưng lộ ra khi verify runtime `CREATE_LEDGER_ENTRY`.
+Ảnh hưởng **toàn bộ sổ thu chi**, mọi giao dịch, không riêng giao dịch AI tạo.
+
+**Bằng chứng runtime:** tạo khoản chi thủ công lúc 20:19:00 giờ VN (13:19:00
+UTC, verify TZ = Asia/Bangkok bằng `adb shell date`/`date -u` khớp cả emulator
+lẫn host). Sổ thu chi hiện `13:18` — đúng bằng giờ UTC.
+
+**Nguyên nhân — chứng minh bằng vòng khép kín, không suy luận:** FE tự gửi
+`entryDate` bằng `DateTime.now().toUtc().toIso8601String()` (UTC chuẩn) lúc
+**tạo** giao dịch (`WalletProvider.recordEntry`), nhưng `displayEntryDate` lại
+cắt bỏ `Z` rồi parse như giờ naive lúc **hiển thị** — tự đọc sai dữ liệu do
+chính FE gửi lên. **Lỗi FE, không phải BE.** Comment cũ trong code ghi "BE vẫn
+trả hậu tố Z nhưng giữ giờ local GMT+7" — giả định này không còn đúng với
+ledger (có thể BE đã đổi sang UTC thật, khớp với `expiresAt` của AI Chatbot
+cũng là UTC thật).
+
+**Đã sửa:** `WalletProvider.displayEntryDate` và `ChildWalletScreen._fmtDate`
+— parse chuẩn rồi `.toLocal()` khi chuỗi thật sự UTC, giữ nguyên nếu chuỗi
+naive (phòng dữ liệu cũ). Test mới: `test/wallet_ledger_date_test.dart`.
+`API_DOCS.md` sửa lại dòng sai về timezone ledger.
+
+**Không đụng:** support-request date — chưa có bằng chứng runtime mới, để
+verify riêng nếu đụng tới, không suy diễn theo ledger.
+
+**📋 Cần báo BE (phát hiện phụ, chưa xử lý):**
+1. Giao dịch tự sinh từ `POST /finance/fund-allocations` có `description`
+   tiếng Anh ("Allocate fund to Savings/Giving/Enjoyment/Education/
+   Necessities") trong khi toàn app tiếng Việt — không tìm thấy chuỗi này ở
+   bất kỳ đâu trong `lib/`, xác nhận là nội dung BE tự sinh. Không tự dịch
+   cứng ở FE vì dễ vỡ nếu BE đổi tên hũ/mô hình sau này.
+2. Màn Chi tiết giao dịch hiện "Số tiền: 30,000,000 đ **đ**" — lặp đơn vị.
+   Phát hiện khi bấm nhầm vào giao dịch cũ lúc test, **chưa xác định được vị
+   trí chính xác trong code** để phân loại lỗi FE hay do ghép chuỗi từ dữ liệu
+   BE — cần soi lại trước khi sửa.
+
 ### File tạm không được commit
 
 `.tmp_report_audit/`, `BuildDocx.cs`, `build_report6.ps1` là công cụ dựng báo cáo

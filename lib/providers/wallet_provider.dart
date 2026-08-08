@@ -113,17 +113,25 @@ class LedgerEntry {
   String get legacyDescription => description;
   String get legacyCreatedAt => entryDate;
 
-  /// BE hiện vẫn trả hậu tố `Z` trên một số field nhưng giữ giờ local GMT+7.
-  /// Giữ cách hiển thị cũ cho tới khi BE xác nhận migration sang UTC thật.
+  /// `entryDate` là UTC thật, không phải wall-clock local gắn `Z` giả.
+  ///
+  /// Verify runtime 2026-08-07: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC),
+  /// sổ thu chi hiện `13:18` — đúng bằng giờ UTC, lệch 7 tiếng so với giờ bấm
+  /// lưu thật. Nguyên nhân: [recordEntry] bên dưới tự gửi `entryDate` bằng
+  /// `DateTime.now().toUtc().toIso8601String()` (UTC chuẩn) khi TẠO, nhưng
+  /// hàm này lại cắt bỏ `Z` rồi parse như giờ naive khi HIỂN THỊ — tự đọc sai
+  /// dữ liệu do chính FE gửi lên. Đây là lỗi FE, không phải BE.
+  ///
+  /// Parse chuẩn rồi `.toLocal()` khi chuỗi thật sự là UTC (`isUtc == true`,
+  /// tức có `Z`/offset); chuỗi naive (không `Z`) thì giữ nguyên, không tự ý
+  /// cộng trừ giờ — phòng dữ liệu cũ chưa chắc cùng quy ước.
   String get displayEntryDate {
-    final localValue = entryDate.endsWith('Z')
-        ? entryDate.substring(0, entryDate.length - 1)
-        : entryDate;
-    final parsed = DateTime.tryParse(localValue);
+    final parsed = DateTime.tryParse(entryDate);
     if (parsed == null) return entryDate;
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
     String two(int value) => value.toString().padLeft(2, '0');
-    return '${two(parsed.day)}/${two(parsed.month)}/${parsed.year} '
-        '${two(parsed.hour)}:${two(parsed.minute)}';
+    return '${two(local.day)}/${two(local.month)}/${local.year} '
+        '${two(local.hour)}:${two(local.minute)}';
   }
 }
 

@@ -141,8 +141,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
     setState(() => _period = period);
     await Future.wait([
       _fetchMonthlyFinance(),
-      if (mounted)
-        context.read<WalletProvider>().fetchWallets(period: period),
+      if (mounted) context.read<WalletProvider>().fetchWallets(period: period),
     ]);
   }
 
@@ -202,7 +201,8 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               MonthStartChecklist(
                 period: _period,
                 canManageFinance:
-                    context.watch<AuthProvider>().user?.canManageFinance == true,
+                    context.watch<AuthProvider>().user?.canManageFinance ==
+                    true,
               ),
 
               // ── Balance / Allowance card ──────────────────────
@@ -945,9 +945,14 @@ class _LedgerCard extends StatelessWidget {
     );
   }
 
+  /// `iso` là `entryDate` từ BE — UTC thật (xem
+  /// `WalletProvider.displayEntryDate`). Không gọi `.toLocal()` thì `.day` là
+  /// ngày UTC, sai ở biên nửa đêm giờ VN (23:xx giờ VN vẫn còn là ngày hôm
+  /// trước theo UTC).
   static String _fmtDate(String iso) {
-    final d = DateTime.tryParse(iso);
-    if (d == null) return iso;
+    final parsed = DateTime.tryParse(iso);
+    if (parsed == null) return iso;
+    final d = parsed.isUtc ? parsed.toLocal() : parsed;
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
