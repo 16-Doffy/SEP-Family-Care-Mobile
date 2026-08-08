@@ -135,8 +135,35 @@ class JsonReportView extends StatelessWidget {
   static String _fmtDate(String value) {
     final date = DateTime.tryParse(value);
     if (date == null) return value;
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    // Ngày dạng "2026-08-01" (không giờ) parse ra local sẵn, `.toLocal()`
+    // không đổi gì; nhưng field timestamp đầy đủ có "Z" (UTC) đổi ngày lệch
+    // khi giờ VN đã sang ngày khác — phải quy về local trước khi tách ngày.
+    final local = date.isUtc ? date.toLocal() : date;
+    return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
   }
+
+  /// Field kiểu "startTime"/"endTime" là một MỐC THỜI GIAN cụ thể, không phải
+  /// chỉ ngày — quan sát thật 2026-08-08: Daily Brief hiện "Next Events" với
+  /// `startTime`/`endTime` nguyên văn `2026-08-09T02:00:00.0Z` vì bộ nhận diện
+  /// ngày cũ (`endsWith('at')`, `contains('date')`...) không khớp tên 2 key
+  /// này. Định dạng đủ giờ:phút + đổi sang giờ local.
+  static String _fmtDateTime(String value) {
+    final date = DateTime.tryParse(value);
+    if (date == null) return value;
+    final local = date.isUtc ? date.toLocal() : date;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.hour)}:${two(local.minute)} '
+        '${two(local.day)}/${two(local.month)}/${local.year}';
+  }
+
+  static final _isoDateTimePattern = RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}');
+
+  /// Nhận diện theo HÌNH DẠNG giá trị, không chỉ theo tên key — BE có thể đặt
+  /// tên field mới bất kỳ lúc nào (đúng tinh thần đã áp dụng cho
+  /// `formatAiPreviewValue` ở màn Trợ lý AI), an toàn vì chuỗi thường (tên,
+  /// địa chỉ...) không khớp định dạng ISO datetime này.
+  static bool _looksLikeIsoDateTime(String value) =>
+      _isoDateTimePattern.hasMatch(value);
 
   static String _fmtStatus(String value) => switch (value) {
     'DRAFT' => 'Bản nháp',
@@ -210,13 +237,26 @@ class JsonReportView extends StatelessWidget {
   Widget _entryRow(String key, dynamic value) {
     final isComplex = value is Map || value is List;
     if (isComplex) {
+      final label = financeReportMode ? (_financeLabels[key] ?? _labelize(key)) : _labelize(key);
       return Padding(
-        padding: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.only(top: 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(financeReportMode ? (_financeLabels[key] ?? _labelize(key)) : _labelize(key),
-              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+          // Trước đây tiêu đề nhóm (Family/Scope/Task/Calendar...) tô màu
+          // xám nhạt (textSecondary) giống hệt nhãn field thường, nhìn không
+          // phân biệt được đâu là tiêu đề nhóm — đổi màu nổi bật + gạch chân
+          // mảnh để tách nhóm rõ ràng hơn.
+          Container(
+            padding: const EdgeInsets.only(bottom: 4),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppColors.primary100, width: 1.5),
+              ),
+            ),
+            child: Text(label,
+                style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w800, color: AppColors.primary600)),
+          ),
           Padding(
-            padding: const EdgeInsets.only(left: 10, top: 4),
+            padding: const EdgeInsets.only(left: 10, top: 6),
             child: JsonReportView._nested(
               data: value,
               financeReportMode: financeReportMode,
@@ -235,6 +275,9 @@ class JsonReportView extends StatelessWidget {
         ? '$raw%'
         : value is num && _looksLikeMoney(key)
         ? _fmtMoney(value)
+        : lowerKey.contains('time') ||
+                (value is String && _looksLikeIsoDateTime(raw))
+        ? _fmtDateTime(raw)
         : lowerKey.endsWith('at') ||
                 lowerKey.contains('date') ||
                 lowerKey == 'deadline' ||

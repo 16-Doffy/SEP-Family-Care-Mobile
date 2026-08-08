@@ -2,6 +2,38 @@
 
 Last updated: **2026-08-08**
 
+## Daily Brief: xem lại sau khi đóng + sửa giờ thô + làm nổi bật tiêu đề nhóm — 2026-08-08, ĐÃ LÀM
+
+User hỏi cách xem lại card "Tổng quan hôm nay" sau khi đã bấm X đóng (trước đó
+chỉ có cách thoát hẳn màn Trợ lý AI rồi mở lại), và nhờ làm tiêu đề các nhóm
+(Family/Scope/Task/Calendar...) trong `JsonReportView` nổi bật hơn.
+
+1. **Xem lại sau khi đóng**: thêm `AiChatbotProvider.showDailyBrief()` — dùng
+   lại dữ liệu đã có trong bộ nhớ (không gọi lại API nếu đã tải), chỉ bỏ cờ
+   ẩn. Thêm icon ☀️ ở AppBar màn Trợ lý AI (chỉ hiện khi đang ẩn), bấm vào tự
+   cuộn lên đầu vì card luôn là item đầu tiên của `ListView`.
+2. **Giờ thô trong "Next Events"**: ảnh chụp cho thấy `startTime`/`endTime`
+   hiện nguyên văn `2026-08-09T02:00:00.0Z` — `JsonReportView` có bộ nhận
+   diện ngày riêng (`endsWith('at')`, `contains('date')`...) không khớp tên 2
+   key này. Thêm nhận theo tên chứa `time` + theo HÌNH DẠNG chuỗi (ISO
+   datetime, không phụ thuộc tên key — cùng cách đã áp dụng cho
+   `formatAiPreviewValue`), định dạng đủ giờ:phút + đổi UTC sang giờ local.
+   Tiện thể sửa luôn `_fmtDate` (dùng cho `deadline`/`periodStart`...) thiếu
+   bước đổi sang local trước khi tách ngày — timestamp UTC gần nửa đêm có thể
+   lệch ngày hiển thị so với giờ VN.
+3. **Tiêu đề nhóm nổi bật**: đổi từ màu xám nhạt (`textSecondary`, cùng màu
+   với nhãn field thường — nhìn không phân biệt được) sang màu hồng đậm
+   (`primary600`) + gạch chân mảnh, đậm chữ hơn.
+
+`JsonReportView` dùng chung cho nhiều report khác (budget-plan, goal
+progress, non-essential-spending) — 2 thay đổi #2/#3 ảnh hưởng luôn các màn
+đó, không chỉ Daily Brief, nhưng đều là cải thiện chung không đổi hành vi cũ
+theo hướng xấu đi.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass (không có test
+riêng cho `JsonReportView` vì file này chưa từng có test, các hàm định dạng
+là `static private`). Chưa verify runtime.
+
 ## Thiếu chỗ ghi thu/chi "thực tế" hàng tháng — báo cáo 2026-08-08, ĐÃ LÀM
 
 User hỏi: nhìn màn Ví Member (`child_wallet_screen.dart`) thì Member ghi

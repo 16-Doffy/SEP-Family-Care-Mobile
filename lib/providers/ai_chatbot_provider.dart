@@ -174,6 +174,20 @@ class AiChatbotProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hiện lại Daily Brief sau khi đã bấm đóng (nút X), không cần thoát hẳn
+  /// màn Trợ lý AI rồi mở lại như trước — dữ liệu vẫn còn trong bộ nhớ
+  /// (`_dailyBrief`) nên chỉ cần bỏ cờ ẩn; chỉ gọi lại API khi chưa từng tải
+  /// được (ví dụ family mới bật tính năng sau khi màn đã mở sẵn).
+  Future<void> showDailyBrief() async {
+    if (_dailyBrief != null) {
+      if (!_dailyBriefDismissed) return;
+      _dailyBriefDismissed = false;
+      notifyListeners();
+      return;
+    }
+    await fetchDailyBrief();
+  }
+
   Future<void> fetchFeatureAccess() async {
     final fid = ApiClient.instance.familyId;
     if (fid == null) return;

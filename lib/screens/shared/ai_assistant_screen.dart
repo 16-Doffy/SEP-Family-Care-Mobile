@@ -173,6 +173,27 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     });
   }
 
+  void _scrollToTop() {
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (!_scrollCtrl.hasClients) return;
+      _scrollCtrl.animateTo(
+        0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  // Trước đây bấm X đóng Daily Brief xong không còn cách nào xem lại ngoài
+  // thoát hẳn màn rồi mở lại (bootstrap() mới tải lại). `showDailyBrief()`
+  // dùng lại dữ liệu đã có trong bộ nhớ nên hiện lại ngay không cần gọi API,
+  // rồi cuộn lên đầu vì card luôn là item đầu tiên của danh sách.
+  Future<void> _showDailyBriefAgain() async {
+    await context.read<AiChatbotProvider>().showDailyBrief();
+    if (!mounted) return;
+    _scrollToTop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AiChatbotProvider>(
@@ -205,6 +226,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
               ],
             ),
             actions: [
+              if (ai.dailyBrief == null)
+                IconButton(
+                  tooltip: 'Xem tổng quan hôm nay',
+                  onPressed: _showDailyBriefAgain,
+                  icon: Icon(
+                    Icons.wb_sunny_outlined,
+                    color: context.colors.textPrimary,
+                  ),
+                ),
               IconButton(
                 tooltip: 'Hội thoại',
                 onPressed: () => _showConversationSheet(context),
