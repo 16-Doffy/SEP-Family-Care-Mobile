@@ -124,9 +124,18 @@ class AiChatbotProvider extends ChangeNotifier {
     // Gói không có quyền thì đừng gọi tiếp — mọi endpoint ai-chatbot đều 403,
     // chỉ tổ hiện banner đỏ thay vì lời mời nâng gói.
     if (!canUseAssistant) return;
-    await fetchConversations();
-    // Tính năng phụ Sprint 2, không chặn hiển thị hội thoại nếu lỗi/chưa bật.
-    unawaited(fetchDailyBrief());
+    // Quan sát thật 2026-08-09: trước đây `fetchDailyBrief()` chạy
+    // `unawaited` (không chặn), nên có thể tự hoàn thành SAU khi
+    // `bootstrap()` đã return và màn hình đã cuộn xuống cuối. Daily Brief
+    // luôn là item đầu (`leadingBrief`) của `ListView` — hoàn thành trễ
+    // nghĩa là chèn thêm một item cao ở TRÊN vị trí đang cuộn tới, đẩy lệch
+    // toàn bộ nội dung xuống mà không có gì kéo lại scroll offset, màn hình
+    // trắng trơn cho tới khi người dùng tự thao tác (gửi tin mới) kích hoạt
+    // cuộn lại. `fetchDailyBrief()` tự bắt lỗi bên trong (không throw, không
+    // treo màn) nên đợi cùng `fetchConversations()` là an toàn — cả hai vẫn
+    // chạy song song, chỉ khác là `bootstrap()` chờ đủ cả hai xong rồi mới
+    // trả về cho màn hình tính vị trí cuộn.
+    await Future.wait([fetchConversations(), fetchDailyBrief()]);
     // Lớp phòng thủ thứ hai sau resetForNewSession: vào lại màn mà hội thoại
     // đang mở không còn thuộc danh sách server trả về thì tin nhắn đang giữ
     // không phải của người dùng này — xóa ngay.

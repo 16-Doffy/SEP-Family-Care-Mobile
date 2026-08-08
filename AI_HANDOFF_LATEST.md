@@ -1,6 +1,32 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-08**
+Last updated: **2026-08-09**
+
+## Bug màn Trợ lý AI load trắng giữa chừng — báo cáo 2026-08-09, ĐÃ SỬA
+
+User báo: mở Trợ lý AI, thấy Daily Brief đàng hoàng, sau đó **màn trắng trơn
+một lúc** rồi mới hiện đoạn chat thật — có lúc trắng luôn, phải bấm vào một
+chip gợi ý mới hiện lại được nội dung.
+
+Nguyên nhân: `AiChatbotProvider.bootstrap()` gọi `fetchDailyBrief()` kiểu
+`unawaited` (không chờ) để không chặn hiển thị hội thoại nếu tính năng phụ
+này lỗi/chậm. Nhưng vì không chờ, request này có thể **tự hoàn thành SAU
+KHI** `bootstrap()` đã return và màn hình đã chạy xong `_scrollToBottom()`.
+Daily Brief luôn là item đầu tiên của `ListView` — hoàn thành trễ nghĩa là
+CHÈN THÊM một item cao ở phía TRÊN vị trí vừa cuộn tới, đẩy lệch toàn bộ nội
+dung xuống dưới mà không có gì kéo lại scroll offset — màn hình đứng nhìn
+vào đúng chỗ trống giữa hai layout cũ/mới cho tới khi người dùng tự thao tác
+(gửi tin) kích hoạt `_scrollToBottom()` chạy lại và tự sửa.
+
+Sửa: `fetchDailyBrief()` đã tự bắt lỗi bên trong (không throw, không treo
+màn nếu lỗi/404) nên đợi cùng lúc với `fetchConversations()` qua
+`Future.wait([...])` là an toàn — cả hai vẫn chạy song song như cũ, chỉ khác
+là `bootstrap()` chờ đủ CẢ HAI xong rồi mới trả về, nên màn hình chỉ tính vị
+trí cuộn đúng một lần, sau khi toàn bộ nội dung (kể cả Daily Brief) đã ổn
+định.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime.
 
 ## Script test Member — 3 bug UX cuộn + 1 nghi vấn BE — 2026-08-08, ĐÃ SỬA 2/3 FE
 
@@ -21,12 +47,18 @@ Chạy script test 14 bước cho vai trò Member, phát hiện:
    Scrollable mới nên `animateTo` không có tác dụng. Đổi
    `_scrollToBottom()`/mọi chỗ tương tự sang `addPostFrameCallback` (đợi đúng
    sau khi frame build/layout xong) thay vì đoán một mốc thời gian cố định.
-3. **[Cần hỏi BE]** Member không thấy card "Tổng quan hôm nay" (Manager có).
-   FE không hề gate tính năng này theo role (`fetchDailyBrief()` gọi y hệt
-   cho mọi role trong `bootstrap()`) — nên nhiều khả năng
-   `GET /ai-chatbot/daily-brief` trả về khác cho Member (404/rỗng/lỗi âm
-   thầm). Cần BE xác nhận endpoint này có áp dụng cho vai trò Member không,
-   và nếu không áp dụng thì trả về gì để FE phân biệt "chưa bật" với "lỗi".
+3. **[Đã rút lại — không phải bug]** Từng nghi Member không thấy card "Tổng
+   quan hôm nay" — kiểm tra lại 2026-08-09 thì Member ĐÃ thấy card bình
+   thường (có thể lần trước do đúng ca hoàn thành trễ ở mục bug "load trắng"
+   phía trên, chưa hẳn do BE). Không cần báo BE mục này nữa.
+4. **[Xác nhận đúng thiết kế — không phải bug]** Member không tự tạo được
+   nhiệm vụ cho chính mình qua AI (bị chặn quyền, PERMISSION_NOTICE) — user
+   xác nhận 2026-08-09 đây ĐÚNG chủ ý: chỉ Manager/Deputy được giao việc,
+   Member không tự giao được kể cả cho bản thân. Đã verify thêm:
+   `task_management_screen.dart` (`_showAssignSheet` + `_GenerateAssignments`)
+   lọc người nhận chỉ theo `isActive`, không lọc theo vai trò — Manager giao
+   việc được cho Deputy đúng như kỳ vọng (và ngược lại, vì `canManageTasks`
+   là quyền chung `isAdministrative`, không phân cấp trên/dưới nội bộ).
 
 Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
 runtime.
