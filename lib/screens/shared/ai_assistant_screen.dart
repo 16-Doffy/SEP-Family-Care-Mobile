@@ -111,9 +111,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      context.read<AiChatbotProvider>().bootstrap();
+      await context.read<AiChatbotProvider>().bootstrap();
+      // Bootstrap chọn sẵn hội thoại gần nhất, nhưng ListView mặc định đứng ở
+      // đầu danh sách (đầu là Daily Brief nếu có). Không cuộn xuống thì người
+      // dùng mở Trợ lý AI lên chỉ thấy "Tổng quan hôm nay" chứ không thấy
+      // ngay đoạn chat đang dở — phải tự kéo xuống mới thấy.
+      if (!mounted) return;
+      _scrollToBottom();
     });
   }
 
@@ -326,9 +332,11 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                  onTap: () {
-                                    ai.selectConversation(c.id);
+                                  onTap: () async {
                                     Navigator.of(sheetContext).pop();
+                                    await ai.selectConversation(c.id);
+                                    if (!mounted) return;
+                                    _scrollToBottom();
                                   },
                                 );
                               },

@@ -108,6 +108,26 @@ Verify: `flutter analyze` (0 error, kể cả file này) + `flutter test`
 runtime, không phải logic parse — đúng theo quy trình mới, chưa mở emulator
 kiểm tra lại bằng mắt, nhờ user tự xác nhận card cuộn mượt, không tràn nữa).
 
+### Bug UX mở màn AI luôn đứng ở đầu (Daily Brief) — báo cáo từ user 2026-08-08, ĐÃ SỬA
+
+User báo: bấm vào Trợ lý AI thì màn luôn dừng ở đầu danh sách (card "Tổng quan
+hôm nay" chiếm hết màn hình), phải tự kéo xuống mới thấy đoạn chat đang dở —
+trong khi kỳ vọng mở lên phải thấy ngay tin nhắn gần nhất như mọi app chat
+khác. Nguyên nhân: `_scrollToBottom()` trước đó chỉ được gọi sau khi TỰ gửi
+tin nhắn mới (`_send()`), không được gọi sau khi `bootstrap()` tải xong hội
+thoại có sẵn, cũng không gọi sau khi chọn hội thoại khác từ danh sách — nên
+`ListView` đứng nguyên ở vị trí mặc định (item 0 = Daily Brief nếu có).
+
+Sửa: gọi `_scrollToBottom()` thêm ở 2 chỗ — (1) ngay sau khi `bootstrap()`
+trong `initState` tải xong hội thoại gần nhất, (2) ngay sau khi chọn một hội
+thoại khác từ bottom sheet "Hội thoại AI". Card Daily Brief vẫn còn đó (kéo
+lên là thấy), chỉ đổi vị trí cuộn mặc định về cuối — giống hành vi chat bình
+thường.
+
+Verify: `flutter analyze` 0 error, `flutter test` 289/289 pass. Chưa xác nhận
+runtime — nhờ user tự test lại bước "mở Trợ lý AI" và "chuyển hội thoại từ
+danh sách" xem có nhảy thẳng xuống tin nhắn gần nhất không.
+
 ### Quy trình mới từ 2026-08-08
 
 Chị (Claude) chỉ code + fix, KHÔNG tự mở emulator thao tác kiểm tra nữa (tốn
