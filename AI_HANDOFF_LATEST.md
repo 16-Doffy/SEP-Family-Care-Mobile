@@ -2,6 +2,56 @@
 
 Last updated: **2026-08-09**
 
+## `ACTION_PLAN_CARD` — XÁC NHẬN HOẠT ĐỘNG ĐÚNG qua test thật (2026-08-09)
+
+Sau nhiều lần test qua lại (ban đầu tưởng chưa hoạt động, sau lại tưởng có
+lỗ hổng an toàn — cả hai đều do đọc thiếu ảnh chụp, đã đính chính), **user
+chụp đủ trình tự đầy đủ và xác nhận rõ ràng cả 2 điểm còn treo trước đó**:
+
+- Câu "Giúp tôi chuẩn bị cho chuyến du lịch: tạo lịch đi chơi cuối tuần này
+  và ghi khoản chi 500.000đ tiền đặt cọc" ra ĐÚNG 1 tin nhắn (1 avatar AI
+  duy nhất) chứa 2 thẻ xếp chồng (`pendingActions[]` 2 phần tử: lịch +
+  khoản chi) — đúng contract `ACTION_PLAN_CARD` Sprint 3.
+- Xác nhận/từ chối từng thẻ **độc lập với nhau**: hủy thẻ lịch xong, thẻ
+  khoản chi vẫn giữ nguyên "Chờ xác nhận", không bị ảnh hưởng — đúng thiết
+  kế `actionIndex` riêng từng bước.
+- **Endpoint reject-theo-step (`POST .../actions/:actionIndex/reject`) chạy
+  đúng, không lỗi 404/mạng nào** — xác nhận path FE từng đoán (đối xứng với
+  `/confirm`) là ĐÚNG. Bỏ hẳn cờ `[VERIFY]` cho endpoint này.
+- Khi TOÀN BỘ các bước trong 1 kế hoạch đều bị từ chối, BE trả về đúng 1 thẻ
+  tổng kết "Kế hoạch đã hủy" — vòng đời plan (xác nhận/từ chối riêng từng
+  bước + tổng kết khi hoàn tất) hoạt động đúng đầu-cuối.
+
+**Kết luận: rút cả 2 mục `ACTION_PLAN_CARD` chưa hoạt động và endpoint
+reject chưa xác nhận khỏi danh sách "Cần báo BE" — không cần hỏi BE gì thêm
+về Sprint 3 nữa.** Đã cập nhật `API_DOCS.md` xóa cờ `[VERIFY]` tương ứng.
+
+## Làm rõ 3 quan sát ngày/giờ + AI hỏi lại — không sửa code FE (2026-08-09)
+
+User gửi 3 ảnh chụp test tạo khoản thu/chi qua AI, nhờ làm rõ logic. Đã đọc
+kỹ lại `formatAiPreviewValue`/`formatAiPreviewDateTime`
+(`ai_assistant_screen.dart`) và `_fmtDateTime` (`json_report_view.dart`) để
+xác nhận chắc chắn trước khi kết luận — **không có gì cần sửa ở FE cho cả 3
+mục**:
+
+1. **"Tạo khoản thu ... hôm nay" → ngày đúng nhưng giờ vẫn `00:00`** — ĐÚNG
+   THIẾT KẾ. BE đã xác nhận trước đó: `entryDate` là field "ngày sổ sách"
+   (ngày lịch), chuẩn hóa về mốc đầu ngày khi người dùng không nói giờ cụ
+   thể — không phải timestamp chính xác. FE hiển thị đúng nguyên giá trị.
+2. **AI hỏi lại khi câu lệnh thiếu thông tin (không nói rõ thu/chi, số
+   tiền)** — ĐÚNG HÀNH VI MONG MUỐN. AI tự bịa số tiền thay vì hỏi lại mới là
+   vấn đề nghiêm trọng hơn (tạo nhầm dữ liệu tài chính bằng số AI tự nghĩ
+   ra). Không phải lỗi hiển thị/logic FE.
+3. **"Tạo khoản chi ... ngay bây giờ" → giờ hiển thị lệch so với giờ thật** —
+   LÀ BUG THẬT, nhưng ở phía BE. Đã rà lại 2 hàm format hiển thị: chỉ có
+   `DateTime.tryParse(...).toLocal()`, không có phép cộng/trừ giờ thủ công
+   nào. Theo đúng semantics Dart, chuỗi ISO có offset tường minh (`+07:00`)
+   được quy đổi đúng về một thời điểm tuyệt đối ngay lúc parse — FE không có
+   cách nào làm lệch giá trị này thêm lần nữa. Nếu giờ hiển thị sai thì giá
+   trị BE gửi về đã sai TỪ TRƯỚC khi tới FE.
+
+Xem mục "Cần báo BE" phía dưới cho chi tiết mục 3 kèm bằng chứng.
+
 ## Ví dụ "Nhờ AI tạo" trộn cả thu lẫn chi + phát hiện bug ngày sai — 2026-08-09
 
 User hỏi ý kiến: chip "Tạo thu/chi" nên gộp chung hay tách riêng "Tạo khoản

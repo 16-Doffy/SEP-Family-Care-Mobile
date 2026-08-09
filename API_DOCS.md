@@ -372,14 +372,17 @@ NHIỀU đề xuất cùng lúc trong `pendingActions[]` (kế hoạch nhiều b
 `aiMessage.uiHints.displayStyle === "ACTION_PLAN_CARD"` thì render card kế
 hoạch nhiều bước, mỗi phần tử `pendingActions[n]` có thêm `actionIndex` (vị
 trí bước) để xác nhận/từ chối RIÊNG từng bước, khác hẳn 2 endpoint cũ vốn
-thao tác theo `messageId` (chỉ áp dụng khi action đơn lẻ, không phải plan):
+thao tác theo `messageId` (chỉ áp dụng khi action đơn lẻ, không phải plan).
+**Đã verify runtime 2026-08-09** (câu "Giúp tôi chuẩn bị cho chuyến du lịch:
+tạo lịch đi chơi cuối tuần này và ghi khoản chi 500.000đ tiền đặt cọc" ra
+đúng 1 message với `pendingActions[]` 2 phần tử, xác nhận/từ chối độc lập
+từng bước đúng, plan-level "Kế hoạch đã hủy" đúng khi mọi bước đều bị từ
+chối) — cả 2 endpoint dưới đây đều hoạt động đúng, không còn `[VERIFY]`:
 
 - `POST .../messages/{messageId}/actions/{actionIndex}/confirm` — xác nhận
-  một bước. **BE xác nhận nguyên văn.**
+  một bước.
 - `POST .../messages/{messageId}/actions/{actionIndex}/reject` — từ chối một
-  bước. **`[VERIFY]` — BE gửi tin nhắn bị cắt dòng đúng chỗ path này, đoạn
-  cuối chỉ suy đoán theo quy ước đối xứng với `confirm` ở trên, CHƯA được BE
-  xác nhận nguyên văn. Cần hỏi lại BE xác nhận đúng đuôi path.**
+  bước.
 
 FE đã wire ở `AiChatbotProvider.confirmStep`/`rejectStep`,
 `_ActionPlanCard`/`_PendingActionCard(stepIndex: ...)` trong

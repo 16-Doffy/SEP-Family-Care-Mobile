@@ -450,10 +450,10 @@ class AiChatbotProvider extends ChangeNotifier {
       _actionBusy.contains('$messageId#$actionIndex');
 
   /// Xác nhận/từ chối MỘT bước trong kế hoạch nhiều bước (`ACTION_PLAN_CARD`,
-  /// BE Sprint 3 2026-08-09). Endpoint confirm do BE xác nhận nguyên văn;
-  /// endpoint reject BE gửi bị cắt dòng giữa chừng, chỉ đoán được đúng theo
-  /// quy ước đối xứng với confirm (`/actions/:actionIndex/reject`) — CHƯA
-  /// được BE xác nhận chữ-chữ, đánh `[VERIFY]`.
+  /// BE Sprint 3 2026-08-09). Cả hai endpoint đã verify đúng qua test runtime
+  /// 2026-08-09 (xác nhận/từ chối độc lập từng bước, không lỗi 404) — đường
+  /// dẫn `/actions/:actionIndex/reject` (suy đoán đối xứng với `/confirm` lúc
+  /// BE gửi tin bị cắt dòng) đã được xác nhận đúng.
   Future<bool> confirmStep(String messageId, int actionIndex) async =>
       _handleStepAction(messageId, actionIndex, confirm: true);
 
@@ -475,8 +475,6 @@ class AiChatbotProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      // [VERIFY] "reject" là suy đoán theo đối xứng với "confirm" — BE cắt
-      // dòng giữa chừng lúc gửi path này, chưa xác nhận nguyên văn.
       final action = confirm ? 'confirm' : 'reject';
       await ApiClient.instance.post(
         '/families/$fid/ai-chatbot/conversations/$cid/messages/$messageId'
