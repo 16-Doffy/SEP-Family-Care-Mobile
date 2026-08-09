@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -66,16 +67,27 @@ class _WearPageState extends State<WearPage> {
   Widget build(BuildContext context) {
     final resolvedPadding = widget.padding ?? WearUtils.contentPadding(context);
     final content = widget.scrollable
-        ? RawScrollbar(
-            controller: _scrollController,
-            thumbColor: Colors.white38,
-            radius: const Radius.circular(8),
-            thickness: 2,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: resolvedPadding,
-              child: widget.child,
-            ),
+        ? LayoutBuilder(
+            builder: (context, constraints) {
+              final minHeight = math.max(
+                0.0,
+                constraints.maxHeight - resolvedPadding.vertical,
+              );
+              return RawScrollbar(
+                controller: _scrollController,
+                thumbColor: Colors.white38,
+                radius: const Radius.circular(8),
+                thickness: 2,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: resolvedPadding,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: minHeight),
+                    child: widget.child,
+                  ),
+                ),
+              );
+            },
           )
         : Padding(padding: resolvedPadding, child: widget.child);
 
@@ -365,6 +377,7 @@ class WearPillButton extends StatelessWidget {
     this.color = WearPalette.sos,
     this.outlined = false,
     this.loading = false,
+    this.height = 48,
   });
 
   final String label;
@@ -373,6 +386,7 @@ class WearPillButton extends StatelessWidget {
   final Color color;
   final bool outlined;
   final bool loading;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -383,7 +397,7 @@ class WearPillButton extends StatelessWidget {
         onTap: loading ? null : onTap,
         borderRadius: BorderRadius.circular(24),
         child: Container(
-          height: 48,
+          height: height,
           width: double.infinity,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
