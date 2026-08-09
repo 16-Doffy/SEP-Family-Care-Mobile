@@ -2,6 +2,41 @@
 
 Last updated: **2026-08-09**
 
+## Snapshot cuối phiên 2026-08-09 — AI Chatbox coi như ổn định, phát hiện thêm 2 việc ở Sổ thu chi
+
+**Trạng thái AI Chatbox: ỔN ĐỊNH**, đã test đủ vòng đời (chat thường, action
+đơn lẻ đủ 3 outcome màu đúng, `ACTION_PLAN_CARD` nhiều bước xác nhận/từ chối
+độc lập, phân quyền theo vai trò, Daily Brief, markdown). Không còn bug FE
+nào treo trong tính năng này.
+
+**Còn 4 mục cần báo BE (đã tổng hợp gửi user):**
+1. Giờ tạo khoản thu/chi qua "ngay bây giờ" bị lệch so với giờ thật (BE
+   tính `now()` sai trước khi gắn nhãn `+07:00`, đã xác minh không phải FE).
+2. `uiHints.title` cho `CREATE_LEDGER_ENTRY` dùng chung "Tạo giao dịch tài
+   chính", nên phân biệt EXPENSE/INCOME (đã có field `Loại` sẵn để phân biệt).
+3. **[Mới]** Phân trang `finance/ledger/entries` nên theo `createdAt` giảm
+   dần thay vì `entryDate` — giao dịch AI vừa tạo hôm nay (09/08) bị kẹt ở
+   trang 2 vì các khoản "Allocate fund to X" (chia quỹ, tạo từ trước) có
+   `entryDate` = cuối tháng (31/08, tương lai) nên luôn được BE xếp lên
+   trang 1 nếu BE phân trang theo `entryDate`. Fix `WalletProvider._fetchEntries`
+   trước đó (sort lại theo `createdAt`) chỉ sắp xếp đúng THỨ TỰ trong 1 trang
+   đã tải — không kéo được item từ trang 2 lên trang 1 vì đó là ranh giới do
+   BE quyết định, FE không sửa được nếu không tải dư nhiều trang (tốn kém).
+4. **[Mới]** AI tạo khoản chi/thu không gửi kèm `categoryId` — khoản đó
+   không được BE tự gán hũ theo mô hình tài chính (rơi vào "Chưa gán hũ").
+   Xác nhận qua: (a) không thẻ AI nào từng hiện field Danh mục, (b) form tạo
+   giao dịch thủ công có ô chọn danh mục kèm chú thích "Backend tự gán hũ
+   theo danh mục", (c) số "Chưa gán hũ" ở màn Ngân sách khớp với các khoản
+   AI tạo. Cần BE quyết định: AI có nên hỏi/gợi ý danh mục khi tạo khoản chi
+   không.
+
+**Phát hiện thêm, đang chờ user quyết định hướng làm:** `WalletProvider.updateLedgerEntry()`
+đã viết sẵn (PATCH `/finance/ledger/entries/{id}`, nhận `categoryId`/`jarId`)
+nhưng **chưa có màn nào trong app gọi tới nó** — hiện không có cách nào sửa
+lại danh mục của một giao dịch đã tạo (dù AI tạo hay tạo tay quên chọn danh
+mục). Có thể làm 1 màn "Sửa danh mục" tận dụng hàm có sẵn này nếu user muốn,
+thay vì chỉ báo BE mục 4 ở trên.
+
 ## `ACTION_PLAN_CARD` — XÁC NHẬN HOẠT ĐỘNG ĐÚNG qua test thật (2026-08-09)
 
 Sau nhiều lần test qua lại (ban đầu tưởng chưa hoạt động, sau lại tưởng có
