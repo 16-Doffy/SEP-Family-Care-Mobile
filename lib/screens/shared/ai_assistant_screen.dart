@@ -99,6 +99,24 @@ String formatAiPreviewDateTime(DateTime d) {
   return '${two(d.hour)}:${two(d.minute)} ${two(d.day)}/${two(d.month)}/${d.year}';
 }
 
+/// Quan sát thật 2026-08-09: field `categoryId` (BE Sprint mới, AI tự gán
+/// danh mục khi nội dung khớp rõ) hiện nguyên UUID thô ("Danh mục:
+/// 0a3d7df8-517a-...") — không ai đọc hiểu được. `FinanceProvider.categories`
+/// đã tải sẵn ở app scope (màn Sổ thu chi/Ngân sách gọi trước đó), tra ngược
+/// ID → tên hiển thị ngay tại đây; không tìm thấy (danh mục bị xóa, hoặc
+/// chưa tải kịp) thì đành hiện lại ID thô — còn hơn giả vờ có tên. Dùng
+/// chung cho cả `_PendingActionCard` (đang chờ xác nhận) lẫn `_ResultCard`
+/// (đã xử lý xong) vì cả hai đều có thể hiện field Danh mục.
+String resolveCategoryName(BuildContext context, dynamic value) {
+  final id = value?.toString() ?? '';
+  if (id.isEmpty) return '-';
+  final categories = context.read<FinanceProvider>().categories;
+  for (final c in categories) {
+    if (c.id == id) return c.name;
+  }
+  return id;
+}
+
 /// Tháng cần tải lại sau khi xác nhận đề xuất tạo sự kiện lịch.
 ///
 /// `CalendarProvider.fetchEvents` chỉ tải đúng MỘT tháng. Sự kiện AI vừa tạo
@@ -1336,14 +1354,19 @@ class _ResultCard extends StatelessWidget {
           ),
           if (fields.isNotEmpty) ...[
             const SizedBox(height: 8),
-            for (final f in fields) _detailRow(f.label, f.key, f.value),
+            for (final f in fields) _detailRow(context, f.label, f.key, f.value),
           ],
         ],
       ),
     );
   }
 
-  Widget _detailRow(String label, String key, dynamic value) => Padding(
+  Widget _detailRow(
+    BuildContext context,
+    String label,
+    String key,
+    dynamic value,
+  ) => Padding(
     padding: const EdgeInsets.only(bottom: 4),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1361,7 +1384,9 @@ class _ResultCard extends StatelessWidget {
         ),
         Expanded(
           child: Text(
-            formatAiPreviewValue(key, value),
+            key.toLowerCase() == 'categoryid'
+                ? resolveCategoryName(context, value)
+                : formatAiPreviewValue(key, value),
             style: GoogleFonts.inter(
               fontSize: 12,
               color: AppColors.textSecondary,
@@ -1519,7 +1544,7 @@ class _PendingActionCard extends StatelessWidget {
           if (action.displayFields.isNotEmpty) ...[
             const SizedBox(height: 8),
             for (final f in action.displayFields)
-              _previewRow(f.key, f.label, f.value),
+              _previewRow(context, f.key, f.label, f.value),
           ],
           const SizedBox(height: 10),
           if (!action.isPending)
@@ -1656,7 +1681,12 @@ class _PendingActionCard extends StatelessWidget {
   // `AiPendingAction.displayFields` trong `models/ai_chatbot.dart` — dùng
   // chung cho cả nguồn `uiHints.fields` (Sprint 2) lẫn `preview` cũ.
 
-  Widget _previewRow(String key, String label, dynamic value) => Padding(
+  Widget _previewRow(
+    BuildContext context,
+    String key,
+    String label,
+    dynamic value,
+  ) => Padding(
     padding: const EdgeInsets.only(bottom: 4),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1674,7 +1704,9 @@ class _PendingActionCard extends StatelessWidget {
         ),
         Expanded(
           child: Text(
-            formatAiPreviewValue(key, value),
+            key.toLowerCase() == 'categoryid'
+                ? resolveCategoryName(context, value)
+                : formatAiPreviewValue(key, value),
             style: GoogleFonts.inter(
               fontSize: 12,
               height: 1.3,

@@ -2,6 +2,46 @@
 
 Last updated: **2026-08-09**
 
+## Test sau merge Giáp — 1 fix FE + 4/5 actionType tài chính mới chưa có pendingAction
+
+Sau khi merge code Giáp (SOS/wearable/Google login) vào `main`/`NDuy`, user
+test lại theo script (regression + 5 loại đề xuất tài chính mới vừa chốt
+9 `actionType` chính thức). Kết quả:
+
+**Regression (Rửa bát, khoản chi 50k):** chạy đúng — xác nhận/từ chối vẫn ra
+banner đúng màu. Riêng khoản chi 50k lần này AI **tự gán được `categoryId`**
+(tính năng BE mới làm) nhưng field "Danh mục" hiện **nguyên UUID thô**
+(`0a3d7df8-517a-4fc8-...`) — **ĐÃ SỬA**: thêm `resolveCategoryName()`
+(top-level, `lib/screens/shared/ai_assistant_screen.dart`) tra ngược qua
+`FinanceProvider.categories` (đã tải sẵn ở app scope) để hiện tên thật thay
+vì ID; áp dụng cho cả `_PendingActionCard._previewRow` (đang chờ xác nhận)
+lẫn `_ResultCard._detailRow` (đã xử lý xong) — cả hai đều có thể hiện field
+Danh mục. Không tìm thấy danh mục (đã xóa/chưa tải kịp) thì lùi về hiện ID
+thô, không giả vờ có tên. Test mới: `test/ai_category_name_test.dart` (3
+test, `testWidgets` vì hàm cần `BuildContext` để đọc provider).
+
+**5 actionType tài chính mới — chỉ 1/5 hoạt động, 4/5 thiếu `pendingAction`:**
+- ✅ `CREATE_BUDGET_LINE` ("Thêm dòng ngân sách 2.000.000đ cho mục ăn uống")
+  — ra thẻ đầy đủ, xác nhận thành công.
+- ❌ `CREATE_FINANCIAL_GOAL`, `CREATE_GOAL_ALLOCATION`,
+  `CREATE_GOAL_CONTRIBUTION_PLAN`, `ALLOCATE_FUND_BY_MODEL` — AI chỉ trả lời
+  bằng chữ ("Đề xuất đã được tạo... bạn hãy vào ứng dụng để xác nhận nhé!")
+  **không kèm `pendingAction`/thẻ nào cả** — đúng pattern lỗi "chập chờn" đã
+  gặp với `CREATE_LEDGER_ENTRY` trước đây, giờ lặp lại có hệ thống với 4/5
+  loại mới. Nhiều khả năng giống `ACTION_PLAN_CARD` trước đó: BE mới thêm
+  vào Swagger/schema nhưng AI chưa thực sự được dạy sinh đúng cấu trúc cho 4
+  loại này.
+
+**Cần báo BE**: 4 actionType tài chính mới (`CREATE_FINANCIAL_GOAL`,
+`CREATE_GOAL_ALLOCATION`, `CREATE_GOAL_CONTRIBUTION_PLAN`,
+`ALLOCATE_FUND_BY_MODEL`) chưa thực sự sinh `pendingAction` dù đã có trong
+danh sách `AiActionType` chính thức — chỉ `CREATE_BUDGET_LINE` hoạt động
+đúng trong 5 loại vừa thêm.
+
+Verify: `flutter analyze` 0 error, `flutter test` 403/403 pass. Chưa verify
+runtime cho fix `resolveCategoryName` — nhờ user test lại đúng field Danh
+mục có hiện tên thay vì UUID không.
+
 ## BE fix nốt 4/4 mục còn lại — FE hầu như không cần đổi gì (2026-08-09)
 
 BE phản hồi và fix cả 4 mục cuối cùng còn treo:
