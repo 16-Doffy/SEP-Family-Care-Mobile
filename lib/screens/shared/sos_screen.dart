@@ -12,6 +12,7 @@ import '../../providers/sos_provider.dart';
 import '../../services/sos_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
+import '../../utils/sos_alert_location.dart';
 import '../../widgets/json_report_view.dart';
 import 'sos_settings_screen.dart';
 
@@ -1348,6 +1349,8 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _detail;
+  int _locationRetryCount = 0;
+  static const int _maxLocationRetries = 3;
 
   @override
   void initState() {
@@ -1365,6 +1368,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
           _detail = d;
           _loading = false;
         });
+        _scheduleLocationRetryIfNeeded(d);
       }
     } catch (e) {
       if (mounted) {
@@ -1374,6 +1378,39 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
         });
       }
     }
+  }
+
+  void _scheduleLocationRetryIfNeeded(Map<String, dynamic> detail) {
+    final status = (detail['status']?.toString() ?? 'ACTIVE').toUpperCase();
+    if (status != 'ACTIVE' || parseSosAlertLocation(detail) != null) return;
+    if (_locationRetryCount >= _maxLocationRetries) return;
+    _locationRetryCount++;
+
+    Future.delayed(const Duration(seconds: 5), () async {
+      if (!mounted) return;
+      final loc = await context.read<SosProvider>().fetchCurrentLocation(
+        widget.alertId,
+      );
+      if (!mounted) return;
+      if (loc == null) {
+        _scheduleLocationRetryIfNeeded(_detail ?? detail);
+        return;
+      }
+      final existing = _detail?['locationPoints'];
+      setState(() {
+        _detail = {
+          ...?_detail,
+          'locationPoints': [
+            if (existing is List) ...existing,
+            {
+              'latitude': loc.lat,
+              'longitude': loc.lng,
+              'recordedAt': DateTime.now().toUtc().toIso8601String(),
+            },
+          ],
+        };
+      });
+    });
   }
 
   // ── Parse phòng thủ (response schema chi tiết KHÔNG được Swagger document —
@@ -1393,12 +1430,6 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     return null;
   }
 
-  static double? _d(dynamic v) {
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString());
-  }
-
   static String _fmtTime(String iso) {
     final d = DateTime.tryParse(iso)?.toLocal();
     if (d == null) return iso;
@@ -1415,22 +1446,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
   }
 
   ({double lat, double lng})? _location(Map<String, dynamic> d) {
-    // Ưu tiên điểm vị trí mới nhất trong mảng locations, fallback toạ độ alert.
-    for (final key in ['locations', 'sosLocations']) {
-      final v = d[key];
-      if (v is List && v.isNotEmpty) {
-        final last = v.whereType<Map>().toList();
-        if (last.isNotEmpty) {
-          final lat = _d(last.last['latitude']);
-          final lng = _d(last.last['longitude']);
-          if (lat != null && lng != null) return (lat: lat, lng: lng);
-        }
-      }
-    }
-    final lat = _d(d['latitude'] ?? d['initialLatitude']);
-    final lng = _d(d['longitude'] ?? d['initialLongitude']);
-    if (lat != null && lng != null) return (lat: lat, lng: lng);
-    return null;
+    return parseSosAlertLocation(d);
   }
 
   // Ánh xạ loại phản hồi → (icon, màu nền node, nhãn hiển thị).
