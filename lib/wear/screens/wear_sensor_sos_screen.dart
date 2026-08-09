@@ -8,6 +8,7 @@ import '../../providers/sos_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/fall_detector_service.dart';
 import '../../services/sos_location.dart';
+import '../wear_fall_alert_view.dart';
 import '../wear_widgets.dart';
 
 /// SOS tự động từ cảm biến trên đồng hồ — theo spec "Wear OS Flow" (Discord
@@ -357,73 +358,19 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     // KHÔNG cho cuộn: đây là màn đếm ngược, cả "Con ổn" lẫn "Gửi SOS" phải nằm
     // sẵn trong tầm mắt. Đổi lại nội dung phải tự vừa — từng khoảng cách dưới
     // đây đã bị cắt để có dư chỗ (trước đây tràn 4px trên đồng hồ tròn).
-    final buttonHeight = wearIsLarge(context) ? 48.0 : 42.0;
     return WearPage(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(t.icon, size: 20, color: WearPalette.sos),
-          const SizedBox(height: 4),
-          Text(
-            t.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: WearPalette.text,
-            ),
-          ),
-          if (t.reading.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              t.reading,
-              maxLines: 1,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                color: WearPalette.sos,
-              ),
-            ),
-          ],
-          const SizedBox(height: 2),
-          Text(
-            t.question,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 9, color: WearPalette.muted),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Tự gửi SOS sau $_countdown giây',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 8, color: WearPalette.faint),
-          ),
-          const SizedBox(height: 6),
-          // Nút huỷ để trên và nổi hơn: đây là nút chống báo nhầm.
-          WearPillButton(
-            label: t.dismissLabel,
-            icon: Icons.check_rounded,
-            color: WearPalette.green,
-            height: buttonHeight,
-            onTap: _dismiss,
-          ),
-          const SizedBox(height: 4),
-          WearPillButton(
-            label: 'Gửi SOS',
-            icon: Icons.sos_rounded,
-            color: WearPalette.sos,
-            height: buttonHeight,
-            onTap: () {
-              _timer?.cancel();
-              _send(t);
-            },
-          ),
-        ],
+      child: WearFallAlertView(
+        icon: t.icon,
+        title: t.title,
+        reading: t.reading,
+        question: t.question,
+        countdown: _countdown,
+        dismissLabel: t.dismissLabel,
+        onDismiss: _dismiss,
+        onSendNow: () {
+          _timer?.cancel();
+          _send(t);
+        },
       ),
     );
   }
