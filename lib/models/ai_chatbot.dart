@@ -130,27 +130,20 @@ class AiMessage {
   /// liệu cũ, không phá test/màn hình đang chạy đúng.
   AiDisplayStyle get effectiveDisplayStyle {
     // BE chỉ định rõ ràng đây là kế hoạch nhiều bước (Sprint 3) — ưu tiên
-    // kiểm tra trước tiên, vì widget kế hoạch tự lo hiển thị trạng thái
-    // riêng của TỪNG bước (mỗi `pendingActions[n]` có `status` riêng), không
-    // áp dụng cùng một quy tắc "đã xử lý thì ép về actionCard" như action
-    // đơn lẻ bên dưới.
+    // kiểm tra trước tiên, vì widget kế hoạch tự lo hiển thị trạng thái riêng
+    // của TỪNG bước (mỗi `pendingActions[n]` có `status` riêng).
     if (uiHints?.displayStyle == AiDisplayStyle.actionPlanCard) {
       return AiDisplayStyle.actionPlanCard;
     }
-    // Đề xuất ĐÃ XỬ LÝ (từ chối/xác nhận/hết hạn) phải luôn hiện đúng thẻ
-    // xác nhận (có banner kết quả — "Bạn đã từ chối...", "Đã thực hiện
-    // xong"...), bất kể `uiHints.displayStyle` nói gì. Quan sát thật
-    // 2026-08-09: bấm "Hủy đề xuất" xong, BE trả lại CHÍNH tin nhắn đó với
-    // `uiHints.displayStyle = INSIGHT_CARD` (nội dung chữ vẫn y hệt lúc chưa
-    // xử lý, "xin xác nhận trên ứng dụng") — theo đúng `displayStyle` thì
-    // FE vẽ ra card phân tích chung chung, MẤT LUÔN banner "đã từ chối",
-    // người dùng tưởng đề xuất còn treo dù đã xử lý xong. `pendingAction`
-    // vẫn còn dữ liệu status thật (REJECTED/CONFIRMED/EXPIRED) — dùng nó ưu
-    // tiên hơn hint hiển thị, vẫn là quyết định theo CẤU TRÚC (không phải
-    // đoán qua content) nên không vi phạm yêu cầu BE.
-    if (pendingAction != null && !pendingAction!.isPending) {
-      return AiDisplayStyle.actionCard;
-    }
+    // Trước 2026-08-09: đề xuất ĐÃ XỬ LÝ (từ chối/xác nhận/hết hạn) có lúc bị
+    // BE trả lại `uiHints.displayStyle = INSIGHT_CARD` (nội dung chữ vẫn y
+    // hệt lúc chưa xử lý), làm mất banner kết quả — FE từng phải ép cứng về
+    // `actionCard` bất kể hint để vá tạm. **BE đã xác nhận sửa tận gốc
+    // 2026-08-09**: REJECTED/CONFIRMED/EXPIRED giờ luôn trả đúng
+    // `RESULT_CARD` kèm `content` cập nhật đúng theo trạng thái thật — nên bỏ
+    // lớp vá tạm, tin thẳng `uiHints.displayStyle` như thiết kế ban đầu.
+    // `_ResultCard` đã đổi màu/icon theo `pendingAction.outcome` để hiển thị
+    // đúng cho cả 3 trường hợp (không còn mặc định xanh "thành công").
     return uiHints?.displayStyle ??
         (pendingAction != null ? AiDisplayStyle.actionCard : AiDisplayStyle.text);
   }
@@ -290,9 +283,10 @@ class AiActionUiHints {
   final String? primaryActionLabel;
   final String? secondaryActionLabel;
 
-  /// BE chưa cho biết endpoint/cơ chế "sửa" đề xuất — chỉ có nhãn nút. Xem
-  /// cách FE tạm xử lý ở `_PendingActionCard._handleEdit` trong
-  /// `ai_assistant_screen.dart`.
+  /// BE xác nhận 2026-08-09: không có endpoint riêng cho "sửa" — luồng chính
+  /// thức là mở form tạo dữ liệu tương ứng prefill từ `preview`, fallback khi
+  /// chưa có form là từ chối đề xuất rồi để người dùng gõ lại. Xem
+  /// `_PendingActionCard._handleEdit` trong `ai_assistant_screen.dart`.
   final String? editActionLabel;
 
   const AiActionUiHints({
@@ -403,11 +397,14 @@ class AiPendingAction {
     );
   }
 
-  /// Ba `actionType` chính thức trong `AiActionType` của OpenAPI 2026-08-07.
+  /// 4 `actionType` chính thức. 3 loại đầu trong `AiActionType` của OpenAPI
+  /// 2026-08-07; `CREATE_BUDGET_PLAN` được BE xác nhận chính thức thêm ngày
+  /// 2026-08-09 (trước đó từng xuất hiện trong runtime nhưng chưa được chốt).
   static const confirmedActionTypes = <String>{
     'CREATE_TASK',
     'CREATE_LEDGER_ENTRY',
     'CREATE_CALENDAR_EVENT',
+    'CREATE_BUDGET_PLAN',
   };
 
   /// Biến thể tên FE từng đoán trước khi BE chốt. Giữ lại vì vô hại và đỡ được
@@ -491,6 +488,7 @@ class AiPendingAction {
     'FINANCE_LEDGER_CREATE' => 'Tạo thu/chi',
     'CREATE_TASK' || 'TASK_CREATE' => 'Tạo nhiệm vụ',
     'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => 'Tạo sự kiện lịch',
+    'CREATE_BUDGET_PLAN' => 'Tạo kế hoạch ngân sách',
     _ => 'Thực hiện đề xuất',
   };
 

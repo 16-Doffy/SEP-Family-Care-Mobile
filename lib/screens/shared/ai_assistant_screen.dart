@@ -9,6 +9,7 @@ import '../../models/ai_chatbot.dart';
 import '../../providers/ai_chatbot_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
+import '../../providers/finance_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
@@ -114,6 +115,36 @@ DateTime calendarMonthToReload(Map<String, dynamic> preview) {
   }
   return DateTime.now();
 }
+
+/// Câu trạng thái dưới thẻ đề xuất. Xác nhận thành công phải nói rõ là **đã
+/// xong**, không được dùng chung một câu cảnh báo với đề xuất hết hạn. Tách
+/// top-level (không phải instance getter) để `_PendingActionCard` và
+/// `_ResultCard` dùng chung — từ 2026-08-09, BE trả `RESULT_CARD` cho cả 3
+/// trạng thái đã xử lý (REJECTED/CONFIRMED/EXPIRED), nên `_ResultCard` cũng
+/// cần đúng màu/icon/câu chữ theo outcome thay vì mặc định "thành công".
+String outcomeMessageFor(AiActionOutcome outcome) => switch (outcome) {
+  AiActionOutcome.completed => 'Đã thực hiện xong.',
+  AiActionOutcome.rejected => 'Bạn đã từ chối đề xuất này.',
+  AiActionOutcome.expired =>
+    'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',
+  AiActionOutcome.failed => 'Thực hiện đề xuất không thành công.',
+  AiActionOutcome.pending => '',
+};
+
+Color outcomeColorFor(AiActionOutcome outcome) => switch (outcome) {
+  AiActionOutcome.completed => AppColors.success,
+  AiActionOutcome.rejected => AppColors.textMuted,
+  AiActionOutcome.expired || AiActionOutcome.failed => AppColors.danger,
+  AiActionOutcome.pending => AppColors.textSecondary,
+};
+
+IconData outcomeIconFor(AiActionOutcome outcome) => switch (outcome) {
+  AiActionOutcome.completed => Icons.check_circle_rounded,
+  AiActionOutcome.rejected => Icons.do_not_disturb_on_outlined,
+  AiActionOutcome.expired => Icons.timer_off_outlined,
+  AiActionOutcome.failed => Icons.error_outline_rounded,
+  AiActionOutcome.pending => Icons.schedule_rounded,
+};
 
 class AIAssistantScreen extends StatefulWidget {
   const AIAssistantScreen({super.key});
@@ -1236,6 +1267,14 @@ class _ResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // BE xác nhận 2026-08-09: RESULT_CARD giờ dùng cho cả 3 trạng thái đã xử
+    // lý (REJECTED/CONFIRMED/EXPIRED), không chỉ xác nhận thành công — không
+    // còn được mặc định tô xanh "thành công" cho mọi trường hợp. Không có
+    // `pendingAction` đính kèm (result thuần thông tin) thì coi như thành
+    // công, giữ đúng hành vi hiển thị cũ trước khi có outcome đa dạng.
+    final outcome = message.pendingAction?.outcome ?? AiActionOutcome.completed;
+    final color = outcomeColorFor(outcome);
+    final icon = outcomeIconFor(outcome);
     final title = message.uiHints?.title?.trim();
     final fields = message.pendingAction?.displayFields ?? const [];
     return Container(
@@ -1245,20 +1284,16 @@ class _ResultCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.success.withValues(alpha: 0.06),
+        color: color.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.success.withValues(alpha: 0.22)),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.check_circle_rounded,
-                size: 18,
-                color: AppColors.success,
-              ),
+              Icon(icon, size: 18, color: color),
               const SizedBox(width: 8),
               if (title != null && title.isNotEmpty)
                 Expanded(
@@ -1267,7 +1302,7 @@ class _ResultCard extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.success,
+                      color: color,
                     ),
                   ),
                 ),
@@ -1281,7 +1316,7 @@ class _ResultCard extends StatelessWidget {
               height: 1.4,
               color: context.colors.textPrimary,
             ),
-            boldColor: AppColors.success,
+            boldColor: color,
           ),
           if (fields.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -1516,10 +1551,12 @@ class _PendingActionCard extends StatelessWidget {
                 ),
               ],
             ),
-            // BE chưa cho endpoint/cơ chế riêng cho "sửa" đề xuất — chỉ có
-            // nhãn nút. Tạm xử lý bằng 2 khả năng đã có sẵn: từ chối đề xuất
-            // hiện tại rồi điền sẵn ô nhập một câu sửa để người dùng chỉnh và
-            // gửi lại cho AI. Đây là suy luận tạm, cần hỏi lại BE nếu sai.
+            // BE xác nhận 2026-08-09: KHÔNG có endpoint "sửa" pending action.
+            // Luồng chính thức là mở form tạo dữ liệu tương ứng, điền sẵn từ
+            // `pendingAction.preview`, cho người dùng chỉnh trước khi lưu —
+            // FE chưa có màn prefill riêng cho từng actionType nên áp dụng
+            // đúng fallback BE xác nhận là hợp lệ: từ chối đề xuất hiện tại
+            // rồi để người dùng tự gõ lại câu mới cho AI.
             if (enabled &&
                 (action.uiHints?.editActionLabel?.trim().isNotEmpty ?? false))
               Padding(
@@ -1550,29 +1587,11 @@ class _PendingActionCard extends StatelessWidget {
 
   /// Câu trạng thái dưới thẻ. Xác nhận thành công phải nói rõ là **đã xong**,
   /// không được dùng chung một câu cảnh báo với đề xuất hết hạn.
-  String get _outcomeMessage => switch (action.outcome) {
-    AiActionOutcome.completed => 'Đã thực hiện xong.',
-    AiActionOutcome.rejected => 'Bạn đã từ chối đề xuất này.',
-    AiActionOutcome.expired =>
-      'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',
-    AiActionOutcome.failed => 'Thực hiện đề xuất không thành công.',
-    AiActionOutcome.pending => '',
-  };
+  String get _outcomeMessage => outcomeMessageFor(action.outcome);
 
-  Color get _outcomeColor => switch (action.outcome) {
-    AiActionOutcome.completed => AppColors.success,
-    AiActionOutcome.rejected => AppColors.textMuted,
-    AiActionOutcome.expired || AiActionOutcome.failed => AppColors.danger,
-    AiActionOutcome.pending => AppColors.textSecondary,
-  };
+  Color get _outcomeColor => outcomeColorFor(action.outcome);
 
-  IconData get _outcomeIcon => switch (action.outcome) {
-    AiActionOutcome.completed => Icons.check_circle_rounded,
-    AiActionOutcome.rejected => Icons.do_not_disturb_on_outlined,
-    AiActionOutcome.expired => Icons.timer_off_outlined,
-    AiActionOutcome.failed => Icons.error_outline_rounded,
-    AiActionOutcome.pending => Icons.schedule_rounded,
-  };
+  IconData get _outcomeIcon => outcomeIconFor(action.outcome);
 
   Widget _statusChip(Color color) {
     final text = switch (action.outcome) {
@@ -1650,6 +1669,7 @@ class _PendingActionCard extends StatelessWidget {
     'FINANCE_LEDGER_CREATE' => Icons.account_balance_wallet_outlined,
     'CREATE_CALENDAR_EVENT' ||
     'CALENDAR_EVENT_CREATE' => Icons.event_available_outlined,
+    'CREATE_BUDGET_PLAN' => Icons.pie_chart_outline_rounded,
     _ => Icons.fact_check_outlined,
   };
 
@@ -1659,6 +1679,7 @@ class _PendingActionCard extends StatelessWidget {
     'CREATE_TRANSACTION' ||
     'FINANCE_LEDGER_CREATE' => AppColors.success,
     'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => AppColors.calTravel,
+    'CREATE_BUDGET_PLAN' => AppColors.accent500,
     _ => AppColors.primary600,
   };
 
@@ -1667,6 +1688,7 @@ class _PendingActionCard extends StatelessWidget {
     final tasks = context.read<TaskProvider>();
     final wallet = context.read<WalletProvider>();
     final calendar = context.read<CalendarProvider>();
+    final finance = context.read<FinanceProvider>();
     final ok = stepIndex != null
         ? await ai.confirmStep(messageId, stepIndex!)
         : await ai.confirmAction(messageId);
@@ -1691,6 +1713,13 @@ class _PendingActionCard extends StatelessWidget {
     final refreshCalendar =
         !action.isKnownActionType ||
         const {'CREATE_CALENDAR_EVENT', 'CALENDAR_EVENT_CREATE'}.contains(type);
+    // BE xác nhận CREATE_BUDGET_PLAN là actionType chính thức 2026-08-09, yêu
+    // cầu FE refresh Wallet/Budget/finance overview sau khi xác nhận —
+    // `FinanceProvider.fetchAll()` kéo lại đúng nhóm này (models/jars/
+    // categories/budgetPlans/goals/monthlyFinance) trong 1 lần gọi.
+    final refreshFinance =
+        !action.isKnownActionType ||
+        const {'CREATE_BUDGET_PLAN'}.contains(type);
 
     if (!action.isKnownActionType) {
       debugPrint(
@@ -1716,6 +1745,7 @@ class _PendingActionCard extends StatelessWidget {
         () => calendar.fetchEvents(calendarMonthToReload(action.preview)),
       );
     }
+    if (refreshFinance) await guarded('finance', finance.fetchAll);
   }
 }
 

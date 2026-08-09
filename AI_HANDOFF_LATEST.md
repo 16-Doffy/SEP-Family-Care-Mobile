@@ -2,6 +2,118 @@
 
 Last updated: **2026-08-09**
 
+## BE fix 5/8 mục đã báo cáo — FE cập nhật theo, ĐÃ XONG (2026-08-09)
+
+BE phản hồi và fix 5 trong 8 mục ở danh sách "Cần báo BE" (2 mục còn lại về
+`ACTION_PLAN_CARD`/endpoint reject-theo-step vẫn treo, chưa có tin BE; mục
+thiếu tên hiển thị chỉ cần verify lại, không có code FE để đổi).
+
+1. **`CREATE_LEDGER_ENTRY` chập chờn (BE fix, FE cần test lại)** — nguyên
+   nhân là `entryDate` do AI sinh format không ổn định. BE đã normalize
+   trước khi validate (`YYYY-MM-DD` → thêm giờ 00:00 +07:00, thiếu timezone
+   → tự thêm +07:00, không parse được → fallback ngày hiện tại giờ VN).
+   **Không có code FE nào cần đổi** — nhờ user test lại luồng "Ghi khoản chi
+   ... hôm nay/tuần này" nhiều lần xem còn chập chờn không.
+
+2. **`uiHints.displayStyle` sai sau confirm/reject (BE fix tận gốc, FE bỏ
+   lớp vá tạm)** — BE xác nhận `REJECTED`/`CONFIRMED`/`EXPIRED` giờ luôn trả
+   đúng `RESULT_CARD`, `content` cập nhật đúng theo trạng thái thật (không
+   còn giữ câu "vui lòng xác nhận" cũ). Đã bỏ đoạn ép cứng `actionCard` cho
+   action đã xử lý ở `AiMessage.effectiveDisplayStyle` (`lib/models/ai_chatbot.dart`)
+   — giờ tin thẳng `uiHints.displayStyle` như thiết kế ban đầu. **`_ResultCard`
+   (`ai_assistant_screen.dart`) đổi thành outcome-aware**: màu/icon lấy theo
+   `pendingAction.outcome` (`outcomeColorFor`/`outcomeIconFor`, tách top-level
+   dùng chung với `_PendingActionCard`) thay vì mặc định xanh "thành công"
+   cho cả 3 trường hợp — REJECTED giờ hiện xám, EXPIRED hiện đỏ, đúng màu
+   từng loại.
+
+3. **`CREATE_BUDGET_PLAN` xác nhận chính thức** — thêm vào
+   `AiPendingAction.confirmedActionTypes` (giờ 4 loại), thêm nhãn "Tạo kế
+   hoạch ngân sách", icon/màu riêng (`Icons.pie_chart_outline_rounded`,
+   `AppColors.accent500`). `_confirmAndReload` thêm nhánh `refreshFinance`
+   gọi `FinanceProvider.fetchAll()` sau khi xác nhận (kéo lại
+   models/jars/categories/budgetPlans/goals/monthlyFinance — đúng yêu cầu BE
+   "refresh Wallet/Budget screens, budget plan list/detail, và finance
+   overview").
+
+4. **Permission message mất dấu (BE fix)** — không có code FE, nhờ user test
+   lại xem các câu "Bạn không có quyền..." đã có dấu đầy đủ và NHẤT QUÁN
+   giữa các loại hành động chưa (trước đó phát hiện có câu đúng dấu, có câu
+   sai — cần xem đã sửa hết chưa).
+
+5. **Nút "Sửa" — làm rõ luồng chính thức (không phải fix code)** — BE xác
+   nhận không có endpoint edit, luồng đúng là mở form tạo dữ liệu tương ứng
+   prefill từ `preview`. FE chưa có form prefill riêng theo actionType nên
+   fallback hiện tại (từ chối rồi để gõ lại) được BE xác nhận là hợp lệ —
+   **giữ nguyên code, chỉ cập nhật lại comment/doc** không còn gắn nhãn "suy
+   đoán tạm" nữa.
+
+**Test cập nhật:** `test/ai_pending_action_contract_test.dart` (4 actionType
+thay vì 3, thêm nhóm test cho `outcomeMessageFor`/`outcomeColorFor`/
+`outcomeIconFor`), `test/ai_ui_hints_test.dart` (2 test khóa hành vi vá tạm
+cũ đã đổi thành khóa hành vi mới — tin thẳng `uiHints.displayStyle` cho
+RESULT_CARD).
+
+Verify: `flutter analyze` 0 error, `flutter test` 304/304 pass. Chưa verify
+runtime cho cả 5 mục — nhờ user test lại, đặc biệt mục 1 và 2 (mục 2 cần coi
+màu card sau khi Hủy/Xác nhận/Hết hạn có đúng xám/xanh/đỏ tương ứng không).
+
+**Còn treo với BE (2 mục cũ chưa có phản hồi):** `ACTION_PLAN_CARD` chưa
+từng thấy hoạt động thật trong runtime; endpoint reject-theo-step
+(`.../actions/:actionIndex/reject`) chưa được BE xác nhận nguyên văn.
+
+## Snapshot hiện hành 2026-08-09 — đọc phần này trước khi làm tiếp
+
+**Trạng thái nhánh:** `NDuy` và `main` đang **trùng nhau tuyệt đối**
+(`fc69b9d`, đã push cả hai). `origin/giap` đang **thua `main` 14 commit**
+(không có commit riêng nào khác) — cần báo Giáp `git pull origin main` để
+lấy bản mới nhất, không có rủi ro mất việc của bạn ấy khi làm vậy.
+
+**Việc đã xong trong phiên 2026-08-08 → 2026-08-09 (chi tiết ở các mục dưới,
+theo thứ tự mới nhất trên cùng):**
+1. Wire BE Sprint 3 — `ACTION_PLAN_CARD` nhiều bước (model/provider/UI/test),
+   backward-compatible với dữ liệu cũ. **Chưa verify runtime** vì BE chưa
+   từng thực sự trả về plan nhiều bước trong lúc test (xem mục ngay dưới).
+2. Sửa mất banner "đã từ chối" sau khi Hủy đề xuất (ưu tiên `pendingAction.status`
+   thật hơn `uiHints.displayStyle` khi đề xuất đã có kết quả).
+3. Sửa màn Trợ lý AI load trắng giữa chừng (Daily Brief tải trễ, đua với
+   scroll-to-bottom).
+4. Sửa 2 bug cuộn UX (icon xem lại Daily Brief kéo lệch vị trí; gửi tin đầu
+   tiên từ màn trống không tự cuộn xuống).
+5. Thêm ô nhập thu/chi "thực tế" hàng tháng cho thành viên (Hồ sơ → Tài
+   chính tháng) — BE đã hỗ trợ sẵn field, chỉ thiếu UI.
+6. Sửa checklist "Bắt đầu tháng" không tự tick sau khi khai báo (thiếu reload
+   sau khi quay về từ màn khai báo).
+7. 4 bug UX/UI phát hiện từ ảnh test thật (nhảy màn khi Xác nhận/Hủy, ví dụ
+   chi tiêu set cứng 200k, markdown `**...**` hiện dấu sao thô, giờ ISO thô
+   trong thẻ sự kiện lịch).
+8. Sửa layout overflow Daily Brief + UX mở màn luôn đứng ở đầu (không tự
+   cuộn xuống hội thoại đang dở).
+9. Toàn bộ Sprint 2 (`uiHints`-driven rendering, 5 `displayStyle`, Daily
+   Brief) — nền tảng cho mọi việc ở trên.
+
+**Cần báo BE (8 mục, đã tổng hợp gửi user để gửi team BE — xem chi tiết ở
+mục "BE Sprint 3" và các mục cũ hơn phía dưới):**
+1. `ACTION_PLAN_CARD` chưa thực sự hoạt động — request nhiều hành động vẫn
+   rơi về 1 action đơn, AI tự báo lỗi ("có lỗi khi ghi cả hai hành động cùng
+   lúc"...). **Chưa từng thấy plan nhiều bước thật trong runtime.**
+2. Endpoint reject-theo-step chưa xác nhận được nguyên văn (BE cắt dòng giữa
+   chừng) — FE đang dùng `/reject` theo suy đoán đối xứng, chưa test được vì
+   phụ thuộc mục 1.
+3. Tạo đề xuất ghi khoản chi lỗi chập chờn, tự nhận liên quan định dạng ngày.
+4. `uiHints.displayStyle` đổi sai sau khi resolve đề xuất, nội dung không
+   cập nhật theo trạng thái mới (FE đã tự vá được, BE vẫn nên sửa gốc).
+5. `actionType` mới `CREATE_BUDGET_PLAN` chưa xác nhận chính thức.
+6. Thông báo từ chối quyền mất dấu tiếng Việt không nhất quán.
+7. AI không biết displayName thành viên thật.
+8. Cơ chế nút "Sửa" (`editActionLabel`) chưa rõ, FE đang tạm suy đoán.
+
+**Quy trình đang áp dụng:** Claude chỉ code + fix, KHÔNG tự mở emulator thao
+tác — user tự test mọi thay đổi UI/UX và báo lại bằng ảnh chụp. Mọi thay đổi
+đều chạy `flutter analyze --no-fatal-infos` (0 error) + `flutter test`
+(301/301 pass tính đến cuối phiên này) trước khi commit, nhưng **chưa có xác
+nhận runtime nào** cho các mục 1-8 ở trên cho tới khi user tự test.
+
 ## BE Sprint 3 — kế hoạch nhiều bước `ACTION_PLAN_CARD` — ĐÃ WIRE (2026-08-09)
 
 BE nâng cấp AI Chatbot lên Sprint 3, **backward-compatible**, endpoint cũ

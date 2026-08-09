@@ -93,37 +93,37 @@ void main() {
     });
 
     test(
-      'đề xuất ĐÃ TỪ CHỐI vẫn phải hiện actionCard (banner kết quả) dù BE đổi '
-      'uiHints.displayStyle sang kiểu khác — quan sát thật 2026-08-09: bấm '
-      'Hủy đề xuất xong, BE trả lại tin nhắn đó với displayStyle=INSIGHT_CARD '
-      'và content vẫn y hệt lúc chưa xử lý, mất luôn banner "đã từ chối"',
+      'đề xuất ĐÃ TỪ CHỐI tin thẳng uiHints.displayStyle = RESULT_CARD — BE '
+      'xác nhận sửa tận gốc 2026-08-09: REJECTED/CONFIRMED/EXPIRED giờ luôn '
+      'trả đúng RESULT_CARD (trước đó có lúc trả nhầm INSIGHT_CARD, FE từng '
+      'phải ép cứng actionCard để vá tạm — lớp vá đó đã bỏ)',
       () {
         final rejected = AiMessage.fromJson({
           'id': 'm1',
           'senderType': 'AI',
-          'content': 'Xin vui lòng xác nhận trên ứng dụng để hoàn tất!',
-          'uiHints': {'displayStyle': 'INSIGHT_CARD'},
+          'content': 'Bạn đã từ chối đề xuất ghi khoản chi này.',
+          'uiHints': {'displayStyle': 'RESULT_CARD'},
           'pendingAction': {
             'actionType': 'CREATE_LEDGER_ENTRY',
             'status': 'REJECTED',
           },
         });
-        expect(rejected.effectiveDisplayStyle, AiDisplayStyle.actionCard);
+        expect(rejected.effectiveDisplayStyle, AiDisplayStyle.resultCard);
       },
     );
 
-    test('đề xuất ĐÃ XÁC NHẬN cũng ưu tiên actionCard hơn uiHints', () {
+    test('đề xuất ĐÃ XÁC NHẬN cũng tin thẳng uiHints.displayStyle', () {
       final confirmed = AiMessage.fromJson({
         'id': 'm1',
         'senderType': 'AI',
         'content': 'Đã ghi sổ.',
-        'uiHints': {'displayStyle': 'TEXT'},
+        'uiHints': {'displayStyle': 'RESULT_CARD'},
         'pendingAction': {
           'actionType': 'CREATE_LEDGER_ENTRY',
           'status': 'CONFIRMED',
         },
       });
-      expect(confirmed.effectiveDisplayStyle, AiDisplayStyle.actionCard);
+      expect(confirmed.effectiveDisplayStyle, AiDisplayStyle.resultCard);
     });
 
     test('đề xuất còn PENDING thì vẫn tôn trọng uiHints như cũ (không đổi '

@@ -10,7 +10,7 @@
 > - `POST /wearable-activations/{sessionId}/claim`: Wear OS claim `accessToken`, `refreshToken`, `user` sau khi mobile pair mã.
 >
 > Bản ngay trước đó cũng đã bổ sung **25 response/schema**:
-> - **AI Chatbot**: có DTO chính thức cho conversations, messages, send message, confirm/reject action, delete conversation; thêm enum `AiActionType` (`CREATE_LEDGER_ENTRY | CREATE_TASK | CREATE_CALENDAR_EVENT`) và `AiActionStatus` (`PENDING | CONFIRMED | REJECTED | EXPIRED`).
+> - **AI Chatbot**: có DTO chính thức cho conversations, messages, send message, confirm/reject action, delete conversation; enum `AiActionType` (`CREATE_LEDGER_ENTRY | CREATE_TASK | CREATE_CALENDAR_EVENT | CREATE_BUDGET_PLAN`, 4 giá trị từ 2026-08-09) và `AiActionStatus` (`PENDING | CONFIRMED | REJECTED | EXPIRED`).
 > - **Wearable sensor event**: `POST /families/{familyId}/wearables/{deviceId}/events` có `WearableEventIngestApiResponseDto`, gồm `event`, `alertCreated`, `alertId`; duplicate active SOS trả `alertCreated=false` và `alertId` là SOS active hiện có.
 > - **Wearable error codes** đã được document trong response lỗi: `WEARABLE_ALREADY_PAIRED`, `DEVICE_IDENTIFIER_TAKEN`, `WEARABLE_NOT_PAIRED`, `INVALID_SENSOR_EVENT_TYPE`, `INVALID_SENSOR_EVENT_PAYLOAD`.
 
@@ -400,14 +400,19 @@ coi là "bước 0" duy nhất).
 }
 ```
 
-- `actionType` chính thức, **đúng 3 giá trị**: `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`.
+- `actionType` chính thức, **4 giá trị** (cập nhật 2026-08-09): `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`, `CREATE_BUDGET_PLAN` (BE xác nhận chính thức thêm, trước đó từng thấy runtime nhưng chưa chốt). Sau confirm `CREATE_BUDGET_PLAN` phải refresh Wallet/Budget/finance overview — FE gọi `FinanceProvider.fetchAll()`.
 - `status` chính thức, **đúng 4 giá trị**: `PENDING` → `CONFIRMED` (confirm thành công) / `REJECTED` (người dùng từ chối) / `EXPIRED` (quá hạn). **Không có `CANCELED` hay `FAILED`.**
 - Sau confirm thành công, status lưu trên tin nhắn AI gốc là `CONFIRMED` và **`result.id` là id bản ghi vừa tạo** (FE hiện chưa dùng field này — có thể dùng sau để deep-link tới bản ghi).
+- **[Sửa 2026-08-09]** `uiHints.displayStyle` của tin nhắn sau khi resolve (confirm/reject) từng có lúc trả sai `INSIGHT_CARD` kèm `content` vẫn y hệt lúc chưa xử lý ("xin xác nhận"), làm FE mất banner kết quả — BE xác nhận đã sửa tận gốc: `REJECTED`/`CONFIRMED`/`EXPIRED` giờ luôn trả đúng `RESULT_CARD`, `content` cập nhật đúng theo trạng thái thật. FE đã bỏ lớp vá tạm (ép cứng `actionCard`), tin thẳng `uiHints.displayStyle`; `_ResultCard` đổi màu/icon theo outcome (không còn mặc định xanh "thành công" cho mọi trường hợp).
 - `expiresAt` là **ISO UTC thật** sinh bằng `Date.toISOString()`, có đuôi `Z`, interceptor **không** convert timezone. FE tính countdown theo UTC bình thường.
 - **Cập nhật 2026-08-07:** `entryDate` của Ledger **cũng là UTC thật**, không còn phải wall-clock local gắn `Z` như ghi nhận trước đây. Verify runtime: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC), sổ thu chi từng hiện `13:18` — lộ ra `WalletProvider.displayEntryDate` tự cắt `Z` rồi đọc số UTC như giờ local, lỗi FE đã sửa (không phải BE). **Support request chưa verify lại** — nếu đụng tới thì phải test runtime riêng, không suy diễn theo ledger.
+- **[Sửa 2026-08-09]** `CREATE_LEDGER_ENTRY` từng lỗi chập chờn không sinh `pendingAction` (AI tự báo lỗi định dạng ngày). Nguyên nhân: `entryDate` do AI sinh ra không ổn định format. BE đã normalize trước khi validate: `YYYY-MM-DD` → `YYYY-MM-DDT00:00:00+07:00`; datetime thiếu timezone → tự thêm `+07:00`; text/ngày không parse được → fallback ngày hiện tại theo giờ VN. Cần test lại luồng "Ghi khoản chi ... hôm nay/tuần này" để xác nhận đã hết chập chờn.
+- **[Sửa 2026-08-09]** Thông báo từ chối quyền (`PERMISSION_NOTICE`, "Bạn không có quyền...") từng mất dấu tiếng Việt không nhất quán — BE xác nhận đã sửa, giờ có dấu đầy đủ.
+- **[Sửa 2026-08-09]** AI context cho `list_family_members` từng chỉ có ID/"chưa có tên hiển thị" — BE đã bổ sung fallback: `displayName` → `user.fullName` → `user.email`.
+- **[Làm rõ 2026-08-09]** Nút "Sửa" (`editActionLabel`): BE xác nhận KHÔNG có endpoint edit pending action. Luồng chính thức: FE dùng `pendingAction.preview` để mở form tạo dữ liệu tương ứng, prefill sẵn, cho người dùng chỉnh trước khi lưu. FE hiện chưa có form prefill riêng cho từng actionType, nên áp dụng fallback BE xác nhận là hợp lệ: từ chối đề xuất hiện tại rồi để người dùng gõ lại.
 - Field `preview` của `CREATE_TASK` dùng tên **`task`** (không phải `title`) — quan sát runtime 2026-08-07.
 - Lỗi: `403` không có quyền tạo · `409` đề xuất đã xử lý rồi · `410` hết hạn, phải chat lại để AI tạo đề xuất mới.
-- Sau confirm thành công phải reload đúng module: task → danh sách nhiệm vụ · ledger → finance ledger/overview · calendar → sự kiện lịch (**theo tháng của `startTime`**, không phải tháng hiện tại).
+- Sau confirm thành công phải reload đúng module: task → danh sách nhiệm vụ · ledger → finance ledger/overview · calendar → sự kiện lịch (**theo tháng của `startTime`**, không phải tháng hiện tại) · budget plan → `FinanceProvider.fetchAll()`.
 - FE **không** được tự tạo dữ liệu từ `preview`; `preview` chỉ để người dùng đối chiếu.
 
 **Phân quyền (BE chốt 2026-08-07):** thao tác ghi tài chính `CREATE_LEDGER_ENTRY`
@@ -424,7 +429,7 @@ quyền lợi ở màn Gói đăng ký.
 **✅ Swagger đã có response DTO đầy đủ (bản dump 2026-08-07).** `POST .../messages`
 nay khai cả `200`. Các schema chính thức:
 
-- `AiActionType` (enum) — đúng 3 giá trị, khớp `AiPendingAction.confirmedActionTypes`.
+- `AiActionType` (enum) — đúng 4 giá trị, khớp `AiPendingAction.confirmedActionTypes`.
 - `AiActionStatus` (enum) — đúng 4 giá trị, khớp `AiPendingAction.confirmedStatuses`.
 - `AiPendingActionResponseDto` — `messageId`, `actionType`, `status`, `preview`, `expiresAt` (bắt buộc) + `result` (tuỳ chọn, `AiActionResultResponseDto { id }`).
 - `AiMessageResponseDto` — `id`, `senderType`, `content`, `relatedModule` (nullable), `createdAt`, `pendingAction` (nullable). **Mỗi tin nhắn trong lịch sử có thể tự mang `pendingAction`**, không chỉ response lúc gửi.
