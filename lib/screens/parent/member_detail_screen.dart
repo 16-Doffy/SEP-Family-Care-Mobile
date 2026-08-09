@@ -11,9 +11,41 @@ import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/face_profile_provider.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
+
+/// 8 giá trị `relationship` mà BE chấp nhận (`UpdateMemberRelationshipDto`).
+///
+/// Cố ý **không** có `PARENT`/`SIBLING`: đó là dữ liệu cũ, `relationLabel` vẫn
+/// dịch được để hiển thị nhưng không được phép chọn mới.
+const kRelationshipOptions = <String, String>{
+  'FATHER': 'Bố',
+  'MOTHER': 'Mẹ',
+  'SPOUSE': 'Vợ / Chồng',
+  'CHILD': 'Con',
+  'SISTER': 'Chị / Em gái',
+  'BROTHER': 'Anh / Em trai',
+  'GRANDPARENT': 'Ông / Bà',
+  'OTHER': 'Khác',
+};
+
+/// Dịch lỗi khi đổi quan hệ sang câu người dùng đọc được.
+///
+/// Bắt theo `code`/`errorCode` của BE chứ không theo `message`, vì message là
+/// tiếng Việt do BE viết và sẽ đổi khi họ sửa câu chữ.
+String relationshipErrorMessage(Object error) {
+  if (error is ApiException) {
+    switch (error.code) {
+      case 'FAMILY_ALREADY_HAS_FATHER':
+        return 'Gia đình đã có người giữ vai trò Bố. Hãy đổi quan hệ của người đó trước.';
+      case 'FAMILY_ALREADY_HAS_MOTHER':
+        return 'Gia đình đã có người giữ vai trò Mẹ. Hãy đổi quan hệ của người đó trước.';
+    }
+  }
+  return error.toString().replaceFirst('Exception: ', '');
+}
 
 class MemberDetailScreen extends StatefulWidget {
   final String memberId;
@@ -156,6 +188,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           if (me?.isAdministrative ?? false) ...[
                             const SizedBox(height: 14),
                             _faceProfileCard(member),
+                          ],
+                          // Manager-only (BE trả 403 cho Deputy). Gate bằng
+                          // capability riêng, KHÔNG dùng isAdministrative.
+                          // Cho sửa cả quan hệ của chính Manager vì chọn nhầm
+                          // xảy ra ngay từ lúc tạo gia đình.
+                          if ((me?.canManageMemberRoles ?? false) &&
+                              member.status == 'ACTIVE') ...[
+                            const SizedBox(height: 14),
+                            _relationshipCard(member),
                           ],
                           // Chỉ Trưởng nhóm mới trao quyền được, và chỉ cho
                           // thành viên ACTIVE khác (không phải chính mình).
@@ -1114,6 +1155,125 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
+  Widget _relationshipCard(FamilyMember member) {
+    final current = member.relation.toUpperCase();
+    final isLegacy = current.isNotEmpty && !kRelationshipOptions.containsKey(current);
+    return _sectionCard(
+      title: 'Quan hệ gia đình',
+      icon: Icons.family_restroom_rounded,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            member.relationLabel.isEmpty
+                ? 'Chưa đặt quan hệ cho thành viên này.'
+                : 'Đang là ${member.relationLabel}${isLegacy ? ' (giá trị cũ)' : ''}.',
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _editRelationship(member),
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Đổi quan hệ'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editRelationship(FamilyMember member) async {
+    final family = context.read<FamilyProvider>();
+    final taken = family.takenExclusiveRelations(exceptUserId: member.userId);
+    final current = member.relation.toUpperCase();
+    // Giá trị cũ ngoài 8 lựa chọn (vd PARENT) để null, nếu không RadioGroup sẽ
+    // có value không khớp item nào.
+    var selected = kRelationshipOptions.containsKey(current) ? current : null;
+
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Đổi quan hệ gia đình'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final entry in kRelationshipOptions.entries)
+                  // Dùng ListTile thay RadioListTile: RadioListTile.groupValue
+                  // /onChanged đã deprecated từ Flutter 3.32.
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    enabled: !taken.containsKey(entry.key),
+                    leading: Icon(
+                      selected == entry.key
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      color: selected == entry.key
+                          ? AppColors.primary500
+                          : AppColors.textSecondary,
+                    ),
+                    title: Text(entry.value),
+                    subtitle: taken.containsKey(entry.key)
+                        ? Text(
+                            '${taken[entry.key]} đang giữ vai trò này',
+                            style: const TextStyle(fontSize: 11),
+                          )
+                        : null,
+                    // Chặn trước cho người dùng hiểu lý do; BE vẫn là nơi
+                    // quyết định cuối bằng 409.
+                    onTap: taken.containsKey(entry.key)
+                        ? null
+                        : () => setDialogState(() => selected = entry.key),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: selected == null || selected == current
+                  ? null
+                  : () => Navigator.pop(dialogContext, selected),
+              child: const Text('Lưu'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    try {
+      await family.updateRelationship(member.userId, picked);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã đổi quan hệ thành ${kRelationshipOptions[picked]}'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(relationshipErrorMessage(e)),
           backgroundColor: AppColors.danger,
         ),
       );

@@ -80,6 +80,13 @@ class NotificationRouter {
             : null;
       case 'CONVERSATION':
         return '/$shell/chat';
+      case 'SUPPORT_REQUEST':
+        // BE bắt đầu gửi loại này từ 09/08/2026: tạo yêu cầu → báo
+        // Manager/Deputy, duyệt/từ chối → báo lại chính người gửi. Nên **mọi
+        // role** đều phải có màn đích, không gate theo isMgr như BUDGET_ALERT.
+        // `/finance/support-requests` là route phẳng (không thuộc shell nào)
+        // và không nằm trong _managerOnlyPaths → Member vào được.
+        return '/finance/support-requests';
       default:
         return null; // GENERAL / referenceType chưa hỗ trợ → giữ ở list
     }
