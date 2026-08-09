@@ -154,10 +154,29 @@ void main() {
     String label(String type) =>
         AiPendingAction.fromJson({'actionType': type}).actionLabel;
 
+    test('9 actionType chính thức đều được nhận diện và có nhãn riêng', () {
+      expect(AiPendingAction.confirmedActionTypes, hasLength(9));
+      for (final type in AiPendingAction.confirmedActionTypes) {
+        final action = AiPendingAction.fromJson({'actionType': type});
+        expect(action.isKnownActionType, isTrue, reason: type);
+        expect(
+          action.actionLabel,
+          isNot('Thực hiện đề xuất'),
+          reason: '$type phải có nhãn cụ thể, không rơi về fallback',
+        );
+      }
+    });
+
     test('giao dịch tài chính', () {
       expect(label('CREATE_LEDGER_ENTRY'), 'Tạo thu/chi');
       expect(label('CREATE_TRANSACTION'), 'Tạo thu/chi');
       expect(label('FINANCE_LEDGER_CREATE'), 'Tạo thu/chi');
+      expect(label('CREATE_BUDGET_PLAN'), 'Tạo kế hoạch ngân sách');
+      expect(label('CREATE_BUDGET_LINE'), 'Thêm dòng ngân sách');
+      expect(label('CREATE_FINANCIAL_GOAL'), 'Tạo mục tiêu tài chính');
+      expect(label('CREATE_GOAL_ALLOCATION'), 'Phân bổ cho mục tiêu');
+      expect(label('CREATE_GOAL_CONTRIBUTION_PLAN'), 'Tạo kế hoạch đóng góp');
+      expect(label('ALLOCATE_FUND_BY_MODEL'), 'Chia quỹ theo mô hình');
     });
 
     test('nhiệm vụ và lịch', () {
