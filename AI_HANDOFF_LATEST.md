@@ -2,6 +2,43 @@
 
 Last updated: **2026-08-09**
 
+## Ví dụ "Nhờ AI tạo" trộn cả thu lẫn chi + phát hiện bug ngày sai — 2026-08-09
+
+User hỏi ý kiến: chip "Tạo thu/chi" nên gộp chung hay tách riêng "Tạo khoản
+chi"/"Tạo khoản thu" thành 2 nút/submenu? **Đề xuất & đã làm**: giữ gộp
+chung một chip (đây chỉ là gợi ý mở đầu câu chat, không phải form — tách nút
+chỉ chật dải chip, không giúp AI hiểu tốt hơn), nhưng mở rộng bộ mẫu random
+(`_ledgerPromptSamples`, đổi tên từ `_expensePromptSamples`/
+`_randomExpensePrompt` → `_randomLedgerPrompt`) để **trộn cả ví dụ khoản
+thu** (lương, thưởng, lì xì, làm thêm) bên cạnh các ví dụ khoản chi có sẵn —
+người dùng tự khám phá được cả hai khả năng khi bấm lại nhiều lần, không cần
+thêm nút. Cập nhật `test/ai_prompt_role_test.dart` (assertion đổi từ cố định
+"ghi khoản chi" sang "ghi khoản" chung để không bị flaky theo kết quả random).
+
+**[Cần báo BE]** Ảnh test cho thấy field "Ngày" của khoản chi tạo qua câu
+"... tuần này" ra `00:00 06/08/2026` trong khi ngày thật lúc test là
+09/08/2026 — lệch tận 3 ngày, không phải lỗi timezone (giờ `00:00` là đúng
+theo thiết kế BE đã nói rõ: `entryDate` chuẩn hóa về mốc đầu ngày
+`YYYY-MM-DDT00:00:00+07:00`, không phải timestamp thật — FE hiển thị đúng y
+nguyên giá trị nhận được, không có phép cộng/trừ giờ nào ở đây). Vấn đề DUY
+NHẤT là ngày bị sai — nghi AI dùng sai mốc "hôm nay" khi suy luận cụm từ
+tương đối như "tuần này"/"hôm nay" lúc tạo `entryDate`, không liên quan gì
+đến format vừa fix. Cần BE xác nhận ngữ cảnh "ngày hiện tại" AI dùng để suy
+luận các cụm tương đối có đúng giờ VN thời điểm request không.
+
+Về chữ "giao dịch" còn xuất hiện trong tiêu đề thẻ ("Tạo giao dịch tài
+chính", "Đề xuất đã hủy") dù đã có field `Loại: EXPENSE/INCOME` sẵn: đây là
+`uiHints.title` do BE tự sinh, KHÔNG phải hardcode ở FE (đã grep xác nhận) —
+theo đúng nguyên tắc đã thống nhất (tin thẳng `uiHints`, không tự đoán/sửa
+lại chữ BE gửi), FE không tự đổi chữ này. **Cần báo BE**: nên phân biệt tiêu
+đề theo `Loại` (`Tạo khoản chi`/`Tạo khoản thu`) thay vì dùng chung một câu
+"Tạo giao dịch tài chính" cho mọi trường hợp.
+
+Verify: `flutter analyze` 0 error, `flutter test` 304/304 pass (chạy lại
+`ai_prompt_role_test.dart` 5 lần liên tiếp xác nhận hết flaky). Xác nhận
+runtime (từ ảnh user gửi): **màu outcome đã đúng** — Xác nhận ra xanh, Hủy
+ra xám — fix `_ResultCard` outcome-aware ở mục dưới đã hoạt động tốt.
+
 ## BE fix 5/8 mục đã báo cáo — FE cập nhật theo, ĐÃ XONG (2026-08-09)
 
 BE phản hồi và fix 5 trong 8 mục ở danh sách "Cần báo BE" (2 mục còn lại về

@@ -602,18 +602,27 @@ class _DailyBriefCard extends StatelessWidget {
 /// Câu gợi ý "nhờ AI ghi khoản chi" trước đây cố định `200.000đ tiền ăn uống`
 /// — bấm hoài chỉ tạo đúng một khoản y hệt, test không thấy AI xử lý số/danh
 /// mục khác nhau thế nào. Random một câu trong vài mẫu thực tế mỗi lần dựng
-/// widget để mỗi lần mở màn/mỗi lần thấy chip là một khoản chi khác nhau.
-const _expensePromptSamples = [
+/// widget để mỗi lần mở màn/mỗi lần thấy chip là một khoản khác nhau.
+///
+/// Gộp chung chi lẫn thu trong một chip "Tạo thu/chi" thay vì tách 2 nút
+/// riêng hay làm submenu chọn loại — đây chỉ là 1 gợi ý mở đầu câu chat, AI
+/// đã hiểu được cả hai qua câu tự nhiên, tách thêm nút chỉ chật chỗ dải chip
+/// mà không giúp AI "thông minh" hơn. Trộn cả ví dụ thu vào bộ random để
+/// người dùng tự khám phá được cả hai khả năng khi bấm lại nhiều lần.
+const _ledgerPromptSamples = [
   'Ghi khoản chi 45.000đ tiền cà phê sáng nay',
   'Ghi khoản chi 120.000đ tiền chợ hôm nay',
   'Ghi khoản chi 60.000đ tiền xăng xe hôm nay',
   'Ghi khoản chi 250.000đ tiền sửa xe tuần này',
   'Ghi khoản chi 85.000đ tiền ăn trưa hôm nay',
   'Ghi khoản chi 500.000đ tiền học phí tháng này',
+  'Ghi khoản thu 2.000.000đ tiền thưởng tháng này',
+  'Ghi khoản thu 500.000đ tiền lì xì hôm nay',
+  'Ghi khoản thu 1.500.000đ tiền làm thêm tuần này',
 ];
 
-String _randomExpensePrompt() =>
-    _expensePromptSamples[Random().nextInt(_expensePromptSamples.length)];
+String _randomLedgerPrompt() =>
+    _ledgerPromptSamples[Random().nextInt(_ledgerPromptSamples.length)];
 
 class AiPromptGroup {
   final String title;
@@ -709,7 +718,7 @@ List<AiPromptGroup> aiPromptGroupsFor({required bool canManageFinance}) {
       icon: Icons.auto_awesome_rounded,
       color: AppColors.calTravel,
       prompts: [
-        _randomExpensePrompt(),
+        _randomLedgerPrompt(),
         'Ghi khoản thu 5.000.000đ lương tháng này',
         'Tạo nhiệm vụ rửa bát tối nay',
         'Tạo lịch khám sức khỏe 9h sáng mai',
@@ -1856,7 +1865,7 @@ class _QuickPrompts extends StatelessWidget {
               label: 'Hũ vượt mục tiêu',
               prompt: 'Hũ nào đang chi vượt mục tiêu?',
             ),
-            (label: 'Tạo thu/chi', prompt: _randomExpensePrompt()),
+            (label: 'Tạo thu/chi', prompt: _randomLedgerPrompt()),
             (
               label: 'Tình hình nhiệm vụ',
               prompt: 'Tóm tắt nhiệm vụ của gia đình',
