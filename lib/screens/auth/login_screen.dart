@@ -287,6 +287,16 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Nếu email này đã có tài khoản, hệ thống sẽ liên kết Google vào tài khoản đó.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
                         ],
                       ),
                     ),
