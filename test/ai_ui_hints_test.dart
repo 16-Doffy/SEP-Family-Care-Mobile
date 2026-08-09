@@ -55,6 +55,19 @@ void main() {
   });
 
   group('effectiveDisplayStyle — fallback khi thiếu uiHints (dữ liệu cũ)', () {
+    test('nhiều pendingActions không có uiHints vẫn là action plan', () {
+      final message = AiMessage.fromJson({
+        'id': 'plan-1',
+        'senderType': 'AI',
+        'content': 'Kế hoạch',
+        'pendingActions': [
+          {'actionType': 'CREATE_TASK'},
+          {'actionType': 'CREATE_CALENDAR_EVENT'},
+        ],
+      });
+      expect(message.effectiveDisplayStyle, AiDisplayStyle.actionPlanCard);
+    });
+
     test(
       'không có uiHints, có pendingAction → actionCard (đúng hành vi cũ)',
       () {

@@ -144,10 +144,15 @@ class AiMessage {
     // lớp vá tạm, tin thẳng `uiHints.displayStyle` như thiết kế ban đầu.
     // `_ResultCard` đã đổi màu/icon theo `pendingAction.outcome` để hiển thị
     // đúng cho cả 3 trường hợp (không còn mặc định xanh "thành công").
-    return uiHints?.displayStyle ??
-        (pendingAction != null
-            ? AiDisplayStyle.actionCard
-            : AiDisplayStyle.text);
+    final hintedStyle = uiHints?.displayStyle;
+    if (hintedStyle != null) return hintedStyle;
+    // Response chuẩn Sprint 3 luôn gửi ACTION_PLAN_CARD cùng nhiều bước. Vẫn
+    // phòng thủ ở đây để một response thiếu uiHints không làm UI chỉ render
+    // bước đầu của kế hoạch dù dữ liệu `pendingActions[]` đã đầy đủ.
+    if (pendingActions.length > 1) return AiDisplayStyle.actionPlanCard;
+    return pendingAction != null
+        ? AiDisplayStyle.actionCard
+        : AiDisplayStyle.text;
   }
 
   // Chữ ký giữ nguyên (nhận 1 AiPendingAction, không phải List) để không phá

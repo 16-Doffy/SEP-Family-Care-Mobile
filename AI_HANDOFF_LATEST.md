@@ -1,6 +1,138 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-09**
+Last updated: **2026-08-10**
+
+## 🔖 Cập nhật cuối phiên 2026-08-10 — chốt test AI Chatbox mới nhất, chuẩn bị commit/merge
+
+### Fix FE đã hoàn tất trong phiên
+
+- **UUID thô trong preview AI**: `Người nhận` task và `Danh mục` giao dịch đã
+  được xử lý theo cả key kỹ thuật lẫn nhãn `uiHints.fields` tiếng Việt. Màn AI
+  nay lắng nghe `FamilyProvider`, nên khi danh sách thành viên tải xong thẻ tự
+  build lại để thay UUID bằng tên, không cần gửi lại chat. Runtime: task hiển
+  thị đúng **Minh Nhựt**; cần hot restart/đóng mở màn AI sau khi lấy code mới.
+- **`pendingActions[]` Sprint 3**: `AiSendMessageDataResponseDto` có cả
+  `pendingAction` alias và `pendingActions[]` đầy đủ. Provider cũ chỉ đọc alias
+  nên có thể làm rơi các bước từ thứ hai của `ACTION_PLAN_CARD` ngay sau gửi.
+  Nay giữ toàn bộ mảng + có fallback render plan khi thiếu `uiHints`; thêm test
+  vào `test/ai_send_response_test.dart` và `test/ai_ui_hints_test.dart`.
+- **Thông báo chia quỹ qua AI**: map theo `ApiException.code` thay vì chỉ hiện
+  câu ngắn BE. `FUND_ALLOCATION_ALREADY_EXISTS`, `INSUFFICIENT_AVAILABLE_FUND`,
+  `NO_ACTIVE_FINANCE_MODEL`, `INVALID_JAR_PERCENTAGE` đều có hướng dẫn rõ.
+  Runtime đã thấy banner 409 và 400 sau confirm, không còn cảm giác nút đứng im.
+- **Danh mục UUID**: bổ sung test `uiHints` key lạ + label `Danh mục` trong
+  `test/ai_category_name_test.dart`.
+
+### Kết quả runtime mới nhất
+
+1. **Chia quỹ tháng 8/2026**: confirm trả `409 FUND_ALLOCATION_ALREADY_EXISTS`
+   và FE hiện: “Gia đình đã chia quỹ cho kỳ này. Mỗi tháng chỉ được chia một
+   lần, kể cả khi đổi mô hình.” Đây là rule đúng: khóa là
+   `familyId + periodMonth + periodYear`, không phụ thuộc model. Thẻ vẫn
+   `PENDING` là đúng vì không có allocation mới.
+2. **Chia quỹ tháng 12/2026**: confirm proposal 20tr/2tr/100k trả
+   `INSUFFICIENT_AVAILABLE_FUND`; FE hiện hướng dẫn chọn **Chỉnh chia quỹ** để
+   nhập lại hoặc ghi nhận quỹ cho đúng kỳ. Đây chưa đủ bằng chứng BE tính sai:
+   số dư tổng không đồng nghĩa quỹ khả dụng theo kỳ, nhất là tháng tương lai.
+3. Test tạo khoản thu 500k ngày 01/12/2026 thành công, nhưng prompt chia quỹ
+   tháng 12 kế tiếp lại bị AI trả `PERMISSION_NOTICE` (“không có quyền…”) và
+   **không sinh pendingAction**. Nếu cùng account Manager/Deputy (đã tạo thu
+   thành công) thì đây là lỗi BE ở tầng AI/permission, chặn trước endpoint
+   confirm nên chưa thể kiểm tra phép tính quỹ tháng 12 qua AI.
+4. **“Cuối tuần này” vẫn lỗi không ổn định**: có prompt `đề xuất`/một lượt ra
+   đúng 15/08, nhưng `tạo` và đặc biệt luồng AI hỏi thêm giờ/địa điểm ra
+   `13/08/2026` (thứ Năm), dù text nói “cuối tuần này”. Đây là lỗi BE suy luận
+   ngày tương đối; FE chỉ render `startTime/endTime` server trả về, không tự sửa.
+
+### Cần báo BE
+
+1. Chuẩn hóa resolver ngày tương đối “cuối tuần này” theo thời điểm gửi message
+   hiện tại và giữ mốc xuyên suốt conversation; hiện kết quả chập chờn 13/08
+   hoặc 15/08 khi test ngày 10/08/2026 (đúng phải là 15–16/08).
+2. `ALLOCATE_FUND_BY_MODEL` qua AI: Manager/Deputy bị `PERMISSION_NOTICE` sai
+   khi yêu cầu chia quỹ tháng 12, dù vừa tạo khoản thu cùng kỳ thành công. AI
+   phải sinh `pendingAction`; nếu thiếu quỹ thì endpoint confirm mới trả
+   `INSUFFICIENT_AVAILABLE_FUND`.
+3. Thêm chi tiết lỗi `INSUFFICIENT_AVAILABLE_FUND`: `requestedAmount`,
+   `availableAmount`, `periodMonth`, `periodYear`, để FE nói được mức tối đa
+   còn có thể chia. Hiện không có endpoint công khai để FE tải quỹ khả dụng
+   chính xác theo kỳ.
+4. Chuẩn hóa message `FUND_ALLOCATION_ALREADY_EXISTS` có dấu tiếng Việt nếu BE
+   vẫn trả `Ky nay da co lan chia quy`.
+
+### Không phải bug BE
+
+- 409 tháng đã chia: đúng rule nghiệp vụ, FE đã hiển thị rõ.
+- 400 vượt quỹ tháng 12: chưa kết luận sai cho tới khi BE cho AI sinh action
+  hoặc test được qua màn Chia quỹ trực tiếp với cùng kỳ.
+
+## 🔖 Bàn giao 2026-08-10 (tiếp phiên 08-09) — verify tin BE + tìm ra nguyên nhân thật của bug `ALLOCATE_FUND_BY_MODEL`
+
+BE gửi tin báo đã fix 2 lỗi ngày/giờ + thêm log chẩn đoán cho `ALLOCATE_FUND_BY_MODEL`. Test lại toàn bộ qua máy ảo (qua nửa đêm, ngày hệ thống chuyển 09/08 → 10/08 giữa lúc test):
+
+**1. Giờ "ngay bây giờ" — BE ĐÃ FIX ĐÚNG, xác nhận qua đối chiếu `adb shell date`.** Câu "Ghi khoản chi ... ngay bây giờ" ra đúng giờ hệ thống thật (test lúc 23:58 → field Ngày ra đúng 23:58; test lại lúc 00:12 hôm sau → ra đúng 00:12). Rút khỏi danh sách cần báo BE.
+
+**2. "Cuối tuần này" — VẪN CHƯA FIX ĐÚNG, nhưng tìm ra được điều kiện tái hiện chính xác.** BE báo đã normalize deterministic (test date 09/08 → phải ra thứ Bảy 15/08). Kết quả test:
+- Gõ gọn 1 câu duy nhất ("Tạo lịch đi chơi cuối tuần này", hoặc "hãy đề xuất lịch đi chơi cuối tuần") → **ra ĐÚNG 15/08/2026 (thứ Bảy)**.
+- Câu bị AI hỏi lại chi tiết trước (gõ "tạo lịch đi chơi cuối tuần" không có "này" → AI hỏi thêm giờ/địa điểm → trả lời tiếp ở tin nhắn sau, vd "cắm trại 19h-21h campus hcm") → **ra SAI 13/08/2026 (thứ Năm)**, lặp lại nhiều lần với 2 mốc "hôm nay" khác nhau (09/08 và 10/08) đều cùng ra sai 13/08.
+- **Kết luận: bug chỉ xảy ra ở luồng 2 lượt chat (AI hỏi lại → user trả lời bổ sung), không xảy ra khi gộp đủ thông tin trong 1 câu.** Nghi BE tính "hôm nay" đúng cho message đầu tiên của flow nhưng dùng sai mốc (có thể là thời điểm tạo conversation, không phải thời điểm gửi tin nhắn cụ thể) khi ghép ngữ cảnh ở lượt hỏi-đáp tiếp theo. Cần báo lại BE kèm chi tiết luồng 2 lượt này — quan trọng vì đây là luồng UX phổ biến (AI luôn hỏi lại khi thiếu thông tin).
+- Còn thấy thêm: 1 lần AI tạo `ACTION_PLAN_CARD` 2 đề xuất, text mô tả nói "ngày 13 và 14" nhưng card thật lại đúng "15/08" — **chữ và dữ liệu tự mâu thuẫn nhau theo cả 2 chiều** (lúc thì text đúng data sai, lúc thì text sai data đúng) — càng củng cố nghi ngờ lỗi nằm ở tầng suy luận/ghép ngữ cảnh nhiều lượt, không phải lỗi hiển thị.
+
+**3. `ALLOCATE_FUND_BY_MODEL` — KHÔNG PHẢI LỖI BE, ĐÃ TÌM RA VÀ SỬA 2 BUG FE THẬT.** Thêm debugPrint tạm vào `_handleAction` để bắt log theo yêu cầu BE, kết quả:
+```
+status=409 message="Ky nay da co lan chia quy" code=FUND_ALLOCATION_ALREADY_EXISTS
+```
+BE trả lỗi **đúng nghiệp vụ** (gia đình đã chia quỹ tháng 8 này rồi từ lúc test trước đó trong phiên) — không phải lỗi server. Vấn đề nằm ở FE: (a) [ai_chatbot_provider.dart:654](lib/providers/ai_chatbot_provider.dart#L654) ép cứng câu "Đề xuất này đã được xử lý trước đó" cho MỌI lỗi 409, che mất message thật của BE; (b) sau khi set `_error`, code gọi `fetchMessages()` để refresh — mà hàm này tự xóa `_error = null` ngay đầu, nên banner lỗi bị dọn sạch trước khi UI kịp vẽ, khiến thẻ nhìn như "đứng im" không phản hồi gì.
+- **Đã sửa cả 2** ([ai_chatbot_provider.dart](lib/providers/ai_chatbot_provider.dart), 2 hàm `_handleAction`/`_handleStepAction`): đổi thứ tự set `_error` sau khi `fetchMessages()` chạy xong; đổi case 409 trong `_friendlyError` dùng thẳng `error.message` từ BE thay vì câu cứng (giữ câu cứng làm fallback nếu message rỗng).
+- Bỏ khỏi danh sách "cần báo BE" — nhưng vẫn nên báo BE 1 câu ngắn: field `code`/`message` trả về (`FUND_ALLOCATION_ALREADY_EXISTS` / "Kỳ này đã có lần chia quỹ") **không có dấu tiếng Việt** — nên thêm dấu cho nhất quán với các message lỗi khác.
+
+**Bug khác phát hiện thêm (đã sửa):** Danh mục/Mục tiêu/Mô hình vẫn hiện UUID thô dù đã sửa `resolveAiPreviewField` ở phiên trước — nguyên nhân: `AiAssistantScreen.initState()` chỉ tự tải các danh sách này nếu màn được **mount mới** (initState chạy), còn **hot reload không kích hoạt lại initState** (đặc tính Flutter, giữ nguyên State cũ) nên nếu màn đã mở từ trước khi sửa code thì fix không có tác dụng cho tới khi thoát ra vào lại hoặc hot restart. Không phải bug logic — đã verify lại đúng sau khi mở lại màn từ đầu.
+
+**Trạng thái nhánh**: `flutter analyze` 0 error, `flutter test` 403/403 pass cho tất cả fix ở mục này. Chưa commit gì trong toàn bộ phiên 08-09→08-10 (nhiều fix rải rác: UUID thô, overflow Lịch, auto-load categories/members, message 409 + timing lỗi `_error`) — cần gộp lại xem xét trước khi commit.
+
+## 🔖 Bàn giao giữa phiên 2026-08-09 — bug đặt thưởng nhiệm vụ (KHÔNG thuộc AI Chatbox), tạm dừng để quay lại test AI Chatbox
+
+Trong lúc verify field "Người nhận" của task do AI tạo (đã fix xong, xem mục dưới), tình cờ phát hiện thêm 1 bug **ở tính năng Nhiệm vụ nói chung** (không riêng AI Chatbox):
+
+**Bug: "Đặt thưởng" cho nhiệm vụ hiện badge sai "Chưa đặt thưởng" dù đã lưu thành công.**
+- Tái hiện: mở task "Fix bug" (do AI tạo) → Đặt thưởng 20.000đ → Lưu → back ra danh sách → **badge vẫn "Chưa đặt thưởng"**. Mở lại "Đặt thưởng", nhập số khác, bấm Lưu → banner đỏ **"Công việc đã có cấu hình thưởng"** — xác nhận BE **đã lưu thật** lần đầu, chỉ là FE hiển thị sai.
+- Nguyên nhân (đã đọc code, chưa sửa): [task_management_screen.dart:1820](lib/screens/parent/task_management_screen.dart#L1820) quyết định gọi POST (tạo mới) hay PATCH (cập nhật) dựa vào `task.rewardSetting` — field này chỉ được parse nếu `GET /tasks` (danh sách) **nhúng sẵn** `rewardSetting` trong response, một giả định ghi trong comment ở [task_provider.dart:113-114](lib/providers/task_provider.dart#L113-L114) nhưng **chưa từng verify runtime và không có trong Swagger/API_DOCS.md** (chỉ tài liệu hóa 4 endpoint `reward-setting` riêng, không nói gì về việc list có nhúng field này không). Bằng chứng runtime cho thấy list **không** mang theo field này → FE tưởng chưa có thưởng mãi mãi → mỗi lần thử lại đều gọi nhầm POST thay vì PATCH → BE từ chối.
+- **Đề xuất sửa (chưa làm, để dành phiên sau)**: đổi sheet "Đặt thưởng" sang gọi `fetchRewardSetting(taskId)` (endpoint riêng, có sẵn ở [task_provider.dart:1115](lib/providers/task_provider.dart#L1115)) để lấy đúng trạng thái mới nhất trước khi quyết định POST/PATCH, thay vì tin vào `task.rewardSetting` từ list.
+- **Cũng cần làm rõ với BE**: `GET /tasks` (danh sách) có dự định trả kèm `rewardSetting` không? Nếu không, badge trong danh sách sẽ luôn sai cho tới khi FE đổi cách lấy dữ liệu (gọi thêm 1 request/task, hoặc BE bổ sung field vào list).
+
+**Trạng thái nhánh lúc dừng**: `lib/providers/task_provider.dart` và `lib/screens/parent/task_management_screen.dart` **CHƯA sửa gì** cho bug này — chỉ mới chẩn đoán xong nguyên nhân. `flutter analyze`/`flutter test` vẫn ở trạng thái sạch từ các fix AI Chatbox trước đó (403/403 pass), vì chưa động vào 2 file trên.
+
+## 🔖 Bàn giao phiên tối 2026-08-09 — test toàn diện AI Chatbox qua máy ảo (kịch bản `docs/AI_CHATBOX_TEST_SCRIPT.md`), đọc khối này trước tiên
+
+User test theo kịch bản mới viết (`docs/AI_CHATBOX_TEST_SCRIPT.md`, 30 mục, bao phủ đủ 9 `actionType`, `ACTION_PLAN_CARD`, phân quyền, outcome màu). Nửa sau của phiên Claude tự điều khiển máy ảo qua `adb`
+(uiautomator dump lấy tọa độ chính xác, screencap để đọc kết quả — không có tool điều khiển thiết bị chuyên dụng nên phải build quy trình adb thủ công; gõ tiếng Việt có dấu qua `adb shell input text` KHÔNG được — chữ mất dấu — nên với câu tiếng Việt vẫn cần user gõ tay, Claude chỉ bấm nút/đọc kết quả).
+
+**Kết luận quan trọng nhất: đính chính lại claim "4/5 actionType tài chính mới thiếu `pendingAction`" ở mục bàn giao cũ bên dưới — SAI, đã lỗi thời.** Test lại xác nhận **cả 5/5 loại đều sinh `pendingAction` đúng**:
+- ✅ `CREATE_BUDGET_LINE` — đã verify từ trước, vẫn đúng.
+- ✅ `CREATE_GOAL_ALLOCATION` — phân bổ 500k vào mục tiêu tiết kiệm, xác nhận thành công thật.
+- ✅ `CREATE_GOAL_CONTRIBUTION_PLAN` — AI phản hồi hợp lý (hỏi tạo mục tiêu mới nếu chưa có mục tiêu khớp tên), không phải bug.
+- ✅ `CREATE_FINANCIAL_GOAL` — test câu độc lập ("Tạo mục tiêu tiết kiệm 10.000.000đ để mua xe đạp, hạn tháng 12 năm nay") ra đúng thẻ, xác nhận thành công thật (mục tiêu "Mua xe đạp", hạn 2026-12-31).
+- ⚠️ `ALLOCATE_FUND_BY_MODEL` — ra đúng thẻ "Chia quỹ theo mô hình hũ" (bản thân action CÓ sinh `pendingAction`, không phải lỗi thiếu action), nhưng bấm **Xác nhận** luôn lỗi 502 — xem mục 3 phần "Cần báo BE" bên dưới.
+
+**2 bug FE đã sửa trong phiên này** (đã qua `flutter analyze` 0 error + `flutter test` 403/403 pass):
+1. **UUID thô hiện ở 4 field** (không chỉ Danh mục như phiên trước tưởng đã sửa hết) — phát hiện thêm "Mục tiêu" (`CREATE_GOAL_ALLOCATION`), "Mô hình" (`ALLOCATE_FUND_BY_MODEL`), "Người nhận" (`CREATE_TASK`) đều hiện UUID thô y hệt lỗi Danh mục cũ. Sửa tận gốc: gộp `resolveCategoryName` cũ thành 4 resolver (`resolveCategoryName`/`resolveGoalName`/`resolveFinanceModelName`/`resolveMemberName`) + 1 điều phối `resolveAiPreviewField()` theo tên key, dùng chung cho `_PendingActionCard` và `_ResultCard` — [ai_assistant_screen.dart:110-166](lib/screens/shared/ai_assistant_screen.dart#L110-L166).
+2. **Lỗi tràn layout "BOTTOM OVERFLOWED BY 13 PIXELS"** ở lưới màn Lịch khi 1 ngày có ≥3 sự kiện (phát hiện tình cờ lúc verify mục "sự kiện nhảy đúng tháng") — ô ngày cao cố định 118px chỉ đủ chỗ cho 2 pill sự kiện (22px/pill × 2 = 44px), 3 pill (66px) tràn ~13-22px tùy chiều cao thật. Giới hạn `max` sự kiện hiển thị/ngày từ 3 xuống 2 — [calendar_screen.dart:990](lib/screens/parent/calendar_screen.dart#L990).
+
+**4 mục cần báo BE (đã re-test lấy bằng chứng sạch bằng câu đơn giản, user tự chụp màn hình gửi team BE):**
+1. **AI suy luận sai ngày cho cụm "cuối tuần này"** — hôm nay (test) là Chủ Nhật 09/08/2026, câu "Tạo lịch đi chơi cuối tuần này" ra ngày **13/08/2026 (thứ Năm)**, không phải thứ Bảy/Chủ Nhật tới (15-16/08) như "cuối tuần này" phải là. Lần test trước (câu ghép `ACTION_PLAN_CARD`) còn lộ thêm: chính AI mô tả bằng chữ là "**tối thứ Bảy** này" — tự mâu thuẫn với giá trị ngày nó vừa sinh ra. Nghi AI dùng sai mốc "hôm nay" khi suy luận cụm từ tương đối, lặp lại đúng pattern lỗi đã báo BE với "tuần này" trước đó (BE từng nói đã fix mốc `now()`, có vẻ chưa fix hết mọi cụm từ tương đối).
+2. **Giờ "ngay bây giờ" vẫn về `00:00`, KHÔNG phải giờ thực** — câu "Ghi khoản chi 20.000đ tiền nước ngay bây giờ" test lúc 10:5x sáng ra field Ngày **"00:00 09/08/2026"**. BE từng báo đã fix mốc `now()` giờ VN trước khi gắn `+07:00` — bằng chứng phiên này cho thấy CHƯA fix, hoặc regression trở lại.
+3. **`ALLOCATE_FUND_BY_MODEL`: bấm "Xác nhận chia quỹ" luôn lỗi 502 "Server trả dữ liệu không đúng định dạng JSON"** — tái hiện độc lập ở **3 số tiền khác nhau** (20tr, 5tr, 100k — loại hẳn khả năng do vượt quỹ khả dụng vì 100k rất nhỏ so với quỹ 53tr đang có). Sau lỗi, thẻ **quay về đúng "Chờ xác nhận" như cũ** (đã đọc code `_handleAction` trong `ai_chatbot_provider.dart` xác nhận: lỗi không phải 409/410 thì FE không tự đổi trạng thái) — **không phải bug FE tự ý đổi trạng thái như nghi ngờ ban đầu trong phiên này, đã đính chính**. Riêng lần đầu test còn thấy thêm banner "Số tiền chia quỹ vượt quá quỹ khả dụng của kỳ này" ở 1 lượt gửi trước đó (không liên quan trực tiếp tới lỗi 502) — có thể là 2 lỗi BE riêng biệt, cần BE tự kiểm tra endpoint confirm cho action này.
+4. ~~AI tự bịa dữ liệu không có trong câu lệnh~~ — **rút khỏi danh sách báo BE, không đủ bằng chứng**. Chỉ xảy ra 1 lần duy nhất (AI tự điền "Địa điểm: Cần Thơ" dù câu không nhắc) với câu ghép `ACTION_PLAN_CARD`; gửi lại **đúng y nguyên câu đó thêm 2 lần nữa** đều không tái hiện (không có field Địa điểm nào cả). Không ổn định đủ để báo BE — nếu gặp lại trong tương lai thì ghi nhận lại.
+
+**Bằng chứng bổ sung cho mục 1 (ngày sai "cuối tuần này")**: gửi lại đúng câu ghép trên 1 lần nữa, AI **vẫn nói "tối thứ Bảy này"** trong khi ngày sinh ra vẫn là **13/08/2026 (thứ Năm)** — lặp lại y hệt lần đầu, xác nhận đây là lỗi **ổn định, tái hiện được nhiều lần**, không phải ngẫu nhiên.
+
+**Không phải bug (đã verify PASS, không cần báo BE):**
+- Phân quyền Member: gửi "Ghi khoản chi 50.000đ..." bằng tài khoản Member → AI từ chối đúng, icon khóa, câu "Bạn không có quyền ghi khoản thu/chi vào sổ chung. Hãy nhờ Trưởng nhóm hoặc Phó nhóm thực hiện giúp bạn." (dấu tiếng Việt đầy đủ, không lọt `pendingAction`). Màn Trợ lý AI của Member cũng không có chip gợi ý tạo khoản thu/chi, có banner giải thích rõ ràng.
+- `ACTION_PLAN_CARD` nhiều bước: PASS đúng contract — 1 tin nhắn 2 thẻ xếp chồng, xác nhận/từ chối độc lập từng bước, khi cả 2 bước đều bị từ chối ra đúng thẻ tổng kết "Kế hoạch đã hủy".
+- `CREATE_LEDGER_ENTRY` với "tuần này" từng ra chữ suông không thẻ (giống lỗi chập chờn cũ) 1 lần duy nhất trong lúc test mục 7 kịch bản — không lặp lại ở các câu ledger khác cùng phiên, chưa đủ bằng chứng để báo BE, cần test lại nếu tái hiện.
+- Nút "Chỉnh quỹ"/"Sửa" trên `ALLOCATE_FUND_BY_MODEL`: bấm vào tự động từ chối đề xuất hiện tại (card đổi thành "Đã hủy") — ban đầu tưởng là bug liên quan tới lỗi 502 ở trên, đã đối chiếu lại đúng là hành vi "Sửa" đã chốt với BE từ trước (không có endpoint edit, fallback = reject rồi cho gõ lại), không liên quan tới bug 502.
+
+Verify: `flutter analyze` 0 error, `flutter test` 403/403 pass cho 2 fix FE trên. Runtime đã verify trực tiếp qua máy ảo (không phải suy đoán) cho toàn bộ các mục liệt kê ở trên.
 
 ## 🔖 Bàn giao cuối phiên 2026-08-09 — đọc khối này trước tiên
 
@@ -12,13 +144,18 @@ trình merge ở mục "Snapshot cuối phiên" phía dưới nếu cần đối
 đơn lẻ đủ 9 actionType chính thức, `ACTION_PLAN_CARD` nhiều bước, phân
 quyền, Daily Brief, markdown, tên danh mục). Không có bug FE nào đang treo.
 
-**Việc cần làm tiếp khi có phiên mới / có tin BE:**
-1. **Ưu tiên cao** — báo BE: 4/5 actionType tài chính mới
+> **[Lỗi thời — xem khối bàn giao phía trên]** 4 mục dưới đây đã được test
+> lại trong phiên tối 2026-08-09: mục 1 SAI (3/4 actionType đã hoạt động,
+> không phải 4/5 hỏng), mục 2 đã có bằng chứng mới xác nhận CHƯA fix. Giữ
+> nguyên đoạn gốc bên dưới để đối chiếu lịch sử, đừng tin trực tiếp nữa.
+
+**Việc cần làm tiếp khi có phiên mới / có tin BE (bản gốc, đã lỗi thời — xem khối trên):**
+1. ~~Ưu tiên cao — báo BE: 4/5 actionType tài chính mới~~
    (`CREATE_FINANCIAL_GOAL`, `CREATE_GOAL_ALLOCATION`,
    `CREATE_GOAL_CONTRIBUTION_PLAN`, `ALLOCATE_FUND_BY_MODEL`) chưa sinh
    `pendingAction` thật — xem chi tiết + ví dụ câu test ngay dưới đây.
-2. Giờ tạo khoản thu/chi qua "ngay bây giờ" — BE nói đã fix, **chưa có ai
-   test lại để xác nhận**.
+2. ~~Giờ tạo khoản thu/chi qua "ngay bây giờ" — BE nói đã fix, chưa có ai
+   test lại để xác nhận~~.
 3. Phân trang `finance/ledger/entries` theo `createdAt` — BE nói đã fix,
    **chưa có ai test lại để xác nhận**.
 4. Đang chờ user quyết định: có làm màn "Sửa danh mục" cho giao dịch cũ/AI

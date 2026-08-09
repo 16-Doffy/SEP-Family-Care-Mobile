@@ -42,6 +42,42 @@ void main() {
   });
 
   group('các hình dạng response khác vẫn đọc được', () {
+    test('Sprint 3 giữ đủ pendingActions[] ở response gửi tin', () {
+      final provider = AiChatbotProvider();
+      provider.appendSendResponse({
+        'aiMessage': {
+          'id': 'plan-1',
+          'senderType': 'AI',
+          'content': 'Tôi đã chuẩn bị kế hoạch.',
+          'uiHints': {'displayStyle': 'ACTION_PLAN_CARD'},
+        },
+        // Theo contract: pendingAction chỉ là alias của phần tử đầu; mảng này
+        // mới là nguồn đầy đủ để người dùng xác nhận/từ chối từng bước.
+        'pendingAction': {
+          'messageId': 'plan-1',
+          'actionIndex': 0,
+          'actionType': 'CREATE_CALENDAR_EVENT',
+        },
+        'pendingActions': [
+          {
+            'messageId': 'plan-1',
+            'actionIndex': 0,
+            'actionType': 'CREATE_CALENDAR_EVENT',
+          },
+          {
+            'messageId': 'plan-1',
+            'actionIndex': 1,
+            'actionType': 'CREATE_LEDGER_ENTRY',
+          },
+        ],
+      });
+
+      final message = provider.messages.single;
+      expect(message.pendingActions, hasLength(2));
+      expect(message.pendingActions[1].actionIndex, 1);
+      expect(message.pendingActions[1].actionType, 'CREATE_LEDGER_ENTRY');
+    });
+
     test('có aiMessage kèm pendingAction ở gốc', () {
       final provider = AiChatbotProvider();
       provider.appendSendResponse({

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import '../../models/ai_chatbot.dart';
 import '../../providers/ai_chatbot_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -99,14 +101,14 @@ String formatAiPreviewDateTime(DateTime d) {
   return '${two(d.hour)}:${two(d.minute)} ${two(d.day)}/${two(d.month)}/${d.year}';
 }
 
-/// Quan sát thật 2026-08-09: field `categoryId` (BE Sprint mới, AI tự gán
-/// danh mục khi nội dung khớp rõ) hiện nguyên UUID thô ("Danh mục:
-/// 0a3d7df8-517a-...") — không ai đọc hiểu được. `FinanceProvider.categories`
-/// đã tải sẵn ở app scope (màn Sổ thu chi/Ngân sách gọi trước đó), tra ngược
-/// ID → tên hiển thị ngay tại đây; không tìm thấy (danh mục bị xóa, hoặc
-/// chưa tải kịp) thì đành hiện lại ID thô — còn hơn giả vờ có tên. Dùng
-/// chung cho cả `_PendingActionCard` (đang chờ xác nhận) lẫn `_ResultCard`
-/// (đã xử lý xong) vì cả hai đều có thể hiện field Danh mục.
+/// Quan sát thật 2026-08-09: các field ID (`categoryId`, và sau đó phát hiện
+/// thêm `goalId`, model tài chính, người nhận nhiệm vụ) hiện nguyên UUID thô
+/// ("Danh mục: 0a3d7df8-517a-...") — không ai đọc hiểu được. Các danh sách
+/// tương ứng (`FinanceProvider.categories/goals/models`, `FamilyProvider.members`)
+/// đã tải sẵn ở app scope, tra ngược ID → tên hiển thị ngay tại đây; không
+/// tìm thấy (đã xóa, hoặc chưa tải kịp) thì đành hiện lại ID thô — còn hơn
+/// giả vờ có tên. Dùng chung cho cả `_PendingActionCard` (đang chờ xác nhận)
+/// lẫn `_ResultCard` (đã xử lý xong).
 String resolveCategoryName(BuildContext context, dynamic value) {
   final id = value?.toString() ?? '';
   if (id.isEmpty) return '-';
@@ -115,6 +117,80 @@ String resolveCategoryName(BuildContext context, dynamic value) {
     if (c.id == id) return c.name;
   }
   return id;
+}
+
+String resolveGoalName(BuildContext context, dynamic value) {
+  final id = value?.toString() ?? '';
+  if (id.isEmpty) return '-';
+  final goals = context.read<FinanceProvider>().goals;
+  for (final g in goals) {
+    if (g.id == id) return g.goalName;
+  }
+  return id;
+}
+
+String resolveFinanceModelName(BuildContext context, dynamic value) {
+  final id = value?.toString() ?? '';
+  if (id.isEmpty) return '-';
+  final models = context.read<FinanceProvider>().models;
+  for (final m in models) {
+    if (m.id == id) return m.name;
+  }
+  return id;
+}
+
+String resolveMemberName(BuildContext context, dynamic value) {
+  final id = value?.toString() ?? '';
+  if (id.isEmpty) return '-';
+  final members = context.read<FamilyProvider>().members;
+  for (final m in members) {
+    if (m.id == id || m.userId == id) return m.name;
+  }
+  return id;
+}
+
+/// Điều phối theo key *và nhãn hiển thị* tới đúng resolver ID → tên ở trên.
+///
+/// `uiHints.fields` do BE soạn có thể dùng key kỹ thuật bất kỳ, trong khi nhãn
+/// tiếng Việt vẫn nói rõ ngữ nghĩa (vd. "Người nhận"). Chỉ nhìn key khiến
+/// preview nhiệm vụ rơi về UUID dù `FamilyProvider.members` đã có dữ liệu.
+/// Field không khớp loại ID nào thì rơi về `formatAiPreviewValue` như cũ.
+String resolveAiPreviewField(
+  BuildContext context,
+  String key,
+  dynamic value, {
+  String? label,
+}) {
+  final k = key.toLowerCase();
+  final fieldIdentity = '$k ${label ?? ''}'.toLowerCase();
+  // `uiHints.fields` đôi lúc đặt key trình bày thay vì `categoryId`, nhưng
+  // nhãn vẫn là "Danh mục". Nhận theo cả hai để không in UUID thô.
+  if (k == 'categoryid' ||
+      fieldIdentity.contains('category') ||
+      fieldIdentity.contains('danh mục') ||
+      fieldIdentity.contains('danh muc')) {
+    return resolveCategoryName(context, value);
+  }
+  if (k == 'goalid' || fieldIdentity.contains('mục tiêu')) {
+    return resolveGoalName(context, value);
+  }
+  if (k == 'financialmodelid' ||
+      k == 'modelid' ||
+      fieldIdentity.contains('mô hình') ||
+      fieldIdentity.contains('mo hinh')) {
+    return resolveFinanceModelName(context, value);
+  }
+  // Tên field thực tế của BE cho người nhận chưa ổn định giữa preview cũ và
+  // uiHints mới. Nhận cả key kỹ thuật lẫn nhãn tiếng Việt để chịu được
+  // `assignedToMemberId`, `recipientId`, hoặc key lạ kèm "Người nhận".
+  if (fieldIdentity.contains('assign') ||
+      fieldIdentity.contains('recipient') ||
+      fieldIdentity.contains('member') ||
+      fieldIdentity.contains('người nhận') ||
+      fieldIdentity.contains('nguoi nhan')) {
+    return resolveMemberName(context, value);
+  }
+  return formatAiPreviewValue(key, value);
 }
 
 /// Tháng cần tải lại sau khi xác nhận đề xuất tạo sự kiện lịch.
@@ -179,6 +255,22 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      // Quan sát runtime 2026-08-09: mở thẳng màn này (chưa từng ghé Sổ thu
+      // chi/Ngân sách/Thành viên trong phiên) khiến `resolveAiPreviewField`
+      // luôn rơi về ID thô vì `FinanceProvider.categories/goals/models` rỗng
+      // — trước đó các resolver này ngầm dựa vào màn khác tải hộ. Tự tải ở
+      // đây, không chặn bootstrap chat (fire-and-forget, chỉ phục vụ hiển
+      // thị tên thay ID nên không cần đợi).
+      final finance = context.read<FinanceProvider>();
+      if (finance.categories.isEmpty ||
+          finance.goals.isEmpty ||
+          finance.models.isEmpty) {
+        unawaited(finance.fetchAll());
+      }
+      final family = context.read<FamilyProvider>();
+      if (family.members.isEmpty) {
+        unawaited(family.fetchMembers());
+      }
       await context.read<AiChatbotProvider>().bootstrap();
       // Bootstrap chọn sẵn hội thoại gần nhất, nhưng ListView mặc định đứng ở
       // đầu danh sách (đầu là Daily Brief nếu có). Không cuộn xuống thì người
@@ -248,8 +340,12 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<AiChatbotProvider>(
-      builder: (context, ai, _) {
+    // Lắng nghe cả FamilyProvider: preview task có thể mở trước khi danh sách
+    // thành viên tải xong. Nếu chỉ Consumer AiChatbotProvider, dữ liệu member
+    // về sau sẽ không kích hoạt build lại và UUID "Người nhận" bị kẹt trên
+    // thẻ cho tới khi có một thay đổi chat khác.
+    return Consumer2<AiChatbotProvider, FamilyProvider>(
+      builder: (context, ai, _, __) {
         return Scaffold(
           backgroundColor: context.colors.background,
           appBar: AppBar(
@@ -1384,9 +1480,7 @@ class _ResultCard extends StatelessWidget {
         ),
         Expanded(
           child: Text(
-            key.toLowerCase() == 'categoryid'
-                ? resolveCategoryName(context, value)
-                : formatAiPreviewValue(key, value),
+            resolveAiPreviewField(context, key, value, label: label),
             style: GoogleFonts.inter(
               fontSize: 12,
               color: AppColors.textSecondary,
@@ -1704,9 +1798,7 @@ class _PendingActionCard extends StatelessWidget {
         ),
         Expanded(
           child: Text(
-            key.toLowerCase() == 'categoryid'
-                ? resolveCategoryName(context, value)
-                : formatAiPreviewValue(key, value),
+            resolveAiPreviewField(context, key, value, label: label),
             style: GoogleFonts.inter(
               fontSize: 12,
               height: 1.3,

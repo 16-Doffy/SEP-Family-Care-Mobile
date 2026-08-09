@@ -484,10 +484,19 @@ class AiChatbotProvider extends ChangeNotifier {
       await fetchMessages();
       return true;
     } catch (e) {
-      _error = _friendlyError(e, isAction: true);
+      final friendly = _friendlyError(e, isAction: true);
+      // 409 (đã xử lý rồi) và 410 (hết hạn) đều nghĩa là trạng thái thật ở
+      // server đã khác cái FE đang vẽ. Không tải lại thì thẻ đề xuất kẹt ở
+      // "Chờ xác nhận" và người dùng bấm mãi cũng chỉ ra đúng lỗi đó.
       if (e is ApiException && (e.statusCode == 409 || e.statusCode == 410)) {
         await fetchMessages();
       }
+      // Set SAU khi fetchMessages() chạy xong — hàm đó tự xóa `_error = null`
+      // ngay đầu (refresh: true), nếu set trước sẽ bị xóa mất trước khi UI kịp
+      // vẽ banner, khiến người dùng bấm hoài không hiểu lý do (bug thật phát
+      // hiện 2026-08-10 qua log runtime: lỗi 409 `FUND_ALLOCATION_ALREADY_EXISTS`
+      // của `ALLOCATE_FUND_BY_MODEL` bị nuốt mất, thẻ chỉ im lặng đứng yên).
+      _error = friendly;
       return false;
     } finally {
       _actionBusy.remove(busyKey);
@@ -547,8 +556,8 @@ class AiChatbotProvider extends ChangeNotifier {
     _actionBusy.add(messageId);
     _error = null;
     notifyListeners();
+    final action = confirm ? 'confirm-action' : 'reject-action';
     try {
-      final action = confirm ? 'confirm-action' : 'reject-action';
       await ApiClient.instance.post(
         '/families/$fid/ai-chatbot/conversations/$cid/messages/$messageId/$action',
         {},
@@ -556,13 +565,17 @@ class AiChatbotProvider extends ChangeNotifier {
       await fetchMessages();
       return true;
     } catch (e) {
-      _error = _friendlyError(e, isAction: true);
-      // 409 (đã xử lý rồi) và 410 (hết hạn) đều nghĩa là trạng thái thật ở
-      // server đã khác cái FE đang vẽ. Không tải lại thì thẻ đề xuất kẹt ở
-      // "Chờ xác nhận" và người dùng bấm mãi cũng chỉ ra đúng lỗi đó.
+      final friendly = _friendlyError(e, isAction: true);
+      // 409 (đã xử lý rồi/xung đột nghiệp vụ, vd `FUND_ALLOCATION_ALREADY_EXISTS`)
+      // và 410 (hết hạn) đều nghĩa là trạng thái thật ở server đã khác cái FE
+      // đang vẽ. Không tải lại thì thẻ đề xuất kẹt ở "Chờ xác nhận" và người
+      // dùng bấm mãi cũng chỉ ra đúng lỗi đó.
       if (e is ApiException && (e.statusCode == 409 || e.statusCode == 410)) {
         await fetchMessages();
       }
+      // Set SAU khi fetchMessages() chạy xong — xem giải thích ở
+      // `_handleStepAction`, cùng 1 bug, cùng cách sửa.
+      _error = friendly;
       return false;
     } finally {
       _actionBusy.remove(messageId);
@@ -579,30 +592,69 @@ class AiChatbotProvider extends ChangeNotifier {
     final pendingAction = rawAction is Map
         ? AiPendingAction.fromJson(Map<String, dynamic>.from(rawAction))
         : null;
+    final rawActions = data['pendingActions'];
+    final pendingActions = rawActions is List
+        ? rawActions
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+        : const <Map<String, dynamic>>[];
+
+    // `AiSendMessageDataResponseDto` (Sprint 3) trả đồng thời `aiMessage`,
+    // `pendingAction` (alias bước đầu) và `pendingActions[]` (toàn bộ kế
+    // hoạch). Trước đây chỉ truyền `pendingAction` vào model, khiến response
+    // vừa gửi làm rơi mọi bước từ thứ hai trở đi cho tới lúc người dùng tải lại
+    // lịch sử. Ưu tiên mảng gốc của chính aiMessage nếu có; chỉ bổ sung dữ liệu
+    // ở root khi aiMessage chưa mang chúng.
+    Map<String, dynamic> withRootActions(Map raw) {
+      final message = Map<String, dynamic>.from(raw);
+      final messageActions = message['pendingActions'];
+      if (pendingActions.isNotEmpty &&
+          (messageActions is! List || messageActions.isEmpty)) {
+        message['pendingActions'] = pendingActions;
+      }
+      if (message['pendingAction'] is! Map &&
+          message['pendingActions'] is! List &&
+          pendingAction != null) {
+        message['pendingAction'] = rawAction;
+      }
+      return message;
+    }
+
     final rawUser = data['userMessage'];
     if (rawUser is Map) {
       _messages.add(AiMessage.fromJson(Map<String, dynamic>.from(rawUser)));
     }
     final rawAi = data['aiMessage'] ?? data['message'];
     if (rawAi is Map) {
-      final ai = AiMessage.fromJson(
-        Map<String, dynamic>.from(rawAi),
-        pendingAction: pendingAction,
-      );
+      final ai = AiMessage.fromJson(withRootActions(rawAi));
       _messages.add(ai);
     } else if (data['content'] != null) {
-      _messages.add(AiMessage.fromJson(data, pendingAction: pendingAction));
-    } else if (pendingAction != null) {
-      // Ví dụ trong contract BE gửi chỉ có đúng `pendingAction`, không kèm câu
-      // trả lời nào. Không đỡ ca này thì đề xuất bị nuốt mất: người dùng gửi
-      // tin xong màn hình không hiện gì, dù server đã tạo đề xuất chờ xác nhận.
+      _messages.add(AiMessage.fromJson(withRootActions(data)));
+    } else if (pendingActions.isNotEmpty || pendingAction != null) {
+      // Đỡ cả response legacy chỉ có `pendingAction` lẫn response Sprint 3 chỉ
+      // có `pendingActions[]`, không kèm câu trả lời nào. Không đỡ ca này thì
+      // đề xuất bị nuốt mất: người dùng gửi tin xong màn hình không hiện gì,
+      // dù server đã tạo đề xuất chờ xác nhận.
+      final actions = pendingActions
+          .asMap()
+          .entries
+          .map(
+            (entry) => AiPendingAction.fromJson(
+              entry.value,
+              indexOverride: entry.key,
+            ),
+          )
+          .toList();
+      if (actions.isEmpty) actions.add(pendingAction!);
+      final first = actions.first;
       _messages.add(
         AiMessage(
-          id: pendingAction.messageId,
+          id: first.messageId,
           senderType: 'AI',
           content: 'Tôi đã chuẩn bị một đề xuất, bạn xem và xác nhận giúp nhé.',
           createdAt: DateTime.now(),
-          pendingActions: [pendingAction],
+          pendingActions: actions,
         ),
       );
     }
@@ -630,6 +682,27 @@ class AiChatbotProvider extends ChangeNotifier {
   /// câu thì Member bị từ chối tạo giao dịch lại tưởng phải đi nâng gói.
   String _friendlyError(Object error, {bool isAction = false}) {
     if (error is ApiException) {
+      if (isAction) {
+        final actionMessage = switch (error.code) {
+          // Chia quỹ có các lỗi nghiệp vụ riêng. Chỉ hiện lại message ngắn từ
+          // BE ("vượt quỹ khả dụng") khiến người dùng không biết thẻ vẫn chờ
+          // để làm gì; nói rõ cách xử lý nhưng không bịa số dư khả dụng — API
+          // chatbot không trả con số đó, đặc biệt với kỳ tương lai.
+          'FUND_ALLOCATION_ALREADY_EXISTS' =>
+            'Gia đình đã chia quỹ cho kỳ này. Mỗi tháng chỉ được chia một lần, '
+                'kể cả khi đổi mô hình.',
+          'INSUFFICIENT_AVAILABLE_FUND' =>
+            'Số tiền chia quỹ vượt quá quỹ khả dụng của kỳ đã chọn. Hãy chọn '
+                '“Chỉnh chia quỹ” để nhập số thấp hơn, hoặc ghi nhận quỹ cho kỳ '
+                'này trước.',
+          'NO_ACTIVE_FINANCE_MODEL' =>
+            'Gia đình chưa có mô hình tài chính đang áp dụng.',
+          'INVALID_JAR_PERCENTAGE' =>
+            'Tổng tỷ lệ các hũ đang hoạt động phải bằng 100% trước khi chia quỹ.',
+          _ => null,
+        };
+        if (actionMessage != null) return actionMessage;
+      }
       return switch (error.statusCode) {
         403 when isAction =>
           // Contract 2026-08-07: propose_create_ledger_entry mở cho CẢ
@@ -637,6 +710,14 @@ class AiChatbotProvider extends ChangeNotifier {
           'Bạn không có quyền tạo dữ liệu này. Hãy nhờ Trưởng nhóm hoặc Phó '
               'nhóm thực hiện.',
         403 => 'Bạn chưa có quyền dùng Trợ lý AI trong gói hiện tại.',
+        // Trước 2026-08-10 câu này bị ép cứng "Đề xuất này đã được xử lý
+        // trước đó" cho MỌI lỗi 409 — đúng cho case đề xuất đã confirm/reject
+        // trước đó, nhưng BE cũng dùng 409 cho xung đột nghiệp vụ khác (vd
+        // `FUND_ALLOCATION_ALREADY_EXISTS` — "kỳ này đã có lần chia quỹ"),
+        // lúc đó câu cứng gây hiểu lầm hoàn toàn. Tin thẳng message BE gửi
+        // (đúng nguyên tắc chung của ApiException) thay vì đoán.
+        409 when isAction && error.message.trim().isNotEmpty =>
+          error.message,
         409 => 'Đề xuất này đã được xử lý trước đó.',
         410 => 'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',
         502 =>

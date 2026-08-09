@@ -49,6 +49,31 @@ void main() {
   });
 
   testWidgets(
+    'uiHints dùng key lạ nhưng nhãn "Danh mục" vẫn hiện tên, không in UUID',
+    (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        ChangeNotifierProvider<FinanceProvider>(
+          create: (_) => FinanceProvider()..categories = categories,
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) {
+                ctx = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        resolveAiPreviewField(ctx, 'value', 'cat-1', label: 'Danh mục'),
+        'Ăn uống',
+      );
+    },
+  );
+
+  testWidgets(
     'categoryId không khớp danh mục nào (đã xóa/chưa tải kịp) thì hiện lại '
     'ID thô, không giả vờ có tên',
     (tester) async {
