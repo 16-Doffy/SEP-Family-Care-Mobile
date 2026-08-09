@@ -15,6 +15,10 @@ class WearPalette {
   static const muted = Colors.white70;
   static const faint = Colors.white38;
   static const sos = Color(0xFFE11D48);
+
+  /// Nút SOS lúc đang giữ — cùng giá trị với `AppColors.sosPressed` bên điện
+  /// thoại để phản hồi chạm giống nhau ở hai nền tảng.
+  static const sosPressed = Color(0xFFBE123C);
   static const sosSoft = Color(0xFFFDA4AF);
   static const green = Color(0xFF86EFAC);
   static const blue = Color(0xFF7DD3FC);
