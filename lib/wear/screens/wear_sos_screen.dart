@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/auth_provider.dart';
-import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
+import '../../providers/wearable_provider.dart';
+import '../../services/sos_location.dart';
+import '../wear_sos_location_stream_guard.dart';
 import '../wear_widgets.dart';
 
 class WearSosScreen extends StatefulWidget {
@@ -19,13 +20,18 @@ class WearSosScreen extends StatefulWidget {
 
 class _WearSosScreenState extends State<WearSosScreen>
     with SingleTickerProviderStateMixin {
+  static const _locationStreamPeriod = Duration(seconds: 30);
+
   bool _holding = false;
   bool _sent = false;
   bool _sending = false;
   String? _sentAlertId;
   String? _error;
+  String? _locationNotice;
   int _countdown = 2;
   Timer? _holdTimer;
+  Timer? _locationStreamTimer;
+  final _locationStreamGuard = WearSosLocationStreamGuard();
 
   late final AnimationController _pulse;
   late final Animation<double> _scale;
@@ -41,14 +47,12 @@ class _WearSosScreenState extends State<WearSosScreen>
       begin: 1,
       end: 1.08,
     ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<GpsProvider>().fetchFamilyLocations(),
-    );
   }
 
   @override
   void dispose() {
     _holdTimer?.cancel();
+    _stopLocationStreaming();
     _pulse.dispose();
     super.dispose();
   }
@@ -88,22 +92,14 @@ class _WearSosScreenState extends State<WearSosScreen>
     setState(() {
       _sending = true;
       _holding = false;
+      _locationNotice = null;
     });
     HapticFeedback.heavyImpact();
 
     try {
-      final myId = context.read<AuthProvider>().user?.id ?? '';
-      final gps = context.read<GpsProvider>();
-      final loc = gps.shares
-          .where((s) => s.userId == myId && s.latitude != null)
-          .firstOrNull;
       final alertId = await context.read<SosProvider>().sendSos(
         message: 'SOS từ đồng hồ FamilyCare',
-        address: loc != null
-            ? 'GPS: ${loc.latitude?.toStringAsFixed(5)}, ${loc.longitude?.toStringAsFixed(5)}'
-            : 'Vị trí đang cập nhật',
-        latitude: loc?.latitude,
-        longitude: loc?.longitude,
+        address: 'Vị trí đang cập nhật',
         sourceType: 'WEARABLE',
       );
       if (!mounted) return;
@@ -113,6 +109,12 @@ class _WearSosScreenState extends State<WearSosScreen>
         _sending = false;
         _error = null;
       });
+      // Không hỏi GPS trước khi tạo SOS vì có thể tốn tới 10 giây. Cảnh báo phải
+      // được tạo ngay, sau đó đồng hồ tự đẩy vị trí của chính nó nếu lấy được.
+      final deviceId = await _wearableDeviceId();
+      if (!mounted) return;
+      await _pushPosition(alertId, deviceId);
+      if (mounted) _startLocationStreaming(alertId, deviceId);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -122,6 +124,97 @@ class _WearSosScreenState extends State<WearSosScreen>
         _error = e.toString().replaceFirst('Exception: ', '');
       });
       _pulse.repeat(reverse: true);
+    }
+  }
+
+  /// Best-effort, chạy sau khi SOS đã được tạo: cả hai hàm bên dưới đều không
+  /// ném lỗi ra ngoài nên hỏng bước này cũng không ảnh hưởng cảnh báo.
+  Future<bool> _pushPosition(
+    String alertId,
+    String? deviceId, {
+    bool showLocating = true,
+  }) async {
+    if (showLocating) setState(() => _locationNotice = 'Đang lấy vị trí…');
+    final pos = await resolveWearableSosPosition();
+    if (!mounted) return false;
+    if (pos == null) {
+      setState(() => _locationNotice = 'Không lấy được GPS đồng hồ');
+      return false;
+    }
+    final pushed = await context.read<SosProvider>().pushLocation(
+      alertId,
+      pos.lat,
+      pos.lng,
+      accuracy: pos.accuracy,
+      sourceType: 'WEARABLE_GPS',
+      deviceId: deviceId,
+    );
+    if (!mounted) return false;
+    setState(
+      () => _locationNotice = pushed
+          ? 'Đã có vị trí'
+          : 'Chưa gửi được vị trí đồng hồ',
+    );
+    return pushed;
+  }
+
+  Future<String?> _wearableDeviceId() async {
+    final wearable = context.read<WearableProvider>();
+    var id = wearable.currentDevice?.id;
+    if (id != null && id.isNotEmpty) return id;
+    try {
+      await wearable.fetchCurrentDevice();
+    } catch (_) {
+      return null;
+    }
+    if (!mounted) return null;
+    id = wearable.currentDevice?.id;
+    return id != null && id.isNotEmpty ? id : null;
+  }
+
+  void _startLocationStreaming(String alertId, String? deviceId) {
+    _locationStreamTimer?.cancel();
+    _locationStreamGuard.reset();
+    _locationStreamTimer = Timer.periodic(
+      _locationStreamPeriod,
+      (_) => _streamLocation(alertId, deviceId),
+    );
+  }
+
+  void _stopLocationStreaming({String? notice}) {
+    _locationStreamTimer?.cancel();
+    _locationStreamTimer = null;
+    _locationStreamGuard.reset();
+    if (notice != null && mounted) {
+      setState(() => _locationNotice = notice);
+    }
+  }
+
+  Future<void> _streamLocation(String alertId, String? deviceId) async {
+    if (!mounted) return;
+    try {
+      final detail = await context.read<SosProvider>().fetchAlertDetail(
+        alertId,
+      );
+      if (!mounted) return;
+      final status = (detail['status']?.toString() ?? 'ACTIVE').toUpperCase();
+      if (status != 'ACTIVE') {
+        _stopLocationStreaming();
+        return;
+      }
+    } catch (_) {
+      if (_locationStreamGuard.recordFailure()) {
+        _stopLocationStreaming(notice: 'Đã dừng gửi vị trí do lỗi liên tiếp');
+      }
+      return;
+    }
+
+    final pushed = await _pushPosition(alertId, deviceId, showLocating: false);
+    if (!mounted) return;
+    if (pushed) {
+      _locationStreamGuard.recordSuccess();
+    } else if (_locationStreamGuard.recordFailure()) {
+      _stopLocationStreaming(notice: 'Đã dừng gửi vị trí do lỗi liên tiếp');
     }
   }
 
@@ -142,11 +235,13 @@ class _WearSosScreenState extends State<WearSosScreen>
       return;
     }
     if (!mounted) return;
+    _stopLocationStreaming();
     setState(() {
       _sent = false;
       _sentAlertId = null;
       _countdown = 2;
       _error = null;
+      _locationNotice = null;
     });
     _pulse.repeat(reverse: true);
   }
@@ -190,7 +285,7 @@ class _WearSosScreenState extends State<WearSosScreen>
                 height: buttonSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: _holding ? const Color(0xFFBE123C) : WearPalette.sos,
+                  color: _holding ? WearPalette.sosPressed : WearPalette.sos,
                   boxShadow: [
                     BoxShadow(
                       color: WearPalette.sos.withValues(alpha: 0.45),
@@ -297,6 +392,16 @@ class _WearSosScreenState extends State<WearSosScreen>
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 10, color: Color(0xFFFCA5A5)),
+            ),
+          ],
+          if (_locationNotice != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              _locationNotice!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 9, color: WearPalette.faint),
             ),
           ],
         ],

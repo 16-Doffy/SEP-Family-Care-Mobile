@@ -7,6 +7,9 @@ import 'package:provider/provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/fall_detector_service.dart';
+import '../../services/sos_location.dart';
+import '../wear_fall_alert_view.dart';
+import '../wear_sos_location_stream_guard.dart';
 import '../wear_widgets.dart';
 
 /// SOS tự động từ cảm biến trên đồng hồ — theo spec "Wear OS Flow" (Discord
@@ -96,6 +99,7 @@ extension _TriggerSpec on _Trigger {
 class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
   /// Spec: "Tự gửi SOS sau 20s".
   static const _countdownSeconds = 20;
+  static const _locationStreamPeriod = Duration(seconds: 30);
 
   bool _sensorOn = false;
   _Trigger? _pending;
@@ -107,6 +111,9 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
   String? _alertId;
   bool _alertCreated = false;
   String? _error;
+  String? _locationNotice;
+  Timer? _locationStreamTimer;
+  final _locationStreamGuard = WearSosLocationStreamGuard();
 
   @override
   void initState() {
@@ -121,6 +128,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _stopLocationStreaming();
     FallDetectorService.instance.stop();
     super.dispose();
   }
@@ -142,6 +150,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
       _pending = trigger;
       _countdown = _countdownSeconds;
       _error = null;
+      _locationNotice = null;
     });
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -178,6 +187,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
       _pending = null;
       _sending = true;
       _error = null;
+      _locationNotice = null;
     });
     try {
       final result = await context.read<WearableProvider>().createEvent(
@@ -192,12 +202,98 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
         _alertCreated = result.alertCreated;
         _alertId = result.alertId;
       });
+      // `CreateSensorEventDto` KHÔNG có trường vị trí và BE là bên tạo alert,
+      // nên cảnh báo sinh ra từ cảm biến không có toạ độ nào. Người nhận vì thế
+      // không thấy bản đồ, khác hẳn cảnh báo phát từ điện thoại. Đẩy một điểm
+      // vị trí ngay sau khi alert tồn tại để bù chỗ đó.
+      final alertId = result.alertId;
+      if (alertId != null) {
+        await _pushPosition(alertId, device.id);
+        if (mounted) _startLocationStreaming(alertId, device.id);
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
       }
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Gửi vị trí kèm cho cảnh báo vừa tạo. Chỉ dùng GPS của chính đồng hồ; hỏng
+  /// bước này thì cảnh báo vẫn còn nguyên, chỉ là thiếu bản đồ.
+  Future<bool> _pushPosition(
+    String alertId,
+    String deviceId, {
+    bool showLocating = true,
+  }) async {
+    if (showLocating) setState(() => _locationNotice = 'Đang lấy vị trí…');
+    final pos = await resolveWearableSosPosition();
+    if (!mounted) return false;
+    if (pos == null) {
+      setState(() => _locationNotice = 'Không lấy được GPS đồng hồ');
+      return false;
+    }
+    final pushed = await context.read<SosProvider>().pushLocation(
+      alertId,
+      pos.lat,
+      pos.lng,
+      accuracy: pos.accuracy,
+      sourceType: 'WEARABLE_GPS',
+      deviceId: deviceId,
+    );
+    if (!mounted) return false;
+    setState(
+      () => _locationNotice = pushed
+          ? 'Đã có vị trí'
+          : 'Chưa gửi được vị trí đồng hồ',
+    );
+    return pushed;
+  }
+
+  void _startLocationStreaming(String alertId, String deviceId) {
+    _locationStreamTimer?.cancel();
+    _locationStreamGuard.reset();
+    _locationStreamTimer = Timer.periodic(
+      _locationStreamPeriod,
+      (_) => _streamLocation(alertId, deviceId),
+    );
+  }
+
+  void _stopLocationStreaming({String? notice}) {
+    _locationStreamTimer?.cancel();
+    _locationStreamTimer = null;
+    _locationStreamGuard.reset();
+    if (notice != null && mounted) {
+      setState(() => _locationNotice = notice);
+    }
+  }
+
+  Future<void> _streamLocation(String alertId, String deviceId) async {
+    if (!mounted) return;
+    try {
+      final detail = await context.read<SosProvider>().fetchAlertDetail(
+        alertId,
+      );
+      if (!mounted) return;
+      final status = (detail['status']?.toString() ?? 'ACTIVE').toUpperCase();
+      if (status != 'ACTIVE') {
+        _stopLocationStreaming();
+        return;
+      }
+    } catch (_) {
+      if (_locationStreamGuard.recordFailure()) {
+        _stopLocationStreaming(notice: 'Đã dừng gửi vị trí do lỗi liên tiếp');
+      }
+      return;
+    }
+
+    final pushed = await _pushPosition(alertId, deviceId, showLocating: false);
+    if (!mounted) return;
+    if (pushed) {
+      _locationStreamGuard.recordSuccess();
+    } else if (_locationStreamGuard.recordFailure()) {
+      _stopLocationStreaming(notice: 'Đã dừng gửi vị trí do lỗi liên tiếp');
     }
   }
 
@@ -214,10 +310,12 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     try {
       await context.read<SosProvider>().confirmSafety(id);
       if (mounted) {
+        _stopLocationStreaming();
         setState(() {
           _sent = false;
           _alertId = null;
           _alertCreated = false;
+          _locationNotice = null;
         });
       }
     } catch (e) {
@@ -325,70 +423,22 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
 
   // ── Màn cảnh báo: đếm ngược 20s ──────────────────────────────────────────
   Widget _alertView(_Trigger t) {
+    // KHÔNG cho cuộn: đây là màn đếm ngược, cả "Con ổn" lẫn "Gửi SOS" phải nằm
+    // sẵn trong tầm mắt. Đổi lại nội dung phải tự vừa — từng khoảng cách dưới
+    // đây đã bị cắt để có dư chỗ (trước đây tràn 4px trên đồng hồ tròn).
     return WearPage(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(t.icon, size: 24, color: WearPalette.sos),
-          const SizedBox(height: 5),
-          Text(
-            t.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: WearPalette.text,
-            ),
-          ),
-          if (t.reading.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              t.reading,
-              maxLines: 1,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                color: WearPalette.sos,
-              ),
-            ),
-          ],
-          const SizedBox(height: 3),
-          Text(
-            t.question,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 9, color: WearPalette.muted),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Tự gửi SOS sau $_countdown giây',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 8, color: WearPalette.faint),
-          ),
-          const SizedBox(height: 8),
-          // Nút huỷ để trên và nổi hơn: đây là nút chống báo nhầm.
-          WearPillButton(
-            label: t.dismissLabel,
-            icon: Icons.check_rounded,
-            color: WearPalette.green,
-            onTap: _dismiss,
-          ),
-          const SizedBox(height: 6),
-          WearPillButton(
-            label: 'Gửi SOS',
-            icon: Icons.sos_rounded,
-            color: WearPalette.sos,
-            onTap: () {
-              _timer?.cancel();
-              _send(t);
-            },
-          ),
-        ],
+      child: WearFallAlertView(
+        icon: t.icon,
+        title: t.title,
+        reading: t.reading,
+        question: t.question,
+        countdown: _countdown,
+        dismissLabel: t.dismissLabel,
+        onDismiss: _dismiss,
+        onSendNow: () {
+          _timer?.cancel();
+          _send(t);
+        },
       ),
     );
   }
@@ -441,6 +491,16 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 8, color: WearPalette.sosSoft),
+            ),
+          ],
+          if (_locationNotice != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _locationNotice!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 8, color: WearPalette.faint),
             ),
           ],
           const SizedBox(height: 10),

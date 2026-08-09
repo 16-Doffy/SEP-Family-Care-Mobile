@@ -145,7 +145,9 @@ class AiMessage {
     // `_ResultCard` đã đổi màu/icon theo `pendingAction.outcome` để hiển thị
     // đúng cho cả 3 trường hợp (không còn mặc định xanh "thành công").
     return uiHints?.displayStyle ??
-        (pendingAction != null ? AiDisplayStyle.actionCard : AiDisplayStyle.text);
+        (pendingAction != null
+            ? AiDisplayStyle.actionCard
+            : AiDisplayStyle.text);
   }
 
   // Chữ ký giữ nguyên (nhận 1 AiPendingAction, không phải List) để không phá
@@ -306,7 +308,9 @@ class AiActionUiHints {
       fields: rawFields is List
           ? rawFields
                 .whereType<Map>()
-                .map((e) => AiActionField.fromJson(Map<String, dynamic>.from(e)))
+                .map(
+                  (e) => AiActionField.fromJson(Map<String, dynamic>.from(e)),
+                )
                 .toList()
           : const [],
       primaryActionLabel: json['primaryActionLabel']?.toString(),
@@ -392,19 +396,32 @@ class AiPendingAction {
       // có thể không lặp lại field này trong từng phần tử mảng — dùng thẳng
       // vị trí mảng làm actionIndex). JSON tự có `actionIndex` (BE gửi rõ)
       // thì ưu tiên đọc trực tiếp.
-      actionIndex:
-          (json['actionIndex'] as num?)?.toInt() ?? indexOverride ?? 0,
+      actionIndex: (json['actionIndex'] as num?)?.toInt() ?? indexOverride ?? 0,
     );
   }
 
-  /// 4 `actionType` chính thức. 3 loại đầu trong `AiActionType` của OpenAPI
-  /// 2026-08-07; `CREATE_BUDGET_PLAN` được BE xác nhận chính thức thêm ngày
-  /// 2026-08-09 (trước đó từng xuất hiện trong runtime nhưng chưa được chốt).
+  /// 9 `actionType` chính thức theo OpenAPI mới nhất đội BE gửi ngày
+  /// 2026-08-09. Các action tài chính đều ghi dữ liệu thật và cần refresh nhóm
+  /// finance sau khi xác nhận.
   static const confirmedActionTypes = <String>{
     'CREATE_TASK',
     'CREATE_LEDGER_ENTRY',
     'CREATE_CALENDAR_EVENT',
     'CREATE_BUDGET_PLAN',
+    'CREATE_BUDGET_LINE',
+    'CREATE_FINANCIAL_GOAL',
+    'CREATE_GOAL_ALLOCATION',
+    'CREATE_GOAL_CONTRIBUTION_PLAN',
+    'ALLOCATE_FUND_BY_MODEL',
+  };
+
+  static const financeActionTypes = <String>{
+    'CREATE_BUDGET_PLAN',
+    'CREATE_BUDGET_LINE',
+    'CREATE_FINANCIAL_GOAL',
+    'CREATE_GOAL_ALLOCATION',
+    'CREATE_GOAL_CONTRIBUTION_PLAN',
+    'ALLOCATE_FUND_BY_MODEL',
   };
 
   /// Biến thể tên FE từng đoán trước khi BE chốt. Giữ lại vì vô hại và đỡ được
@@ -489,6 +506,11 @@ class AiPendingAction {
     'CREATE_TASK' || 'TASK_CREATE' => 'Tạo nhiệm vụ',
     'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => 'Tạo sự kiện lịch',
     'CREATE_BUDGET_PLAN' => 'Tạo kế hoạch ngân sách',
+    'CREATE_BUDGET_LINE' => 'Thêm dòng ngân sách',
+    'CREATE_FINANCIAL_GOAL' => 'Tạo mục tiêu tài chính',
+    'CREATE_GOAL_ALLOCATION' => 'Phân bổ cho mục tiêu',
+    'CREATE_GOAL_CONTRIBUTION_PLAN' => 'Tạo kế hoạch đóng góp',
+    'ALLOCATE_FUND_BY_MODEL' => 'Chia quỹ theo mô hình',
     _ => 'Thực hiện đề xuất',
   };
 
@@ -545,7 +567,11 @@ class AiPendingAction {
       if (!preview.containsKey(key) || used.contains(key)) continue;
       used.add(key);
       fields.add(
-        AiActionField(key: key, label: _legacyFieldLabel(key), value: preview[key]),
+        AiActionField(
+          key: key,
+          label: _legacyFieldLabel(key),
+          value: preview[key],
+        ),
       );
     }
     if (fields.isEmpty) {

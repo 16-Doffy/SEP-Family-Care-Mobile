@@ -529,31 +529,39 @@ class SosProvider extends ChangeNotifier {
   // _startLocationStreaming). Không dùng _ensureNoActionInProgress/_sending
   // vì đây là tác vụ nền lặp lại, không nên chặn các thao tác SOS khác
   // (resolve/cancel/confirm-safety) của cùng alert.
-  Future<void> pushLocation(
+  /// [sourceType] theo `PushSosLocationDto`: `MOBILE_GPS | WEARABLE_GPS |
+  /// SIMULATED_GPS`. Đồng hồ phải gửi `WEARABLE_GPS` kèm [deviceId] để người
+  /// nhận phân biệt được điểm nào do thiết bị đeo báo về.
+  Future<bool> pushLocation(
     String alertId,
     double latitude,
     double longitude, {
     double? accuracy,
+    String sourceType = 'MOBILE_GPS',
+    String? deviceId,
   }) async {
     final fid = _fid;
-    if (fid == null) return;
+    if (fid == null) return false;
     try {
       await ApiClient.instance
           .post('/families/$fid/sos/alerts/$alertId/locations', {
             'latitude': latitude,
             'longitude': longitude,
-            'sourceType': 'MOBILE_GPS',
+            'sourceType': sourceType,
             'accuracy': ?accuracy,
+            'deviceId': ?deviceId,
           });
+      return true;
     } catch (e) {
       debugPrint('SosProvider: pushLocation failed: $e');
+      return false;
     }
   }
 
   // GET .../sos/alerts/{alertId}/location/current — vị trí MỚI NHẤT của alert
   // (BE bổ sung 2026-07-10, dành cho người theo dõi vừa vào xem). Trả null nếu
   // alert chưa có điểm vị trí nào hoặc gọi lỗi — caller tự fallback.
-  Future<({double lat, double lng})?> fetchCurrentLocation(
+  Future<({double lat, double lng, String? sourceType})?> fetchCurrentLocation(
     String alertId,
   ) async {
     final fid = _fid;
@@ -565,7 +573,13 @@ class SosProvider extends ChangeNotifier {
       if (data is Map) {
         final lat = double.tryParse(data['latitude']?.toString() ?? '');
         final lng = double.tryParse(data['longitude']?.toString() ?? '');
-        if (lat != null && lng != null) return (lat: lat, lng: lng);
+        if (lat != null && lng != null) {
+          return (
+            lat: lat,
+            lng: lng,
+            sourceType: data['sourceType']?.toString(),
+          );
+        }
       }
     } catch (e) {
       debugPrint('SosProvider: fetchCurrentLocation failed: $e');

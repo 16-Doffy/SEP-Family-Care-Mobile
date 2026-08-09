@@ -66,8 +66,7 @@ String formatAiPreviewValue(String key, dynamic value) {
 
 final _isoDateTimePattern = RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}');
 
-bool _looksLikeIsoDateTime(String value) =>
-    _isoDateTimePattern.hasMatch(value);
+bool _looksLikeIsoDateTime(String value) => _isoDateTimePattern.hasMatch(value);
 
 bool _isMoneyKey(String key) => const {
   'amount',
@@ -943,17 +942,25 @@ class _UpgradePanel extends StatelessWidget {
 IconData _resolveHintIcon(String? icon, {required IconData fallback}) {
   final key = icon?.toLowerCase().trim() ?? '';
   if (key.isEmpty) return fallback;
-  if (key.contains('finance') || key.contains('money') || key.contains('wallet')) {
+  if (key.contains('finance') ||
+      key.contains('money') ||
+      key.contains('wallet')) {
     return Icons.account_balance_wallet_outlined;
   }
-  if (key.contains('task') || key.contains('chore')) return Icons.task_alt_rounded;
+  if (key.contains('task') || key.contains('chore')) {
+    return Icons.task_alt_rounded;
+  }
   if (key.contains('calendar') || key.contains('event')) {
     return Icons.event_available_outlined;
   }
-  if (key.contains('sos') || key.contains('safety') || key.contains('warning')) {
+  if (key.contains('sos') ||
+      key.contains('safety') ||
+      key.contains('warning')) {
     return Icons.shield_outlined;
   }
-  if (key.contains('saving') || key.contains('goal')) return Icons.savings_outlined;
+  if (key.contains('saving') || key.contains('goal')) {
+    return Icons.savings_outlined;
+  }
   if (key.contains('insight') || key.contains('analysis')) {
     return Icons.insights_rounded;
   }
@@ -1355,7 +1362,10 @@ class _ResultCard extends StatelessWidget {
         Expanded(
           child: Text(
             formatAiPreviewValue(key, value),
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
           ),
         ),
       ],
@@ -1386,7 +1396,9 @@ class _ActionPlanCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: _PendingActionCard(
-              messageId: step.messageId.isNotEmpty ? step.messageId : message.id,
+              messageId: step.messageId.isNotEmpty
+                  ? step.messageId
+                  : message.id,
               action: step,
               stepIndex: step.actionIndex,
             ),
@@ -1413,7 +1425,9 @@ class _ActionCardWithIntro extends StatelessWidget {
         if (message.content.trim().isNotEmpty)
           _TextBubble(text: message.content, isMe: false),
         _PendingActionCard(
-          messageId: action.messageId.isNotEmpty ? action.messageId : message.id,
+          messageId: action.messageId.isNotEmpty
+              ? action.messageId
+              : message.id,
           action: action,
         ),
       ],
@@ -1472,8 +1486,7 @@ class _PendingActionCard extends StatelessWidget {
                         color: color,
                       ),
                     ),
-                    if (action.uiHints?.description?.trim().isNotEmpty ??
-                        false)
+                    if (action.uiHints?.description?.trim().isNotEmpty ?? false)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
@@ -1555,7 +1568,9 @@ class _PendingActionCard extends StatelessWidget {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : Text(action.uiHints?.primaryActionLabel ?? 'Xác nhận'),
+                        : Text(
+                            action.uiHints?.primaryActionLabel ?? 'Xác nhận',
+                          ),
                   ),
                 ),
               ],
@@ -1679,6 +1694,11 @@ class _PendingActionCard extends StatelessWidget {
     'CREATE_CALENDAR_EVENT' ||
     'CALENDAR_EVENT_CREATE' => Icons.event_available_outlined,
     'CREATE_BUDGET_PLAN' => Icons.pie_chart_outline_rounded,
+    'CREATE_BUDGET_LINE' => Icons.playlist_add_rounded,
+    'CREATE_FINANCIAL_GOAL' => Icons.flag_outlined,
+    'CREATE_GOAL_ALLOCATION' ||
+    'CREATE_GOAL_CONTRIBUTION_PLAN' => Icons.savings_outlined,
+    'ALLOCATE_FUND_BY_MODEL' => Icons.account_tree_outlined,
     _ => Icons.fact_check_outlined,
   };
 
@@ -1688,7 +1708,12 @@ class _PendingActionCard extends StatelessWidget {
     'CREATE_TRANSACTION' ||
     'FINANCE_LEDGER_CREATE' => AppColors.success,
     'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => AppColors.calTravel,
-    'CREATE_BUDGET_PLAN' => AppColors.accent500,
+    'CREATE_BUDGET_PLAN' ||
+    'CREATE_BUDGET_LINE' ||
+    'CREATE_FINANCIAL_GOAL' ||
+    'CREATE_GOAL_ALLOCATION' ||
+    'CREATE_GOAL_CONTRIBUTION_PLAN' ||
+    'ALLOCATE_FUND_BY_MODEL' => AppColors.accent500,
     _ => AppColors.primary600,
   };
 
@@ -1728,7 +1753,7 @@ class _PendingActionCard extends StatelessWidget {
     // categories/budgetPlans/goals/monthlyFinance) trong 1 lần gọi.
     final refreshFinance =
         !action.isKnownActionType ||
-        const {'CREATE_BUDGET_PLAN'}.contains(type);
+        AiPendingAction.financeActionTypes.contains(type);
 
     if (!action.isKnownActionType) {
       debugPrint(

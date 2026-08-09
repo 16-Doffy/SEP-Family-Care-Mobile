@@ -89,6 +89,11 @@ class AppColors {
   /// Haptic: 0 s Light → 1 s Medium → 2 s Medium → 3 s Heavy×2 (SEND)
   static const sos = Color(0xFFDC2626);
 
+  /// Màu nút SOS lúc người dùng đang giữ để gửi — đậm hơn [sos] một bậc.
+  /// Cùng tông với `WearPalette.sosPressed` bên đồng hồ để hai nền tảng phản hồi
+  /// chạm giống nhau. WCAG: white on #BE123C = 6.4:1 → AA.
+  static const sosPressed = Color(0xFFBE123C);
+
   // ─── Backward-compat aliases ────────────────────────────────────────────────
   /// Alias → primary500 (#C7617D). Trước đây = #2563EB (blue).
   static const planned = primary500;
@@ -106,13 +111,21 @@ class AppColors {
   static const accentGlow = Color(0x262DD4BF); // teal glow 15%
 
   // ─── Light tint surfaces (bg only — text is semantic token above) ───────────
-  static const safeLight = Color(0xFFDCFCE7); // safe bg tint — task done, income
-  static const dangerLight = Color(0xFFFEE2E2); // danger bg tint — reject, overdue
+  static const safeLight = Color(
+    0xFFDCFCE7,
+  ); // safe bg tint — task done, income
+  static const dangerLight = Color(
+    0xFFFEE2E2,
+  ); // danger bg tint — reject, overdue
   static const amberLight = Color(0xFFFFF7ED); // amber/pending bg tint
-  static const neutralBg = Color(0xFFF3F4F6); // neutral chip / card bg (gray-100)
+  static const neutralBg = Color(
+    0xFFF3F4F6,
+  ); // neutral chip / card bg (gray-100)
 
   // ─── Amber / Warn text ────────────────────────────────────────────────────
-  static const amberText = Color(0xFFD97706); // amber-600 — pending label, reaction
+  static const amberText = Color(
+    0xFFD97706,
+  ); // amber-600 — pending label, reaction
 
   // ─── Dark shade text — dùng trên light tint backgrounds ──────────────────
   // Chỉ dùng khi cần contrast tốt trên safeLight / dangerLight / amberLight

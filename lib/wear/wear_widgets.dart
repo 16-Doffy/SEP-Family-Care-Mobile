@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -15,6 +16,10 @@ class WearPalette {
   static const muted = Colors.white70;
   static const faint = Colors.white38;
   static const sos = Color(0xFFE11D48);
+
+  /// Nút SOS lúc đang giữ — cùng giá trị với `AppColors.sosPressed` bên điện
+  /// thoại để phản hồi chạm giống nhau ở hai nền tảng.
+  static const sosPressed = Color(0xFFBE123C);
   static const sosSoft = Color(0xFFFDA4AF);
   static const green = Color(0xFF86EFAC);
   static const blue = Color(0xFF7DD3FC);
@@ -62,16 +67,27 @@ class _WearPageState extends State<WearPage> {
   Widget build(BuildContext context) {
     final resolvedPadding = widget.padding ?? WearUtils.contentPadding(context);
     final content = widget.scrollable
-        ? RawScrollbar(
-            controller: _scrollController,
-            thumbColor: Colors.white38,
-            radius: const Radius.circular(8),
-            thickness: 2,
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: resolvedPadding,
-              child: widget.child,
-            ),
+        ? LayoutBuilder(
+            builder: (context, constraints) {
+              final minHeight = math.max(
+                0.0,
+                constraints.maxHeight - resolvedPadding.vertical,
+              );
+              return RawScrollbar(
+                controller: _scrollController,
+                thumbColor: Colors.white38,
+                radius: const Radius.circular(8),
+                thickness: 2,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: resolvedPadding,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: minHeight),
+                    child: widget.child,
+                  ),
+                ),
+              );
+            },
           )
         : Padding(padding: resolvedPadding, child: widget.child);
 
@@ -361,6 +377,7 @@ class WearPillButton extends StatelessWidget {
     this.color = WearPalette.sos,
     this.outlined = false,
     this.loading = false,
+    this.height = 48,
   });
 
   final String label;
@@ -369,6 +386,7 @@ class WearPillButton extends StatelessWidget {
   final Color color;
   final bool outlined;
   final bool loading;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -379,7 +397,7 @@ class WearPillButton extends StatelessWidget {
         onTap: loading ? null : onTap,
         borderRadius: BorderRadius.circular(24),
         child: Container(
-          height: 48,
+          height: height,
           width: double.infinity,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),

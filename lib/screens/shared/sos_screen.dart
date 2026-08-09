@@ -12,6 +12,7 @@ import '../../providers/sos_provider.dart';
 import '../../services/sos_location.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
+import '../../utils/sos_alert_location.dart';
 import '../../widgets/json_report_view.dart';
 import 'sos_settings_screen.dart';
 
@@ -31,8 +32,10 @@ class _SOSScreenState extends State<SOSScreen>
   double? _localLat, _localLng; // GPS lưu local khi API chưa có
   String? _sentAlertId; // id alert vừa tạo, để Đóng/confirm-safety đúng alert
   Timer? _locationStreamTimer; // gửi vị trí định kỳ trong lúc alert đang active
+  /// Một controller chạy 0→1 **không đảo chiều**: ba vòng sóng lấy cùng giá trị
+  /// này nhưng lệch pha 1/3 nên lan ra nối tiếp nhau như radar, thay vì cùng
+  /// phình ra thu vào. Lấy theo hiệu ứng nút SOS trên đồng hồ.
   late AnimationController _pulseCtrl;
-  late Animation<double> _ring1, _ring2, _ring3;
 
   bool get _dark => Theme.of(context).brightness == Brightness.dark;
   Color get _sosBg => context.colors.background;
@@ -51,20 +54,8 @@ class _SOSScreenState extends State<SOSScreen>
     super.initState();
     _pulseCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat(reverse: true);
-    _ring1 = Tween<double>(
-      begin: 1.0,
-      end: 1.08,
-    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-    _ring2 = Tween<double>(
-      begin: 1.0,
-      end: 1.06,
-    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-    _ring3 = Tween<double>(
-      begin: 1.0,
-      end: 1.04,
-    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+      duration: const Duration(milliseconds: 2600),
+    )..repeat();
 
     // Refresh alerts when manager opens screen
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -132,7 +123,7 @@ class _SOSScreenState extends State<SOSScreen>
   void _onPressEnd() {
     _countTimer?.cancel();
     setState(() => _countdown = null);
-    _pulseCtrl.repeat(reverse: true);
+    _pulseCtrl.repeat();
   }
 
   // ── Get GPS → send SOS ───────────────────────────────────────────────────
@@ -185,7 +176,7 @@ class _SOSScreenState extends State<SOSScreen>
         setState(() {
           _sending = false;
         });
-        _pulseCtrl.repeat(reverse: true);
+        _pulseCtrl.repeat();
         _showSosFailDialog(e.toString().replaceFirst('Exception: ', ''));
       }
     }
@@ -393,97 +384,97 @@ class _SOSScreenState extends State<SOSScreen>
                 Expanded(
                   child: AnimatedBuilder(
                     animation: _pulseCtrl,
-                    builder: (_, _) => Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Transform.scale(
-                          scale: _ring3.value,
-                          child: _ring(
-                            290,
-                            AppColors.sos.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        Transform.scale(
-                          scale: _ring2.value,
-                          child: _ring(
-                            240,
-                            AppColors.sos.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        Transform.scale(
-                          scale: _ring1.value,
-                          child: _ring(
-                            190,
-                            AppColors.sos.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTapDown: (_) => _onPressStart(),
-                          onTapUp: (_) => _onPressEnd(),
-                          onTapCancel: _onPressEnd,
-                          child: Container(
-                            width: 130,
-                            height: 130,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.sos,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.sos_rounded,
-                                  size: 44,
-                                  color: Colors.white,
+                    builder: (_, _) {
+                      final holding = _countdown != null;
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          // Sóng chỉ chạy khi đang chờ. Lúc giữ nút thì dừng
+                          // hẳn để không có gì kéo mắt khỏi con số đếm ngược.
+                          if (!holding) ...[
+                            _sonarRing(0),
+                            _sonarRing(1 / 3),
+                            _sonarRing(2 / 3),
+                          ],
+                          GestureDetector(
+                            onTapDown: (_) => _onPressStart(),
+                            onTapUp: (_) => _onPressEnd(),
+                            onTapCancel: _onPressEnd,
+                            child: Transform.scale(
+                              scale: holding ? 1.04 : _breathScale,
+                              child: Container(
+                                width: 130,
+                                height: 130,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: holding
+                                      ? AppColors.sosPressed
+                                      : AppColors.sos,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          (holding
+                                                  ? AppColors.sosPressed
+                                                  : AppColors.sos)
+                                              .withValues(alpha: 0.45),
+                                      blurRadius: holding ? 48 : 28,
+                                      spreadRadius: holding ? 6 : 0,
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  'SOS',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                    letterSpacing: 2,
-                                  ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.emergency_share_rounded,
+                                      size: holding ? 34 : 44,
+                                      color: Colors.white,
+                                    ),
+                                    Text(
+                                      holding ? '$_countdown' : 'SOS',
+                                      style: GoogleFonts.inter(
+                                        fontSize: holding ? 34 : 18,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        letterSpacing: holding ? 0 : 2,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 32),
-                  child: _countdown != null
-                      ? Text(
-                          '$_countdown',
-                          style: GoogleFonts.inter(
-                            fontSize: 56,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.danger,
-                          ),
-                        )
-                      : Column(
-                          children: [
-                            Text(
-                              'KHẨN CẤP',
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.danger,
-                                letterSpacing: 3,
-                              ),
-                            ),
-                            Text(
-                              'Giữ 3 giây để gửi SOS',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: _sosMuted,
-                              ),
-                            ),
-                          ],
+                  // Số đếm ngược nay nằm TRONG nút (giống đồng hồ), nên chỗ này
+                  // chỉ còn nhãn — lúc đang giữ thì đổi thành cách thoát.
+                  child: Column(
+                    children: [
+                      Text(
+                        'KHẨN CẤP',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.danger,
+                          letterSpacing: 3,
                         ),
+                      ),
+                      Text(
+                        _countdown != null
+                            ? 'Thả ra để hủy'
+                            : 'Giữ 3 giây để gửi SOS',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: _sosMuted,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 // Liên hệ khẩn: ưu tiên danh bạ gia đình (BE), fallback hotline
                 // quốc gia khi gia đình chưa khai báo liên hệ nào.
@@ -1320,14 +1311,29 @@ class _SOSScreenState extends State<SOSScreen>
     ),
   );
 
-  static Widget _ring(double size, Color color) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      border: Border.all(color: color, width: 1),
-    ),
-  );
+  /// Nhịp thở của chính nút SOS: 1.0 → 1.05 → 1.0 trong một vòng controller.
+  double get _breathScale => 1 + 0.05 * (1 - (2 * _pulseCtrl.value - 1).abs());
+
+  /// Một vòng sóng lan ra rồi mờ hẳn, bắt đầu từ đúng mép nút.
+  ///
+  /// [phase] lệch nhau 1/3 để ba vòng nối đuôi nhau thay vì cùng phình một lúc
+  /// — đó là khác biệt giữa "radar đang phát" và "ba đường viền rung nhẹ".
+  Widget _sonarRing(double phase) {
+    final t = (_pulseCtrl.value + phase) % 1.0;
+    return Transform.scale(
+      scale: 1 + t * 1.25,
+      child: Container(
+        width: 130,
+        height: 130,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: AppColors.sos.withValues(alpha: 0.55 * (1 - t)),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // GET /families/{familyId}/sos/alerts/{alertId} — chi tiết đầy đủ (phản hồi
@@ -1343,6 +1349,8 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _detail;
+  int _locationRetryCount = 0;
+  static const int _maxLocationRetries = 3;
 
   @override
   void initState() {
@@ -1360,6 +1368,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
           _detail = d;
           _loading = false;
         });
+        _scheduleLocationRetryIfNeeded(d);
       }
     } catch (e) {
       if (mounted) {
@@ -1369,6 +1378,40 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
         });
       }
     }
+  }
+
+  void _scheduleLocationRetryIfNeeded(Map<String, dynamic> detail) {
+    final status = (detail['status']?.toString() ?? 'ACTIVE').toUpperCase();
+    if (status != 'ACTIVE' || parseSosAlertLocation(detail) != null) return;
+    if (_locationRetryCount >= _maxLocationRetries) return;
+    _locationRetryCount++;
+
+    Future.delayed(const Duration(seconds: 5), () async {
+      if (!mounted) return;
+      final loc = await context.read<SosProvider>().fetchCurrentLocation(
+        widget.alertId,
+      );
+      if (!mounted) return;
+      if (loc == null) {
+        _scheduleLocationRetryIfNeeded(_detail ?? detail);
+        return;
+      }
+      final existing = _detail?['locationPoints'];
+      setState(() {
+        _detail = {
+          ...?_detail,
+          'locationPoints': [
+            if (existing is List) ...existing,
+            {
+              'latitude': loc.lat,
+              'longitude': loc.lng,
+              if (loc.sourceType != null) 'sourceType': loc.sourceType,
+              'recordedAt': DateTime.now().toUtc().toIso8601String(),
+            },
+          ],
+        };
+      });
+    });
   }
 
   // ── Parse phòng thủ (response schema chi tiết KHÔNG được Swagger document —
@@ -1388,12 +1431,6 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     return null;
   }
 
-  static double? _d(dynamic v) {
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString());
-  }
-
   static String _fmtTime(String iso) {
     final d = DateTime.tryParse(iso)?.toLocal();
     if (d == null) return iso;
@@ -1409,23 +1446,24 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     return const [];
   }
 
-  ({double lat, double lng})? _location(Map<String, dynamic> d) {
-    // Ưu tiên điểm vị trí mới nhất trong mảng locations, fallback toạ độ alert.
-    for (final key in ['locations', 'sosLocations']) {
-      final v = d[key];
-      if (v is List && v.isNotEmpty) {
-        final last = v.whereType<Map>().toList();
-        if (last.isNotEmpty) {
-          final lat = _d(last.last['latitude']);
-          final lng = _d(last.last['longitude']);
-          if (lat != null && lng != null) return (lat: lat, lng: lng);
-        }
-      }
-    }
-    final lat = _d(d['latitude'] ?? d['initialLatitude']);
-    final lng = _d(d['longitude'] ?? d['initialLongitude']);
-    if (lat != null && lng != null) return (lat: lat, lng: lng);
-    return null;
+  SosAlertLocation? _location(Map<String, dynamic> d) {
+    return parseSosAlertLocation(d);
+  }
+
+  ({IconData icon, String label})? _locationSource(String? sourceType) {
+    final type = sourceType?.toUpperCase().trim();
+    if (type == null || type.isEmpty) return null;
+    return switch (type) {
+      'WEARABLE_GPS' ||
+      'WEARABLE' => (icon: Icons.watch_rounded, label: 'Vị trí từ đồng hồ'),
+      'MOBILE_GPS' || 'MOBILE_APP' => (
+        icon: Icons.phone_android_rounded,
+        label: 'Vị trí từ điện thoại',
+      ),
+      'SIMULATED_GPS' ||
+      'SIMULATED_DEVICE' => (icon: Icons.tune_rounded, label: 'Vị trí giả lập'),
+      _ => null,
+    };
   }
 
   // Ánh xạ loại phản hồi → (icon, màu nền node, nhãn hiển thị).
@@ -1543,6 +1581,9 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     final message = d['message']?.toString() ?? '';
     final address = d['address']?.toString() ?? '';
     final loc = _location(d);
+    final locationPoints = parseSosAlertLocationPoints(d);
+    final routePoints = [for (final p in locationPoints) LatLng(p.lat, p.lng)];
+    final source = _locationSource(loc?.sourceType);
     final responses = _responses(d);
     final resolvedBy = _memberName(d['resolvedByMember']);
     final resolutionNote = d['resolutionNote']?.toString();
@@ -1720,13 +1761,41 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                         ),
                       if (loc != null) ...[
                         if (address.isNotEmpty) const SizedBox(height: 8),
-                        Text(
-                          'Tọa độ: ${loc.lat.toStringAsFixed(4)}, ${loc.lng.toStringAsFixed(4)}',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: context.colors.textMuted,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Tọa độ: ${loc.lat.toStringAsFixed(4)}, ${loc.lng.toStringAsFixed(4)}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: context.colors.textMuted,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (source != null) ...[
+                              const SizedBox(width: 8),
+                              Icon(
+                                source.icon,
+                                size: 13,
+                                color: context.colors.textMuted,
+                              ),
+                              const SizedBox(width: 3),
+                              Flexible(
+                                child: Text(
+                                  source.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: context.colors.textMuted,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 12),
                         ClipRRect(
@@ -1747,6 +1816,18 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                                       'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                                   userAgentPackageName: 'com.familycare.app',
                                 ),
+                                if (routePoints.length >= 2)
+                                  PolylineLayer(
+                                    polylines: [
+                                      Polyline(
+                                        points: routePoints,
+                                        color: AppColors.sos.withValues(
+                                          alpha: 0.72,
+                                        ),
+                                        strokeWidth: 4,
+                                      ),
+                                    ],
+                                  ),
                                 MarkerLayer(
                                   markers: [
                                     Marker(

@@ -42,6 +42,21 @@ Future<Position?> resolveSosPosition() async {
   }
 }
 
+/// Vị trí để đính kèm SOS **phát từ đồng hồ**.
+///
+/// Chỉ dùng GPS của chính đồng hồ vì đây mới là vị trí của người đeo trong tình
+/// huống khẩn cấp. Không lùi về vị trí điện thoại cùng tài khoản: điện thoại có
+/// thể đang ở nơi khác và làm sai lệch cảnh báo. Trên máy ảo Wear OS cần đặt
+/// toạ độ trong Extended controls > Location trước khi demo bản đồ.
+Future<({double lat, double lng, double? accuracy})?>
+resolveWearableSosPosition() async {
+  final pos = await resolveSosPosition();
+  if (pos != null) {
+    return (lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy);
+  }
+  return null;
+}
+
 /// Chuỗi địa chỉ dạng `GPS: lat, lng` để gửi kèm alert; rỗng nếu không có toạ độ.
 String sosAddressOf(Position? pos) => pos == null
     ? ''

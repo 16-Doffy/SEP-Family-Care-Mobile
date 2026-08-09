@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -30,6 +31,7 @@ import '../screens/shared/tab_settings_screen.dart';
 import '../screens/shared/wearables_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
 import '../screens/shared/change_password_screen.dart';
+import '../screens/shared/debug_status_screen.dart';
 
 // New screens
 import '../screens/parent/subscription_screen.dart';
@@ -327,6 +329,11 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (_, _) => const TabSettingsScreen(),
       ),
       GoRoute(path: '/wearables', builder: (_, _) => const WearablesScreen()),
+      if (kDebugMode)
+        GoRoute(
+          path: '/debug/status',
+          builder: (_, _) => const DebugStatusScreen(),
+        ),
 
       // ── Manager Shell (Trang chủ/Nhắn tin/Lịch/SOS/Album/Tôi) ──
       StatefulShellRoute.indexedStack(

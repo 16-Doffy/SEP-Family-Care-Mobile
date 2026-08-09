@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -156,6 +157,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 'Thiết bị đeo',
                 onTap: () => context.push('/wearables'),
               ),
+              if (kDebugMode)
+                _tile(
+                  Icons.bug_report_outlined,
+                  'Debug nội bộ',
+                  onTap: () => context.push('/debug/status'),
+                ),
             ]),
             const SizedBox(height: 16),
 

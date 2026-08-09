@@ -45,26 +45,27 @@ void main() {
       },
     );
 
-    test(
-      'đủ 4 actionType BE đã chốt và FE nhận diện được cả bốn (thêm '
-      'CREATE_BUDGET_PLAN xác nhận chính thức 2026-08-09)',
-      () {
-        expect(AiPendingAction.confirmedActionTypes, {
-          'CREATE_TASK',
-          'CREATE_LEDGER_ENTRY',
-          'CREATE_CALENDAR_EVENT',
-          'CREATE_BUDGET_PLAN',
+    test('đủ 9 actionType BE đã chốt và FE nhận diện được tất cả', () {
+      expect(AiPendingAction.confirmedActionTypes, {
+        'CREATE_TASK',
+        'CREATE_LEDGER_ENTRY',
+        'CREATE_CALENDAR_EVENT',
+        'CREATE_BUDGET_PLAN',
+        'CREATE_BUDGET_LINE',
+        'CREATE_FINANCIAL_GOAL',
+        'CREATE_GOAL_ALLOCATION',
+        'CREATE_GOAL_CONTRIBUTION_PLAN',
+        'ALLOCATE_FUND_BY_MODEL',
+      });
+      for (final type in AiPendingAction.confirmedActionTypes) {
+        final action = AiPendingAction.fromJson({
+          'messageId': 'm1',
+          'actionType': type,
         });
-        for (final type in AiPendingAction.confirmedActionTypes) {
-          final action = AiPendingAction.fromJson({
-            'messageId': 'm1',
-            'actionType': type,
-          });
-          expect(action.isKnownActionType, isTrue, reason: type);
-          expect(action.actionLabel, isNot('Thực hiện đề xuất'), reason: type);
-        }
-      },
-    );
+        expect(action.isKnownActionType, isTrue, reason: type);
+        expect(action.actionLabel, isNot('Thực hiện đề xuất'), reason: type);
+      }
+    });
 
     test('nhãn thẻ xác nhận đúng theo từng nhóm', () {
       String labelOf(String type) => AiPendingAction.fromJson({
@@ -278,14 +279,20 @@ void main() {
   group('outcomeMessageFor/outcomeColorFor/outcomeIconFor — dùng chung cho '
       'cả _PendingActionCard và _ResultCard (BE Sprint: RESULT_CARD giờ dùng '
       'cho cả REJECTED/EXPIRED, không chỉ CONFIRMED)', () {
-    test('mỗi outcome có câu chữ riêng, không lẫn lộn xác nhận với hết hạn', () {
-      expect(outcomeMessageFor(AiActionOutcome.completed), 'Đã thực hiện xong.');
-      expect(
-        outcomeMessageFor(AiActionOutcome.rejected),
-        'Bạn đã từ chối đề xuất này.',
-      );
-      expect(outcomeMessageFor(AiActionOutcome.pending), isEmpty);
-    });
+    test(
+      'mỗi outcome có câu chữ riêng, không lẫn lộn xác nhận với hết hạn',
+      () {
+        expect(
+          outcomeMessageFor(AiActionOutcome.completed),
+          'Đã thực hiện xong.',
+        );
+        expect(
+          outcomeMessageFor(AiActionOutcome.rejected),
+          'Bạn đã từ chối đề xuất này.',
+        );
+        expect(outcomeMessageFor(AiActionOutcome.pending), isEmpty);
+      },
+    );
 
     test('completed và rejected/expired KHÔNG dùng chung một màu — trước đây '
         '_ResultCard mặc định xanh cho mọi trường hợp', () {
