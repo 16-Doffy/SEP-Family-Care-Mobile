@@ -531,6 +531,7 @@ class AiPendingAction {
         'amount',
         'categoryName',
         'category',
+        'categoryId',
         'description',
         'note',
       ],
@@ -565,7 +566,7 @@ class AiPendingAction {
 
   static String _legacyFieldLabel(String key) => switch (key) {
     'amount' => 'Số tiền',
-    'category' || 'categoryName' => 'Danh mục',
+    'category' || 'categoryName' || 'categoryId' => 'Danh mục',
     'description' || 'note' => 'Ghi chú',
     'title' => 'Tiêu đề',
     'task' || 'taskTitle' => 'Nhiệm vụ',

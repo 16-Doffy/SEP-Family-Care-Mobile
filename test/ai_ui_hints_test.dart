@@ -250,6 +250,27 @@ void main() {
     );
 
     test(
+      'preview cũ có categoryId (BE Sprint 2026-08-09 — AI tự gán danh mục) '
+      'vẫn được nhận diện, không bị rơi mất khỏi displayFields',
+      () {
+        final action = AiPendingAction.fromJson({
+          'messageId': 'm1',
+          'actionType': 'CREATE_LEDGER_ENTRY',
+          'preview': {
+            'amount': 45000,
+            'categoryId': 'cat-an-uong',
+            'note': 'Cà phê sáng',
+          },
+        });
+        final fields = action.displayFields;
+        final category = fields.where((f) => f.key == 'categoryId');
+        expect(category, isNotEmpty);
+        expect(category.first.label, 'Danh mục');
+        expect(category.first.value, 'cat-an-uong');
+      },
+    );
+
+    test(
       'uiHints có nhưng fields rỗng vẫn rơi về preview, không hiện trống trơn',
       () {
         final action = AiPendingAction.fromJson({

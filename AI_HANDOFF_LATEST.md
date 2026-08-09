@@ -2,6 +2,44 @@
 
 Last updated: **2026-08-09**
 
+## BE fix nốt 4/4 mục còn lại — FE hầu như không cần đổi gì (2026-08-09)
+
+BE phản hồi và fix cả 4 mục cuối cùng còn treo:
+
+1. **Giờ "ngay bây giờ" lệch** — BE sửa lấy đúng timestamp hiện tại theo giờ
+   VN trước khi gắn `+07:00` (ví dụ `2026-08-09T10:04:05+07:00`). Thuần BE,
+   không có gì để FE sửa — nhờ user test lại luồng "... ngay bây giờ" để
+   xác nhận hết lệch.
+2. **Title thẻ phân biệt thu/chi** — EXPENSE → "Tạo khoản chi", INCOME →
+   "Tạo khoản thu", nhãn nút Xác nhận/Sửa cũng phân biệt theo loại. FE
+   **không cần đổi gì** vì đã tin thẳng `uiHints.title`/`primaryActionLabel`/
+   `secondaryActionLabel`/`editActionLabel` từ Sprint 2 — tự động ăn theo
+   ngay khi BE đổi chữ, không cần deploy lại FE.
+3. **Phân trang ledger entries** — BE đổi sort mặc định thành `createdAt desc`
+   rồi mới tới `entryDate desc`, khoản mới tạo (AI hay thủ công) luôn nổi
+   lên trang đầu. FE **không cần đổi gì** — `WalletProvider._fetchEntries`
+   vẫn giữ nguyên lớp sort lại theo `createdAt` ở client làm lá chắn thứ hai
+   (giờ chỉ là no-op vô hại vì BE đã trả đúng thứ tự sẵn, không xung đột).
+4. **AI tự gán danh mục khi rõ nghĩa** — BE chỉnh prompt để AI gọi
+   `list_finance_categories` và gửi `categoryId` khi nội dung khớp rõ danh
+   mục (không khớp thì để trống, không chặn user); có `categoryId` thì BE
+   tự map sang `jarId` theo mô hình đang áp dụng, giống hệt luồng tạo thủ
+   công. **1 chỗ FE đã vá phòng ngừa**: nhánh fallback cũ (khi BE không gửi
+   `uiHints.fields`, dùng trực tiếp `preview`) thiếu `categoryId` trong danh
+   sách khóa nhận diện — thêm vào `_fieldsFromLegacyPreview`/`_legacyFieldLabel`
+   (`lib/models/ai_chatbot.dart`) để không bị rơi mất field Danh mục nếu rơi
+   vào nhánh dự phòng này. Thêm 1 test khóa hành vi trong `ai_ui_hints_test.dart`.
+
+**BE cũng đề xuất thêm màn "Sửa danh mục" cho giao dịch đã tạo** (xử lý dữ
+liệu cũ/giao dịch chưa gắn danh mục) — trùng với đề xuất chị đã nêu trước đó
+(`WalletProvider.updateLedgerEntry()` có sẵn nhưng chưa màn nào gọi). Vẫn
+đang chờ user quyết định có làm ngay không.
+
+Verify: `flutter analyze` 0 error, `flutter test` 305/305 pass (thêm 1 test
+mới). Chưa verify runtime — nhờ user test lại cả 4 mục, đặc biệt xem chữ
+"Tạo khoản chi"/"Tạo khoản thu" và field Danh mục (nếu AI nhận diện được)
+có hiện đúng không.
+
 ## Snapshot cuối phiên 2026-08-09 — AI Chatbox coi như ổn định, phát hiện thêm 2 việc ở Sổ thu chi
 
 **Trạng thái AI Chatbox: ỔN ĐỊNH**, đã test đủ vòng đời (chat thường, action
