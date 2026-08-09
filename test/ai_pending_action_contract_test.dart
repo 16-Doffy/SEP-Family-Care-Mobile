@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:family_care/models/ai_chatbot.dart';
 import 'package:family_care/screens/shared/ai_assistant_screen.dart';
+import 'package:family_care/theme/app_colors.dart';
 
 /// Khóa contract `pendingAction` theo OpenAPI 2026-08-07 và tin nhắn BE cùng ngày.
 /// Nếu BE đổi `AiPendingActionResponseDto`, `AiActionType` hoặc `AiActionStatus`
@@ -44,21 +45,26 @@ void main() {
       },
     );
 
-    test('đủ 3 actionType BE đã chốt và FE nhận diện được cả ba', () {
-      expect(AiPendingAction.confirmedActionTypes, {
-        'CREATE_TASK',
-        'CREATE_LEDGER_ENTRY',
-        'CREATE_CALENDAR_EVENT',
-      });
-      for (final type in AiPendingAction.confirmedActionTypes) {
-        final action = AiPendingAction.fromJson({
-          'messageId': 'm1',
-          'actionType': type,
+    test(
+      'đủ 4 actionType BE đã chốt và FE nhận diện được cả bốn (thêm '
+      'CREATE_BUDGET_PLAN xác nhận chính thức 2026-08-09)',
+      () {
+        expect(AiPendingAction.confirmedActionTypes, {
+          'CREATE_TASK',
+          'CREATE_LEDGER_ENTRY',
+          'CREATE_CALENDAR_EVENT',
+          'CREATE_BUDGET_PLAN',
         });
-        expect(action.isKnownActionType, isTrue, reason: type);
-        expect(action.actionLabel, isNot('Thực hiện đề xuất'), reason: type);
-      }
-    });
+        for (final type in AiPendingAction.confirmedActionTypes) {
+          final action = AiPendingAction.fromJson({
+            'messageId': 'm1',
+            'actionType': type,
+          });
+          expect(action.isKnownActionType, isTrue, reason: type);
+          expect(action.actionLabel, isNot('Thực hiện đề xuất'), reason: type);
+        }
+      },
+    );
 
     test('nhãn thẻ xác nhận đúng theo từng nhóm', () {
       String labelOf(String type) => AiPendingAction.fromJson({
@@ -67,8 +73,9 @@ void main() {
       }).actionLabel;
 
       expect(labelOf('CREATE_TASK'), 'Tạo nhiệm vụ');
-      expect(labelOf('CREATE_LEDGER_ENTRY'), 'Tạo giao dịch');
+      expect(labelOf('CREATE_LEDGER_ENTRY'), 'Tạo thu/chi');
       expect(labelOf('CREATE_CALENDAR_EVENT'), 'Tạo sự kiện lịch');
+      expect(labelOf('CREATE_BUDGET_PLAN'), 'Tạo kế hoạch ngân sách');
     });
   });
 
@@ -80,6 +87,55 @@ void main() {
           'status': status,
           if (expiresAt != null) 'expiresAt': expiresAt.toIso8601String(),
         });
+
+    test('đúng 4 status BE đã chốt, mỗi cái ra một kết cục riêng', () {
+      // Contract BE 2026-08-07: PENDING → CONFIRMED / REJECTED / EXPIRED.
+      // BE nói rõ chưa có CANCELED và FAILED.
+      expect(AiPendingAction.confirmedStatuses, {
+        'PENDING',
+        'CONFIRMED',
+        'REJECTED',
+        'EXPIRED',
+      });
+      expect(
+        withStatus(
+          'PENDING',
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+        ).outcome,
+        AiActionOutcome.pending,
+      );
+      expect(withStatus('CONFIRMED').outcome, AiActionOutcome.completed);
+      expect(withStatus('REJECTED').outcome, AiActionOutcome.rejected);
+      expect(withStatus('EXPIRED').outcome, AiActionOutcome.expired);
+    });
+
+    test('expiresAt là ISO UTC thật, so sánh không lệch múi giờ', () {
+      // BE xác nhận expiresAt sinh bằng Date.toISOString(), có đuôi Z, và
+      // interceptor KHÔNG convert timezone — khác ledger vốn trả wall-clock
+      // local rồi gắn Z. Nên so trực tiếp với thời điểm hiện tại là đúng.
+      final future = AiPendingAction.fromJson({
+        'messageId': 'm1',
+        'actionType': 'CREATE_TASK',
+        'status': 'PENDING',
+        'expiresAt': DateTime.now()
+            .toUtc()
+            .add(const Duration(hours: 2))
+            .toIso8601String(),
+      });
+      expect(future.expiresAt!.isUtc, isTrue);
+      expect(future.outcome, AiActionOutcome.pending);
+
+      final past = AiPendingAction.fromJson({
+        'messageId': 'm1',
+        'actionType': 'CREATE_TASK',
+        'status': 'PENDING',
+        'expiresAt': DateTime.now()
+            .toUtc()
+            .subtract(const Duration(hours: 2))
+            .toIso8601String(),
+      });
+      expect(past.outcome, AiActionOutcome.expired);
+    });
 
     test('xác nhận thành công là completed, không phải expired', () {
       // Quan sát runtime 2026-08-07: sau confirm-action thành công, thẻ vẫn
@@ -159,6 +215,23 @@ void main() {
       );
     });
 
+    test(
+      'key lạ (uiHints.fields do BE tự đặt) nhưng giá trị là ISO datetime vẫn được đổi giờ local',
+      () {
+        // Quan sát thật 2026-08-08: thẻ sự kiện lịch từ `uiHints.fields` dùng
+        // key khác `startTime`/`endTime` cứng ("Bắt đầu"/"Kết thúc" hiện
+        // nguyên văn `2026-08-09T09:00:00+07:00"). Nhận theo HÌNH DẠNG chuỗi,
+        // không phụ thuộc tên key, để không phải đoán trước mọi tên field BE
+        // có thể đặt.
+        final shown = formatAiPreviewValue(
+          'start',
+          '2026-08-09T09:00:00+07:00',
+        );
+        expect(shown, isNot(contains('T')));
+        expect(shown, isNot(contains('+07:00')));
+      },
+    );
+
     test('BE lồng object thì lấy tên hiển thị thay vì đổ cả map', () {
       expect(
         formatAiPreviewValue('assignee', {'id': 'uuid-1', 'name': 'Minh'}),
@@ -199,6 +272,41 @@ void main() {
       final now = DateTime.now();
       expect(month.year, now.year);
       expect(month.month, now.month);
+    });
+  });
+
+  group('outcomeMessageFor/outcomeColorFor/outcomeIconFor — dùng chung cho '
+      'cả _PendingActionCard và _ResultCard (BE Sprint: RESULT_CARD giờ dùng '
+      'cho cả REJECTED/EXPIRED, không chỉ CONFIRMED)', () {
+    test('mỗi outcome có câu chữ riêng, không lẫn lộn xác nhận với hết hạn', () {
+      expect(outcomeMessageFor(AiActionOutcome.completed), 'Đã thực hiện xong.');
+      expect(
+        outcomeMessageFor(AiActionOutcome.rejected),
+        'Bạn đã từ chối đề xuất này.',
+      );
+      expect(outcomeMessageFor(AiActionOutcome.pending), isEmpty);
+    });
+
+    test('completed và rejected/expired KHÔNG dùng chung một màu — trước đây '
+        '_ResultCard mặc định xanh cho mọi trường hợp', () {
+      expect(outcomeColorFor(AiActionOutcome.completed), AppColors.success);
+      expect(
+        outcomeColorFor(AiActionOutcome.rejected),
+        isNot(AppColors.success),
+      );
+      expect(
+        outcomeColorFor(AiActionOutcome.expired),
+        isNot(AppColors.success),
+      );
+    });
+
+    test('icon phân biệt được cả 3: thành công/từ chối/hết hạn', () {
+      final icons = {
+        outcomeIconFor(AiActionOutcome.completed),
+        outcomeIconFor(AiActionOutcome.rejected),
+        outcomeIconFor(AiActionOutcome.expired),
+      };
+      expect(icons, hasLength(3));
     });
   });
 }

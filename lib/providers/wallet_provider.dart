@@ -43,6 +43,14 @@ class LedgerEntry {
   final String description;
   final String? note;
   final String entryDate;
+
+  /// Thời điểm bản ghi được tạo trên server — KHÁC `entryDate` với giao dịch
+  /// chia quỹ theo mô hình: `entryDate` luôn là ngày cuối kỳ (vd 31/08 00:00,
+  /// giống hệt nhau cho mọi hũ trong cùng một lần chia), còn `createdAt` mới
+  /// là lúc thao tác thật sự xảy ra. Sort theo `entryDate` không phân biệt
+  /// được các lần chia quỹ khác nhau — phải dùng `createdAt` mới đúng thứ tự
+  /// "mới nhất lên đầu". Xem `WalletProvider._fetchEntries`.
+  final String createdAt;
   final String? categoryName;
   final String? categoryId;
 
@@ -60,6 +68,7 @@ class LedgerEntry {
     required this.description,
     this.note,
     required this.entryDate,
+    this.createdAt = '',
     this.categoryName,
     this.categoryId,
     this.jarId,
@@ -100,6 +109,7 @@ class LedgerEntry {
       note: json['note']?.toString(),
       entryDate:
           json['entryDate']?.toString() ?? json['createdAt']?.toString() ?? '',
+      createdAt: json['createdAt']?.toString() ?? '',
       categoryName: cat?['name']?.toString(),
       categoryId: json['categoryId']?.toString() ?? cat?['id']?.toString(),
       jarId: json['jarId']?.toString() ?? jar?['id']?.toString(),
@@ -113,17 +123,25 @@ class LedgerEntry {
   String get legacyDescription => description;
   String get legacyCreatedAt => entryDate;
 
-  /// BE hiện vẫn trả hậu tố `Z` trên một số field nhưng giữ giờ local GMT+7.
-  /// Giữ cách hiển thị cũ cho tới khi BE xác nhận migration sang UTC thật.
+  /// `entryDate` là UTC thật, không phải wall-clock local gắn `Z` giả.
+  ///
+  /// Verify runtime 2026-08-07: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC),
+  /// sổ thu chi hiện `13:18` — đúng bằng giờ UTC, lệch 7 tiếng so với giờ bấm
+  /// lưu thật. Nguyên nhân: [recordEntry] bên dưới tự gửi `entryDate` bằng
+  /// `DateTime.now().toUtc().toIso8601String()` (UTC chuẩn) khi TẠO, nhưng
+  /// hàm này lại cắt bỏ `Z` rồi parse như giờ naive khi HIỂN THỊ — tự đọc sai
+  /// dữ liệu do chính FE gửi lên. Đây là lỗi FE, không phải BE.
+  ///
+  /// Parse chuẩn rồi `.toLocal()` khi chuỗi thật sự là UTC (`isUtc == true`,
+  /// tức có `Z`/offset); chuỗi naive (không `Z`) thì giữ nguyên, không tự ý
+  /// cộng trừ giờ — phòng dữ liệu cũ chưa chắc cùng quy ước.
   String get displayEntryDate {
-    final localValue = entryDate.endsWith('Z')
-        ? entryDate.substring(0, entryDate.length - 1)
-        : entryDate;
-    final parsed = DateTime.tryParse(localValue);
+    final parsed = DateTime.tryParse(entryDate);
     if (parsed == null) return entryDate;
+    final local = parsed.isUtc ? parsed.toLocal() : parsed;
     String two(int value) => value.toString().padLeft(2, '0');
-    return '${two(parsed.day)}/${two(parsed.month)}/${parsed.year} '
-        '${two(parsed.hour)}:${two(parsed.minute)}';
+    return '${two(local.day)}/${two(local.month)}/${local.year} '
+        '${two(local.hour)}:${two(local.minute)}';
   }
 }
 
@@ -399,6 +417,22 @@ class WalletProvider extends ChangeNotifier {
       } else {
         _entries.addAll(parsed);
       }
+      // BE trả theo thứ tự riêng, không đảm bảo mới nhất trước — quan sát
+      // thật: nhiều lần chia quỹ khác nhau xen kẽ lộn xộn trong Lịch sử vì
+      // cùng entryDate (ngày cuối kỳ) nhưng khác lần tạo. Sort lại theo
+      // createdAt mới đúng "mới nhất lên đầu"; DateTime.compareTo so đúng
+      // theo thời điểm tuyệt đối bất kể chuỗi gốc là UTC hay naive, nên không
+      // cần .toLocal() ở đây — chỉ hiển thị mới cần.
+      _entries.sort((a, b) {
+        final da = DateTime.tryParse(
+          a.createdAt.isNotEmpty ? a.createdAt : a.entryDate,
+        );
+        final db = DateTime.tryParse(
+          b.createdAt.isNotEmpty ? b.createdAt : b.entryDate,
+        );
+        if (da == null || db == null) return 0;
+        return db.compareTo(da);
+      });
       _entriesPage = nextPage;
       _entriesTotalPages = _readTotalPages(data, parsed.length);
     } catch (e) {

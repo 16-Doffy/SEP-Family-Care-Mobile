@@ -10,7 +10,7 @@
 > - `POST /wearable-activations/{sessionId}/claim`: Wear OS claim `accessToken`, `refreshToken`, `user` sau khi mobile pair mã.
 >
 > Bản ngay trước đó cũng đã bổ sung **25 response/schema**:
-> - **AI Chatbot**: có DTO chính thức cho conversations, messages, send message, confirm/reject action, delete conversation; thêm enum `AiActionType` (`CREATE_LEDGER_ENTRY | CREATE_TASK | CREATE_CALENDAR_EVENT`) và `AiActionStatus` (`PENDING | CONFIRMED | REJECTED | EXPIRED`).
+> - **AI Chatbot**: có DTO chính thức cho conversations, messages, send message, confirm/reject action, delete conversation; enum `AiActionType` (`CREATE_LEDGER_ENTRY | CREATE_TASK | CREATE_CALENDAR_EVENT | CREATE_BUDGET_PLAN`, 4 giá trị từ 2026-08-09) và `AiActionStatus` (`PENDING | CONFIRMED | REJECTED | EXPIRED`).
 > - **Wearable sensor event**: `POST /families/{familyId}/wearables/{deviceId}/events` có `WearableEventIngestApiResponseDto`, gồm `event`, `alertCreated`, `alertId`; duplicate active SOS trả `alertCreated=false` và `alertId` là SOS active hiện có.
 > - **Wearable error codes** đã được document trong response lỗi: `WEARABLE_ALREADY_PAIRED`, `DEVICE_IDENTIFIER_TAKEN`, `WEARABLE_NOT_PAIRED`, `INVALID_SENSOR_EVENT_TYPE`, `INVALID_SENSOR_EVENT_PAYLOAD`.
 
@@ -351,6 +351,102 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET .../tasks/reward-disputes` — Danh sách tranh chấp. Query `page, limit, status, rewardSettlementId, reportedByMemberId`. `status`: `OPEN | RESOLVED | REJECTED`. **[wire FE 2026-07-08]** tab "Tranh chấp" trong `RewardManagementScreen` (trước đó Member tạo được dispute nhưng Manager không có UI xem/giải quyết).
 - `GET .../tasks/reward-disputes/{disputeId}` — Chi tiết. Provider method có sẵn, chưa có UI gọi (còn dư).
 - `PATCH .../tasks/reward-disputes/{disputeId}/resolve` — Xử lý tranh chấp. Body `ResolveRewardDisputeDto { action }` (`action`: `ACCEPT_DISPUTE | REJECT_DISPUTE`). **[wire FE 2026-07-08]** — trước đó FE gửi sai body `{ resolutionNote }`, đã sửa; dialog đổi từ ghi chú tự do sang 2 nút Chấp nhận/Từ chối.
+
+### AI Chatbot — **[contract BE chốt 2026-08-07, FE wire đủ 7/7]**
+
+7 operation, FE gọi đủ cả 7 trong `ai_chatbot_provider.dart`, không gọi endpoint
+AI nào ngoài Swagger.
+
+- `POST /api/v1/families/{familyId}/ai-chatbot/conversations` — tạo hội thoại. Body `CreateAiConversationDto { title? }` (bỏ trống thì BE tự đặt theo tin đầu, max 120 ký tự).
+- `GET /api/v1/families/{familyId}/ai-chatbot/conversations?page=&limit=` — chỉ trả hội thoại **của chính thành viên hiện tại**. Đã verify runtime: Thành viên nhận danh sách rỗng khi chưa có hội thoại nào, không thấy hội thoại của Trưởng nhóm.
+- `GET /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}/messages?page=&limit=` — lịch sử tin nhắn.
+- `POST /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}/messages` — gửi tin. Body `SendAiMessageDto { content }` (required, max 2000). FE để timeout 30s vì AI trả chậm.
+- `POST .../messages/{messageId}/confirm-action` — xác nhận đề xuất, BE mới thực sự ghi dữ liệu.
+- `POST .../messages/{messageId}/reject-action` — từ chối đề xuất.
+- `DELETE /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}` — xóa hội thoại kèm toàn bộ tin nhắn.
+
+**Sprint 3 (2026-08-09, backward-compatible — BE xác nhận endpoint cũ ở trên
+giữ nguyên, FE không bắt buộc đổi flow ngay):** một `aiMessage` giờ có thể có
+NHIỀU đề xuất cùng lúc trong `pendingActions[]` (kế hoạch nhiều bước),
+`pendingAction` (số ít) **vẫn còn, là alias của `pendingActions[0]`**. Nếu
+`aiMessage.uiHints.displayStyle === "ACTION_PLAN_CARD"` thì render card kế
+hoạch nhiều bước, mỗi phần tử `pendingActions[n]` có thêm `actionIndex` (vị
+trí bước) để xác nhận/từ chối RIÊNG từng bước, khác hẳn 2 endpoint cũ vốn
+thao tác theo `messageId` (chỉ áp dụng khi action đơn lẻ, không phải plan).
+**Đã verify runtime 2026-08-09** (câu "Giúp tôi chuẩn bị cho chuyến du lịch:
+tạo lịch đi chơi cuối tuần này và ghi khoản chi 500.000đ tiền đặt cọc" ra
+đúng 1 message với `pendingActions[]` 2 phần tử, xác nhận/từ chối độc lập
+từng bước đúng, plan-level "Kế hoạch đã hủy" đúng khi mọi bước đều bị từ
+chối) — cả 2 endpoint dưới đây đều hoạt động đúng, không còn `[VERIFY]`:
+
+- `POST .../messages/{messageId}/actions/{actionIndex}/confirm` — xác nhận
+  một bước.
+- `POST .../messages/{messageId}/actions/{actionIndex}/reject` — từ chối một
+  bước.
+
+FE đã wire ở `AiChatbotProvider.confirmStep`/`rejectStep`,
+`_ActionPlanCard`/`_PendingActionCard(stepIndex: ...)` trong
+`ai_assistant_screen.dart`. `AiPendingAction.actionIndex` mặc định `0` nếu
+JSON không có field này (tương thích action đơn lẻ trước Sprint 3, luôn được
+coi là "bước 0" duy nhất).
+
+**`pendingAction` — chỉ hiện thẻ xác nhận khi response CÓ khối này.**
+
+```jsonc
+{
+  "pendingAction": {
+    "messageId": "ai-message-id",
+    "actionType": "CREATE_CALENDAR_EVENT",
+    "preview": { "title": "...", "startTime": "...", "location": "..." },
+    "expiresAt": "2026-08-07T12:15:00.000Z"
+  }
+}
+```
+
+- `actionType` chính thức, **4 giá trị** (cập nhật 2026-08-09): `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`, `CREATE_BUDGET_PLAN` (BE xác nhận chính thức thêm, trước đó từng thấy runtime nhưng chưa chốt). Sau confirm `CREATE_BUDGET_PLAN` phải refresh Wallet/Budget/finance overview — FE gọi `FinanceProvider.fetchAll()`.
+- `status` chính thức, **đúng 4 giá trị**: `PENDING` → `CONFIRMED` (confirm thành công) / `REJECTED` (người dùng từ chối) / `EXPIRED` (quá hạn). **Không có `CANCELED` hay `FAILED`.**
+- Sau confirm thành công, status lưu trên tin nhắn AI gốc là `CONFIRMED` và **`result.id` là id bản ghi vừa tạo** (FE hiện chưa dùng field này — có thể dùng sau để deep-link tới bản ghi).
+- **[Sửa 2026-08-09]** `uiHints.displayStyle` của tin nhắn sau khi resolve (confirm/reject) từng có lúc trả sai `INSIGHT_CARD` kèm `content` vẫn y hệt lúc chưa xử lý ("xin xác nhận"), làm FE mất banner kết quả — BE xác nhận đã sửa tận gốc: `REJECTED`/`CONFIRMED`/`EXPIRED` giờ luôn trả đúng `RESULT_CARD`, `content` cập nhật đúng theo trạng thái thật. FE đã bỏ lớp vá tạm (ép cứng `actionCard`), tin thẳng `uiHints.displayStyle`; `_ResultCard` đổi màu/icon theo outcome (không còn mặc định xanh "thành công" cho mọi trường hợp).
+- `expiresAt` là **ISO UTC thật** sinh bằng `Date.toISOString()`, có đuôi `Z`, interceptor **không** convert timezone. FE tính countdown theo UTC bình thường.
+- **Cập nhật 2026-08-07:** `entryDate` của Ledger **cũng là UTC thật**, không còn phải wall-clock local gắn `Z` như ghi nhận trước đây. Verify runtime: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC), sổ thu chi từng hiện `13:18` — lộ ra `WalletProvider.displayEntryDate` tự cắt `Z` rồi đọc số UTC như giờ local, lỗi FE đã sửa (không phải BE). **Support request chưa verify lại** — nếu đụng tới thì phải test runtime riêng, không suy diễn theo ledger.
+- **[Sửa 2026-08-09]** `CREATE_LEDGER_ENTRY` từng lỗi chập chờn không sinh `pendingAction` (AI tự báo lỗi định dạng ngày). Nguyên nhân: `entryDate` do AI sinh ra không ổn định format. BE đã normalize trước khi validate: `YYYY-MM-DD` → `YYYY-MM-DDT00:00:00+07:00`; datetime thiếu timezone → tự thêm `+07:00`; text/ngày không parse được → fallback ngày hiện tại theo giờ VN. Cần test lại luồng "Ghi khoản chi ... hôm nay/tuần này" để xác nhận đã hết chập chờn.
+- **[Sửa 2026-08-09]** Thông báo từ chối quyền (`PERMISSION_NOTICE`, "Bạn không có quyền...") từng mất dấu tiếng Việt không nhất quán — BE xác nhận đã sửa, giờ có dấu đầy đủ.
+- **[Sửa 2026-08-09]** AI context cho `list_family_members` từng chỉ có ID/"chưa có tên hiển thị" — BE đã bổ sung fallback: `displayName` → `user.fullName` → `user.email`.
+- **[Làm rõ 2026-08-09]** Nút "Sửa" (`editActionLabel`): BE xác nhận KHÔNG có endpoint edit pending action. Luồng chính thức: FE dùng `pendingAction.preview` để mở form tạo dữ liệu tương ứng, prefill sẵn, cho người dùng chỉnh trước khi lưu. FE hiện chưa có form prefill riêng cho từng actionType, nên áp dụng fallback BE xác nhận là hợp lệ: từ chối đề xuất hiện tại rồi để người dùng gõ lại.
+- Field `preview` của `CREATE_TASK` dùng tên **`task`** (không phải `title`) — quan sát runtime 2026-08-07.
+- Lỗi: `403` không có quyền tạo · `409` đề xuất đã xử lý rồi · `410` hết hạn, phải chat lại để AI tạo đề xuất mới.
+- Sau confirm thành công phải reload đúng module: task → danh sách nhiệm vụ · ledger → finance ledger/overview · calendar → sự kiện lịch (**theo tháng của `startTime`**, không phải tháng hiện tại) · budget plan → `FinanceProvider.fetchAll()`.
+- FE **không** được tự tạo dữ liệu từ `preview`; `preview` chỉ để người dùng đối chiếu.
+
+**Phân quyền (BE chốt 2026-08-07):** thao tác ghi tài chính `CREATE_LEDGER_ENTRY`
+chỉ mở cho `FAMILY_MANAGER` và `DEPUTY_MEMBER`. Thành viên thường **không nhận
+`pendingAction`**; BE trả câu trả lời thường giải thích nên nhờ Trưởng/Phó nhóm.
+FE đã ẩn sẵn các gợi ý tạo dữ liệu với Thành viên (`aiPromptGroupsFor`).
+
+**Feature flag:** `ai.assistant` là key gate màn Trợ lý AI. Ba key
+`ai.financeSummary`, `ai.taskSummary`, `ai.savingSuggestions` hiện **chỉ là cờ
+điều khiển hành vi bên trong chatbot/tool access, KHÔNG phải endpoint riêng** và
+BE cũng chưa guard chúng — FE không gate theo ba key này, chỉ đọc để hiển thị
+quyền lợi ở màn Gói đăng ký.
+
+**✅ Swagger đã có response DTO đầy đủ (bản dump 2026-08-07).** `POST .../messages`
+nay khai cả `200`. Các schema chính thức:
+
+- `AiActionType` (enum) — đúng 4 giá trị, khớp `AiPendingAction.confirmedActionTypes`.
+- `AiActionStatus` (enum) — đúng 4 giá trị, khớp `AiPendingAction.confirmedStatuses`.
+- `AiPendingActionResponseDto` — `messageId`, `actionType`, `status`, `preview`, `expiresAt` (bắt buộc) + `result` (tuỳ chọn, `AiActionResultResponseDto { id }`).
+- `AiMessageResponseDto` — `id`, `senderType`, `content`, `relatedModule` (nullable), `createdAt`, `pendingAction` (nullable). **Mỗi tin nhắn trong lịch sử có thể tự mang `pendingAction`**, không chỉ response lúc gửi.
+- `AiSendMessageDataResponseDto` — `{ userMessage, aiMessage, pendingAction }`, cả ba bắt buộc, `pendingAction` nullable.
+- `AiConfirmActionDataResponseDto` — `{ actionType, result }` · `AiRejectActionDataResponseDto` — `{ actionType }`. FE bỏ qua body này và refetch messages.
+- Hai endpoint list dùng `{ items, meta }` với `PaginationMetaResponseDto { page, limit, total, totalPages }` — khớp parser phân trang của FE.
+
+**⚠️ Bẫy tên field:** `AiConversationLastMessageResponseDto` dùng
+**`messageContent`**, KHÔNG phải `content` như `AiMessageResponseDto`. FE từng
+đọc nhầm `content` khiến dòng xem trước dưới mỗi hội thoại **trống trơn** — lỗi
+im lặng, không exception. Đã sửa, khoá bằng `test/ai_conversation_mapping_test.dart`.
+
+Test khoá contract: `test/ai_pending_action_contract_test.dart`,
+`test/ai_send_response_test.dart`, `test/ai_conversation_mapping_test.dart`.
 
 ### Subscription Plans (public/subscriber)
 - `GET /api/v1/subscription-plans` — Danh sách gói active (cho subscriber).

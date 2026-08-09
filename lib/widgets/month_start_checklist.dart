@@ -175,7 +175,17 @@ class _MonthStartChecklistState extends State<MonthStartChecklist> {
             ? 'Đã khai báo'
             : 'Hồ sơ → Tài chính tháng. Chưa khai thì hạn mức hiện “Chưa khai báo”.',
         done: _declared,
-        onTap: () => context.push('/profile/edit'),
+        // `context.push` không dispose lại State này khi quay về (go_router
+        // giữ nguyên widget cha) nên `_declared` không tự cập nhật — người
+        // dùng khai báo xong ở màn Hồ sơ, bấm Lưu, quay lại vẫn thấy mục này
+        // chưa tick dù dữ liệu đã lưu thật. `push()` trả về Future hoàn tất
+        // đúng lúc pop, nên `await` rồi gọi lại `_load()` là đủ, không cần
+        // RouteObserver.
+        onTap: () async {
+          await context.push('/profile/edit');
+          if (!mounted) return;
+          _load();
+        },
       ),
     ];
 

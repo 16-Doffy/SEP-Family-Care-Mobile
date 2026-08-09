@@ -1,11 +1,680 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-07**
+Last updated: **2026-08-09**
 
-## Snapshot hiện hành 2026-08-07 — Trợ lý AI hoàn chỉnh, vá rò rỉ dữ liệu giữa hai tài khoản, đã merge lên main
+## Snapshot cuối phiên 2026-08-09 — AI Chatbox coi như ổn định, phát hiện thêm 2 việc ở Sổ thu chi
 
-> Snapshot này mới hơn toàn bộ phần 2026-08-04 bên dưới. Khi có mâu thuẫn,
+**Trạng thái AI Chatbox: ỔN ĐỊNH**, đã test đủ vòng đời (chat thường, action
+đơn lẻ đủ 3 outcome màu đúng, `ACTION_PLAN_CARD` nhiều bước xác nhận/từ chối
+độc lập, phân quyền theo vai trò, Daily Brief, markdown). Không còn bug FE
+nào treo trong tính năng này.
+
+**Còn 4 mục cần báo BE (đã tổng hợp gửi user):**
+1. Giờ tạo khoản thu/chi qua "ngay bây giờ" bị lệch so với giờ thật (BE
+   tính `now()` sai trước khi gắn nhãn `+07:00`, đã xác minh không phải FE).
+2. `uiHints.title` cho `CREATE_LEDGER_ENTRY` dùng chung "Tạo giao dịch tài
+   chính", nên phân biệt EXPENSE/INCOME (đã có field `Loại` sẵn để phân biệt).
+3. **[Mới]** Phân trang `finance/ledger/entries` nên theo `createdAt` giảm
+   dần thay vì `entryDate` — giao dịch AI vừa tạo hôm nay (09/08) bị kẹt ở
+   trang 2 vì các khoản "Allocate fund to X" (chia quỹ, tạo từ trước) có
+   `entryDate` = cuối tháng (31/08, tương lai) nên luôn được BE xếp lên
+   trang 1 nếu BE phân trang theo `entryDate`. Fix `WalletProvider._fetchEntries`
+   trước đó (sort lại theo `createdAt`) chỉ sắp xếp đúng THỨ TỰ trong 1 trang
+   đã tải — không kéo được item từ trang 2 lên trang 1 vì đó là ranh giới do
+   BE quyết định, FE không sửa được nếu không tải dư nhiều trang (tốn kém).
+4. **[Mới]** AI tạo khoản chi/thu không gửi kèm `categoryId` — khoản đó
+   không được BE tự gán hũ theo mô hình tài chính (rơi vào "Chưa gán hũ").
+   Xác nhận qua: (a) không thẻ AI nào từng hiện field Danh mục, (b) form tạo
+   giao dịch thủ công có ô chọn danh mục kèm chú thích "Backend tự gán hũ
+   theo danh mục", (c) số "Chưa gán hũ" ở màn Ngân sách khớp với các khoản
+   AI tạo. Cần BE quyết định: AI có nên hỏi/gợi ý danh mục khi tạo khoản chi
+   không.
+
+**Phát hiện thêm, đang chờ user quyết định hướng làm:** `WalletProvider.updateLedgerEntry()`
+đã viết sẵn (PATCH `/finance/ledger/entries/{id}`, nhận `categoryId`/`jarId`)
+nhưng **chưa có màn nào trong app gọi tới nó** — hiện không có cách nào sửa
+lại danh mục của một giao dịch đã tạo (dù AI tạo hay tạo tay quên chọn danh
+mục). Có thể làm 1 màn "Sửa danh mục" tận dụng hàm có sẵn này nếu user muốn,
+thay vì chỉ báo BE mục 4 ở trên.
+
+## `ACTION_PLAN_CARD` — XÁC NHẬN HOẠT ĐỘNG ĐÚNG qua test thật (2026-08-09)
+
+Sau nhiều lần test qua lại (ban đầu tưởng chưa hoạt động, sau lại tưởng có
+lỗ hổng an toàn — cả hai đều do đọc thiếu ảnh chụp, đã đính chính), **user
+chụp đủ trình tự đầy đủ và xác nhận rõ ràng cả 2 điểm còn treo trước đó**:
+
+- Câu "Giúp tôi chuẩn bị cho chuyến du lịch: tạo lịch đi chơi cuối tuần này
+  và ghi khoản chi 500.000đ tiền đặt cọc" ra ĐÚNG 1 tin nhắn (1 avatar AI
+  duy nhất) chứa 2 thẻ xếp chồng (`pendingActions[]` 2 phần tử: lịch +
+  khoản chi) — đúng contract `ACTION_PLAN_CARD` Sprint 3.
+- Xác nhận/từ chối từng thẻ **độc lập với nhau**: hủy thẻ lịch xong, thẻ
+  khoản chi vẫn giữ nguyên "Chờ xác nhận", không bị ảnh hưởng — đúng thiết
+  kế `actionIndex` riêng từng bước.
+- **Endpoint reject-theo-step (`POST .../actions/:actionIndex/reject`) chạy
+  đúng, không lỗi 404/mạng nào** — xác nhận path FE từng đoán (đối xứng với
+  `/confirm`) là ĐÚNG. Bỏ hẳn cờ `[VERIFY]` cho endpoint này.
+- Khi TOÀN BỘ các bước trong 1 kế hoạch đều bị từ chối, BE trả về đúng 1 thẻ
+  tổng kết "Kế hoạch đã hủy" — vòng đời plan (xác nhận/từ chối riêng từng
+  bước + tổng kết khi hoàn tất) hoạt động đúng đầu-cuối.
+
+**Kết luận: rút cả 2 mục `ACTION_PLAN_CARD` chưa hoạt động và endpoint
+reject chưa xác nhận khỏi danh sách "Cần báo BE" — không cần hỏi BE gì thêm
+về Sprint 3 nữa.** Đã cập nhật `API_DOCS.md` xóa cờ `[VERIFY]` tương ứng.
+
+## Làm rõ 3 quan sát ngày/giờ + AI hỏi lại — không sửa code FE (2026-08-09)
+
+User gửi 3 ảnh chụp test tạo khoản thu/chi qua AI, nhờ làm rõ logic. Đã đọc
+kỹ lại `formatAiPreviewValue`/`formatAiPreviewDateTime`
+(`ai_assistant_screen.dart`) và `_fmtDateTime` (`json_report_view.dart`) để
+xác nhận chắc chắn trước khi kết luận — **không có gì cần sửa ở FE cho cả 3
+mục**:
+
+1. **"Tạo khoản thu ... hôm nay" → ngày đúng nhưng giờ vẫn `00:00`** — ĐÚNG
+   THIẾT KẾ. BE đã xác nhận trước đó: `entryDate` là field "ngày sổ sách"
+   (ngày lịch), chuẩn hóa về mốc đầu ngày khi người dùng không nói giờ cụ
+   thể — không phải timestamp chính xác. FE hiển thị đúng nguyên giá trị.
+2. **AI hỏi lại khi câu lệnh thiếu thông tin (không nói rõ thu/chi, số
+   tiền)** — ĐÚNG HÀNH VI MONG MUỐN. AI tự bịa số tiền thay vì hỏi lại mới là
+   vấn đề nghiêm trọng hơn (tạo nhầm dữ liệu tài chính bằng số AI tự nghĩ
+   ra). Không phải lỗi hiển thị/logic FE.
+3. **"Tạo khoản chi ... ngay bây giờ" → giờ hiển thị lệch so với giờ thật** —
+   LÀ BUG THẬT, nhưng ở phía BE. Đã rà lại 2 hàm format hiển thị: chỉ có
+   `DateTime.tryParse(...).toLocal()`, không có phép cộng/trừ giờ thủ công
+   nào. Theo đúng semantics Dart, chuỗi ISO có offset tường minh (`+07:00`)
+   được quy đổi đúng về một thời điểm tuyệt đối ngay lúc parse — FE không có
+   cách nào làm lệch giá trị này thêm lần nữa. Nếu giờ hiển thị sai thì giá
+   trị BE gửi về đã sai TỪ TRƯỚC khi tới FE.
+
+Xem mục "Cần báo BE" phía dưới cho chi tiết mục 3 kèm bằng chứng.
+
+## Ví dụ "Nhờ AI tạo" trộn cả thu lẫn chi + phát hiện bug ngày sai — 2026-08-09
+
+User hỏi ý kiến: chip "Tạo thu/chi" nên gộp chung hay tách riêng "Tạo khoản
+chi"/"Tạo khoản thu" thành 2 nút/submenu? **Đề xuất & đã làm**: giữ gộp
+chung một chip (đây chỉ là gợi ý mở đầu câu chat, không phải form — tách nút
+chỉ chật dải chip, không giúp AI hiểu tốt hơn), nhưng mở rộng bộ mẫu random
+(`_ledgerPromptSamples`, đổi tên từ `_expensePromptSamples`/
+`_randomExpensePrompt` → `_randomLedgerPrompt`) để **trộn cả ví dụ khoản
+thu** (lương, thưởng, lì xì, làm thêm) bên cạnh các ví dụ khoản chi có sẵn —
+người dùng tự khám phá được cả hai khả năng khi bấm lại nhiều lần, không cần
+thêm nút. Cập nhật `test/ai_prompt_role_test.dart` (assertion đổi từ cố định
+"ghi khoản chi" sang "ghi khoản" chung để không bị flaky theo kết quả random).
+
+**[Cần báo BE]** Ảnh test cho thấy field "Ngày" của khoản chi tạo qua câu
+"... tuần này" ra `00:00 06/08/2026` trong khi ngày thật lúc test là
+09/08/2026 — lệch tận 3 ngày, không phải lỗi timezone (giờ `00:00` là đúng
+theo thiết kế BE đã nói rõ: `entryDate` chuẩn hóa về mốc đầu ngày
+`YYYY-MM-DDT00:00:00+07:00`, không phải timestamp thật — FE hiển thị đúng y
+nguyên giá trị nhận được, không có phép cộng/trừ giờ nào ở đây). Vấn đề DUY
+NHẤT là ngày bị sai — nghi AI dùng sai mốc "hôm nay" khi suy luận cụm từ
+tương đối như "tuần này"/"hôm nay" lúc tạo `entryDate`, không liên quan gì
+đến format vừa fix. Cần BE xác nhận ngữ cảnh "ngày hiện tại" AI dùng để suy
+luận các cụm tương đối có đúng giờ VN thời điểm request không.
+
+Về chữ "giao dịch" còn xuất hiện trong tiêu đề thẻ ("Tạo giao dịch tài
+chính", "Đề xuất đã hủy") dù đã có field `Loại: EXPENSE/INCOME` sẵn: đây là
+`uiHints.title` do BE tự sinh, KHÔNG phải hardcode ở FE (đã grep xác nhận) —
+theo đúng nguyên tắc đã thống nhất (tin thẳng `uiHints`, không tự đoán/sửa
+lại chữ BE gửi), FE không tự đổi chữ này. **Cần báo BE**: nên phân biệt tiêu
+đề theo `Loại` (`Tạo khoản chi`/`Tạo khoản thu`) thay vì dùng chung một câu
+"Tạo giao dịch tài chính" cho mọi trường hợp.
+
+Verify: `flutter analyze` 0 error, `flutter test` 304/304 pass (chạy lại
+`ai_prompt_role_test.dart` 5 lần liên tiếp xác nhận hết flaky). Xác nhận
+runtime (từ ảnh user gửi): **màu outcome đã đúng** — Xác nhận ra xanh, Hủy
+ra xám — fix `_ResultCard` outcome-aware ở mục dưới đã hoạt động tốt.
+
+## BE fix 5/8 mục đã báo cáo — FE cập nhật theo, ĐÃ XONG (2026-08-09)
+
+BE phản hồi và fix 5 trong 8 mục ở danh sách "Cần báo BE" (2 mục còn lại về
+`ACTION_PLAN_CARD`/endpoint reject-theo-step vẫn treo, chưa có tin BE; mục
+thiếu tên hiển thị chỉ cần verify lại, không có code FE để đổi).
+
+1. **`CREATE_LEDGER_ENTRY` chập chờn (BE fix, FE cần test lại)** — nguyên
+   nhân là `entryDate` do AI sinh format không ổn định. BE đã normalize
+   trước khi validate (`YYYY-MM-DD` → thêm giờ 00:00 +07:00, thiếu timezone
+   → tự thêm +07:00, không parse được → fallback ngày hiện tại giờ VN).
+   **Không có code FE nào cần đổi** — nhờ user test lại luồng "Ghi khoản chi
+   ... hôm nay/tuần này" nhiều lần xem còn chập chờn không.
+
+2. **`uiHints.displayStyle` sai sau confirm/reject (BE fix tận gốc, FE bỏ
+   lớp vá tạm)** — BE xác nhận `REJECTED`/`CONFIRMED`/`EXPIRED` giờ luôn trả
+   đúng `RESULT_CARD`, `content` cập nhật đúng theo trạng thái thật (không
+   còn giữ câu "vui lòng xác nhận" cũ). Đã bỏ đoạn ép cứng `actionCard` cho
+   action đã xử lý ở `AiMessage.effectiveDisplayStyle` (`lib/models/ai_chatbot.dart`)
+   — giờ tin thẳng `uiHints.displayStyle` như thiết kế ban đầu. **`_ResultCard`
+   (`ai_assistant_screen.dart`) đổi thành outcome-aware**: màu/icon lấy theo
+   `pendingAction.outcome` (`outcomeColorFor`/`outcomeIconFor`, tách top-level
+   dùng chung với `_PendingActionCard`) thay vì mặc định xanh "thành công"
+   cho cả 3 trường hợp — REJECTED giờ hiện xám, EXPIRED hiện đỏ, đúng màu
+   từng loại.
+
+3. **`CREATE_BUDGET_PLAN` xác nhận chính thức** — thêm vào
+   `AiPendingAction.confirmedActionTypes` (giờ 4 loại), thêm nhãn "Tạo kế
+   hoạch ngân sách", icon/màu riêng (`Icons.pie_chart_outline_rounded`,
+   `AppColors.accent500`). `_confirmAndReload` thêm nhánh `refreshFinance`
+   gọi `FinanceProvider.fetchAll()` sau khi xác nhận (kéo lại
+   models/jars/categories/budgetPlans/goals/monthlyFinance — đúng yêu cầu BE
+   "refresh Wallet/Budget screens, budget plan list/detail, và finance
+   overview").
+
+4. **Permission message mất dấu (BE fix)** — không có code FE, nhờ user test
+   lại xem các câu "Bạn không có quyền..." đã có dấu đầy đủ và NHẤT QUÁN
+   giữa các loại hành động chưa (trước đó phát hiện có câu đúng dấu, có câu
+   sai — cần xem đã sửa hết chưa).
+
+5. **Nút "Sửa" — làm rõ luồng chính thức (không phải fix code)** — BE xác
+   nhận không có endpoint edit, luồng đúng là mở form tạo dữ liệu tương ứng
+   prefill từ `preview`. FE chưa có form prefill riêng theo actionType nên
+   fallback hiện tại (từ chối rồi để gõ lại) được BE xác nhận là hợp lệ —
+   **giữ nguyên code, chỉ cập nhật lại comment/doc** không còn gắn nhãn "suy
+   đoán tạm" nữa.
+
+**Test cập nhật:** `test/ai_pending_action_contract_test.dart` (4 actionType
+thay vì 3, thêm nhóm test cho `outcomeMessageFor`/`outcomeColorFor`/
+`outcomeIconFor`), `test/ai_ui_hints_test.dart` (2 test khóa hành vi vá tạm
+cũ đã đổi thành khóa hành vi mới — tin thẳng `uiHints.displayStyle` cho
+RESULT_CARD).
+
+Verify: `flutter analyze` 0 error, `flutter test` 304/304 pass. Chưa verify
+runtime cho cả 5 mục — nhờ user test lại, đặc biệt mục 1 và 2 (mục 2 cần coi
+màu card sau khi Hủy/Xác nhận/Hết hạn có đúng xám/xanh/đỏ tương ứng không).
+
+**Còn treo với BE (2 mục cũ chưa có phản hồi):** `ACTION_PLAN_CARD` chưa
+từng thấy hoạt động thật trong runtime; endpoint reject-theo-step
+(`.../actions/:actionIndex/reject`) chưa được BE xác nhận nguyên văn.
+
+## Snapshot hiện hành 2026-08-09 — đọc phần này trước khi làm tiếp
+
+**Trạng thái nhánh:** `NDuy` và `main` đang **trùng nhau tuyệt đối**
+(`fc69b9d`, đã push cả hai). `origin/giap` đang **thua `main` 14 commit**
+(không có commit riêng nào khác) — cần báo Giáp `git pull origin main` để
+lấy bản mới nhất, không có rủi ro mất việc của bạn ấy khi làm vậy.
+
+**Việc đã xong trong phiên 2026-08-08 → 2026-08-09 (chi tiết ở các mục dưới,
+theo thứ tự mới nhất trên cùng):**
+1. Wire BE Sprint 3 — `ACTION_PLAN_CARD` nhiều bước (model/provider/UI/test),
+   backward-compatible với dữ liệu cũ. **Chưa verify runtime** vì BE chưa
+   từng thực sự trả về plan nhiều bước trong lúc test (xem mục ngay dưới).
+2. Sửa mất banner "đã từ chối" sau khi Hủy đề xuất (ưu tiên `pendingAction.status`
+   thật hơn `uiHints.displayStyle` khi đề xuất đã có kết quả).
+3. Sửa màn Trợ lý AI load trắng giữa chừng (Daily Brief tải trễ, đua với
+   scroll-to-bottom).
+4. Sửa 2 bug cuộn UX (icon xem lại Daily Brief kéo lệch vị trí; gửi tin đầu
+   tiên từ màn trống không tự cuộn xuống).
+5. Thêm ô nhập thu/chi "thực tế" hàng tháng cho thành viên (Hồ sơ → Tài
+   chính tháng) — BE đã hỗ trợ sẵn field, chỉ thiếu UI.
+6. Sửa checklist "Bắt đầu tháng" không tự tick sau khi khai báo (thiếu reload
+   sau khi quay về từ màn khai báo).
+7. 4 bug UX/UI phát hiện từ ảnh test thật (nhảy màn khi Xác nhận/Hủy, ví dụ
+   chi tiêu set cứng 200k, markdown `**...**` hiện dấu sao thô, giờ ISO thô
+   trong thẻ sự kiện lịch).
+8. Sửa layout overflow Daily Brief + UX mở màn luôn đứng ở đầu (không tự
+   cuộn xuống hội thoại đang dở).
+9. Toàn bộ Sprint 2 (`uiHints`-driven rendering, 5 `displayStyle`, Daily
+   Brief) — nền tảng cho mọi việc ở trên.
+
+**Cần báo BE (8 mục, đã tổng hợp gửi user để gửi team BE — xem chi tiết ở
+mục "BE Sprint 3" và các mục cũ hơn phía dưới):**
+1. `ACTION_PLAN_CARD` chưa thực sự hoạt động — request nhiều hành động vẫn
+   rơi về 1 action đơn, AI tự báo lỗi ("có lỗi khi ghi cả hai hành động cùng
+   lúc"...). **Chưa từng thấy plan nhiều bước thật trong runtime.**
+2. Endpoint reject-theo-step chưa xác nhận được nguyên văn (BE cắt dòng giữa
+   chừng) — FE đang dùng `/reject` theo suy đoán đối xứng, chưa test được vì
+   phụ thuộc mục 1.
+3. Tạo đề xuất ghi khoản chi lỗi chập chờn, tự nhận liên quan định dạng ngày.
+4. `uiHints.displayStyle` đổi sai sau khi resolve đề xuất, nội dung không
+   cập nhật theo trạng thái mới (FE đã tự vá được, BE vẫn nên sửa gốc).
+5. `actionType` mới `CREATE_BUDGET_PLAN` chưa xác nhận chính thức.
+6. Thông báo từ chối quyền mất dấu tiếng Việt không nhất quán.
+7. AI không biết displayName thành viên thật.
+8. Cơ chế nút "Sửa" (`editActionLabel`) chưa rõ, FE đang tạm suy đoán.
+
+**Quy trình đang áp dụng:** Claude chỉ code + fix, KHÔNG tự mở emulator thao
+tác — user tự test mọi thay đổi UI/UX và báo lại bằng ảnh chụp. Mọi thay đổi
+đều chạy `flutter analyze --no-fatal-infos` (0 error) + `flutter test`
+(301/301 pass tính đến cuối phiên này) trước khi commit, nhưng **chưa có xác
+nhận runtime nào** cho các mục 1-8 ở trên cho tới khi user tự test.
+
+## BE Sprint 3 — kế hoạch nhiều bước `ACTION_PLAN_CARD` — ĐÃ WIRE (2026-08-09)
+
+BE nâng cấp AI Chatbot lên Sprint 3, **backward-compatible**, endpoint cũ
+(gửi chat, `confirm-action`, `reject-action`) giữ nguyên. Điểm mới: một
+`aiMessage` có thể có nhiều đề xuất trong `pendingActions[]` thay vì đúng một
+`pendingAction`; BE nói rõ `pendingAction` (số ít) **vẫn còn, là alias của
+`pendingActions[0]`**. Khi `uiHints.displayStyle === "ACTION_PLAN_CARD"` thì
+render card kế hoạch nhiều bước, mỗi bước có `actionIndex` riêng, xác
+nhận/từ chối qua 2 endpoint mới theo bước (khác endpoint cũ theo message).
+
+**Model (`lib/models/ai_chatbot.dart`):**
+- `AiMessage.pendingAction` (field) → đổi thành **getter** đọc
+  `pendingActions.first` — giữ nguyên 100% API đọc cũ (`message.pendingAction`
+  chạy y hệt mọi nơi, không sửa gì ở `ai_assistant_screen.dart` cho các case
+  action đơn lẻ), chỉ đổi cách LƯU trữ nội bộ.
+- `AiMessage.pendingActions` (mới, `List<AiPendingAction>`) — parse từ
+  `pendingActions[]` nếu BE gửi; nếu không, tự bọc `pendingAction` số ít
+  thành list 1 phần tử (tương thích dữ liệu cũ hoàn toàn, có test khóa).
+- `AiPendingAction.actionIndex` (mới, mặc định `0`) — ưu tiên đọc trực tiếp
+  từ JSON nếu BE gửi, không thì lấy theo VỊ TRÍ trong mảng `pendingActions[]`.
+- `AiDisplayStyle.actionPlanCard` (mới, map từ `ACTION_PLAN_CARD`).
+  `effectiveDisplayStyle` kiểm tra style này TRƯỚC quy tắc "action đã xử lý
+  thì ép actionCard" (quy tắc đó chỉ áp dụng action đơn lẻ, không áp dụng
+  plan — mỗi bước tự có banner trạng thái riêng qua chính
+  `_PendingActionCard` được tái dùng).
+- `copyWith({pendingAction})` giữ nguyên chữ ký cũ (không ai gọi ngoài code
+  hiện tại, nhưng vẫn không đổi để phòng ngừa), chuyển đổi nội bộ sang
+  `pendingActions`.
+
+**Provider (`lib/providers/ai_chatbot_provider.dart`):**
+- `confirmStep(messageId, actionIndex)` / `rejectStep(messageId, actionIndex)`
+  gọi 2 endpoint mới. `isStepBusy(messageId, actionIndex)` — key riêng
+  `'$messageId#$actionIndex'`, không đụng `_actionBusy` của action đơn lẻ.
+- **`[VERIFY]`** endpoint reject-theo-step: BE gửi tin nhắn bị cắt dòng đúng
+  chỗ path này (`.../actions/:actionIndex/` rồi dừng) — FE tạm dùng `reject`
+  theo đối xứng với `confirm`, **chưa được BE xác nhận nguyên văn**. Cần hỏi
+  lại BE xác nhận đúng đuôi path trước khi coi đây là chốt cuối cùng.
+
+**UI (`lib/screens/shared/ai_assistant_screen.dart`):**
+- `_ActionPlanCard` (mới) — render `message.content` (nếu có) + lặp qua
+  `message.pendingActions`, mỗi bước là một `_PendingActionCard` (tái dùng
+  nguyên, không viết lại UI thẻ).
+- `_PendingActionCard` thêm field `stepIndex` (mặc định `null` = hành vi cũ y
+  nguyên cho action đơn lẻ). Khác `null` thì Xác nhận/Hủy/nút "Sửa" gọi
+  `confirmStep`/`rejectStep` thay vì `confirmAction`/`rejectAction`, và
+  `busy` đọc từ `isStepBusy` thay vì `isActionBusy`.
+- `_MessageBubble` thêm case `AiDisplayStyle.actionPlanCard => _ActionPlanCard(...)`.
+
+**Test mới:** `test/ai_action_plan_test.dart` (8 test) — khóa parse
+`pendingActions[]`/`actionIndex`/`ACTION_PLAN_CARD`, và khóa riêng hành vi CŨ
+(message chỉ có `pendingAction` số ít, hoặc không có gì) không bị đổi.
+
+Verify: `flutter analyze` 0 error, `flutter test` 301/301 pass. Chưa verify
+runtime (chưa có ví dụ `ACTION_PLAN_CARD` thật từ BE để test) — nhờ user tự
+test khi BE trả về plan nhiều bước thật, đặc biệt xác nhận lại endpoint
+reject-theo-step có đúng `/reject` không.
+
+## Bug mất banner "đã từ chối" sau khi Hủy đề xuất — báo cáo 2026-08-09, ĐÃ SỬA (FE) + có phần cần báo BE
+
+User test Manager: tạo đề xuất ghi khoản chi 500k → bấm "Hủy đề xuất" → tin
+nhắn đó đổi từ thẻ `ACTION_CARD` (có banner "Bạn đã từ chối đề xuất này")
+sang một thẻ "Phân tích tài chính" (`INSIGHT_CARD`) hoàn toàn chung chung,
+nội dung chữ vẫn y hệt lúc CHƯA xử lý ("xin vui lòng xác nhận trên ứng
+dụng") — nhìn như đề xuất chưa hề bị hủy, dù bấm hủy có tác dụng thật ở BE
+(verify riêng: nhiệm vụ "Đưa con đi chợ" bị hủy trước đó vẫn hiện đúng "Đã
+hủy" trong danh sách nhiệm vụ thật).
+
+Nguyên nhân xác định qua code: khi `fetchMessages()` chạy lại sau
+`rejectAction`, BE trả về CHÍNH tin nhắn đó với `uiHints.displayStyle` đổi
+thành `INSIGHT_CARD` (không còn `ACTION_CARD` như lúc khởi tạo), trong khi
+`pendingAction.status` vẫn có giá trị thật (`REJECTED`). `effectiveDisplayStyle`
+cũ ưu tiên `uiHints.displayStyle` tuyệt đối nên vẽ theo `INSIGHT_CARD`, bỏ
+qua hẳn banner kết quả.
+
+**Đã sửa ở FE**: `AiMessage.effectiveDisplayStyle` — khi `pendingAction` đã
+có kết quả (không còn `PENDING`, tức `REJECTED`/`CONFIRMED`/`EXPIRED`/
+`FAILED`), LUÔN vẽ `actionCard` để hiện đúng banner kết quả, bất kể
+`uiHints.displayStyle` nói gì. Vẫn quyết định theo dữ liệu cấu trúc
+(`pendingAction.status`), không đoán qua `content`, nên không vi phạm yêu
+cầu BE "không đoán qua content". Còn `PENDING` thì hành vi cũ giữ nguyên
+(tôn trọng `uiHints` như thường). Thêm 3 test khóa hành vi này trong
+`test/ai_ui_hints_test.dart`.
+
+**[Cần báo BE]** Vẫn nên hỏi BE vì sao sau khi resolve một đề xuất
+(confirm/reject), response tiếp theo cho tin nhắn đó lại đổi
+`uiHints.displayStyle` sang kiểu khác (mất ý nghĩa ban đầu) mà KHÔNG cập
+nhật lại nội dung `content` cho khớp trạng thái mới (vẫn nói "xin xác nhận"
+dù đã xử lý xong) — FE đã tự vá ở lớp hiển thị, nhưng nội dung chữ do BE
+sinh ra bên trong card vẫn có thể gây hiểu lầm nếu nơi khác hiển thị `content`
+thô (ví dụ preview thông báo/lịch sử ngoài màn chat).
+
+Verify: `flutter analyze` 0 error, `flutter test` 293/293 pass (thêm 3 test
+mới). Chưa verify runtime.
+
+## Bug màn Trợ lý AI load trắng giữa chừng — báo cáo 2026-08-09, ĐÃ SỬA
+
+User báo: mở Trợ lý AI, thấy Daily Brief đàng hoàng, sau đó **màn trắng trơn
+một lúc** rồi mới hiện đoạn chat thật — có lúc trắng luôn, phải bấm vào một
+chip gợi ý mới hiện lại được nội dung.
+
+Nguyên nhân: `AiChatbotProvider.bootstrap()` gọi `fetchDailyBrief()` kiểu
+`unawaited` (không chờ) để không chặn hiển thị hội thoại nếu tính năng phụ
+này lỗi/chậm. Nhưng vì không chờ, request này có thể **tự hoàn thành SAU
+KHI** `bootstrap()` đã return và màn hình đã chạy xong `_scrollToBottom()`.
+Daily Brief luôn là item đầu tiên của `ListView` — hoàn thành trễ nghĩa là
+CHÈN THÊM một item cao ở phía TRÊN vị trí vừa cuộn tới, đẩy lệch toàn bộ nội
+dung xuống dưới mà không có gì kéo lại scroll offset — màn hình đứng nhìn
+vào đúng chỗ trống giữa hai layout cũ/mới cho tới khi người dùng tự thao tác
+(gửi tin) kích hoạt `_scrollToBottom()` chạy lại và tự sửa.
+
+Sửa: `fetchDailyBrief()` đã tự bắt lỗi bên trong (không throw, không treo
+màn nếu lỗi/404) nên đợi cùng lúc với `fetchConversations()` qua
+`Future.wait([...])` là an toàn — cả hai vẫn chạy song song như cũ, chỉ khác
+là `bootstrap()` chờ đủ CẢ HAI xong rồi mới trả về, nên màn hình chỉ tính vị
+trí cuộn đúng một lần, sau khi toàn bộ nội dung (kể cả Daily Brief) đã ổn
+định.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime.
+
+## Script test Member — 3 bug UX cuộn + 1 nghi vấn BE — 2026-08-08, ĐÃ SỬA 2/3 FE
+
+Chạy script test 14 bước cho vai trò Member, phát hiện:
+
+1. **[ĐÃ SỬA]** Bấm icon ☀️ hiện lại Daily Brief xong tự cuộn lên đầu trang —
+   đúng ý "xem" nhưng UX bất tiện: xem xong lại phải tự kéo xuống mới về được
+   đoạn chat đang dở, trong khi thoát màn/mở lại thì mặc định vẫn đứng ở
+   cuối. Đổi thành **không đổi vị trí cuộn** khi bấm ☀️ — chỉ bỏ ẩn rồi báo
+   bằng SnackBar ("Đã hiện lại... kéo lên đầu để xem"), người dùng tự kéo lên
+   xem khi muốn.
+2. **[ĐÃ SỬA]** Gửi tin nhắn đầu tiên từ màn trống (chưa có hội thoại) —
+   thay vì tự nhảy xuống tin nhắn vừa trả lời thì đứng nguyên ở đầu trang,
+   phải kéo xuống mới thấy. Nguyên nhân: gửi tin đầu tiên chuyển
+   `_MessageList` từ `_EmptyStateSuggestions` (ListView riêng, KHÔNG gắn
+   `_scrollCtrl`) sang `ListView.builder` thật (mới gắn `_scrollCtrl`) —
+   `Future.delayed(80ms)` cũ có thể chạy đúng lúc controller chưa kịp gắn vào
+   Scrollable mới nên `animateTo` không có tác dụng. Đổi
+   `_scrollToBottom()`/mọi chỗ tương tự sang `addPostFrameCallback` (đợi đúng
+   sau khi frame build/layout xong) thay vì đoán một mốc thời gian cố định.
+3. **[Đã rút lại — không phải bug]** Từng nghi Member không thấy card "Tổng
+   quan hôm nay" — kiểm tra lại 2026-08-09 thì Member ĐÃ thấy card bình
+   thường (có thể lần trước do đúng ca hoàn thành trễ ở mục bug "load trắng"
+   phía trên, chưa hẳn do BE). Không cần báo BE mục này nữa.
+4. **[Xác nhận đúng thiết kế — không phải bug]** Member không tự tạo được
+   nhiệm vụ cho chính mình qua AI (bị chặn quyền, PERMISSION_NOTICE) — user
+   xác nhận 2026-08-09 đây ĐÚNG chủ ý: chỉ Manager/Deputy được giao việc,
+   Member không tự giao được kể cả cho bản thân. Đã verify thêm:
+   `task_management_screen.dart` (`_showAssignSheet` + `_GenerateAssignments`)
+   lọc người nhận chỉ theo `isActive`, không lọc theo vai trò — Manager giao
+   việc được cho Deputy đúng như kỳ vọng (và ngược lại, vì `canManageTasks`
+   là quyền chung `isAdministrative`, không phân cấp trên/dưới nội bộ).
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime.
+
+## Daily Brief: xem lại sau khi đóng + sửa giờ thô + làm nổi bật tiêu đề nhóm — 2026-08-08, ĐÃ LÀM
+
+User hỏi cách xem lại card "Tổng quan hôm nay" sau khi đã bấm X đóng (trước đó
+chỉ có cách thoát hẳn màn Trợ lý AI rồi mở lại), và nhờ làm tiêu đề các nhóm
+(Family/Scope/Task/Calendar...) trong `JsonReportView` nổi bật hơn.
+
+1. **Xem lại sau khi đóng**: thêm `AiChatbotProvider.showDailyBrief()` — dùng
+   lại dữ liệu đã có trong bộ nhớ (không gọi lại API nếu đã tải), chỉ bỏ cờ
+   ẩn. Thêm icon ☀️ ở AppBar màn Trợ lý AI (chỉ hiện khi đang ẩn), bấm vào tự
+   cuộn lên đầu vì card luôn là item đầu tiên của `ListView`.
+2. **Giờ thô trong "Next Events"**: ảnh chụp cho thấy `startTime`/`endTime`
+   hiện nguyên văn `2026-08-09T02:00:00.0Z` — `JsonReportView` có bộ nhận
+   diện ngày riêng (`endsWith('at')`, `contains('date')`...) không khớp tên 2
+   key này. Thêm nhận theo tên chứa `time` + theo HÌNH DẠNG chuỗi (ISO
+   datetime, không phụ thuộc tên key — cùng cách đã áp dụng cho
+   `formatAiPreviewValue`), định dạng đủ giờ:phút + đổi UTC sang giờ local.
+   Tiện thể sửa luôn `_fmtDate` (dùng cho `deadline`/`periodStart`...) thiếu
+   bước đổi sang local trước khi tách ngày — timestamp UTC gần nửa đêm có thể
+   lệch ngày hiển thị so với giờ VN.
+3. **Tiêu đề nhóm nổi bật**: đổi từ màu xám nhạt (`textSecondary`, cùng màu
+   với nhãn field thường — nhìn không phân biệt được) sang màu hồng đậm
+   (`primary600`) + gạch chân mảnh, đậm chữ hơn.
+
+`JsonReportView` dùng chung cho nhiều report khác (budget-plan, goal
+progress, non-essential-spending) — 2 thay đổi #2/#3 ảnh hưởng luôn các màn
+đó, không chỉ Daily Brief, nhưng đều là cải thiện chung không đổi hành vi cũ
+theo hướng xấu đi.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass (không có test
+riêng cho `JsonReportView` vì file này chưa từng có test, các hàm định dạng
+là `static private`). Chưa verify runtime.
+
+## Thiếu chỗ ghi thu/chi "thực tế" hàng tháng — báo cáo 2026-08-08, ĐÃ LÀM
+
+User hỏi: nhìn màn Ví Member (`child_wallet_screen.dart`) thì Member ghi
+thu/chi ở đâu? Rà lại toàn màn thì thấy Member chỉ có 3 việc: khai báo
+**dự kiến** (một lần), "Xin tiền từ Trưởng/Phó nhóm", và xem lịch sử (bị chặn
+403 với sổ quỹ chung) — **không có chỗ nào ghi số đã thu/chi thực tế**, nên
+"Đã tiêu tháng này" luôn là 0đ.
+
+Đối chiếu `family-care-api.json`: BE **đã có sẵn** `actualIncome`,
+`actualPersonalExpense`, `actualSharedContribution` trong cùng
+`CreateMemberMonthlyFinanceDto`/`UpdateMemberMonthlyFinanceDto` mà FE đang
+dùng cho "dự kiến" (`POST`/`PUT .../finance/monthly-finances/me`).
+`FinanceProvider.upsertMonthlyFinance()` (`lib/providers/finance_provider.dart:1517`)
+**đã nhận đủ 3 tham số này từ trước** — chỉ riêng
+`edit_profile_screen.dart` chưa từng có ô nhập cho chúng. Đây không phải BE
+thiếu, mà là FE chưa làm nốt UI cho field BE đã hỗ trợ.
+
+Đã thêm 3 ô "thực tế" đi kèm ngay sau mỗi ô "dự kiến" tương ứng (Thu nhập /
+Chi tiêu cá nhân / Đóng góp chung) trong `edit_profile_screen.dart`, dùng
+chung nút "Lưu tài chính tháng" hiện có — không cần route/API mới. Ghi chú
+trong banner: có thể cập nhật lại số "thực tế" bất cứ lúc nào trong tháng.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime — nhờ user tự test: Hồ sơ → Tài chính tháng → nhập số "thực tế" →
+Lưu → quay lại Ví xem "Đã tiêu tháng này" có đúng số vừa nhập không.
+
+## Bug checklist "Bắt đầu tháng" không tự tick sau khi khai báo — báo cáo 2026-08-08, ĐÃ SỬA
+
+User (Member) khai báo thu nhập/hạn mức ở "Chỉnh sửa hồ sơ" → bấm "Lưu tài
+chính tháng" → quay lại màn Ví. Số liệu "Hạn mức tháng" đã đúng (lấy dữ liệu
+mới), nhưng mục "Khai báo thu nhập & hạn mức" trong `MonthStartChecklist`
+(`lib/widgets/month_start_checklist.dart`) vẫn hiện chưa tick (vòng tròn
+rỗng), như thể chưa khai báo gì.
+
+Nguyên nhân: mục này điều hướng bằng `context.push('/profile/edit')`.
+go_router `push` KHÔNG dispose lại `_MonthStartChecklistState` của màn Ví khi
+pop về — `_load()` (gọi `fetchMonthlyFinanceFor` để tính `_declared`) chỉ chạy
+đúng 1 lần ở `initState`, không có gì kích hoạt chạy lại sau khi quay về từ
+màn khai báo. Đây là bug FE thuần túy, không liên quan BE.
+
+Sửa: đổi `onTap` của mục này thành `async`, `await context.push(...)` rồi gọi
+lại `_load()` ngay khi quay về (path chỉ có đúng 1 nơi gọi
+`/profile/edit` từ widget này, không cần `RouteObserver` phức tạp). Áp dụng
+chung cho cả màn Ví Member (`child_wallet_screen.dart`) và Manager
+(`wallet_screen.dart`) vì dùng chung 1 widget `MonthStartChecklist`.
+
+Verify: `flutter analyze` 0 error, `flutter test` 290/290 pass. Chưa verify
+runtime — nhờ user tự test lại đúng luồng: từ màn Ví bấm vào mục "Khai báo
+thu nhập & hạn mức" → sửa số → Lưu → quay lại xem có tự tick "Đã khai báo"
+ngay không.
+
+## Snapshot hiện hành 2026-08-08 — Trợ lý AI render theo `uiHints` (BE Sprint 2)
+
+> Snapshot này mới hơn toàn bộ phần 2026-08-07 bên dưới. Khi có mâu thuẫn,
 > dùng trạng thái ở đây và source hiện tại.
+
+### BE nâng cấp AI Chatbot lên Sprint 2 — đổi cách render, không đổi endpoint
+
+BE gửi contract mới: mỗi `aiMessage` giờ có thêm khối `uiHints` chỉ định RÕ
+cách hiển thị (`displayStyle`), thay cho việc FE tự đoán qua `actionType`/chữ
+trong `content` như trước. Quy tắc BE nhắc đi nhắc lại: **không được đoán qua
+nội dung chữ** — mọi quyết định render phải dựa vào `uiHints` và
+`pendingAction` (cấu trúc). Cùng một màn `AIAssistantScreen`, cùng endpoint
+gửi/confirm/reject — chỉ đổi phần hiển thị.
+
+5 `displayStyle`: `TEXT` (bubble chữ như cũ), `INSIGHT_CARD` (phân tích/gợi ý,
+có quick-action chip), `ACTION_CARD` (thẻ xác nhận — thay `_PendingActionCard`
+cũ), `PERMISSION_NOTICE` (không đủ quyền, không nút), `RESULT_CARD` (kết quả
+sau khi confirm).
+
+**Tương thích ngược:** tin nhắn cũ (trước Sprint 2, hoặc BE tạm không gửi
+`uiHints`) suy `effectiveDisplayStyle` theo CẤU TRÚC đã có sẵn — có
+`pendingAction` → `actionCard`, không có → `text`. Đúng hành vi cũ 100%, không
+đoán qua `content`.
+
+**Model** (`lib/models/ai_chatbot.dart`): thêm `AiDisplayStyle`,
+`AiQuickAction`, `AiMessageUiHints`, `AiActionField`, `AiActionUiHints`,
+`AiDailyBrief`. `AiMessage` thêm `uiHints` + `effectiveDisplayStyle`.
+`AiPendingAction` thêm `uiHints` + `displayTitle` + `displayFields` (ưu tiên
+`uiHints.fields`, rơi về `preview` cũ khi rỗng/thiếu). Toàn bộ API cũ
+(`actionLabel`, `isPending`, `outcome`, `preview`, `messageId`, `status`,
+`confirmedActionTypes`, `confirmedStatuses`) **giữ nguyên không đổi** — đã
+verify bằng cách chạy lại nguyên vẹn 2 file test của Giáp
+(`ai_pending_action_mapping_test.dart`) và 4 file test cũ của mình, không sửa
+dòng nào trong đó.
+
+**UI** (`lib/screens/shared/ai_assistant_screen.dart`): `_MessageBubble` switch
+theo `effectiveDisplayStyle` ra 5 widget con (`_TextBubble`, `_InsightCard`,
+`_ActionCardWithIntro` + `_PendingActionCard`, `_PermissionNoticeCard`,
+`_ResultCard`). Logic chọn field/nhãn theo `actionType` (`_previewRows`,
+`_label` cũ) đã dời nguyên vẹn vào model (`AiPendingAction._fieldsFromLegacyPreview`),
+không đổi nội dung bảng nhãn. `_QuickActionChips` dùng chung cho mọi style có
+`uiHints.quickActions`, bấm gửi `prompt` (không gửi `label`).
+
+**Daily Brief** (tùy chọn, BE nói "FE không bắt buộc làm ngay"): thêm
+`AiChatbotProvider.fetchDailyBrief()` gọi
+`GET /families/{id}/ai-chatbot/daily-brief`, lỗi/404 thì bỏ qua lặng lẽ
+(không set `_error`, không che khung chat chính). BE không cho tên field con
+cụ thể (task/calendar/finance/insights) nên render `raw` qua `JsonReportView`
+có sẵn — đúng quy ước repo cho response chưa rõ schema (CLAUDE.md Rule 4),
+không đoán tên field. `suggestedPrompts` tách riêng thành chip vì BE có nói rõ
+hình dạng.
+
+**[VERIFY chưa làm]** Nút "Sửa" (`editActionLabel`) — BE cho nhãn nhưng KHÔNG
+nói cơ chế/endpoint. Tạm xử lý: bấm nút gọi `rejectAction` (endpoint đã có),
+chưa tự điền lại composer. Đây là suy luận tạm, cần hỏi lại BE nếu sai — xem
+comment tại `_PendingActionCard._handleEdit`.
+
+### Bug lệch giờ + xóa hội thoại — báo cáo từ user 2026-08-08, đã xử lý 1/2
+
+Kèm 2 bug user báo bằng ảnh chụp thật, không liên quan Sprint 2:
+
+1. **Lịch sử ví lộn xộn khi có nhiều lần chia quỹ khác nhau** — ĐÃ SỬA. Nguyên
+   nhân: `WalletProvider._entries` không hề sort, thứ tự phụ thuộc hoàn toàn
+   BE trả về; các entry chia quỹ cùng `entryDate` (ngày cuối kỳ) nhưng khác
+   lần tạo bị xen kẽ lộn xộn. BE có field `createdAt` riêng (khác `entryDate`)
+   mà FE chưa từng đọc. Đã thêm `LedgerEntry.createdAt` + sort `_entries` theo
+   `createdAt` giảm dần (dùng `createdAt`, rơi về `entryDate` nếu thiếu).
+2. **Xóa hội thoại AI xong quay lại vẫn còn thấy, màn hình "nhảy liên tục"** —
+   **chỉ sửa được nửa vế đầu, KHÔNG suy đoán tiếp vế sau vì thiếu bằng
+   chứng.** `deleteCurrentConversation()` giờ xóa ngay khỏi `_conversations`
+   trong RAM (không đợi refetch) và lọc cứng id vừa xóa khỏi ĐÚNG một lần
+   `fetchConversations` kế tiếp — phòng ca hợp lý nhất không cần giả lập lại
+   được: `DELETE` trả 200 nhưng `GET` danh sách ngay sau đó đọc dữ liệu chưa
+   kịp đồng bộ. **"Màn hình nhảy liên tục" CHƯA chẩn đoán được** — không đủ
+   bằng chứng để sửa mà không đoán mò (có thể là mở màn AI hai lần liên tiếp
+   tạo hai `_AIAssistantScreenState` cùng gọi `bootstrap()` trên một provider
+   dùng chung, có thể là nguyên nhân khác). Cần user mô tả rõ hơn "nhảy" là gì
+   (chuyển màn, giật hình, cuộn nhảy vị trí?) hoặc quay video khi tái hiện
+   được, vì từ giờ chị không tự mở emulator kiểm tra nữa.
+
+### Bug overflow Daily Brief — báo cáo từ user 2026-08-08, ĐÃ SỬA
+
+User gửi ảnh chụp `RenderFlex overflowed by 993 pixels` ngay trên card "Tổng
+quan hôm nay" vừa thêm ở trên. Nguyên nhân: `_MessageList.build()` bọc danh
+sách tin nhắn trong `Column` với `_DailyBriefCard` là con **không co giãn**
+(non-flex) nằm cố định phía trên `Expanded(child: <danh sách cuộn>)`. Dữ liệu
+Daily Brief thật từ BE (nhóm Family/Scope/Task/Calendar/Finance qua
+`JsonReportView`) cao hơn nhiều so với chỗ còn lại, mà `Column` không thể co
+nhỏ một con non-flex lại — tràn layout. `_EmptyStateSuggestions` không dính
+lỗi này vì đã render trong `ListView` sẵn.
+
+Sửa: bỏ hẳn khung `Column`/`Expanded` trong `_MessageList`, đưa
+`_DailyBriefCard` thành phần tử đầu tiên (index 0) của chính
+`ListView.builder` — cùng kiểu "leading item" đã dùng cho `_LoadMoreTile`
+(biến đếm `leadingBrief`/`leadingLoadMore`/`leading`). Card giờ cuộn được
+cùng danh sách tin nhắn thay vì chiếm không gian cố định. Sửa null-check tại
+điểm gọi `_DailyBriefCard(brief: brief, ...)` từ `if (leadingBrief == 1 && i
+== 0)` sang `if (brief != null && i == 0)` để Dart tự promote `brief` về
+non-null (check `leadingBrief` — một biến int khác dẫn xuất từ `brief` — không
+đủ để analyzer suy ra `brief` non-null tại điểm dùng).
+
+Verify: `flutter analyze` (0 error, kể cả file này) + `flutter test`
+(289/289 pass, không có test riêng cho path overflow này vì đây là lỗi layout
+runtime, không phải logic parse — đúng theo quy trình mới, chưa mở emulator
+kiểm tra lại bằng mắt, nhờ user tự xác nhận card cuộn mượt, không tràn nữa).
+
+### Bug UX mở màn AI luôn đứng ở đầu (Daily Brief) — báo cáo từ user 2026-08-08, ĐÃ SỬA
+
+User báo: bấm vào Trợ lý AI thì màn luôn dừng ở đầu danh sách (card "Tổng quan
+hôm nay" chiếm hết màn hình), phải tự kéo xuống mới thấy đoạn chat đang dở —
+trong khi kỳ vọng mở lên phải thấy ngay tin nhắn gần nhất như mọi app chat
+khác. Nguyên nhân: `_scrollToBottom()` trước đó chỉ được gọi sau khi TỰ gửi
+tin nhắn mới (`_send()`), không được gọi sau khi `bootstrap()` tải xong hội
+thoại có sẵn, cũng không gọi sau khi chọn hội thoại khác từ danh sách — nên
+`ListView` đứng nguyên ở vị trí mặc định (item 0 = Daily Brief nếu có).
+
+Sửa: gọi `_scrollToBottom()` thêm ở 2 chỗ — (1) ngay sau khi `bootstrap()`
+trong `initState` tải xong hội thoại gần nhất, (2) ngay sau khi chọn một hội
+thoại khác từ bottom sheet "Hội thoại AI". Card Daily Brief vẫn còn đó (kéo
+lên là thấy), chỉ đổi vị trí cuộn mặc định về cuối — giống hành vi chat bình
+thường.
+
+Verify: `flutter analyze` 0 error, `flutter test` 289/289 pass. Chưa xác nhận
+runtime — nhờ user tự test lại bước "mở Trợ lý AI" và "chuyển hội thoại từ
+danh sách" xem có nhảy thẳng xuống tin nhắn gần nhất không.
+
+### 4 bug UX/UI từ ảnh chụp test thật — báo cáo từ user 2026-08-08, ĐÃ SỬA
+
+User gửi 18 ảnh chụp test thật (Manager) + 4 yêu cầu cụ thể:
+
+1. **Bấm Xác nhận/Hủy đề xuất thì đoạn chat nhảy lên đầu trang** — ĐÃ SỬA.
+   Nguyên nhân: `_MessageList.build()` có `if (ai.loadingMessages) return
+   Center(...)` KHÔNG loại trừ trường hợp đã có `messages`. `_handleAction`
+   (confirm/reject) gọi `fetchMessages()` để làm mới trạng thái, hàm này bật
+   `loadingMessages = true` trong lúc chờ — mỗi lần bấm nút, `ListView.builder`
+   bị thay hẳn bằng `Center` rồi dựng lại **mất luôn vị trí cuộn cũ**. Sửa
+   thành chỉ chặn cả màn bằng spinner khi `messages.isEmpty` (tải lần đầu
+   thật sự), còn lại giữ nguyên `ListView` khi làm mới.
+2. **Ví dụ "tạo khoản chi" luôn set cứng 200.000đ tiền ăn uống** — ĐÃ SỬA.
+   Đây không phải AI tự chọn số tiền — là câu gợi ý mẫu (quick prompt) FE
+   hard-code y hệt ở 2 chỗ (`aiPromptGroupsFor` nhóm "Nhờ AI tạo" + chip
+   "Tạo thu/chi" dưới composer), bấm hoài ra đúng một khoản. Đổi thành random
+   1 trong 6 mẫu chi tiêu khác nhau (số tiền + danh mục khác nhau) mỗi lần
+   dựng widget — `_randomExpensePrompt()`.
+3. **Chữ `**in đậm**` hiện nguyên cặp dấu `**` xấu** — ĐÃ SỬA. BE trả nguyên
+   văn markdown để nhấn tiêu đề (`**Nhận định:**`, `**Đề xuất:**`...) nhưng
+   FE vẽ bằng `Text` trơn nên hiện cả dấu sao. Thêm `_AiRichText` (regex tối
+   thiểu, không kéo thư viện markdown) — phần giữa `**...**` in đậm + tô màu
+   theo ngữ cảnh (chip primary cho bong bóng chữ, màu icon card cho insight/
+   permission/result). Áp dụng ở cả 4 nơi hiện `content` thô: `_TextBubble`,
+   `_InsightCard`, `_PermissionNoticeCard`, `_ResultCard`.
+4. **Phát hiện thêm khi rà ảnh (không nằm trong 3 yêu cầu trên nhưng cùng
+   nhóm UX)**: field "Bắt đầu"/"Kết thúc" của thẻ tạo sự kiện lịch hiện
+   nguyên văn `2026-08-09T09:00:00+07:00` thay vì giờ đọc được — ĐÃ SỬA.
+   `uiHints.fields` (Sprint 2) dùng key tự do do BE đặt, không khớp bộ khóa
+   cứng của `_isTimeKey` (`startTime`/`endTime`...). Thêm nhận diện theo HÌNH
+   DẠNG giá trị (chuỗi khớp `\d{4}-\d{2}-\d{2}T\d{2}:\d{2}`) bất kể tên key —
+   an toàn vì tiêu đề/địa điểm dạng chữ không khớp định dạng này nên không bị
+   format nhầm. Thêm test trong `ai_pending_action_contract_test.dart`.
+
+**[Cần báo BE — chưa/không thể sửa ở FE]**
+- Ảnh lúc 10:28 (nhờ Manager "Ghi nhận khoản chi 200000 cho ăn uống hôm nay"):
+  AI trả lời dạng thẻ "Phân tích tài chính" với nội dung "Tôi đã tạo đề xuất
+  ghi nhận khoản chi... Xin vui lòng xác nhận trên ứng dụng để hoàn tất!"
+  nhưng **không kèm `pendingAction`** — không có nút nào để bấm, y hệt lỗi đã
+  từng báo cho trường hợp Thành viên (2026-08-07), nay xảy ra cả với Manager
+  có đủ quyền. Cần BE xác nhận vì sao AI hứa "xác nhận trên ứng dụng" mà
+  không gửi kèm `pendingAction`.
+- Ảnh 22:12 xuất hiện `actionType` mới `CREATE_BUDGET_PLAN` (thẻ "Tạo kế
+  hoạch ngân sách") — chưa nằm trong 3 loại đã chốt trước đó
+  (`CREATE_TASK`/`CREATE_LEDGER_ENTRY`/`CREATE_CALENDAR_EVENT`). Card vẫn
+  hiển thị đúng nhờ đọc `uiHints.fields` (không phụ thuộc bảng cứng), nhưng
+  FE chưa biết refresh màn nào tương ứng sau khi xác nhận (hiện rơi vào
+  nhánh "actionType lạ → refresh cả Task+Wallet+Calendar" mang tính phòng
+  thủ, không có màn "Kế hoạch ngân sách" nào được refresh riêng). Cần BE xác
+  nhận đây có phải actionType chính thức mới không, và có màn/API tương ứng
+  nào ở FE cần biết để refresh.
+- Quan sát chưa chắc chắn, CHƯA sửa vì không đủ bằng chứng lặp lại: một tin
+  nhắn người dùng hiện dạng "phân tích tài chínhphân tích tài chính" (dính
+  liền, không dấu cách) trong 1 bong bóng chat — nghi do bấm rất nhanh 2 lần
+  liên tiếp vào cùng một chip gợi ý trong lúc `sending` chưa kịp bật, nhưng
+  chưa tái hiện lại được để chẩn đoán chắc chắn. Em gặp lại thì mô tả rõ thao
+  tác bấm (đơn/đúp) giúp chị.
+
+Verify: `flutter analyze` 0 error. `flutter test` 290/290 pass (thêm 1 test
+mới cho fix #4 ở `ai_pending_action_contract_test.dart`). Chưa verify runtime
+bất kỳ ý nào — nhờ user tự test lại theo script mới gửi kèm.
+
+### Quy trình mới từ 2026-08-08
+
+Chị (Claude) chỉ code + fix, KHÔNG tự mở emulator thao tác kiểm tra nữa (tốn
+quota/thời gian). Người dùng tự test runtime. Verify trong phiên này chỉ có
+`flutter analyze` (0 error/warning) + `flutter test` (289/289 pass, tăng từ
+265 nhờ 24 test mới: `ai_ui_hints_test.dart` 20 test, `ai_daily_brief_test.dart`
+4 test) — **chưa verify runtime cho bất kỳ thay đổi nào trong snapshot này**,
+người dùng cần tự test theo checklist BE đã gửi (10 mục, đặc biệt #1 chat
+thường, #2 insight card, #4-6 action card 3 loại, #7 permission notice, #9
+không đoán content, #10 reload lịch sử vẫn giữ pendingAction) cộng 2 bug lệch
+giờ/xóa hội thoại ở trên.
+
+## Snapshot 2026-08-07 — Trợ lý AI hoàn chỉnh, vá rò rỉ dữ liệu giữa hai tài khoản, đã merge lên main
 
 ### Trạng thái Git chốt cuối ngày
 
@@ -245,55 +914,90 @@ Thành viên — xem mục #1 dưới); `409`/`410` (không kích được từ 
 hạn hoặc thao tác phía server). Logic hai mã này đã có unit test phủ nhưng
 **chưa xác minh runtime** — đừng ghi là đã test.
 
-### 📋 BE phản hồi AI Chatbot — 14:15, 2026-08-07
+### ✅ BE đã trả lời đủ 6 mục (2026-08-07) — contract chốt
 
-BE đã trả lời đầy đủ 6 mục FE gửi trước đó. Cập nhật này thay thế mục "Cần báo BE"
-trước đây.
+BE phản hồi bằng văn bản, đã ghi vào `API_DOCS.md` mục **AI Chatbot**. Tóm tắt
+và việc FE phải làm:
 
-1. **Member ghi thu/chi không có `pendingAction` — chốt hướng (b).**
-   BE sẽ sửa prompt/guard để AI trả lời rõ: *"bạn không có quyền ghi khoản chi,
-   hãy nhờ Trưởng nhóm/Phó nhóm"*. Không tạo `pendingAction` giả rồi để
-   `confirm-action` trả 403. Lý do: BE hiện chỉ cấp tool `propose_create_ledger_entry`
-   cho `FAMILY_MANAGER` và `DEPUTY_MEMBER`; `FAMILY_MEMBER` không nhận write tool.
-   FE không cần tự dựng nút xác nhận cho Member.
-2. **OpenAPI mới đã bổ sung response schema cho AI Chatbot.**
-   Bản API mới 2026-08-07 đã thêm response DTO cho các endpoint AI, đặc biệt các field:
-   `pendingAction`, `actionType`, `status`, `preview`, `expiresAt`, `result`.
-   `actionType` chính thức là enum:
-   `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`.
-3. **`pendingAction.status` chính thức chỉ có 4 giá trị.**
-   BE hiện có đúng: `PENDING`, `CONFIRMED`, `REJECTED`, `EXPIRED`.
-   Sau confirm thành công: `CONFIRMED`; reject: `REJECTED`; hết hạn: `EXPIRED`.
-   Chưa có `CANCELED` hoặc `FAILED` trong BE hiện tại. FE hiện vẫn parse phòng thủ
-   thêm vài trạng thái cũ/giả định để không vỡ nếu dữ liệu legacy hoặc BE mở rộng sau.
-4. **`expiresAt` là ISO UTC chuẩn.**
-   BE tạo bằng `new Date(...).toISOString()`, có đuôi `Z`; interceptor không convert
-   timezone. FE có thể tính countdown/hết hạn theo UTC bình thường.
-5. **`ai.financeSummary`, `ai.taskSummary`, `ai.savingSuggestions` trước mắt là feature flags.**
-   Chưa có endpoint riêng và cũng chưa guard vào AI Chatbot. BE đề xuất chốt với FE:
-   tạm xem đây là cờ điều khiển hành vi bên trong chatbot/tool access. Nếu cần khóa
-   theo gói, BE sẽ thêm guard/logic ở AI tools sau.
-6. **Wording theo vai trò — BE đồng ý sửa.**
-   Với `FAMILY_MEMBER`, AI nên nói theo phạm vi cá nhân: *"bạn chưa có chi tiêu nào"*
-   hoặc *"mình chỉ xem được dữ liệu cá nhân của bạn"*. Chỉ `FAMILY_MANAGER` /
-   `DEPUTY_MEMBER` mới dùng *"gia đình/nhà mình"*.
+| Mục | BE trả lời | FE phải làm |
+|---|---|---|
+| 1. Member ghi thu chi | Chọn hướng (b): sửa prompt để AI **không** nói "vui lòng xác nhận" khi không có `pendingAction`. `CREATE_LEDGER_ENTRY` chỉ mở cho `FAMILY_MANAGER` + `DEPUTY_MEMBER` | **Không** — FE đã ẩn sẵn gợi ý tạo dữ liệu với Thành viên |
+| 2. Swagger thiếu schema | Đồng ý bổ sung response DTO cho cả 7 endpoint + khai enum `actionType` | **✅ BE đã ship** (bản dump 2026-08-07 có `AiActionType`, `AiActionStatus`, `AiPendingActionResponseDto`…). Đối chiếu lại thì bắt được bug thật: `AiConversationLastMessageResponseDto` dùng `messageContent` chứ không phải `content` — dòng xem trước hội thoại từng trống trơn. Đã sửa ở `746a83d` |
+| 3. `status` chính thức | Đúng **4 giá trị**: `PENDING`, `CONFIRMED`, `REJECTED`, `EXPIRED`. **Chưa có `CANCELED`/`FAILED`** | Đã siết `AiPendingAction.confirmedStatuses` + test |
+| 4. `expiresAt` | **Có, ISO UTC thật** (`Date.toISOString()`, đuôi `Z`), interceptor không convert timezone | **Không** — FE parse đúng sẵn, đã thêm test khẳng định |
+| 5. Ba key AI phụ | Chỉ là **cờ điều khiển hành vi trong chatbot**, không phải endpoint riêng, BE cũng chưa guard | **Không gate theo ba key này**, chỉ đọc để hiển thị quyền lợi gói |
+| 6. Đại từ trong câu trả lời | Đồng ý sửa: Member → "bạn", Manager/Deputy → "gia đình" | **Không** — thuộc prompt BE |
 
-### Việc tiếp theo đề xuất
+**Field mới BE nhắc tới:** sau confirm thành công, `result.id` là id bản ghi vừa
+tạo. FE **hiện chưa parse** field này (không cần, vì đã refetch messages). Có thể
+dùng sau để deep-link tới bản ghi vừa tạo — chưa làm, đừng tưởng là đã có.
 
-1. Theo dõi BE cập nhật prompt/guard cho Member không có quyền ghi thu chi. Sau khi BE
-   sửa, test lại câu: *"Ghi nhận khoản chi 200.000 cho ăn uống hôm nay"* bằng tài
-   khoản `FAMILY_MEMBER` — kỳ vọng **không có thẻ xác nhận** và câu trả lời nói rõ
-   cần nhờ Trưởng nhóm/Phó nhóm.
-2. Đối chiếu parser `AiMessage` / `AiPendingAction` với response DTO mới trong OpenAPI
-   2026-08-07 trước khi chốt commit; hiện test contract đã khóa 3 `actionType` và 4 `status`.
-3. Vì Swagger đã có enum `status`, có thể thu hẹp UI outcome theo 4 trạng thái thật:
-   `PENDING`, `CONFIRMED`, `REJECTED`, `EXPIRED`. Chưa cần làm ngay vì parser hiện
-   đang phòng thủ và không gây lỗi.
-4. Test runtime `409`/`410` của `confirm-action` khi có điều kiện tái hiện. Logic hai
-   mã này đã có unit test phủ nhưng **chưa xác minh runtime**.
-5. Module AI không còn việc FE lớn nào nợ. Việc tiếp theo nên quay lại các mục treo từ
-   trước: test quyền chia quỹ theo `FAMILY_MANAGER`/`DEPUTY_MEMBER`/`FAMILY_MEMBER`,
-   retest 9 mục Finance QA, và runtime verify Face scan khi job kẹt.
+**Còn nợ, chưa đổi:** `403`/`409`/`410` vẫn **chưa xác minh runtime**. Mục 1 và 2
+phải chờ BE ship xong mới test lại được. Khi test lại mục 1, dùng đúng câu
+*"Ghi nhận khoản chi 200.000 cho ăn uống hôm nay"* bằng tài khoản
+`FAMILY_MEMBER` — kỳ vọng **không có thẻ xác nhận**, câu trả lời nói rõ cần nhờ
+Trưởng nhóm/Phó nhóm.
+
+### Audit contract AI Chatbot lần 2 — BE gửi kèm file contract chính thức
+
+BE gửi thêm file `AI Chatbot contract` (markdown, có mục Pending action /
+Permission behavior / Feature flags) xác nhận lại đúng 6 mục ở trên. Đọc lại
+toàn bộ `ai_chatbot.dart` + `ai_chatbot_provider.dart` (full file, không phải
+đoạn trích) để đối chiếu — **hầu hết đã đúng từ các lần audit trước**, không
+có gì bị merge với Giáp làm lệch:
+
+- `actionType` (3 giá trị), `status` (4 giá trị, không `CANCELED`/`FAILED`),
+  `expiresAt` parse UTC không cắt `Z`, card chỉ hiện khi có `pendingAction`,
+  reload đúng module, 409/410 tự đồng bộ lại thẻ, 3 key gói cước không gate
+  màn AI — **tất cả khớp contract, không sửa gì**.
+- Sửa đúng 1 chỗ: câu báo lỗi `403` lúc `confirm-action` trong
+  `_friendlyError` chỉ nhắc "Trưởng nhóm", thiếu "Phó nhóm" — trong khi
+  contract nói rõ `propose_create_ledger_entry` mở cho **cả**
+  `FAMILY_MANAGER` **và** `DEPUTY_MEMBER`. Màn rỗng của Thành viên
+  (`ai_assistant_screen.dart`) đã viết đúng "Trưởng nhóm và Phó nhóm" từ
+  trước — chỉ riêng câu lỗi này bị sót. Đã sửa.
+- Xác nhận lại: vấn đề chính (Member không nên nhận `pendingAction`) là lỗi
+  **prompt/guard phía BE**, không phải chỗ nào FE sửa được — FE đã đúng sẵn
+  (không có `pendingAction` thì không hiện thẻ).
+
+### 📋 Nội dung 6 mục đã gửi BE (giữ lại để đối chiếu)
+
+### 🔴 Bug lệch giờ 7 tiếng ở sổ thu chi — phát hiện khi verify giao dịch AI tạo
+
+Không liên quan module AI, nhưng lộ ra khi verify runtime `CREATE_LEDGER_ENTRY`.
+Ảnh hưởng **toàn bộ sổ thu chi**, mọi giao dịch, không riêng giao dịch AI tạo.
+
+**Bằng chứng runtime:** tạo khoản chi thủ công lúc 20:19:00 giờ VN (13:19:00
+UTC, verify TZ = Asia/Bangkok bằng `adb shell date`/`date -u` khớp cả emulator
+lẫn host). Sổ thu chi hiện `13:18` — đúng bằng giờ UTC.
+
+**Nguyên nhân — chứng minh bằng vòng khép kín, không suy luận:** FE tự gửi
+`entryDate` bằng `DateTime.now().toUtc().toIso8601String()` (UTC chuẩn) lúc
+**tạo** giao dịch (`WalletProvider.recordEntry`), nhưng `displayEntryDate` lại
+cắt bỏ `Z` rồi parse như giờ naive lúc **hiển thị** — tự đọc sai dữ liệu do
+chính FE gửi lên. **Lỗi FE, không phải BE.** Comment cũ trong code ghi "BE vẫn
+trả hậu tố Z nhưng giữ giờ local GMT+7" — giả định này không còn đúng với
+ledger (có thể BE đã đổi sang UTC thật, khớp với `expiresAt` của AI Chatbot
+cũng là UTC thật).
+
+**Đã sửa:** `WalletProvider.displayEntryDate` và `ChildWalletScreen._fmtDate`
+— parse chuẩn rồi `.toLocal()` khi chuỗi thật sự UTC, giữ nguyên nếu chuỗi
+naive (phòng dữ liệu cũ). Test mới: `test/wallet_ledger_date_test.dart`.
+`API_DOCS.md` sửa lại dòng sai về timezone ledger.
+
+**Không đụng:** support-request date — chưa có bằng chứng runtime mới, để
+verify riêng nếu đụng tới, không suy diễn theo ledger.
+
+**📋 Cần báo BE (phát hiện phụ, chưa xử lý):**
+1. Giao dịch tự sinh từ `POST /finance/fund-allocations` có `description`
+   tiếng Anh ("Allocate fund to Savings/Giving/Enjoyment/Education/
+   Necessities") trong khi toàn app tiếng Việt — không tìm thấy chuỗi này ở
+   bất kỳ đâu trong `lib/`, xác nhận là nội dung BE tự sinh. Không tự dịch
+   cứng ở FE vì dễ vỡ nếu BE đổi tên hũ/mô hình sau này.
+2. Màn Chi tiết giao dịch hiện "Số tiền: 30,000,000 đ **đ**" — lặp đơn vị.
+   Phát hiện khi bấm nhầm vào giao dịch cũ lúc test, **chưa xác định được vị
+   trí chính xác trong code** để phân loại lỗi FE hay do ghép chuỗi từ dữ liệu
+   BE — cần soi lại trước khi sửa.
 
 ### File tạm không được commit
 

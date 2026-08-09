@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,11 +9,13 @@ import '../../models/ai_chatbot.dart';
 import '../../providers/ai_chatbot_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
+import '../../providers/finance_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/ai_chatbot_icon.dart';
+import '../../widgets/json_report_view.dart';
 
 /// Định dạng một field trong `preview` của đề xuất AI để người dùng đọc được.
 ///
@@ -46,8 +50,24 @@ String formatAiPreviewValue(String key, dynamic value) {
     final parsed = DateTime.tryParse(value.toString());
     if (parsed != null) return formatAiPreviewDateTime(parsed.toLocal());
   }
+  // `uiHints.fields` (Sprint 2) dùng key tự do do BE đặt (`start`, `end`...),
+  // không chắc lúc nào cũng khớp bộ khóa cứng ở `_isTimeKey` — quan sát thật
+  // 2026-08-08: field "Bắt đầu"/"Kết thúc" của sự kiện lịch hiện nguyên văn
+  // `2026-08-09T09:00:00+07:00` vì key không nằm trong danh sách trên. Nhận
+  // diện thêm theo HÌNH DẠNG giá trị (chuỗi ISO 8601 đủ giờ phút) bất kể key
+  // là gì — an toàn vì tiêu đề/địa điểm dạng chữ thường không khớp định dạng
+  // này nên không bị định dạng nhầm.
+  if (value is String && _looksLikeIsoDateTime(value)) {
+    final parsed = DateTime.tryParse(value);
+    if (parsed != null) return formatAiPreviewDateTime(parsed.toLocal());
+  }
   return value.toString();
 }
+
+final _isoDateTimePattern = RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}');
+
+bool _looksLikeIsoDateTime(String value) =>
+    _isoDateTimePattern.hasMatch(value);
 
 bool _isMoneyKey(String key) => const {
   'amount',
@@ -96,6 +116,36 @@ DateTime calendarMonthToReload(Map<String, dynamic> preview) {
   return DateTime.now();
 }
 
+/// Câu trạng thái dưới thẻ đề xuất. Xác nhận thành công phải nói rõ là **đã
+/// xong**, không được dùng chung một câu cảnh báo với đề xuất hết hạn. Tách
+/// top-level (không phải instance getter) để `_PendingActionCard` và
+/// `_ResultCard` dùng chung — từ 2026-08-09, BE trả `RESULT_CARD` cho cả 3
+/// trạng thái đã xử lý (REJECTED/CONFIRMED/EXPIRED), nên `_ResultCard` cũng
+/// cần đúng màu/icon/câu chữ theo outcome thay vì mặc định "thành công".
+String outcomeMessageFor(AiActionOutcome outcome) => switch (outcome) {
+  AiActionOutcome.completed => 'Đã thực hiện xong.',
+  AiActionOutcome.rejected => 'Bạn đã từ chối đề xuất này.',
+  AiActionOutcome.expired =>
+    'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',
+  AiActionOutcome.failed => 'Thực hiện đề xuất không thành công.',
+  AiActionOutcome.pending => '',
+};
+
+Color outcomeColorFor(AiActionOutcome outcome) => switch (outcome) {
+  AiActionOutcome.completed => AppColors.success,
+  AiActionOutcome.rejected => AppColors.textMuted,
+  AiActionOutcome.expired || AiActionOutcome.failed => AppColors.danger,
+  AiActionOutcome.pending => AppColors.textSecondary,
+};
+
+IconData outcomeIconFor(AiActionOutcome outcome) => switch (outcome) {
+  AiActionOutcome.completed => Icons.check_circle_rounded,
+  AiActionOutcome.rejected => Icons.do_not_disturb_on_outlined,
+  AiActionOutcome.expired => Icons.timer_off_outlined,
+  AiActionOutcome.failed => Icons.error_outline_rounded,
+  AiActionOutcome.pending => Icons.schedule_rounded,
+};
+
 class AIAssistantScreen extends StatefulWidget {
   const AIAssistantScreen({super.key});
 
@@ -110,9 +160,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      context.read<AiChatbotProvider>().bootstrap();
+      await context.read<AiChatbotProvider>().bootstrap();
+      // Bootstrap chọn sẵn hội thoại gần nhất, nhưng ListView mặc định đứng ở
+      // đầu danh sách (đầu là Daily Brief nếu có). Không cuộn xuống thì người
+      // dùng mở Trợ lý AI lên chỉ thấy "Tổng quan hôm nay" chứ không thấy
+      // ngay đoạn chat đang dở — phải tự kéo xuống mới thấy.
+      if (!mounted) return;
+      _scrollToBottom();
     });
   }
 
@@ -137,8 +193,17 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     await _send();
   }
 
+  // Gửi tin nhắn ĐẦU TIÊN của hội thoại chuyển `_MessageList` từ
+  // `_EmptyStateSuggestions` (ListView riêng, không gắn `_scrollCtrl`) sang
+  // `ListView.builder` thật (mới gắn `_scrollCtrl`) — quan sát thật
+  // 2026-08-08: `Future.delayed(80ms)` cũ chạy đúng lúc controller chưa kịp
+  // gắn vào Scrollable mới, `animateTo` chạy trên vị trí cũ nên không cuộn
+  // được, người dùng thấy màn đứng ở đầu trang dù đã có tin nhắn mới.
+  // `addPostFrameCallback` đợi đúng sau khi frame build/layout xong (controller
+  // đã chắc chắn gắn vào Scrollable hiện tại) thay vì đoán một mốc thời gian
+  // cố định — đúng cả với chuyển tiếp state lẫn tin nhắn giữa hội thoại dài.
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 80), () {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollCtrl.hasClients) return;
       _scrollCtrl.animateTo(
         _scrollCtrl.position.maxScrollExtent,
@@ -146,6 +211,22 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  // Trước đây bấm ☀️ xong tự cuộn lên đầu để "xem" Daily Brief — đúng ý muốn
+  // ban đầu nhưng UX bất tiện thật: xem xong lại phải tự kéo xuống mới về
+  // được đoạn chat đang dở, trong khi thoát màn rồi mở lại thì mặc định vẫn
+  // đứng ở cuối (đúng ý hơn). Đổi thành KHÔNG đổi vị trí cuộn — chỉ bỏ ẩn rồi
+  // báo bằng SnackBar, người dùng tự kéo lên xem khi muốn, không bị kéo đi
+  // khỏi chỗ đang đọc.
+  Future<void> _showDailyBriefAgain() async {
+    await context.read<AiChatbotProvider>().showDailyBrief();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Đã hiện lại "Tổng quan hôm nay" — kéo lên đầu để xem'),
+      ),
+    );
   }
 
   @override
@@ -180,6 +261,15 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
               ],
             ),
             actions: [
+              if (ai.dailyBrief == null)
+                IconButton(
+                  tooltip: 'Xem tổng quan hôm nay',
+                  onPressed: _showDailyBriefAgain,
+                  icon: Icon(
+                    Icons.wb_sunny_outlined,
+                    color: context.colors.textPrimary,
+                  ),
+                ),
               IconButton(
                 tooltip: 'Hội thoại',
                 onPressed: () => _showConversationSheet(context),
@@ -325,9 +415,11 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                  onTap: () {
-                                    ai.selectConversation(c.id);
+                                  onTap: () async {
                                     Navigator.of(sheetContext).pop();
+                                    await ai.selectConversation(c.id);
+                                    if (!mounted) return;
+                                    _scrollToBottom();
                                   },
                                 );
                               },
@@ -375,31 +467,128 @@ class _MessageList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ai = context.watch<AiChatbotProvider>();
-    if (ai.loadingMessages) {
+    final brief = ai.dailyBrief;
+    // Chỉ chặn cả màn bằng spinner khi CHƯA có gì để xem (tải lần đầu). Xác
+    // nhận/từ chối đề xuất gọi `fetchMessages()` để làm mới trạng thái —
+    // trước đây điều kiện này không loại trừ trường hợp đã có `messages`,
+    // nên mỗi lần bấm Xác nhận/Hủy, `ListView.builder` bị thay hẳn bằng
+    // `Center` rồi dựng lại — mất luôn vị trí cuộn cũ, người dùng thấy đoạn
+    // chat "nhảy" về đầu trang dù không hề cuộn.
+    if (ai.loadingMessages && ai.messages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
+
     final messages = ai.messages;
     if (messages.isEmpty) {
-      return _EmptyStateSuggestions(onPick: onPickPrompt);
+      return _EmptyStateSuggestions(onPick: onPickPrompt, dailyBrief: brief);
     }
-    // Hàng "Tải thêm" nằm trên cùng vì tin cũ hơn thuộc về phía trên.
-    final leading = ai.hasMoreMessages ? 1 : 0;
+
+    // Daily Brief và hàng "Tải thêm" đều nằm TRONG danh sách cuộn được, không
+    // phải sibling cố định của nó.
+    //
+    // Bug thật đã gặp: từng đặt `_DailyBriefCard` làm phần tử cố định phía
+    // trên `Expanded(child: ListView)` trong một `Column`. Nội dung Daily
+    // Brief (JsonReportView đệ quy nhiều nhóm: Family/Scope/Task/Calendar/
+    // Finance…) cao hơn hẳn một bubble chat thường, và phần tử cố định trong
+    // `Column` không tự co khi thiếu chỗ — Flutter báo tràn layout (vạch
+    // vàng-đen "RenderFlex overflowed") ngay khi nội dung dài hơn khoảng trống
+    // còn lại phía trên composer. Đưa thẳng vào làm item đầu của
+    // `ListView.builder` thì nó cuộn được như mọi item khác, không bao giờ
+    // tràn nữa — đúng cách `_LoadMoreTile` đã làm từ trước.
+    final leadingBrief = brief != null ? 1 : 0;
+    final leadingLoadMore = ai.hasMoreMessages ? 1 : 0;
+    final leading = leadingBrief + leadingLoadMore;
     return ListView.builder(
       controller: scrollCtrl,
       padding: const EdgeInsets.all(16),
       itemCount: leading + messages.length + (ai.sending ? 1 : 0),
       itemBuilder: (_, i) {
-        if (leading == 1 && i == 0) {
+        if (brief != null && i == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _DailyBriefCard(brief: brief, onPick: onPickPrompt),
+          );
+        }
+        final afterBrief = i - leadingBrief;
+        if (leadingLoadMore == 1 && afterBrief == 0) {
           return _LoadMoreTile(
             label: 'Tải thêm tin nhắn',
             loading: ai.loadingMoreMessages,
             onTap: ai.loadMoreMessages,
           );
         }
-        final index = i - leading;
+        final index = afterBrief - leadingLoadMore;
         if (index >= messages.length) return const _TypingBubble();
-        return _MessageBubble(message: messages[index]);
+        return _MessageBubble(
+          message: messages[index],
+          onPickPrompt: onPickPrompt,
+        );
       },
+    );
+  }
+}
+
+/// Card "Tổng quan hôm nay" — `GET .../ai-chatbot/daily-brief` (Sprint 2, tùy
+/// chọn). BE không cho tên field con cụ thể nên dùng `JsonReportView` — quy
+/// ước sẵn có của repo cho response chưa rõ schema (xem `CLAUDE.md` Rule 4).
+class _DailyBriefCard extends StatelessWidget {
+  final AiDailyBrief brief;
+  final ValueChanged<String> onPick;
+
+  const _DailyBriefCard({required this.brief, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.colors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.wb_sunny_outlined,
+                size: 16,
+                color: AppColors.primary600,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Tổng quan hôm nay',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary600,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: () =>
+                    context.read<AiChatbotProvider>().dismissDailyBrief(),
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: context.colors.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          JsonReportView(data: brief.raw),
+          if (brief.suggestedPrompts.isNotEmpty)
+            _QuickActionChips(actions: brief.suggestedPrompts, onPick: onPick),
+        ],
+      ),
     );
   }
 }
@@ -410,6 +599,31 @@ class _MessageList extends StatelessWidget {
 /// như không ai dùng vì mở màn ra chỉ thấy ô nhập trống. Bộ gợi ý này chia rõ
 /// hai loại: câu chỉ TRA CỨU (trả lời ngay) và câu khiến AI TẠO đề xuất (phải
 /// bấm xác nhận mới ghi dữ liệu) — để người dùng biết trước điều gì sẽ xảy ra.
+/// Câu gợi ý "nhờ AI ghi khoản chi" trước đây cố định `200.000đ tiền ăn uống`
+/// — bấm hoài chỉ tạo đúng một khoản y hệt, test không thấy AI xử lý số/danh
+/// mục khác nhau thế nào. Random một câu trong vài mẫu thực tế mỗi lần dựng
+/// widget để mỗi lần mở màn/mỗi lần thấy chip là một khoản khác nhau.
+///
+/// Gộp chung chi lẫn thu trong một chip "Tạo thu/chi" thay vì tách 2 nút
+/// riêng hay làm submenu chọn loại — đây chỉ là 1 gợi ý mở đầu câu chat, AI
+/// đã hiểu được cả hai qua câu tự nhiên, tách thêm nút chỉ chật chỗ dải chip
+/// mà không giúp AI "thông minh" hơn. Trộn cả ví dụ thu vào bộ random để
+/// người dùng tự khám phá được cả hai khả năng khi bấm lại nhiều lần.
+const _ledgerPromptSamples = [
+  'Ghi khoản chi 45.000đ tiền cà phê sáng nay',
+  'Ghi khoản chi 120.000đ tiền chợ hôm nay',
+  'Ghi khoản chi 60.000đ tiền xăng xe hôm nay',
+  'Ghi khoản chi 250.000đ tiền sửa xe tuần này',
+  'Ghi khoản chi 85.000đ tiền ăn trưa hôm nay',
+  'Ghi khoản chi 500.000đ tiền học phí tháng này',
+  'Ghi khoản thu 2.000.000đ tiền thưởng tháng này',
+  'Ghi khoản thu 500.000đ tiền lì xì hôm nay',
+  'Ghi khoản thu 1.500.000đ tiền làm thêm tuần này',
+];
+
+String _randomLedgerPrompt() =>
+    _ledgerPromptSamples[Random().nextInt(_ledgerPromptSamples.length)];
+
 class AiPromptGroup {
   final String title;
   final IconData icon;
@@ -504,7 +718,7 @@ List<AiPromptGroup> aiPromptGroupsFor({required bool canManageFinance}) {
       icon: Icons.auto_awesome_rounded,
       color: AppColors.calTravel,
       prompts: [
-        'Ghi khoản chi 200.000đ tiền ăn uống hôm nay',
+        _randomLedgerPrompt(),
         'Ghi khoản thu 5.000.000đ lương tháng này',
         'Tạo nhiệm vụ rửa bát tối nay',
         'Tạo lịch khám sức khỏe 9h sáng mai',
@@ -515,17 +729,27 @@ List<AiPromptGroup> aiPromptGroupsFor({required bool canManageFinance}) {
 
 class _EmptyStateSuggestions extends StatelessWidget {
   final ValueChanged<String> onPick;
+  final AiDailyBrief? dailyBrief;
 
-  const _EmptyStateSuggestions({required this.onPick});
+  const _EmptyStateSuggestions({required this.onPick, this.dailyBrief});
 
   @override
   Widget build(BuildContext context) {
     final canManageFinance =
         context.watch<AuthProvider>().user?.canManageFinance ?? false;
     final groups = aiPromptGroupsFor(canManageFinance: canManageFinance);
+    final brief = dailyBrief;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       children: [
+        // `ListView` này vốn đã cuộn được — Daily Brief nằm ngay trong danh
+        // sách children như mọi mục khác, không phải sibling cố định, nên
+        // không có nguy cơ tràn layout dù nội dung có dài (xem bug đã sửa ở
+        // `_MessageList`, cùng nguyên nhân, khác chỗ đặt).
+        if (brief != null) ...[
+          _DailyBriefCard(brief: brief, onPick: onPick),
+          const SizedBox(height: 16),
+        ],
         Center(
           child: Column(
             children: [
@@ -711,15 +935,178 @@ class _UpgradePanel extends StatelessWidget {
   }
 }
 
+/// Map tên icon BE gửi trong `uiHints.icon` sang `IconData`.
+///
+/// BE chưa chốt format chuỗi (material icon name? emoji? từ khoá module?) —
+/// đọc phòng thủ theo từ khoá module, không throw khi gặp tên lạ.
+/// [fallback] nên khớp `displayStyle` của nơi gọi.
+IconData _resolveHintIcon(String? icon, {required IconData fallback}) {
+  final key = icon?.toLowerCase().trim() ?? '';
+  if (key.isEmpty) return fallback;
+  if (key.contains('finance') || key.contains('money') || key.contains('wallet')) {
+    return Icons.account_balance_wallet_outlined;
+  }
+  if (key.contains('task') || key.contains('chore')) return Icons.task_alt_rounded;
+  if (key.contains('calendar') || key.contains('event')) {
+    return Icons.event_available_outlined;
+  }
+  if (key.contains('sos') || key.contains('safety') || key.contains('warning')) {
+    return Icons.shield_outlined;
+  }
+  if (key.contains('saving') || key.contains('goal')) return Icons.savings_outlined;
+  if (key.contains('insight') || key.contains('analysis')) {
+    return Icons.insights_rounded;
+  }
+  return fallback;
+}
+
+/// Chip gợi ý dưới tin nhắn AI (`uiHints.quickActions` hoặc
+/// `dailyBrief.suggestedPrompts`) — bấm gửi `prompt`, không gửi `label`.
+class _QuickActionChips extends StatelessWidget {
+  final List<AiQuickAction> actions;
+  final ValueChanged<String> onPick;
+
+  const _QuickActionChips({required this.actions, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    if (actions.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: actions
+            .map(
+              (a) => ActionChip(
+                label: Text(a.label),
+                onPressed: () => onPick(a.prompt),
+                backgroundColor: context.colors.background,
+                side: BorderSide(color: context.colors.divider),
+                labelStyle: GoogleFonts.inter(fontSize: 12.5),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
   final AiMessage message;
+  final ValueChanged<String> onPickPrompt;
 
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, required this.onPickPrompt});
 
   @override
   Widget build(BuildContext context) {
     final isMe = message.isUser;
-    final bubble = Container(
+    if (isMe) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: _TextBubble(text: message.content, isMe: true),
+      );
+    }
+
+    final quickActions = message.uiHints?.quickActions ?? const [];
+    final Widget content = switch (message.effectiveDisplayStyle) {
+      AiDisplayStyle.insightCard => _InsightCard(message: message),
+      AiDisplayStyle.permissionNotice => _PermissionNoticeCard(
+        content: message.content,
+      ),
+      AiDisplayStyle.resultCard => _ResultCard(message: message),
+      AiDisplayStyle.actionPlanCard => _ActionPlanCard(message: message),
+      AiDisplayStyle.actionCard when message.pendingAction != null =>
+        _ActionCardWithIntro(message: message),
+      // ACTION_CARD mà thiếu pendingAction không nên xảy ra theo contract —
+      // rơi về bubble text an toàn thay vì vẽ nút giả, có log để phát hiện.
+      AiDisplayStyle.actionCard => Builder(
+        builder: (_) {
+          debugPrint(
+            'AIAssistantScreen: displayStyle=ACTION_CARD nhưng không có '
+            'pendingAction, msgId=${message.id} — hiện bubble text thay vì '
+            'vẽ nút giả.',
+          );
+          return _TextBubble(text: message.content, isMe: false);
+        },
+      ),
+      AiDisplayStyle.text => _TextBubble(text: message.content, isMe: false),
+    };
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 2, right: 8),
+          child: AiChatbotIcon(size: 28),
+        ),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              content,
+              if (quickActions.isNotEmpty)
+                _QuickActionChips(actions: quickActions, onPick: onPickPrompt),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Bubble chữ thường — dùng cho `TEXT` và cho tin nhắn của người dùng.
+/// AI trả nguyên văn markdown `**chữ đậm**` để nhấn tiêu đề/số liệu (ví dụ
+/// `**Nhận định:**`, `**Đề xuất:**`). Trước đây vẽ bằng `Text` trơn nên người
+/// dùng thấy cả cặp dấu `**` xấu xí thay vì chữ đậm. Không kéo cả thư viện
+/// markdown chỉ để bôi đậm — parse tối thiểu bằng regex, phần nằm giữa
+/// `**...**` in đậm + tô màu nổi bật, phần còn lại giữ nguyên.
+class _AiRichText extends StatelessWidget {
+  final String text;
+  final TextStyle style;
+  final Color boldColor;
+
+  const _AiRichText({
+    required this.text,
+    required this.style,
+    required this.boldColor,
+  });
+
+  static final _boldPattern = RegExp(r'\*\*(.+?)\*\*');
+
+  @override
+  Widget build(BuildContext context) {
+    if (!text.contains('**')) return Text(text, style: style);
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    for (final match in _boldPattern.allMatches(text)) {
+      if (match.start > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+      }
+      spans.add(
+        TextSpan(
+          text: match.group(1),
+          style: style.copyWith(fontWeight: FontWeight.w800, color: boldColor),
+        ),
+      );
+      cursor = match.end;
+    }
+    if (cursor < text.length) {
+      spans.add(TextSpan(text: text.substring(cursor)));
+    }
+    return Text.rich(TextSpan(style: style, children: spans));
+  }
+}
+
+class _TextBubble extends StatelessWidget {
+  final String text;
+  final bool isMe;
+
+  const _TextBubble({required this.text, required this.isMe});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.74,
       ),
@@ -741,38 +1128,294 @@ class _MessageBubble extends StatelessWidget {
           ),
         ],
       ),
+      child: _AiRichText(
+        text: text,
+        style: GoogleFonts.inter(
+          fontSize: 15,
+          height: 1.35,
+          color: isMe ? Colors.white : context.colors.textPrimary,
+        ),
+        boldColor: isMe ? Colors.white : AppColors.primary600,
+      ),
+    );
+  }
+}
+
+/// `INSIGHT_CARD` — phân tích/gợi ý, không có nút xác nhận.
+class _InsightCard extends StatelessWidget {
+  final AiMessage message;
+
+  const _InsightCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final hints = message.uiHints;
+    final color = AppColors.primary600;
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.82,
+      ),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            message.content,
+          Row(
+            children: [
+              Icon(
+                _resolveHintIcon(hints?.icon, fallback: Icons.insights_rounded),
+                size: 18,
+                color: color,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  (hints?.title?.trim().isNotEmpty ?? false)
+                      ? hints!.title!
+                      : 'Phân tích',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+              ),
+              if (hints?.confidenceLabel?.trim().isNotEmpty ?? false)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    hints!.confidenceLabel!,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _AiRichText(
+            text: message.content,
             style: GoogleFonts.inter(
-              fontSize: 15,
-              height: 1.35,
-              color: isMe ? Colors.white : context.colors.textPrimary,
+              fontSize: 14,
+              height: 1.4,
+              color: context.colors.textPrimary,
+            ),
+            boldColor: color,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// `PERMISSION_NOTICE` — không đủ quyền. Không có nút xác nhận/từ chối nào,
+/// bất kể `content` có chữ gì.
+class _PermissionNoticeCard extends StatelessWidget {
+  final String content;
+
+  const _PermissionNoticeCard({required this.content});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.74,
+      ),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.colors.divider),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.lock_outline_rounded,
+            size: 16,
+            color: context.colors.textMuted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _AiRichText(
+              text: content,
+              style: GoogleFonts.inter(
+                fontSize: 13.5,
+                height: 1.4,
+                color: context.colors.textSecondary,
+              ),
+              boldColor: context.colors.textPrimary,
             ),
           ),
-          if (message.pendingAction != null) ...[
-            const SizedBox(height: 12),
-            _PendingActionCard(
-              messageId: message.pendingAction!.messageId.isNotEmpty
-                  ? message.pendingAction!.messageId
-                  : message.id,
-              action: message.pendingAction!,
+        ],
+      ),
+    );
+  }
+}
+
+/// `RESULT_CARD` — kết quả sau khi một đề xuất đã được confirm. Không có nút.
+class _ResultCard extends StatelessWidget {
+  final AiMessage message;
+
+  const _ResultCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    // BE xác nhận 2026-08-09: RESULT_CARD giờ dùng cho cả 3 trạng thái đã xử
+    // lý (REJECTED/CONFIRMED/EXPIRED), không chỉ xác nhận thành công — không
+    // còn được mặc định tô xanh "thành công" cho mọi trường hợp. Không có
+    // `pendingAction` đính kèm (result thuần thông tin) thì coi như thành
+    // công, giữ đúng hành vi hiển thị cũ trước khi có outcome đa dạng.
+    final outcome = message.pendingAction?.outcome ?? AiActionOutcome.completed;
+    final color = outcomeColorFor(outcome);
+    final icon = outcomeIconFor(outcome);
+    final title = message.uiHints?.title?.trim();
+    final fields = message.pendingAction?.displayFields ?? const [];
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.82,
+      ),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              if (title != null && title.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _AiRichText(
+            text: message.content,
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              height: 1.4,
+              color: context.colors.textPrimary,
             ),
+            boldColor: color,
+          ),
+          if (fields.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            for (final f in fields) _detailRow(f.label, f.key, f.value),
           ],
         ],
       ),
     );
-    if (isMe) return Align(alignment: Alignment.centerRight, child: bubble);
-    return Row(
+  }
+
+  Widget _detailRow(String label, String key, dynamic value) => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(top: 2, right: 8),
-          child: AiChatbotIcon(size: 28),
+        SizedBox(
+          width: 70,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textMuted,
+            ),
+          ),
         ),
-        Flexible(child: bubble),
+        Expanded(
+          child: Text(
+            formatAiPreviewValue(key, value),
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// `ACTION_PLAN_CARD` — kế hoạch nhiều bước (BE Sprint 3, 2026-08-09). Mỗi
+/// bước là một phần tử `message.pendingActions[n]`; tái dùng nguyên
+/// `_PendingActionCard` cho từng bước (đã có `stepIndex` để gọi đúng
+/// endpoint theo bước: `confirmStep`/`rejectStep`) thay vì viết lại UI thẻ.
+class _ActionPlanCard extends StatelessWidget {
+  final AiMessage message;
+
+  const _ActionPlanCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = message.pendingActions;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (message.content.trim().isNotEmpty)
+          _TextBubble(text: message.content, isMe: false),
+        // Không nên xảy ra theo contract (BE nói ACTION_PLAN_CARD luôn kèm
+        // pendingActions[]) — phòng thủ, đừng vẽ khung rỗng nếu thiếu.
+        for (final step in steps)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _PendingActionCard(
+              messageId: step.messageId.isNotEmpty ? step.messageId : message.id,
+              action: step,
+              stepIndex: step.actionIndex,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Bong bóng lời giới thiệu của AI (`message.content`) + thẻ xác nhận bên
+/// dưới — giữ đúng bố cục cũ (`ACTION_CARD` luôn có một câu dẫn của AI trước
+/// khi tới thẻ).
+class _ActionCardWithIntro extends StatelessWidget {
+  final AiMessage message;
+
+  const _ActionCardWithIntro({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final action = message.pendingAction!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (message.content.trim().isNotEmpty)
+          _TextBubble(text: message.content, isMe: false),
+        _PendingActionCard(
+          messageId: action.messageId.isNotEmpty ? action.messageId : message.id,
+          action: action,
+        ),
       ],
     );
   }
@@ -782,12 +1425,25 @@ class _PendingActionCard extends StatelessWidget {
   final String messageId;
   final AiPendingAction action;
 
-  const _PendingActionCard({required this.messageId, required this.action});
+  /// Khác `null` khi thẻ này là MỘT BƯỚC trong kế hoạch nhiều bước
+  /// (`ACTION_PLAN_CARD`, BE Sprint 3 2026-08-09) — khi đó Xác nhận/Hủy phải
+  /// gọi endpoint theo `actionIndex` (`confirmStep`/`rejectStep`) thay vì
+  /// theo message (`confirmAction`/`rejectAction`). `null` = hành vi cũ y
+  /// nguyên, dùng cho thẻ hành động đơn lẻ.
+  final int? stepIndex;
+
+  const _PendingActionCard({
+    required this.messageId,
+    required this.action,
+    this.stepIndex,
+  });
 
   @override
   Widget build(BuildContext context) {
     final ai = context.watch<AiChatbotProvider>();
-    final busy = ai.isActionBusy(messageId);
+    final busy = stepIndex != null
+        ? ai.isStepBusy(messageId, stepIndex!)
+        : ai.isActionBusy(messageId);
     final enabled = action.isPending && !busy;
     final color = _actionColor;
     return Container(
@@ -809,13 +1465,26 @@ class _PendingActionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      action.actionLabel,
+                      action.displayTitle,
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                         color: color,
                       ),
                     ),
+                    if (action.uiHints?.description?.trim().isNotEmpty ??
+                        false)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          action.uiHints!.description!,
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            height: 1.35,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
                     // Loại đề xuất FE chưa biết thì hiện luôn mã BE gửi. Nếu
                     // không, mọi tên lạ đều rơi vào nhãn chung "Thực hiện đề
                     // xuất" và không ai biết BE vừa gửi cái gì.
@@ -834,9 +1503,10 @@ class _PendingActionCard extends StatelessWidget {
               _statusChip(color),
             ],
           ),
-          if (action.preview.isNotEmpty) ...[
+          if (action.displayFields.isNotEmpty) ...[
             const SizedBox(height: 8),
-            ..._previewRows(action.preview),
+            for (final f in action.displayFields)
+              _previewRow(f.key, f.label, f.value),
           ],
           const SizedBox(height: 10),
           if (!action.isPending)
@@ -855,17 +1525,22 @@ class _PendingActionCard extends StatelessWidget {
                 ),
               ],
             )
-          else
+          else ...[
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed: enabled
-                        ? () => context.read<AiChatbotProvider>().rejectAction(
-                            messageId,
-                          )
+                        ? () {
+                            final provider = context.read<AiChatbotProvider>();
+                            if (stepIndex != null) {
+                              provider.rejectStep(messageId, stepIndex!);
+                            } else {
+                              provider.rejectAction(messageId);
+                            }
+                          }
                         : null,
-                    child: const Text('Hủy'),
+                    child: Text(action.uiHints?.secondaryActionLabel ?? 'Hủy'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -880,41 +1555,52 @@ class _PendingActionCard extends StatelessWidget {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('Xác nhận'),
+                        : Text(action.uiHints?.primaryActionLabel ?? 'Xác nhận'),
                   ),
                 ),
               ],
             ),
+            // BE xác nhận 2026-08-09: KHÔNG có endpoint "sửa" pending action.
+            // Luồng chính thức là mở form tạo dữ liệu tương ứng, điền sẵn từ
+            // `pendingAction.preview`, cho người dùng chỉnh trước khi lưu —
+            // FE chưa có màn prefill riêng cho từng actionType nên áp dụng
+            // đúng fallback BE xác nhận là hợp lệ: từ chối đề xuất hiện tại
+            // rồi để người dùng tự gõ lại câu mới cho AI.
+            if (enabled &&
+                (action.uiHints?.editActionLabel?.trim().isNotEmpty ?? false))
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: () => _handleEdit(context),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: Text(action.uiHints!.editActionLabel!),
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );
   }
 
+  Future<void> _handleEdit(BuildContext context) async {
+    final ai = context.read<AiChatbotProvider>();
+    if (stepIndex != null) {
+      await ai.rejectStep(messageId, stepIndex!);
+    } else {
+      await ai.rejectAction(messageId);
+    }
+  }
+
   /// Câu trạng thái dưới thẻ. Xác nhận thành công phải nói rõ là **đã xong**,
   /// không được dùng chung một câu cảnh báo với đề xuất hết hạn.
-  String get _outcomeMessage => switch (action.outcome) {
-    AiActionOutcome.completed => 'Đã thực hiện xong.',
-    AiActionOutcome.rejected => 'Bạn đã từ chối đề xuất này.',
-    AiActionOutcome.expired =>
-      'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',
-    AiActionOutcome.failed => 'Thực hiện đề xuất không thành công.',
-    AiActionOutcome.pending => '',
-  };
+  String get _outcomeMessage => outcomeMessageFor(action.outcome);
 
-  Color get _outcomeColor => switch (action.outcome) {
-    AiActionOutcome.completed => AppColors.success,
-    AiActionOutcome.rejected => AppColors.textMuted,
-    AiActionOutcome.expired || AiActionOutcome.failed => AppColors.danger,
-    AiActionOutcome.pending => AppColors.textSecondary,
-  };
+  Color get _outcomeColor => outcomeColorFor(action.outcome);
 
-  IconData get _outcomeIcon => switch (action.outcome) {
-    AiActionOutcome.completed => Icons.check_circle_rounded,
-    AiActionOutcome.rejected => Icons.do_not_disturb_on_outlined,
-    AiActionOutcome.expired => Icons.timer_off_outlined,
-    AiActionOutcome.failed => Icons.error_outline_rounded,
-    AiActionOutcome.pending => Icons.schedule_rounded,
-  };
+  IconData get _outcomeIcon => outcomeIconFor(action.outcome);
 
   Widget _statusChip(Color color) {
     final text = switch (action.outcome) {
@@ -951,48 +1637,9 @@ class _PendingActionCard extends StatelessWidget {
     );
   }
 
-  List<Widget> _previewRows(Map<String, dynamic> preview) {
-    final keys = switch (action.actionType.toUpperCase()) {
-      // `task` là tên field BE thật sự trả cho CREATE_TASK — quan sát runtime
-      // 2026-08-07, không phải `title` như FE đoán ban đầu.
-      'CREATE_TASK' || 'TASK_CREATE' => [
-        'task',
-        'taskTitle',
-        'title',
-        'description',
-        'dueAt',
-        'dueDate',
-        'assignee',
-      ],
-      'CREATE_LEDGER_ENTRY' ||
-      'CREATE_TRANSACTION' ||
-      'FINANCE_LEDGER_CREATE' => [
-        'amount',
-        'categoryName',
-        'category',
-        'description',
-        'note',
-      ],
-      'CREATE_CALENDAR_EVENT' ||
-      'CALENDAR_EVENT_CREATE' => ['title', 'startTime', 'endTime', 'location'],
-      _ => preview.keys.take(6).toList(),
-    };
-    final rows = <Widget>[];
-    final used = <String>{};
-    for (final key in keys) {
-      if (!preview.containsKey(key) || used.contains(key)) continue;
-      used.add(key);
-      rows.add(_previewRow(key, _label(key), preview[key]));
-    }
-    if (rows.isEmpty) {
-      rows.addAll(
-        preview.entries
-            .take(6)
-            .map((e) => _previewRow(e.key, _label(e.key), e.value)),
-      );
-    }
-    return rows;
-  }
+  // Thứ tự/nhãn field theo actionType đã dời sang
+  // `AiPendingAction.displayFields` trong `models/ai_chatbot.dart` — dùng
+  // chung cho cả nguồn `uiHints.fields` (Sprint 2) lẫn `preview` cũ.
 
   Widget _previewRow(String key, String label, dynamic value) => Padding(
     padding: const EdgeInsets.only(bottom: 4),
@@ -1024,20 +1671,6 @@ class _PendingActionCard extends StatelessWidget {
     ),
   );
 
-  String _label(String key) => switch (key) {
-    'amount' => 'Số tiền',
-    'category' || 'categoryName' => 'Danh mục',
-    'description' || 'note' => 'Ghi chú',
-    'title' => 'Tiêu đề',
-    'task' || 'taskTitle' => 'Nhiệm vụ',
-    'startTime' => 'Bắt đầu',
-    'endTime' => 'Kết thúc',
-    'location' => 'Địa điểm',
-    'assignee' || 'assignedTo' || 'assignedToName' => 'Người làm',
-    'dueAt' || 'dueDate' => 'Hạn',
-    _ => key,
-  };
-
   IconData get _actionIcon => switch (action.actionType.toUpperCase()) {
     'CREATE_TASK' || 'TASK_CREATE' => Icons.task_alt_rounded,
     'CREATE_LEDGER_ENTRY' ||
@@ -1045,6 +1678,7 @@ class _PendingActionCard extends StatelessWidget {
     'FINANCE_LEDGER_CREATE' => Icons.account_balance_wallet_outlined,
     'CREATE_CALENDAR_EVENT' ||
     'CALENDAR_EVENT_CREATE' => Icons.event_available_outlined,
+    'CREATE_BUDGET_PLAN' => Icons.pie_chart_outline_rounded,
     _ => Icons.fact_check_outlined,
   };
 
@@ -1054,6 +1688,7 @@ class _PendingActionCard extends StatelessWidget {
     'CREATE_TRANSACTION' ||
     'FINANCE_LEDGER_CREATE' => AppColors.success,
     'CREATE_CALENDAR_EVENT' || 'CALENDAR_EVENT_CREATE' => AppColors.calTravel,
+    'CREATE_BUDGET_PLAN' => AppColors.accent500,
     _ => AppColors.primary600,
   };
 
@@ -1062,7 +1697,10 @@ class _PendingActionCard extends StatelessWidget {
     final tasks = context.read<TaskProvider>();
     final wallet = context.read<WalletProvider>();
     final calendar = context.read<CalendarProvider>();
-    final ok = await ai.confirmAction(messageId);
+    final finance = context.read<FinanceProvider>();
+    final ok = stepIndex != null
+        ? await ai.confirmStep(messageId, stepIndex!)
+        : await ai.confirmAction(messageId);
     if (!ok) return;
 
     // BE tạo dữ liệu thật rồi, giờ phải kéo lại màn tương ứng. Nếu BE thêm một
@@ -1084,6 +1722,13 @@ class _PendingActionCard extends StatelessWidget {
     final refreshCalendar =
         !action.isKnownActionType ||
         const {'CREATE_CALENDAR_EVENT', 'CALENDAR_EVENT_CREATE'}.contains(type);
+    // BE xác nhận CREATE_BUDGET_PLAN là actionType chính thức 2026-08-09, yêu
+    // cầu FE refresh Wallet/Budget/finance overview sau khi xác nhận —
+    // `FinanceProvider.fetchAll()` kéo lại đúng nhóm này (models/jars/
+    // categories/budgetPlans/goals/monthlyFinance) trong 1 lần gọi.
+    final refreshFinance =
+        !action.isKnownActionType ||
+        const {'CREATE_BUDGET_PLAN'}.contains(type);
 
     if (!action.isKnownActionType) {
       debugPrint(
@@ -1109,6 +1754,7 @@ class _PendingActionCard extends StatelessWidget {
         () => calendar.fetchEvents(calendarMonthToReload(action.preview)),
       );
     }
+    if (refreshFinance) await guarded('finance', finance.fetchAll);
   }
 }
 
@@ -1206,7 +1852,7 @@ class _QuickPrompts extends StatelessWidget {
     // Cùng lý do với bảng gợi ý ở màn rỗng: Thành viên không có quyền ghi quỹ
     // chung nên không được mời làm việc đó.
     final prompts = canManageFinance
-        ? const [
+        ? [
             (
               label: 'Chi tiêu tháng này',
               prompt: 'Tháng này nhà mình tiêu hết bao nhiêu?',
@@ -1219,10 +1865,7 @@ class _QuickPrompts extends StatelessWidget {
               label: 'Hũ vượt mục tiêu',
               prompt: 'Hũ nào đang chi vượt mục tiêu?',
             ),
-            (
-              label: 'Tạo giao dịch',
-              prompt: 'Ghi nhận khoản chi 200000 cho ăn uống hôm nay',
-            ),
+            (label: 'Tạo thu/chi', prompt: _randomLedgerPrompt()),
             (
               label: 'Tình hình nhiệm vụ',
               prompt: 'Tóm tắt nhiệm vụ của gia đình',

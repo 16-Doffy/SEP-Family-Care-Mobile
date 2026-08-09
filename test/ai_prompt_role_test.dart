@@ -33,8 +33,12 @@ void main() {
     });
 
     test('vẫn tạo được cả ba loại đề xuất backend hỗ trợ', () {
+      // Ví dụ "Nhờ AI tạo" ghi sổ được random giữa chi/thu mỗi lần dựng
+      // (`_randomLedgerPrompt`) để người dùng thấy cả hai khả năng — kiểm
+      // tra bằng "ghi khoản" chung (khớp cả "ghi khoản chi" lẫn "ghi khoản
+      // thu") thay vì cố định một trong hai, tránh test tự nhiên bị flaky.
       final all = promptsOf(managerGroups).join(' ').toLowerCase();
-      expect(all, contains('ghi khoản chi'));
+      expect(all, contains('ghi khoản'));
       expect(all, contains('tạo nhiệm vụ'));
       expect(all, contains('tạo lịch'));
     });

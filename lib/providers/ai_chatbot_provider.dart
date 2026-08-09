@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/ai_chatbot.dart';
@@ -27,6 +29,20 @@ class AiChatbotProvider extends ChangeNotifier {
   int? _messagesTotalPages;
   bool _loadingMoreMessages = false;
 
+  AiDailyBrief? _dailyBrief;
+  bool _dailyBriefDismissed = false;
+
+  /// Id hội thoại vừa `DELETE` xong, lọc khỏi ĐÚNG một lần `fetchConversations`
+  /// kế tiếp.
+  ///
+  /// Báo lỗi runtime 2026-08-08: xóa hội thoại xong, back ra rồi quay lại vẫn
+  /// còn thấy nó. Nghi vấn hợp lý nhất không cần giả lập lại được: DELETE trả
+  /// 200 nhưng GET danh sách ngay sau đó đọc dữ liệu chưa kịp đồng bộ (đọc
+  /// từ read-replica/cache trễ hơn write) — id vừa xóa vẫn có trong response.
+  /// Lọc cứng ở FE cho lần refetch ngay sau xóa để không phụ thuộc BE đồng bộ
+  /// kịp trong khoảng thời gian đó.
+  String? _justDeletedConversationId;
+
   List<AiConversation> get conversations => List.unmodifiable(_conversations);
   List<AiMessage> get messages => List.unmodifiable(_messages);
   String? get currentConversationId => _currentConversationId;
@@ -37,6 +53,10 @@ class AiChatbotProvider extends ChangeNotifier {
   String? get error => _error;
   bool get loadingMoreConversations => _loadingMoreConversations;
   bool get loadingMoreMessages => _loadingMoreMessages;
+
+  /// `null` khi BE chưa bật Sprint 2 cho gia đình này, hoặc gọi lỗi — tính
+  /// năng phụ, không được chặn khung chat chính vì thiếu nó.
+  AiDailyBrief? get dailyBrief => _dailyBriefDismissed ? null : _dailyBrief;
 
   /// Còn trang sau hay không.
   ///
@@ -93,6 +113,9 @@ class AiChatbotProvider extends ChangeNotifier {
     _messagesPage = 1;
     _messagesTotalPages = null;
     _loadingMoreMessages = false;
+    _dailyBrief = null;
+    _dailyBriefDismissed = false;
+    _justDeletedConversationId = null;
     notifyListeners();
   }
 
@@ -101,7 +124,18 @@ class AiChatbotProvider extends ChangeNotifier {
     // Gói không có quyền thì đừng gọi tiếp — mọi endpoint ai-chatbot đều 403,
     // chỉ tổ hiện banner đỏ thay vì lời mời nâng gói.
     if (!canUseAssistant) return;
-    await fetchConversations();
+    // Quan sát thật 2026-08-09: trước đây `fetchDailyBrief()` chạy
+    // `unawaited` (không chặn), nên có thể tự hoàn thành SAU khi
+    // `bootstrap()` đã return và màn hình đã cuộn xuống cuối. Daily Brief
+    // luôn là item đầu (`leadingBrief`) của `ListView` — hoàn thành trễ
+    // nghĩa là chèn thêm một item cao ở TRÊN vị trí đang cuộn tới, đẩy lệch
+    // toàn bộ nội dung xuống mà không có gì kéo lại scroll offset, màn hình
+    // trắng trơn cho tới khi người dùng tự thao tác (gửi tin mới) kích hoạt
+    // cuộn lại. `fetchDailyBrief()` tự bắt lỗi bên trong (không throw, không
+    // treo màn) nên đợi cùng `fetchConversations()` là an toàn — cả hai vẫn
+    // chạy song song, chỉ khác là `bootstrap()` chờ đủ cả hai xong rồi mới
+    // trả về cho màn hình tính vị trí cuộn.
+    await Future.wait([fetchConversations(), fetchDailyBrief()]);
     // Lớp phòng thủ thứ hai sau resetForNewSession: vào lại màn mà hội thoại
     // đang mở không còn thuộc danh sách server trả về thì tin nhắn đang giữ
     // không phải của người dùng này — xóa ngay.
@@ -117,6 +151,50 @@ class AiChatbotProvider extends ChangeNotifier {
     if (_conversations.isNotEmpty && _currentConversationId == null) {
       await selectConversation(_conversations.first.id);
     }
+  }
+
+  /// "Tổng quan hôm nay" — Sprint 2, BE nói rõ FE không bắt buộc làm ngay.
+  ///
+  /// Tính năng phụ, cố tình KHÔNG set [_error]: gia đình chưa được BE bật
+  /// Sprint 2 sẽ nhận 404/500 ở đây, không được để lỗi đó hiện thành banner đỏ
+  /// che mất khung chat chính vẫn đang hoạt động bình thường.
+  Future<void> fetchDailyBrief() async {
+    final fid = ApiClient.instance.familyId;
+    if (fid == null) return;
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$fid/ai-chatbot/daily-brief',
+      );
+      _dailyBrief = data is Map
+          ? AiDailyBrief.fromJson(Map<String, dynamic>.from(data))
+          : null;
+      _dailyBriefDismissed = false;
+    } catch (e) {
+      debugPrint('AiChatbotProvider: fetchDailyBrief bỏ qua lỗi: $e');
+      _dailyBrief = null;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  void dismissDailyBrief() {
+    if (_dailyBriefDismissed) return;
+    _dailyBriefDismissed = true;
+    notifyListeners();
+  }
+
+  /// Hiện lại Daily Brief sau khi đã bấm đóng (nút X), không cần thoát hẳn
+  /// màn Trợ lý AI rồi mở lại như trước — dữ liệu vẫn còn trong bộ nhớ
+  /// (`_dailyBrief`) nên chỉ cần bỏ cờ ẩn; chỉ gọi lại API khi chưa từng tải
+  /// được (ví dụ family mới bật tính năng sau khi màn đã mở sẵn).
+  Future<void> showDailyBrief() async {
+    if (_dailyBrief != null) {
+      if (!_dailyBriefDismissed) return;
+      _dailyBriefDismissed = false;
+      notifyListeners();
+      return;
+    }
+    await fetchDailyBrief();
   }
 
   Future<void> fetchFeatureAccess() async {
@@ -162,7 +240,16 @@ class AiChatbotProvider extends ChangeNotifier {
         '/families/$fid/ai-chatbot/conversations'
         '?page=$page&limit=$_conversationsLimit',
       );
-      final parsed = _parseList(data).map(AiConversation.fromJson).toList();
+      var parsed = _parseList(data).map(AiConversation.fromJson).toList();
+      final justDeleted = _justDeletedConversationId;
+      if (justDeleted != null) {
+        // Chỉ lọc đúng một lần — nếu BE thật sự chưa đồng bộ kịp và người
+        // dùng bấm tải lại lần nữa sau đó, phải tin response mới nhất, không
+        // lọc mãi mãi (nếu không sẽ không bao giờ thấy lại hội thoại trùng id
+        // này, dù đó là điều gần như không xảy ra vì id không tái sử dụng).
+        parsed = parsed.where((c) => c.id != justDeleted).toList();
+        _justDeletedConversationId = null;
+      }
       if (refresh) {
         _conversations
           ..clear()
@@ -359,6 +446,55 @@ class AiChatbotProvider extends ChangeNotifier {
     return _handleAction(messageId, confirm: false);
   }
 
+  bool isStepBusy(String messageId, int actionIndex) =>
+      _actionBusy.contains('$messageId#$actionIndex');
+
+  /// Xác nhận/từ chối MỘT bước trong kế hoạch nhiều bước (`ACTION_PLAN_CARD`,
+  /// BE Sprint 3 2026-08-09). Cả hai endpoint đã verify đúng qua test runtime
+  /// 2026-08-09 (xác nhận/từ chối độc lập từng bước, không lỗi 404) — đường
+  /// dẫn `/actions/:actionIndex/reject` (suy đoán đối xứng với `/confirm` lúc
+  /// BE gửi tin bị cắt dòng) đã được xác nhận đúng.
+  Future<bool> confirmStep(String messageId, int actionIndex) async =>
+      _handleStepAction(messageId, actionIndex, confirm: true);
+
+  Future<bool> rejectStep(String messageId, int actionIndex) async =>
+      _handleStepAction(messageId, actionIndex, confirm: false);
+
+  Future<bool> _handleStepAction(
+    String messageId,
+    int actionIndex, {
+    required bool confirm,
+  }) async {
+    final fid = ApiClient.instance.familyId;
+    final cid = _currentConversationId;
+    final busyKey = '$messageId#$actionIndex';
+    if (fid == null || cid == null || _actionBusy.contains(busyKey)) {
+      return false;
+    }
+    _actionBusy.add(busyKey);
+    _error = null;
+    notifyListeners();
+    try {
+      final action = confirm ? 'confirm' : 'reject';
+      await ApiClient.instance.post(
+        '/families/$fid/ai-chatbot/conversations/$cid/messages/$messageId'
+        '/actions/$actionIndex/$action',
+        {},
+      );
+      await fetchMessages();
+      return true;
+    } catch (e) {
+      _error = _friendlyError(e, isAction: true);
+      if (e is ApiException && (e.statusCode == 409 || e.statusCode == 410)) {
+        await fetchMessages();
+      }
+      return false;
+    } finally {
+      _actionBusy.remove(busyKey);
+      notifyListeners();
+    }
+  }
+
   Future<void> deleteCurrentConversation() async {
     final fid = ApiClient.instance.familyId;
     final cid = _currentConversationId;
@@ -366,8 +502,14 @@ class AiChatbotProvider extends ChangeNotifier {
     await ApiClient.instance.delete(
       '/families/$fid/ai-chatbot/conversations/$cid',
     );
+    // Xóa ngay khỏi danh sách đang có trong RAM — không đợi fetchConversations
+    // mới thấy hội thoại biến mất. Đồng thời đánh dấu để lọc khỏi lần refetch
+    // kế tiếp phòng BE chưa kịp đồng bộ (xem [_justDeletedConversationId]).
+    _conversations.removeWhere((c) => c.id == cid);
+    _justDeletedConversationId = cid;
     _currentConversationId = null;
     _messages.clear();
+    notifyListeners();
     await fetchConversations();
     if (_conversations.isNotEmpty) {
       await selectConversation(_conversations.first.id);
@@ -460,7 +602,7 @@ class AiChatbotProvider extends ChangeNotifier {
           senderType: 'AI',
           content: 'Tôi đã chuẩn bị một đề xuất, bạn xem và xác nhận giúp nhé.',
           createdAt: DateTime.now(),
-          pendingAction: pendingAction,
+          pendingActions: [pendingAction],
         ),
       );
     }
@@ -490,7 +632,10 @@ class AiChatbotProvider extends ChangeNotifier {
     if (error is ApiException) {
       return switch (error.statusCode) {
         403 when isAction =>
-          'Bạn không có quyền tạo dữ liệu này. Hãy nhờ Trưởng nhóm thực hiện.',
+          // Contract 2026-08-07: propose_create_ledger_entry mở cho CẢ
+          // FAMILY_MANAGER và DEPUTY_MEMBER, không riêng Trưởng nhóm.
+          'Bạn không có quyền tạo dữ liệu này. Hãy nhờ Trưởng nhóm hoặc Phó '
+              'nhóm thực hiện.',
         403 => 'Bạn chưa có quyền dùng Trợ lý AI trong gói hiện tại.',
         409 => 'Đề xuất này đã được xử lý trước đó.',
         410 => 'Đề xuất đã hết hạn. Hãy nhắn lại để AI tạo đề xuất mới.',

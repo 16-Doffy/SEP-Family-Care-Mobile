@@ -155,9 +155,9 @@ void main() {
         AiPendingAction.fromJson({'actionType': type}).actionLabel;
 
     test('giao dịch tài chính', () {
-      expect(label('CREATE_LEDGER_ENTRY'), 'Tạo giao dịch');
-      expect(label('CREATE_TRANSACTION'), 'Tạo giao dịch');
-      expect(label('FINANCE_LEDGER_CREATE'), 'Tạo giao dịch');
+      expect(label('CREATE_LEDGER_ENTRY'), 'Tạo thu/chi');
+      expect(label('CREATE_TRANSACTION'), 'Tạo thu/chi');
+      expect(label('FINANCE_LEDGER_CREATE'), 'Tạo thu/chi');
     });
 
     test('nhiệm vụ và lịch', () {
