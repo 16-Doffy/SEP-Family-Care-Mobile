@@ -42,6 +42,28 @@ Future<Position?> resolveSosPosition() async {
   }
 }
 
+/// Vị trí để đính kèm SOS **phát từ đồng hồ**.
+///
+/// Ưu tiên GPS của chính đồng hồ (đúng vị trí người đeo). Nhưng đồng hồ có thể
+/// không có GPS, và **máy ảo Wear OS mặc định không có toạ độ nào** — lúc đó
+/// lùi về vị trí điện thoại cùng tài khoản đã chia sẻ qua
+/// `POST /families/{id}/locations` (`GpsProvider.shares`).
+///
+/// Vị trí điện thoại có thể cũ hơn thực tế, nhưng SOS không có toạ độ thì người
+/// nhận **không thấy bản đồ nào cả** — đó là lỗi đã gặp khi phát cảnh báo từ
+/// đồng hồ. Có vị trí gần đúng vẫn hơn không có gì.
+Future<({double lat, double lng, double? accuracy})?>
+resolveWearableSosPosition({double? fallbackLat, double? fallbackLng}) async {
+  final pos = await resolveSosPosition();
+  if (pos != null) {
+    return (lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy);
+  }
+  if (fallbackLat != null && fallbackLng != null) {
+    return (lat: fallbackLat, lng: fallbackLng, accuracy: null);
+  }
+  return null;
+}
+
 /// Chuỗi địa chỉ dạng `GPS: lat, lng` để gửi kèm alert; rỗng nếu không có toạ độ.
 String sosAddressOf(Position? pos) => pos == null
     ? ''

@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
+import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/fall_detector_service.dart';
+import '../../services/sos_location.dart';
 import '../wear_widgets.dart';
 
 /// SOS tự động từ cảm biến trên đồng hồ — theo spec "Wear OS Flow" (Discord
@@ -192,6 +195,12 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
         _alertCreated = result.alertCreated;
         _alertId = result.alertId;
       });
+      // `CreateSensorEventDto` KHÔNG có trường vị trí và BE là bên tạo alert,
+      // nên cảnh báo sinh ra từ cảm biến không có toạ độ nào. Người nhận vì thế
+      // không thấy bản đồ, khác hẳn cảnh báo phát từ điện thoại. Đẩy một điểm
+      // vị trí ngay sau khi alert tồn tại để bù chỗ đó.
+      final alertId = result.alertId;
+      if (alertId != null) await _pushPosition(alertId, device.id);
     } catch (e) {
       if (mounted) {
         setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
@@ -199,6 +208,31 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  /// Gửi vị trí kèm cho cảnh báo vừa tạo. Best-effort: `resolveWearableSosPosition`
+  /// không bao giờ ném, `pushLocation` tự nuốt lỗi — hỏng bước này thì cảnh báo
+  /// vẫn còn nguyên, chỉ là thiếu bản đồ.
+  Future<void> _pushPosition(String alertId, String deviceId) async {
+    final myId = context.read<AuthProvider>().user?.id ?? '';
+    final shared = context
+        .read<GpsProvider>()
+        .shares
+        .where((s) => s.userId == myId && s.latitude != null)
+        .firstOrNull;
+    final pos = await resolveWearableSosPosition(
+      fallbackLat: shared?.latitude,
+      fallbackLng: shared?.longitude,
+    );
+    if (pos == null || !mounted) return;
+    await context.read<SosProvider>().pushLocation(
+      alertId,
+      pos.lat,
+      pos.lng,
+      accuracy: pos.accuracy,
+      sourceType: 'WEARABLE_GPS',
+      deviceId: deviceId,
+    );
   }
 
   /// "Hủy báo động" = người đeo tự xác nhận an toàn. Dùng `confirm-safety` chứ
@@ -325,12 +359,15 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
 
   // ── Màn cảnh báo: đếm ngược 20s ──────────────────────────────────────────
   Widget _alertView(_Trigger t) {
+    // KHÔNG cho cuộn: đây là màn đếm ngược, cả "Con ổn" lẫn "Gửi SOS" phải nằm
+    // sẵn trong tầm mắt. Đổi lại nội dung phải tự vừa — từng khoảng cách dưới
+    // đây đã bị cắt để có dư chỗ (trước đây tràn 4px trên đồng hồ tròn).
     return WearPage(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(t.icon, size: 24, color: WearPalette.sos),
-          const SizedBox(height: 5),
+          Icon(t.icon, size: 20, color: WearPalette.sos),
+          const SizedBox(height: 4),
           Text(
             t.title,
             maxLines: 1,
@@ -354,7 +391,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 3),
+          const SizedBox(height: 2),
           Text(
             t.question,
             maxLines: 1,
@@ -370,7 +407,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 8, color: WearPalette.faint),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           // Nút huỷ để trên và nổi hơn: đây là nút chống báo nhầm.
           WearPillButton(
             label: t.dismissLabel,
@@ -378,7 +415,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
             color: WearPalette.green,
             onTap: _dismiss,
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           WearPillButton(
             label: 'Gửi SOS',
             icon: Icons.sos_rounded,

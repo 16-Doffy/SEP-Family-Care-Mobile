@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
+import '../../providers/wearable_provider.dart';
+import '../../services/sos_location.dart';
 import '../wear_widgets.dart';
 
 class WearSosScreen extends StatefulWidget {
@@ -113,6 +115,11 @@ class _WearSosScreenState extends State<WearSosScreen>
         _sending = false;
         _error = null;
       });
+      // Toạ độ gửi kèm ở trên là vị trí điện thoại chia sẻ lần cuối — lấy ngay
+      // từ bộ nhớ để KHÔNG làm chậm việc phát SOS. Sau khi cảnh báo đã tạo mới
+      // đi hỏi GPS của chính đồng hồ (tốn tới 10 giây) và đẩy thành điểm vị trí
+      // chính xác hơn; không có GPS thì lại lùi về đúng vị trí điện thoại đó.
+      await _pushPosition(alertId, loc?.latitude, loc?.longitude);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -123,6 +130,28 @@ class _WearSosScreenState extends State<WearSosScreen>
       });
       _pulse.repeat(reverse: true);
     }
+  }
+
+  /// Best-effort, chạy sau khi SOS đã được tạo: cả hai hàm bên dưới đều không
+  /// ném lỗi ra ngoài nên hỏng bước này cũng không ảnh hưởng cảnh báo.
+  Future<void> _pushPosition(
+    String alertId,
+    double? fallbackLat,
+    double? fallbackLng,
+  ) async {
+    final pos = await resolveWearableSosPosition(
+      fallbackLat: fallbackLat,
+      fallbackLng: fallbackLng,
+    );
+    if (pos == null || !mounted) return;
+    await context.read<SosProvider>().pushLocation(
+      alertId,
+      pos.lat,
+      pos.lng,
+      accuracy: pos.accuracy,
+      sourceType: 'WEARABLE_GPS',
+      deviceId: context.read<WearableProvider>().currentDevice?.id,
+    );
   }
 
   Future<void> _confirmSafe() async {
@@ -190,7 +219,7 @@ class _WearSosScreenState extends State<WearSosScreen>
                 height: buttonSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: _holding ? const Color(0xFFBE123C) : WearPalette.sos,
+                  color: _holding ? WearPalette.sosPressed : WearPalette.sos,
                   boxShadow: [
                     BoxShadow(
                       color: WearPalette.sos.withValues(alpha: 0.45),

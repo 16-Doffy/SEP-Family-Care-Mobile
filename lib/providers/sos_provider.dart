@@ -529,11 +529,16 @@ class SosProvider extends ChangeNotifier {
   // _startLocationStreaming). Không dùng _ensureNoActionInProgress/_sending
   // vì đây là tác vụ nền lặp lại, không nên chặn các thao tác SOS khác
   // (resolve/cancel/confirm-safety) của cùng alert.
+  /// [sourceType] theo `PushSosLocationDto`: `MOBILE_GPS | WEARABLE_GPS |
+  /// SIMULATED_GPS`. Đồng hồ phải gửi `WEARABLE_GPS` kèm [deviceId] để người
+  /// nhận phân biệt được điểm nào do thiết bị đeo báo về.
   Future<void> pushLocation(
     String alertId,
     double latitude,
     double longitude, {
     double? accuracy,
+    String sourceType = 'MOBILE_GPS',
+    String? deviceId,
   }) async {
     final fid = _fid;
     if (fid == null) return;
@@ -542,8 +547,9 @@ class SosProvider extends ChangeNotifier {
           .post('/families/$fid/sos/alerts/$alertId/locations', {
             'latitude': latitude,
             'longitude': longitude,
-            'sourceType': 'MOBILE_GPS',
+            'sourceType': sourceType,
             'accuracy': ?accuracy,
+            'deviceId': ?deviceId,
           });
     } catch (e) {
       debugPrint('SosProvider: pushLocation failed: $e');

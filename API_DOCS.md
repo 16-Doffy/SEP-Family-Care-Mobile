@@ -517,6 +517,20 @@ Nguồn: Discord *Những chiến binh làm đồ án* → `#chuc-nang-moi` → 
 
 **Error code wearable đã chốt:** response lỗi có cả `code` và `errorCode` trong standard error envelope: `WEARABLE_ALREADY_PAIRED`, `DEVICE_IDENTIFIER_TAKEN`, `WEARABLE_NOT_PAIRED`, `INVALID_SENSOR_EVENT_TYPE`, `INVALID_SENSOR_EVENT_PAYLOAD`.
 
+#### [BUG FE 2026-08-07] SOS từ cảm biến không có vị trí → người nhận không thấy bản đồ
+
+`CreateSensorEventDto` **không có trường vị trí nào**, và BE mới là bên tạo cảnh báo, nên SOS sinh từ sự kiện cảm biến có `initialLatitude`/`initialLongitude` = null và `locationPoints` rỗng. Bên người nhận, `SOSScreen._location()` trả null nên **toàn bộ khối vị trí (gồm bản đồ) không được dựng** — khác hẳn cảnh báo phát từ điện thoại. Đây là hành vi đúng của BE, thiếu sót nằm ở FE.
+
+Đường đúng đã có sẵn trong Swagger: `PushSosLocationDto.sourceType` có giá trị **`WEARABLE_GPS`** và trường `deviceId`; endpoint `POST /sos/alerts/{alertId}/locations` giới hạn "chỉ người kích hoạt" — đồng hồ đăng nhập cùng tài khoản người đeo nên hợp lệ. **Không cần BE thay đổi gì.**
+
+FE sửa: sau khi có `alertId` (kể cả trường hợp trùng SOS đang chạy, lúc đó `alertId` là alert active), đồng hồ đẩy một điểm vị trí với `sourceType: 'WEARABLE_GPS'` + `deviceId`.
+
+- Nguồn vị trí: `resolveWearableSosPosition()` — ưu tiên GPS của chính đồng hồ, không có thì lùi về vị trí điện thoại cùng tài khoản đã chia sẻ (`GpsProvider.shares`). **Máy ảo Wear OS mặc định không có toạ độ GPS**, nên nếu không có bước lùi này thì bản đồ vẫn trống khi demo.
+- SOS thủ công trên đồng hồ trước đây chỉ dùng `GpsProvider.shares` cho `initialLatitude/Longitude`; nay giữ nguyên phần đó (lấy tức thì, không làm chậm việc phát SOS) và **đẩy thêm** điểm vị trí sau khi cảnh báo đã tạo.
+- Cả hai bước đều best-effort: `resolveWearableSosPosition` không ném lỗi, `pushLocation` tự nuốt lỗi — hỏng thì cảnh báo vẫn nguyên vẹn, chỉ thiếu bản đồ.
+
+⚠️ Chưa làm: đẩy vị trí liên tục từ đồng hồ trong lúc cảnh báo còn active (điện thoại làm mỗi 20 giây qua `_startLocationStreaming`). Nghĩa là bản đồ từ đồng hồ hiện **một điểm tĩnh**, không chạy theo người đeo.
+
 **FE đã làm (2026-08-07):** `lib/wear/screens/wear_sensor_sos_screen.dart` — có **cả cảm biến thật** (gia tốc kế qua `FallDetectorService`) **lẫn 3 nút giả lập** (máy ảo không có cảm biến thật, và demo cần bấm ra kết quả ngay). Đếm ngược đúng 20s. `[Hủy báo động]` dùng **`confirm-safety`** chứ không dùng `cancel` — Swagger giới hạn `cancel` cho Trưởng/Phó nhóm, người đeo thường chỉ là thành viên.
 
 **Phụ thuộc cần biết:** đồng hồ cần `deviceId` để gửi event → tài khoản **phải đã ghép wearable từ điện thoại trước**. Chưa ghép thì màn hiện "Chưa ghép thiết bị" và khoá các nút.
