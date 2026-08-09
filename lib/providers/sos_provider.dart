@@ -532,7 +532,7 @@ class SosProvider extends ChangeNotifier {
   /// [sourceType] theo `PushSosLocationDto`: `MOBILE_GPS | WEARABLE_GPS |
   /// SIMULATED_GPS`. Đồng hồ phải gửi `WEARABLE_GPS` kèm [deviceId] để người
   /// nhận phân biệt được điểm nào do thiết bị đeo báo về.
-  Future<void> pushLocation(
+  Future<bool> pushLocation(
     String alertId,
     double latitude,
     double longitude, {
@@ -541,7 +541,7 @@ class SosProvider extends ChangeNotifier {
     String? deviceId,
   }) async {
     final fid = _fid;
-    if (fid == null) return;
+    if (fid == null) return false;
     try {
       await ApiClient.instance
           .post('/families/$fid/sos/alerts/$alertId/locations', {
@@ -551,8 +551,10 @@ class SosProvider extends ChangeNotifier {
             'accuracy': ?accuracy,
             'deviceId': ?deviceId,
           });
+      return true;
     } catch (e) {
       debugPrint('SosProvider: pushLocation failed: $e');
+      return false;
     }
   }
 

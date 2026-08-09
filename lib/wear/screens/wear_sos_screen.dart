@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/sos_location.dart';
+import '../wear_sos_location_stream_guard.dart';
 import '../wear_widgets.dart';
 
 class WearSosScreen extends StatefulWidget {
@@ -19,6 +20,8 @@ class WearSosScreen extends StatefulWidget {
 
 class _WearSosScreenState extends State<WearSosScreen>
     with SingleTickerProviderStateMixin {
+  static const _locationStreamPeriod = Duration(seconds: 30);
+
   bool _holding = false;
   bool _sent = false;
   bool _sending = false;
@@ -27,6 +30,8 @@ class _WearSosScreenState extends State<WearSosScreen>
   String? _locationNotice;
   int _countdown = 2;
   Timer? _holdTimer;
+  Timer? _locationStreamTimer;
+  final _locationStreamGuard = WearSosLocationStreamGuard();
 
   late final AnimationController _pulse;
   late final Animation<double> _scale;
@@ -47,6 +52,7 @@ class _WearSosScreenState extends State<WearSosScreen>
   @override
   void dispose() {
     _holdTimer?.cancel();
+    _stopLocationStreaming();
     _pulse.dispose();
     super.dispose();
   }
@@ -105,7 +111,10 @@ class _WearSosScreenState extends State<WearSosScreen>
       });
       // Không hỏi GPS trước khi tạo SOS vì có thể tốn tới 10 giây. Cảnh báo phải
       // được tạo ngay, sau đó đồng hồ tự đẩy vị trí của chính nó nếu lấy được.
-      await _pushPosition(alertId);
+      final deviceId = await _wearableDeviceId();
+      if (!mounted) return;
+      await _pushPosition(alertId, deviceId);
+      if (mounted) _startLocationStreaming(alertId, deviceId);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -120,24 +129,93 @@ class _WearSosScreenState extends State<WearSosScreen>
 
   /// Best-effort, chạy sau khi SOS đã được tạo: cả hai hàm bên dưới đều không
   /// ném lỗi ra ngoài nên hỏng bước này cũng không ảnh hưởng cảnh báo.
-  Future<void> _pushPosition(String alertId) async {
-    setState(() => _locationNotice = 'Đang lấy vị trí…');
+  Future<bool> _pushPosition(
+    String alertId,
+    String? deviceId, {
+    bool showLocating = true,
+  }) async {
+    if (showLocating) setState(() => _locationNotice = 'Đang lấy vị trí…');
     final pos = await resolveWearableSosPosition();
-    if (!mounted) return;
+    if (!mounted) return false;
     if (pos == null) {
       setState(() => _locationNotice = 'Không lấy được GPS đồng hồ');
-      return;
+      return false;
     }
-    await context.read<SosProvider>().pushLocation(
+    final pushed = await context.read<SosProvider>().pushLocation(
       alertId,
       pos.lat,
       pos.lng,
       accuracy: pos.accuracy,
       sourceType: 'WEARABLE_GPS',
-      deviceId: context.read<WearableProvider>().currentDevice?.id,
+      deviceId: deviceId,
     );
+    if (!mounted) return false;
+    setState(
+      () => _locationNotice = pushed
+          ? 'Đã có vị trí'
+          : 'Chưa gửi được vị trí đồng hồ',
+    );
+    return pushed;
+  }
+
+  Future<String?> _wearableDeviceId() async {
+    final wearable = context.read<WearableProvider>();
+    var id = wearable.currentDevice?.id;
+    if (id != null && id.isNotEmpty) return id;
+    try {
+      await wearable.fetchCurrentDevice();
+    } catch (_) {
+      return null;
+    }
+    if (!mounted) return null;
+    id = wearable.currentDevice?.id;
+    return id != null && id.isNotEmpty ? id : null;
+  }
+
+  void _startLocationStreaming(String alertId, String? deviceId) {
+    _locationStreamTimer?.cancel();
+    _locationStreamGuard.reset();
+    _locationStreamTimer = Timer.periodic(
+      _locationStreamPeriod,
+      (_) => _streamLocation(alertId, deviceId),
+    );
+  }
+
+  void _stopLocationStreaming({String? notice}) {
+    _locationStreamTimer?.cancel();
+    _locationStreamTimer = null;
+    _locationStreamGuard.reset();
+    if (notice != null && mounted) {
+      setState(() => _locationNotice = notice);
+    }
+  }
+
+  Future<void> _streamLocation(String alertId, String? deviceId) async {
     if (!mounted) return;
-    setState(() => _locationNotice = 'Đã có vị trí');
+    try {
+      final detail = await context.read<SosProvider>().fetchAlertDetail(
+        alertId,
+      );
+      if (!mounted) return;
+      final status = (detail['status']?.toString() ?? 'ACTIVE').toUpperCase();
+      if (status != 'ACTIVE') {
+        _stopLocationStreaming();
+        return;
+      }
+    } catch (_) {
+      if (_locationStreamGuard.recordFailure()) {
+        _stopLocationStreaming(notice: 'Đã dừng gửi vị trí do lỗi liên tiếp');
+      }
+      return;
+    }
+
+    final pushed = await _pushPosition(alertId, deviceId, showLocating: false);
+    if (!mounted) return;
+    if (pushed) {
+      _locationStreamGuard.recordSuccess();
+    } else if (_locationStreamGuard.recordFailure()) {
+      _stopLocationStreaming(notice: 'Đã dừng gửi vị trí do lỗi liên tiếp');
+    }
   }
 
   Future<void> _confirmSafe() async {
@@ -157,6 +235,7 @@ class _WearSosScreenState extends State<WearSosScreen>
       return;
     }
     if (!mounted) return;
+    _stopLocationStreaming();
     setState(() {
       _sent = false;
       _sentAlertId = null;
