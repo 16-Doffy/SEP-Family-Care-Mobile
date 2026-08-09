@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/auth_provider.dart';
-import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/sos_location.dart';
@@ -26,6 +24,7 @@ class _WearSosScreenState extends State<WearSosScreen>
   bool _sending = false;
   String? _sentAlertId;
   String? _error;
+  String? _locationNotice;
   int _countdown = 2;
   Timer? _holdTimer;
 
@@ -43,9 +42,6 @@ class _WearSosScreenState extends State<WearSosScreen>
       begin: 1,
       end: 1.08,
     ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<GpsProvider>().fetchFamilyLocations(),
-    );
   }
 
   @override
@@ -90,22 +86,14 @@ class _WearSosScreenState extends State<WearSosScreen>
     setState(() {
       _sending = true;
       _holding = false;
+      _locationNotice = null;
     });
     HapticFeedback.heavyImpact();
 
     try {
-      final myId = context.read<AuthProvider>().user?.id ?? '';
-      final gps = context.read<GpsProvider>();
-      final loc = gps.shares
-          .where((s) => s.userId == myId && s.latitude != null)
-          .firstOrNull;
       final alertId = await context.read<SosProvider>().sendSos(
         message: 'SOS từ đồng hồ FamilyCare',
-        address: loc != null
-            ? 'GPS: ${loc.latitude?.toStringAsFixed(5)}, ${loc.longitude?.toStringAsFixed(5)}'
-            : 'Vị trí đang cập nhật',
-        latitude: loc?.latitude,
-        longitude: loc?.longitude,
+        address: 'Vị trí đang cập nhật',
         sourceType: 'WEARABLE',
       );
       if (!mounted) return;
@@ -115,11 +103,9 @@ class _WearSosScreenState extends State<WearSosScreen>
         _sending = false;
         _error = null;
       });
-      // Toạ độ gửi kèm ở trên là vị trí điện thoại chia sẻ lần cuối — lấy ngay
-      // từ bộ nhớ để KHÔNG làm chậm việc phát SOS. Sau khi cảnh báo đã tạo mới
-      // đi hỏi GPS của chính đồng hồ (tốn tới 10 giây) và đẩy thành điểm vị trí
-      // chính xác hơn; không có GPS thì lại lùi về đúng vị trí điện thoại đó.
-      await _pushPosition(alertId, loc?.latitude, loc?.longitude);
+      // Không hỏi GPS trước khi tạo SOS vì có thể tốn tới 10 giây. Cảnh báo phải
+      // được tạo ngay, sau đó đồng hồ tự đẩy vị trí của chính nó nếu lấy được.
+      await _pushPosition(alertId);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -134,16 +120,13 @@ class _WearSosScreenState extends State<WearSosScreen>
 
   /// Best-effort, chạy sau khi SOS đã được tạo: cả hai hàm bên dưới đều không
   /// ném lỗi ra ngoài nên hỏng bước này cũng không ảnh hưởng cảnh báo.
-  Future<void> _pushPosition(
-    String alertId,
-    double? fallbackLat,
-    double? fallbackLng,
-  ) async {
-    final pos = await resolveWearableSosPosition(
-      fallbackLat: fallbackLat,
-      fallbackLng: fallbackLng,
-    );
-    if (pos == null || !mounted) return;
+  Future<void> _pushPosition(String alertId) async {
+    final pos = await resolveWearableSosPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      setState(() => _locationNotice = 'Không lấy được vị trí đồng hồ');
+      return;
+    }
     await context.read<SosProvider>().pushLocation(
       alertId,
       pos.lat,
@@ -326,6 +309,16 @@ class _WearSosScreenState extends State<WearSosScreen>
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 10, color: Color(0xFFFCA5A5)),
+            ),
+          ],
+          if (_locationNotice != null) ...[
+            const SizedBox(height: 5),
+            Text(
+              _locationNotice!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 9, color: WearPalette.faint),
             ),
           ],
         ],

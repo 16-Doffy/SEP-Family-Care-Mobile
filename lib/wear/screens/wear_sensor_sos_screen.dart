@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../providers/auth_provider.dart';
-import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/fall_detector_service.dart';
@@ -110,6 +108,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
   String? _alertId;
   bool _alertCreated = false;
   String? _error;
+  String? _locationNotice;
 
   @override
   void initState() {
@@ -145,6 +144,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
       _pending = trigger;
       _countdown = _countdownSeconds;
       _error = null;
+      _locationNotice = null;
     });
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -181,6 +181,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
       _pending = null;
       _sending = true;
       _error = null;
+      _locationNotice = null;
     });
     try {
       final result = await context.read<WearableProvider>().createEvent(
@@ -210,21 +211,15 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     }
   }
 
-  /// Gửi vị trí kèm cho cảnh báo vừa tạo. Best-effort: `resolveWearableSosPosition`
-  /// không bao giờ ném, `pushLocation` tự nuốt lỗi — hỏng bước này thì cảnh báo
-  /// vẫn còn nguyên, chỉ là thiếu bản đồ.
+  /// Gửi vị trí kèm cho cảnh báo vừa tạo. Chỉ dùng GPS của chính đồng hồ; hỏng
+  /// bước này thì cảnh báo vẫn còn nguyên, chỉ là thiếu bản đồ.
   Future<void> _pushPosition(String alertId, String deviceId) async {
-    final myId = context.read<AuthProvider>().user?.id ?? '';
-    final shared = context
-        .read<GpsProvider>()
-        .shares
-        .where((s) => s.userId == myId && s.latitude != null)
-        .firstOrNull;
-    final pos = await resolveWearableSosPosition(
-      fallbackLat: shared?.latitude,
-      fallbackLng: shared?.longitude,
-    );
-    if (pos == null || !mounted) return;
+    final pos = await resolveWearableSosPosition();
+    if (!mounted) return;
+    if (pos == null) {
+      setState(() => _locationNotice = 'Không lấy được vị trí đồng hồ');
+      return;
+    }
     await context.read<SosProvider>().pushLocation(
       alertId,
       pos.lat,
@@ -362,6 +357,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     // KHÔNG cho cuộn: đây là màn đếm ngược, cả "Con ổn" lẫn "Gửi SOS" phải nằm
     // sẵn trong tầm mắt. Đổi lại nội dung phải tự vừa — từng khoảng cách dưới
     // đây đã bị cắt để có dư chỗ (trước đây tràn 4px trên đồng hồ tròn).
+    final buttonHeight = wearIsLarge(context) ? 48.0 : 42.0;
     return WearPage(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -413,6 +409,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
             label: t.dismissLabel,
             icon: Icons.check_rounded,
             color: WearPalette.green,
+            height: buttonHeight,
             onTap: _dismiss,
           ),
           const SizedBox(height: 4),
@@ -420,6 +417,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
             label: 'Gửi SOS',
             icon: Icons.sos_rounded,
             color: WearPalette.sos,
+            height: buttonHeight,
             onTap: () {
               _timer?.cancel();
               _send(t);
@@ -478,6 +476,16 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 8, color: WearPalette.sosSoft),
+            ),
+          ],
+          if (_locationNotice != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _locationNotice!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 8, color: WearPalette.faint),
             ),
           ],
           const SizedBox(height: 10),

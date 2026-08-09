@@ -619,11 +619,12 @@ Nguồn: Discord *Những chiến binh làm đồ án* → `#chuc-nang-moi` → 
 
 Đường đúng đã có sẵn trong Swagger: `PushSosLocationDto.sourceType` có giá trị **`WEARABLE_GPS`** và trường `deviceId`; endpoint `POST /sos/alerts/{alertId}/locations` giới hạn "chỉ người kích hoạt" — đồng hồ đăng nhập cùng tài khoản người đeo nên hợp lệ. **Không cần BE thay đổi gì.**
 
-FE sửa: sau khi có `alertId` (kể cả trường hợp trùng SOS đang chạy, lúc đó `alertId` là alert active), đồng hồ đẩy một điểm vị trí với `sourceType: 'WEARABLE_GPS'` + `deviceId`.
+FE sửa: sau khi có `alertId` (kể cả trường hợp trùng SOS đang chạy, lúc đó `alertId` là alert active), đồng hồ đẩy một điểm vị trí với `sourceType: 'WEARABLE_GPS'` + `deviceId`. Bên người nhận phải đọc đúng mảng **`locationPoints`** của `SosAlertResponseDto`; các alias cũ `locations`/`sosLocations` chỉ giữ làm fallback.
 
-- Nguồn vị trí: `resolveWearableSosPosition()` — ưu tiên GPS của chính đồng hồ, không có thì lùi về vị trí điện thoại cùng tài khoản đã chia sẻ (`GpsProvider.shares`). **Máy ảo Wear OS mặc định không có toạ độ GPS**, nên nếu không có bước lùi này thì bản đồ vẫn trống khi demo.
-- SOS thủ công trên đồng hồ trước đây chỉ dùng `GpsProvider.shares` cho `initialLatitude/Longitude`; nay giữ nguyên phần đó (lấy tức thì, không làm chậm việc phát SOS) và **đẩy thêm** điểm vị trí sau khi cảnh báo đã tạo.
+- Nguồn vị trí: `resolveWearableSosPosition()` — **chỉ dùng GPS của chính đồng hồ**, không lùi về vị trí điện thoại cùng tài khoản. Vị trí điện thoại có thể ở nơi khác người đeo nên không được dùng làm dữ liệu khẩn cấp.
+- SOS thủ công trên đồng hồ tạo cảnh báo ngay, không gửi `initialLatitude/Longitude` từ mobile; sau khi có `alertId` mới hỏi GPS đồng hồ và **đẩy thêm** điểm vị trí. Cách này không làm chậm nút SOS vì `resolveSosPosition()` có thể mất tới 10 giây.
 - Cả hai bước đều best-effort: `resolveWearableSosPosition` không ném lỗi, `pushLocation` tự nuốt lỗi — hỏng thì cảnh báo vẫn nguyên vẹn, chỉ thiếu bản đồ.
+- **Máy ảo Wear OS mặc định không có toạ độ GPS**. Khi demo phải đặt vị trí trong Extended controls → Location; nếu không, đồng hồ sẽ hiện "Không lấy được vị trí đồng hồ" và người nhận chưa có bản đồ.
 
 ⚠️ Chưa làm: đẩy vị trí liên tục từ đồng hồ trong lúc cảnh báo còn active (điện thoại làm mỗi 20 giây qua `_startLocationStreaming`). Nghĩa là bản đồ từ đồng hồ hiện **một điểm tĩnh**, không chạy theo người đeo.
 
