@@ -2,6 +2,36 @@
 
 Last updated: **2026-08-09**
 
+## 🔖 Bàn giao cuối phiên 2026-08-09 — đọc khối này trước tiên
+
+**Trạng thái nhánh:** `NDuy` = `origin/main` = `729de28` (đã push cả hai,
+đã merge xong 2 chiều với nhánh `giap` — không còn phân kỳ, xem chi tiết quy
+trình merge ở mục "Snapshot cuối phiên" phía dưới nếu cần đối chiếu lại).
+
+**Code AI Chatbox:** ổn định, đã trải qua rất nhiều vòng test thật (action
+đơn lẻ đủ 9 actionType chính thức, `ACTION_PLAN_CARD` nhiều bước, phân
+quyền, Daily Brief, markdown, tên danh mục). Không có bug FE nào đang treo.
+
+**Việc cần làm tiếp khi có phiên mới / có tin BE:**
+1. **Ưu tiên cao** — báo BE: 4/5 actionType tài chính mới
+   (`CREATE_FINANCIAL_GOAL`, `CREATE_GOAL_ALLOCATION`,
+   `CREATE_GOAL_CONTRIBUTION_PLAN`, `ALLOCATE_FUND_BY_MODEL`) chưa sinh
+   `pendingAction` thật — xem chi tiết + ví dụ câu test ngay dưới đây.
+2. Giờ tạo khoản thu/chi qua "ngay bây giờ" — BE nói đã fix, **chưa có ai
+   test lại để xác nhận**.
+3. Phân trang `finance/ledger/entries` theo `createdAt` — BE nói đã fix,
+   **chưa có ai test lại để xác nhận**.
+4. Đang chờ user quyết định: có làm màn "Sửa danh mục" cho giao dịch cũ/AI
+   tạo chưa gắn danh mục không (`WalletProvider.updateLedgerEntry()` có sẵn,
+   chưa màn nào gọi).
+
+**Quy trình chuẩn đang áp dụng:** chỉ code + fix, không tự mở emulator —
+user tự test và báo lại bằng ảnh chụp. Mọi thay đổi phải qua
+`flutter analyze --no-fatal-infos` (0 error) + `flutter test` (403/403 pass
+tính đến cuối phiên này) trước khi commit; không tạo commit chỉ sửa tài
+liệu một mình (gộp chung với commit code); luôn check `origin/giap` trước
+khi push/merge `main`.
+
 ## Test sau merge Giáp — 1 fix FE + 4/5 actionType tài chính mới chưa có pendingAction
 
 Sau khi merge code Giáp (SOS/wearable/Google login) vào `main`/`NDuy`, user
