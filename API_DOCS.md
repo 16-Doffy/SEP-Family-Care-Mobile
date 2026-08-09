@@ -3,6 +3,14 @@
 **Swagger UI:** https://api.familycare-digital.com/api/docs
 **Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-28 bằng `familycare-swagger-2026-07-28.json`**. FE wiring audit lại sau khi đồng bộ `origin/main` tại `e5aa216`.
 
+> ### 🔄 Cập nhật API mới (2026-08-09) — **229 paths / 296 operations / 253 schemas**
+> Export lại từ Swagger `https://api.familycare-digital.com/api/docs-json` trong A4. So với bản 226 paths, BE bổ sung **3 path AI Sprint 2/3**:
+> - `GET /families/{familyId}/ai-chatbot/daily-brief`
+> - `POST /families/{familyId}/ai-chatbot/conversations/{conversationId}/messages/{messageId}/actions/{actionIndex}/confirm`
+> - `POST /families/{familyId}/ai-chatbot/conversations/{conversationId}/messages/{messageId}/actions/{actionIndex}/reject`
+>
+> FE đã wire cả 3 endpoint mới: `AiChatbotProvider.fetchDailyBrief`, `confirmStep`, `rejectStep`. `AiActionType` chính thức hiện có 9 giá trị: `CREATE_LEDGER_ENTRY`, `CREATE_BUDGET_PLAN`, `CREATE_BUDGET_LINE`, `CREATE_FINANCIAL_GOAL`, `CREATE_GOAL_ALLOCATION`, `CREATE_GOAL_CONTRIBUTION_PLAN`, `ALLOCATE_FUND_BY_MODEL`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`.
+
 > ### 🔄 Cập nhật API mới (2026-08-07) — **226 paths / 293 operations / 248 schemas**
 > So với bản `223 paths / 290 operations / 245 schemas`, BE đã bổ sung **Wearable Activation**:
 > - `POST /wearable-activations`: Wear OS tạo `sessionId` bí mật và `code` công khai `FCW-XXXXXX`.
@@ -10,7 +18,7 @@
 > - `POST /wearable-activations/{sessionId}/claim`: Wear OS claim `accessToken`, `refreshToken`, `user` sau khi mobile pair mã.
 >
 > Bản ngay trước đó cũng đã bổ sung **25 response/schema**:
-> - **AI Chatbot**: có DTO chính thức cho conversations, messages, send message, confirm/reject action, delete conversation; enum `AiActionType` (`CREATE_LEDGER_ENTRY | CREATE_TASK | CREATE_CALENDAR_EVENT | CREATE_BUDGET_PLAN`, 4 giá trị từ 2026-08-09) và `AiActionStatus` (`PENDING | CONFIRMED | REJECTED | EXPIRED`).
+> - **AI Chatbot**: có DTO chính thức cho conversations, messages, send message, confirm/reject action, delete conversation; enum `AiActionType` đã mở rộng lên 9 giá trị trong Swagger 2026-08-09 và `AiActionStatus` (`PENDING | CONFIRMED | REJECTED | EXPIRED`).
 > - **Wearable sensor event**: `POST /families/{familyId}/wearables/{deviceId}/events` có `WearableEventIngestApiResponseDto`, gồm `event`, `alertCreated`, `alertId`; duplicate active SOS trả `alertCreated=false` và `alertId` là SOS active hiện có.
 > - **Wearable error codes** đã được document trong response lỗi: `WEARABLE_ALREADY_PAIRED`, `DEVICE_IDENTIFIER_TAKEN`, `WEARABLE_NOT_PAIRED`, `INVALID_SENSOR_EVENT_TYPE`, `INVALID_SENSOR_EVENT_PAYLOAD`.
 
@@ -352,10 +360,25 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET .../tasks/reward-disputes/{disputeId}` — Chi tiết. Provider method có sẵn, chưa có UI gọi (còn dư).
 - `PATCH .../tasks/reward-disputes/{disputeId}/resolve` — Xử lý tranh chấp. Body `ResolveRewardDisputeDto { action }` (`action`: `ACCEPT_DISPUTE | REJECT_DISPUTE`). **[wire FE 2026-07-08]** — trước đó FE gửi sai body `{ resolutionNote }`, đã sửa; dialog đổi từ ghi chú tự do sang 2 nút Chấp nhận/Từ chối.
 
-### AI Chatbot — **[contract BE chốt 2026-08-07, FE wire đủ 7/7]**
+### AI Chatbot — **[contract BE chốt 2026-08-09, FE wire đủ 10/10]**
 
-7 operation, FE gọi đủ cả 7 trong `ai_chatbot_provider.dart`, không gọi endpoint
+10 operation, FE gọi đủ cả 10 trong `ai_chatbot_provider.dart`, không gọi endpoint
 AI nào ngoài Swagger.
+
+| Endpoint | FE wire | Ghi chú |
+|---|---|---|
+| `POST /ai-chatbot/conversations` | ✅ `createConversation` | Tạo hội thoại mới |
+| `GET /ai-chatbot/conversations` | ✅ `fetchConversations` | Danh sách hội thoại của member hiện tại |
+| `DELETE /ai-chatbot/conversations/{conversationId}` | ✅ `deleteConversation` | Xóa hội thoại |
+| `GET /ai-chatbot/conversations/{conversationId}/messages` | ✅ `fetchMessages` | Lịch sử tin nhắn |
+| `POST /ai-chatbot/conversations/{conversationId}/messages` | ✅ `sendMessage` | Gửi prompt cho AI |
+| `GET /ai-chatbot/daily-brief` | ✅ `fetchDailyBrief` | Sprint 2 |
+| `POST .../messages/{messageId}/confirm-action` | ✅ `confirmAction` | Action đơn lẻ, endpoint cũ |
+| `POST .../messages/{messageId}/reject-action` | ✅ `rejectAction` | Action đơn lẻ, endpoint cũ |
+| `POST .../messages/{messageId}/actions/{actionIndex}/confirm` | ✅ `confirmStep` | Sprint 3, action plan nhiều bước |
+| `POST .../messages/{messageId}/actions/{actionIndex}/reject` | ✅ `rejectStep` | Sprint 3, action plan nhiều bước |
+
+**Endpoint mới so với dump 226 paths:** `daily-brief`, `actions/{actionIndex}/confirm`, `actions/{actionIndex}/reject` — cả 3 đã wire. **Chưa wire:** không có endpoint AI nào mới còn trống trong dump 229 paths.
 
 - `POST /api/v1/families/{familyId}/ai-chatbot/conversations` — tạo hội thoại. Body `CreateAiConversationDto { title? }` (bỏ trống thì BE tự đặt theo tin đầu, max 120 ký tự).
 - `GET /api/v1/families/{familyId}/ai-chatbot/conversations?page=&limit=` — chỉ trả hội thoại **của chính thành viên hiện tại**. Đã verify runtime: Thành viên nhận danh sách rỗng khi chưa có hội thoại nào, không thấy hội thoại của Trưởng nhóm.
@@ -364,6 +387,7 @@ AI nào ngoài Swagger.
 - `POST .../messages/{messageId}/confirm-action` — xác nhận đề xuất, BE mới thực sự ghi dữ liệu.
 - `POST .../messages/{messageId}/reject-action` — từ chối đề xuất.
 - `DELETE /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}` — xóa hội thoại kèm toàn bộ tin nhắn.
+- `GET /api/v1/families/{familyId}/ai-chatbot/daily-brief` — tổng quan hôm nay, kèm quick actions theo `uiHints`.
 
 **Sprint 3 (2026-08-09, backward-compatible — BE xác nhận endpoint cũ ở trên
 giữ nguyên, FE không bắt buộc đổi flow ngay):** một `aiMessage` giờ có thể có
@@ -403,7 +427,7 @@ coi là "bước 0" duy nhất).
 }
 ```
 
-- `actionType` chính thức, **4 giá trị** (cập nhật 2026-08-09): `CREATE_LEDGER_ENTRY`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`, `CREATE_BUDGET_PLAN` (BE xác nhận chính thức thêm, trước đó từng thấy runtime nhưng chưa chốt). Sau confirm `CREATE_BUDGET_PLAN` phải refresh Wallet/Budget/finance overview — FE gọi `FinanceProvider.fetchAll()`.
+- `actionType` chính thức, **9 giá trị** (Swagger 2026-08-09): `CREATE_LEDGER_ENTRY`, `CREATE_BUDGET_PLAN`, `CREATE_BUDGET_LINE`, `CREATE_FINANCIAL_GOAL`, `CREATE_GOAL_ALLOCATION`, `CREATE_GOAL_CONTRIBUTION_PLAN`, `ALLOCATE_FUND_BY_MODEL`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`. Sau confirm các action tài chính phải refresh Wallet/Budget/finance overview — FE gọi `FinanceProvider.fetchAll()`.
 - `status` chính thức, **đúng 4 giá trị**: `PENDING` → `CONFIRMED` (confirm thành công) / `REJECTED` (người dùng từ chối) / `EXPIRED` (quá hạn). **Không có `CANCELED` hay `FAILED`.**
 - Sau confirm thành công, status lưu trên tin nhắn AI gốc là `CONFIRMED` và **`result.id` là id bản ghi vừa tạo** (FE hiện chưa dùng field này — có thể dùng sau để deep-link tới bản ghi).
 - **[Sửa 2026-08-09]** `uiHints.displayStyle` của tin nhắn sau khi resolve (confirm/reject) từng có lúc trả sai `INSIGHT_CARD` kèm `content` vẫn y hệt lúc chưa xử lý ("xin xác nhận"), làm FE mất banner kết quả — BE xác nhận đã sửa tận gốc: `REJECTED`/`CONFIRMED`/`EXPIRED` giờ luôn trả đúng `RESULT_CARD`, `content` cập nhật đúng theo trạng thái thật. FE đã bỏ lớp vá tạm (ép cứng `actionCard`), tin thẳng `uiHints.displayStyle`; `_ResultCard` đổi màu/icon theo outcome (không còn mặc định xanh "thành công" cho mọi trường hợp).
@@ -429,15 +453,15 @@ FE đã ẩn sẵn các gợi ý tạo dữ liệu với Thành viên (`aiPrompt
 BE cũng chưa guard chúng — FE không gate theo ba key này, chỉ đọc để hiển thị
 quyền lợi ở màn Gói đăng ký.
 
-**✅ Swagger đã có response DTO đầy đủ (bản dump 2026-08-07).** `POST .../messages`
+**✅ Swagger đã có response DTO đầy đủ (bản dump 2026-08-09).** `POST .../messages`
 nay khai cả `200`. Các schema chính thức:
 
-- `AiActionType` (enum) — đúng 4 giá trị, khớp `AiPendingAction.confirmedActionTypes`.
+- `AiActionType` (enum) — đúng 9 giá trị, khớp `AiPendingAction.confirmedActionTypes`.
 - `AiActionStatus` (enum) — đúng 4 giá trị, khớp `AiPendingAction.confirmedStatuses`.
-- `AiPendingActionResponseDto` — `messageId`, `actionType`, `status`, `preview`, `expiresAt` (bắt buộc) + `result` (tuỳ chọn, `AiActionResultResponseDto { id }`).
-- `AiMessageResponseDto` — `id`, `senderType`, `content`, `relatedModule` (nullable), `createdAt`, `pendingAction` (nullable). **Mỗi tin nhắn trong lịch sử có thể tự mang `pendingAction`**, không chỉ response lúc gửi.
-- `AiSendMessageDataResponseDto` — `{ userMessage, aiMessage, pendingAction }`, cả ba bắt buộc, `pendingAction` nullable.
-- `AiConfirmActionDataResponseDto` — `{ actionType, result }` · `AiRejectActionDataResponseDto` — `{ actionType }`. FE bỏ qua body này và refetch messages.
+- `AiPendingActionResponseDto` — `messageId`, `actionIndex`, `actionType`, `status`, `preview`, `expiresAt`, `uiHints` (bắt buộc) + `result` (tuỳ chọn, `AiActionResultResponseDto { id }`).
+- `AiMessageResponseDto` — `id`, `senderType`, `content`, `relatedModule` (nullable), `createdAt`, `pendingAction` (nullable), `pendingActions[]`, `uiHints`. **Mỗi tin nhắn trong lịch sử có thể tự mang `pendingAction`/`pendingActions`**, không chỉ response lúc gửi.
+- `AiSendMessageDataResponseDto` — `{ userMessage, aiMessage, pendingAction, pendingActions }`, bắt buộc theo Swagger, `pendingAction` nullable.
+- `AiConfirmActionDataResponseDto` — `{ actionIndex, actionType, result }` · `AiRejectActionDataResponseDto` — `{ actionIndex, actionType }`. FE bỏ qua body này và refetch messages.
 - Hai endpoint list dùng `{ items, meta }` với `PaginationMetaResponseDto { page, limit, total, totalPages }` — khớp parser phân trang của FE.
 
 **⚠️ Bẫy tên field:** `AiConversationLastMessageResponseDto` dùng
