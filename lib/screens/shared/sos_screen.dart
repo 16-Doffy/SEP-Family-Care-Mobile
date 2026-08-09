@@ -1405,6 +1405,7 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
             {
               'latitude': loc.lat,
               'longitude': loc.lng,
+              if (loc.sourceType != null) 'sourceType': loc.sourceType,
               'recordedAt': DateTime.now().toUtc().toIso8601String(),
             },
           ],
@@ -1445,8 +1446,24 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     return const [];
   }
 
-  ({double lat, double lng})? _location(Map<String, dynamic> d) {
+  SosAlertLocation? _location(Map<String, dynamic> d) {
     return parseSosAlertLocation(d);
+  }
+
+  ({IconData icon, String label})? _locationSource(String? sourceType) {
+    final type = sourceType?.toUpperCase().trim();
+    if (type == null || type.isEmpty) return null;
+    return switch (type) {
+      'WEARABLE_GPS' ||
+      'WEARABLE' => (icon: Icons.watch_rounded, label: 'Vị trí từ đồng hồ'),
+      'MOBILE_GPS' || 'MOBILE_APP' => (
+        icon: Icons.phone_android_rounded,
+        label: 'Vị trí từ điện thoại',
+      ),
+      'SIMULATED_GPS' ||
+      'SIMULATED_DEVICE' => (icon: Icons.tune_rounded, label: 'Vị trí giả lập'),
+      _ => null,
+    };
   }
 
   // Ánh xạ loại phản hồi → (icon, màu nền node, nhãn hiển thị).
@@ -1564,6 +1581,9 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
     final message = d['message']?.toString() ?? '';
     final address = d['address']?.toString() ?? '';
     final loc = _location(d);
+    final locationPoints = parseSosAlertLocationPoints(d);
+    final routePoints = [for (final p in locationPoints) LatLng(p.lat, p.lng)];
+    final source = _locationSource(loc?.sourceType);
     final responses = _responses(d);
     final resolvedBy = _memberName(d['resolvedByMember']);
     final resolutionNote = d['resolutionNote']?.toString();
@@ -1741,13 +1761,41 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                         ),
                       if (loc != null) ...[
                         if (address.isNotEmpty) const SizedBox(height: 8),
-                        Text(
-                          'Tọa độ: ${loc.lat.toStringAsFixed(4)}, ${loc.lng.toStringAsFixed(4)}',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: context.colors.textMuted,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Tọa độ: ${loc.lat.toStringAsFixed(4)}, ${loc.lng.toStringAsFixed(4)}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  color: context.colors.textMuted,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (source != null) ...[
+                              const SizedBox(width: 8),
+                              Icon(
+                                source.icon,
+                                size: 13,
+                                color: context.colors.textMuted,
+                              ),
+                              const SizedBox(width: 3),
+                              Flexible(
+                                child: Text(
+                                  source.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: context.colors.textMuted,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 12),
                         ClipRRect(
@@ -1768,6 +1816,18 @@ class _SosAlertDetailSheetState extends State<_SosAlertDetailSheet> {
                                       'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                                   userAgentPackageName: 'com.familycare.app',
                                 ),
+                                if (routePoints.length >= 2)
+                                  PolylineLayer(
+                                    polylines: [
+                                      Polyline(
+                                        points: routePoints,
+                                        color: AppColors.sos.withValues(
+                                          alpha: 0.72,
+                                        ),
+                                        strokeWidth: 4,
+                                      ),
+                                    ],
+                                  ),
                                 MarkerLayer(
                                   markers: [
                                     Marker(

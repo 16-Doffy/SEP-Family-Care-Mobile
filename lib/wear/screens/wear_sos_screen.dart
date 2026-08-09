@@ -121,10 +121,11 @@ class _WearSosScreenState extends State<WearSosScreen>
   /// Best-effort, chạy sau khi SOS đã được tạo: cả hai hàm bên dưới đều không
   /// ném lỗi ra ngoài nên hỏng bước này cũng không ảnh hưởng cảnh báo.
   Future<void> _pushPosition(String alertId) async {
+    setState(() => _locationNotice = 'Đang lấy vị trí…');
     final pos = await resolveWearableSosPosition();
     if (!mounted) return;
     if (pos == null) {
-      setState(() => _locationNotice = 'Không lấy được vị trí đồng hồ');
+      setState(() => _locationNotice = 'Không lấy được GPS đồng hồ');
       return;
     }
     await context.read<SosProvider>().pushLocation(
@@ -135,6 +136,8 @@ class _WearSosScreenState extends State<WearSosScreen>
       sourceType: 'WEARABLE_GPS',
       deviceId: context.read<WearableProvider>().currentDevice?.id,
     );
+    if (!mounted) return;
+    setState(() => _locationNotice = 'Đã có vị trí');
   }
 
   Future<void> _confirmSafe() async {
@@ -159,6 +162,7 @@ class _WearSosScreenState extends State<WearSosScreen>
       _sentAlertId = null;
       _countdown = 2;
       _error = null;
+      _locationNotice = null;
     });
     _pulse.repeat(reverse: true);
   }

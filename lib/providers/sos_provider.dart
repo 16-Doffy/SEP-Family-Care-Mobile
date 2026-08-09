@@ -559,7 +559,7 @@ class SosProvider extends ChangeNotifier {
   // GET .../sos/alerts/{alertId}/location/current — vị trí MỚI NHẤT của alert
   // (BE bổ sung 2026-07-10, dành cho người theo dõi vừa vào xem). Trả null nếu
   // alert chưa có điểm vị trí nào hoặc gọi lỗi — caller tự fallback.
-  Future<({double lat, double lng})?> fetchCurrentLocation(
+  Future<({double lat, double lng, String? sourceType})?> fetchCurrentLocation(
     String alertId,
   ) async {
     final fid = _fid;
@@ -571,7 +571,13 @@ class SosProvider extends ChangeNotifier {
       if (data is Map) {
         final lat = double.tryParse(data['latitude']?.toString() ?? '');
         final lng = double.tryParse(data['longitude']?.toString() ?? '');
-        if (lat != null && lng != null) return (lat: lat, lng: lng);
+        if (lat != null && lng != null) {
+          return (
+            lat: lat,
+            lng: lng,
+            sourceType: data['sourceType']?.toString(),
+          );
+        }
       }
     } catch (e) {
       debugPrint('SosProvider: fetchCurrentLocation failed: $e');

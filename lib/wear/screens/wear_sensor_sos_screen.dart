@@ -215,10 +215,11 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
   /// Gửi vị trí kèm cho cảnh báo vừa tạo. Chỉ dùng GPS của chính đồng hồ; hỏng
   /// bước này thì cảnh báo vẫn còn nguyên, chỉ là thiếu bản đồ.
   Future<void> _pushPosition(String alertId, String deviceId) async {
+    setState(() => _locationNotice = 'Đang lấy vị trí…');
     final pos = await resolveWearableSosPosition();
     if (!mounted) return;
     if (pos == null) {
-      setState(() => _locationNotice = 'Không lấy được vị trí đồng hồ');
+      setState(() => _locationNotice = 'Không lấy được GPS đồng hồ');
       return;
     }
     await context.read<SosProvider>().pushLocation(
@@ -229,6 +230,8 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
       sourceType: 'WEARABLE_GPS',
       deviceId: deviceId,
     );
+    if (!mounted) return;
+    setState(() => _locationNotice = 'Đã có vị trí');
   }
 
   /// "Hủy báo động" = người đeo tự xác nhận an toàn. Dùng `confirm-safety` chứ
@@ -248,6 +251,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
           _sent = false;
           _alertId = null;
           _alertCreated = false;
+          _locationNotice = null;
         });
       }
     } catch (e) {

@@ -1,4 +1,29 @@
-({double lat, double lng})? parseSosAlertLocation(Map<String, dynamic> data) {
+typedef SosAlertLocation = ({double lat, double lng, String? sourceType});
+typedef SosAlertLocationPoint = ({
+  double lat,
+  double lng,
+  String? sourceType,
+  DateTime? recordedAt,
+});
+
+SosAlertLocation? parseSosAlertLocation(Map<String, dynamic> data) {
+  final points = parseSosAlertLocationPoints(data);
+  if (points.isNotEmpty) {
+    final latest = points.last;
+    return (lat: latest.lat, lng: latest.lng, sourceType: latest.sourceType);
+  }
+
+  final lat = _doubleOf(data['latitude'] ?? data['initialLatitude']);
+  final lng = _doubleOf(data['longitude'] ?? data['initialLongitude']);
+  if (lat != null && lng != null) {
+    return (lat: lat, lng: lng, sourceType: data['sourceType']?.toString());
+  }
+  return null;
+}
+
+List<SosAlertLocationPoint> parseSosAlertLocationPoints(
+  Map<String, dynamic> data,
+) {
   for (final key in const ['locationPoints', 'locations', 'sosLocations']) {
     final points = _validLocationPoints(data[key]);
     if (points.isNotEmpty) {
@@ -11,15 +36,19 @@
         final byTime = at.compareTo(bt);
         return byTime == 0 ? a.index.compareTo(b.index) : byTime;
       });
-      final latest = points.last;
-      return (lat: latest.lat, lng: latest.lng);
+      return [
+        for (final p in points)
+          (
+            lat: p.lat,
+            lng: p.lng,
+            sourceType: p.sourceType,
+            recordedAt: p.recordedAt,
+          ),
+      ];
     }
   }
 
-  final lat = _doubleOf(data['latitude'] ?? data['initialLatitude']);
-  final lng = _doubleOf(data['longitude'] ?? data['initialLongitude']);
-  if (lat != null && lng != null) return (lat: lat, lng: lng);
-  return null;
+  return const [];
 }
 
 List<_SosLocationPoint> _validLocationPoints(dynamic value) {
@@ -36,6 +65,7 @@ List<_SosLocationPoint> _validLocationPoints(dynamic value) {
         index: i,
         lat: lat,
         lng: lng,
+        sourceType: item['sourceType']?.toString(),
         recordedAt: _dateOf(item['recordedAt'] ?? item['createdAt']),
       ),
     );
@@ -60,11 +90,13 @@ class _SosLocationPoint {
     required this.index,
     required this.lat,
     required this.lng,
+    required this.sourceType,
     required this.recordedAt,
   });
 
   final int index;
   final double lat;
   final double lng;
+  final String? sourceType;
   final DateTime? recordedAt;
 }
