@@ -3,6 +3,21 @@
 **Swagger UI:** https://api.familycare-digital.com/api/docs
 **Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-28 bằng `familycare-swagger-2026-07-28.json`**. FE wiring audit lại sau khi đồng bộ `origin/main` tại `e5aa216`.
 
+> ### 📌 BE trả lời bộ câu hỏi đối chiếu contract (2026-08-09) — xem `CAU_HOI_BE_2026-08-09.md`
+> Bộ câu hỏi này **chỉ để đối chiếu**, không yêu cầu BE đổi gì. Kết quả: phần lớn FE đã hiểu đúng, gỡ được nhiều `[VERIFY]` treo lâu.
+>
+> **Đã chốt, FE không phải sửa gì:** `type == 'SOS'` khớp enum `NotificationType`; icon thông báo phủ đủ 9 giá trị; `referenceId` mapping đúng; `requesterMember.user.fullName` FE đoán **đúng**; BE tự map category → hũ khi không gửi `jarId` (đúng cách FE đang làm); logout có gửi `refreshToken` nên phiên đồng hồ sống sót; Google login tự liên kết email sẵn có.
+>
+> **BE ship thêm cùng ngày:** `PATCH /families/{familyId}/members/{userId}/relationship` (trước đây chọn nhầm quan hệ là kẹt vĩnh viễn); notification cho luồng hỗ trợ chi tiêu; enum `NotificationType`/`NotificationPriority` vào Swagger.
+>
+> **FE đã làm ngay:** thêm `case 'SUPPORT_REQUEST'` vào `NotificationRouter` + `test/support_request_notification_test.dart`; wire `PATCH .../relationship` + `test/member_relationship_test.dart`.
+>
+> **Dump đã cập nhật (đợt 2 cùng ngày):** `230 paths / 297 operations / 261 schemas` — thêm endpoint `relationship`, `UpdateMemberRelationshipDto`, và 7 schema Notification (`NotificationType`, `NotificationPriority`, `NotificationResponseDto`, 3 envelope + `NotificationUnreadCountResponseDto`). `referenceType` nay là **enum 11 giá trị** trong Swagger, đã gồm `SUPPORT_REQUEST`.
+>
+> **Còn treo:** 4 mã lỗi `claim` trên màn đồng hồ; nhắc chọn danh mục khi AI tạo giao dịch thiếu `categoryId`. Phía BE còn nợ response schema cho `/auth/login`, `/auth/firebase`, `/auth/me` và support-request (Notification đã xong).
+>
+> **Bỏ hẳn, không chờ nữa:** `summary.spending.byJar` (đã có `reports/jar-target-actual`); upload avatar (BE không có endpoint).
+
 > ### 🔄 Cập nhật API mới (2026-08-09) — **229 paths / 296 operations / 253 schemas**
 > Export lại từ Swagger `https://api.familycare-digital.com/api/docs-json` trong A4. So với bản 226 paths, BE bổ sung **3 path AI Sprint 2/3**:
 > - `GET /families/{familyId}/ai-chatbot/daily-brief`
@@ -61,9 +76,15 @@
 - `POST /api/v1/auth/register` — Register a new account (default role: FAMILY_MANAGER). 409 nếu email đã tồn tại.
 - `POST /api/v1/auth/login` — Authenticate with email & password. 401 sai thông tin, 403 account bị khóa.
 - `POST /api/v1/auth/refresh` — Rotate token pair bằng refresh token hợp lệ.
-- `POST /api/v1/auth/logout` — Log out. Có `refreshToken` → revoke đúng device; bỏ trống → revoke tất cả.
+- `POST /api/v1/auth/logout` — Log out. Có `refreshToken` **hợp lệ** → revoke đúng device đó; bỏ trống **hoặc token invalid** → revoke tất cả (BE xác nhận 09/08).
+  - ⚠️ Hệ quả cho Wear OS: `auth_provider.dart` có gửi `refreshToken` nên đăng xuất trên điện thoại **không** giết phiên của đồng hồ. Nhưng nếu token đã xoay vòng và bản lưu bị cũ thì rơi vào nhánh "invalid → revoke all" và đồng hồ chết im.
+- `POST /api/v1/auth/firebase` — **[CHỐT BE 2026-08-09]** Đăng nhập Google. Body `FirebaseLoginDto { idToken }`.
+  - Email đã tồn tại **và** Google token có `email_verified=true` → BE **tự liên kết** `firebaseUid` vào user cũ rồi trả token bình thường. **Không** tạo user trùng email, **không** trả 409 (`AuthService.loginWithFirebase`).
+  - Response 200 giống `/auth/login`: `accessToken`, `refreshToken`, `user`.
+  - Trạng thái đã liên kết Google lưu ở **`User.firebaseUid`**; không có bảng `auth_providers`.
+  - `401` = idToken sai/hết hạn. `503` = server thiếu hoặc sai `FIREBASE_SERVICE_ACCOUNT` — hai cái này phải hiện hai câu khác nhau.
 - `GET /api/v1/auth/me` — Lấy user đang đăng nhập.
-- `PATCH /api/v1/auth/me` — **[wire FE 2026-07-28]** cập nhật `fullName`, `phone`; `avatarUrl` có trong DTO nhưng Mobile chưa có upload/avatar storage flow.
+- `PATCH /api/v1/auth/me` — **[wire FE 2026-07-28]** cập nhật `fullName`, `phone`. `avatarUrl` nhận string/null nhưng **BE không có endpoint upload avatar** (xác nhận 09/08; hai endpoint upload duy nhất là task proof và chat attachment). FE cố ý không hiện ô sửa avatar cho tới khi có luồng upload.
 - `POST /api/v1/auth/verify-email` — **[MỚI, đã wire FE 2026-07-07]** Verify email bằng OTP 6 số. Body `VerifyEmailDto { code }`. 400 nếu OTP sai/hết hạn. Xem `VerifyEmailScreen` + `AuthProvider.verifyEmail()`.
 - `POST /api/v1/auth/resend-verification` — **[MỚI, đã wire FE 2026-07-07]** Gửi lại OTP (rate-limited). 400 nếu đã verify hoặc đang cooldown. Xem `AuthProvider.resendVerificationCode()`.
 - `POST /api/v1/auth/forgot-password` — **[MỚI 07/11, đã wire FE]** Body `ForgotPasswordDto { email }`. BE gửi OTP 6 số qua email. Xem `forgot_password_screen.dart` bước 1.
@@ -82,7 +103,23 @@
 - `GET /api/v1/families/{familyId}` — Lấy family (members only). 403 nếu không phải member.
 - `PATCH /api/v1/families/{familyId}` — Update family (MANAGER only). **[wire FE 2026-07-08]** nút ✏️ cạnh tên gia đình trong `member_list_screen.dart` (chỉ Manager thấy).
 - `DELETE /api/v1/families/{familyId}/members/{userId}` — Xóa member (MANAGER only). 400 không xóa được manager.
-- `PATCH /api/v1/families/{familyId}/members/{userId}/role` — **[wire FE 2026-07-28]** Manager bổ nhiệm/gỡ Phó nhóm bằng `familyRole: DEPUTY_MEMBER | FAMILY_MEMBER`. Swagger chưa có endpoint sửa `relationship`.
+- `PATCH /api/v1/families/{familyId}/members/{userId}/role` — **[wire FE 2026-07-28]** Manager bổ nhiệm/gỡ Phó nhóm bằng `familyRole: DEPUTY_MEMBER | FAMILY_MEMBER`.
+- `PATCH /api/v1/families/{familyId}/members/{userId}/relationship` — **[BE ship + FE wire 2026-08-09]** Sửa quan hệ gia đình của 1 thành viên. Trước đây không có cách nào sửa sau khi đã duyệt vào nhà: chọn nhầm lúc approve join request là kẹt vĩnh viễn, chỉ SYSTEM_ADMIN gỡ được.
+  - Body `UpdateMemberRelationshipDto { relationship }`; enum: `FATHER | MOTHER | SPOUSE | CHILD | SISTER | BROTHER | GRANDPARENT | OTHER`.
+  - **MANAGER only** — Swagger ghi rõ `403 Requires family MANAGER role`. FE gate bằng `canManageMemberRoles`, **không** dùng `isAdministrative` (Deputy sẽ ăn 403).
+  - **Ràng buộc BE:** mỗi family chỉ **1 `FATHER`** và **1 `MOTHER`**; `GRANDPARENT` và các quan hệ còn lại cho phép nhiều.
+
+  | Mã | Ý nghĩa | `code`/`errorCode` |
+  |---|---|---|
+  | `400` | `relationship` không hợp lệ | — |
+  | `403` | Không phải Manager | — |
+  | `404` | Không tìm thấy member trong family | — |
+  | `409` | Đã có Bố | `FAMILY_ALREADY_HAS_FATHER` |
+  | `409` | Đã có Mẹ | `FAMILY_ALREADY_HAS_MOTHER` |
+
+  - **FE (`member_detail_screen.dart`):** card "Quan hệ gia đình" chỉ hiện với Manager và member `ACTIVE`, **kể cả chính Manager** — chọn nhầm xảy ra ngay từ lúc tạo gia đình chứ không riêng lúc duyệt. Dialog chặn trước lựa chọn `FATHER`/`MOTHER` đã có người giữ (kèm tên) để người dùng hiểu lý do, nhưng vẫn bắt 409 vì BE mới là nguồn sự thật. Bắt theo `code`, không theo `message`.
+  - ⚠️ **Chỉ 8 giá trị trên được gửi lên.** `FamilyMember.relationLabel` còn dịch được `PARENT`/`SIBLING` cho dữ liệu cũ, nhưng hai giá trị đó **không** có trong dialog — gửi lên sẽ ăn `400`. Giá trị cũ hiển thị kèm chữ "(giá trị cũ)".
+  - Ghim bằng `test/member_relationship_test.dart` (11 case).
 
 ### SOS (10 operations — khớp `sos_provider.dart`; +2 endpoint mới 07/11)
 - `POST /api/v1/families/{familyId}/sos/alerts` — Kích hoạt SOS (mọi thành viên). Body `CreateSosAlertDto { sourceType, severity?, initialLatitude?, initialLongitude?, message? }`.
@@ -117,12 +154,42 @@ Base: `/api/v1/families/{familyId}/chat/...` · provider `chat_provider.dart` ·
 - `messageType`: `TEXT | IMAGE | FILE | LOCATION | SOS_QUICK_MESSAGE`. `[VERIFY]` giới hạn `limit`, encode emoji URL, có nên chuyển WS realtime.
 - ✅ **Tin an toàn nhanh (2026-07-13, verify live)**: FE gửi `messageType: SOS_QUICK_MESSAGE` tường minh trong `SendMessageDto` — nút khiên cạnh ô nhập chat mở sheet 4 tin mẫu, bubble hiển thị nổi bật màu cam kèm nhãn "TIN AN TOÀN". BE echo đúng `messageType` trong response (đã test server thật).
 
-### Notifications — **[MỚI, bỏ mock]**
+### Notifications — **[CHỐT BE 2026-08-09: đủ contract, hết đoán]**
 - `GET /api/v1/families/{familyId}/notifications` — Danh sách thông báo của thành viên hiện tại. Query `unreadOnly` (bool).
+- `GET /api/v1/families/{familyId}/notifications/unread-count` — Số chưa đọc.
 - `PATCH /api/v1/families/{familyId}/notifications/read-all` — Đánh dấu tất cả đã đọc.
 - `PATCH /api/v1/families/{familyId}/notifications/{notificationId}/read` — Đánh dấu 1 thông báo đã đọc.
+- `POST /api/v1/devices/tokens` / `DELETE /api/v1/devices/tokens/{token}` — Đăng ký / gỡ FCM token. **Push notification ĐÃ hoạt động** (`PushService` gọi sau login, gỡ khi logout).
 
-> ⚠️ Vẫn CHƯA có `POST /auth/fcm-token` → **push notification (FCM) chưa làm được**, chỉ in-app notification qua REST.
+**Field của 1 notification** (BE xác nhận 09/08, `notifications.service.ts` + `notifications.types.ts`):
+`id`, `familyId`, `recipientMemberId`, `type`, `priority`, `title`, `body`, `referenceType`, `referenceId`, `isRead`, `readAt`, `createdAt`.
+
+**`type` — enum `NotificationType`** (9 giá trị): `SOS | GENERAL | ALBUM_TAG | JOIN_REQUEST | MEMBER | TASK | CALENDAR | FINANCE | CHAT`.
+FE dùng `type == 'SOS'` để bật banner đỏ toàn cục (`family_shell.dart`) và đẩy push mức ưu tiên cao (`push_service.dart`) — **đã verify khớp**. Bảng icon ở `notifications_screen.dart` phủ đủ 9 giá trị.
+
+**`priority` — enum `NotificationPriority`** (4 giá trị): `LOW | NORMAL | HIGH | CRITICAL`.
+⚠️ **Không có `MEDIUM`.** `AppNotification.fromJson` từng mặc định `'MEDIUM'`; `accentColor` bắt cả `'MEDIUM' || 'NORMAL'` nên không vỡ, nhưng mặc định đúng phải là `'NORMAL'`.
+
+**`referenceType` — string tự do, KHÔNG phải enum** (`Notification.referenceType` trong `prisma/schema.prisma`).
+Nghĩa là BE thêm giá trị mới bất cứ lúc nào mà không có gì báo cho FE. `NotificationRouter` cố ý fail-open: giá trị lạ → `null` → thông báo nằm im ở danh sách, không crash. **Thêm giá trị mới thì phải thêm `case` bằng tay.**
+
+| `referenceType` | `referenceId` trỏ tới | Màn đích FE |
+|---|---|---|
+| `SOS_ALERT` | `SosAlert.id` | `/{shell}/sos` |
+| `ALBUM_MEDIA` | `AlbumMedia.id` | `/{shell}/album` |
+| `JOIN_REQUEST` | `JoinRequest.id` | `/manager/invite-requests` (Manager/Deputy) |
+| `FAMILY` | `Family.id` | `/{shell}/home` |
+| `FAMILY_MEMBER` | `FamilyMember.id` | `/manager/member/{id}` — `member_detail_screen` nhận **cả** `member.id` lẫn `member.userId` nên không lệ thuộc BE trả id nào |
+| `TASK_ASSIGNMENT` | `TaskAssignment.id` | `/{shell}/tasks` |
+| `CALENDAR_EVENT` | `CalendarEvent.id` | `/{shell}/calendar` (mọi role) |
+| `BUDGET_ALERT` | `BudgetAlert.id` | `/manager/finance-alerts` (Manager/Deputy) |
+| `FINANCIAL_GOAL` | `FinancialGoal.id` | `/manager/goal-detail?goalId={id}` |
+| `CONVERSATION` | `Conversation.id` | `/{shell}/chat` |
+| `SUPPORT_REQUEST` **[MỚI 09/08]** | `SpendingSupportRequest.id` | `/finance/support-requests` — **mọi role**, vì người nhận kết quả duyệt là chính requester (thường là Member) |
+| `null` | — | không điều hướng |
+
+**Payload FCM** (`fcm-notification.channel.ts`) — phần `data` gồm: `title`, `body`, `notificationId`, `type`, `familyId`, `referenceType`, `referenceId`.
+⚠️ Khác REST ở chỗ id tên là **`notificationId`** chứ không phải `id`. `AppNotification.fromJson` đã đọc `json['notificationId'] ?? json['id']` nên dùng chung được cho cả hai nguồn.
 
 ### Subscriptions — **[MỚI, checkout thật]**
 - `GET /api/v1/families/{familyId}/subscription` — Xem gói hiện tại của gia đình.
@@ -187,6 +254,13 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET /api/v1/families/{familyId}/finance/support-requests/{requestId}` — Chi tiết. **[wire FE 2026-07-08]** tap vào `_RequestCard` → `_RequestDetailSheet` (`JsonReportView`).
 - `PATCH /api/v1/families/{familyId}/finance/support-requests/{requestId}/review` — Duyệt/từ chối. Body `ReviewSpendingSupportRequestDto { decision, decisionNote?, occurredAt? }` (`decision`: `APPROVE | REJECT`).
 - `PATCH /api/v1/families/{familyId}/finance/support-requests/{requestId}/cancel` — Hủy yêu cầu PENDING của bản thân.
+
+**Response shape — [CHỐT BE 2026-08-09, hết `[VERIFY]`]:** tên người gửi nằm ở **`requesterMember.user.fullName`** — đúng như `SupportRequest.fromJson` đang đoán từ 29/07, không phải sửa. Object còn có `requesterMember`, `reviewedByMember`, `category`; riêng bản chi tiết và kết quả `review` khi APPROVE có thêm **`ledgerEntry`** (giao dịch vừa được tạo).
+> FE hiện bỏ qua `ledgerEntry` — có thể hiện luôn giao dịch vừa tạo thay vì chỉ báo thành công.
+
+**Notification — [BE ship 2026-08-09]:** tạo yêu cầu → báo **Manager/Deputy**; `approve`/`reject` → báo lại **chính người gửi**. `referenceType = SUPPORT_REQUEST`, `referenceId = SpendingSupportRequest.id`.
+FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/support-requests` cho **mọi role** (route phẳng, không nằm trong `_managerOnlyPaths`, nên Member mở được kết quả duyệt của mình). Ghim bằng `test/support_request_notification_test.dart`.
+> Trước 09/08 BE **không** phát thông báo nào cho luồng này — Manager chỉ biết có yêu cầu nếu tự mở màn hình.
 
 ### Finance — Budget Alerts
 - `GET /api/v1/families/{familyId}/finance/alerts` — Danh sách cảnh báo. Query: `page, limit, status, alertType, severity, budgetPlanId, goalId, jarId, categoryId, fromDate, toDate`.
@@ -258,6 +332,10 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - `GET .../finance/ledger/entries` — Sổ tài chính chung. Query `month`, `year` (default tháng/năm hiện tại). **Vẫn không có filter `memberId`.**
 - `POST .../finance/ledger/entries` — Tạo giao dịch nội bộ. Body `CreateLedgerEntryDto`.
 - `GET .../finance/overview` — Tổng quan sổ chung + tài chính tháng của bản thân. Query `month`, `year`.
+
+**Quan hệ giao dịch ↔ hũ — [CHỐT BE 2026-08-09]:** DB có **`LedgerEntry.jarId` trực tiếp**. Tạo entry mà gửi `categoryId` nhưng **không** gửi `jarId` thì BE tự map qua **`FinanceCategoryJarMapping`** — đúng như form thu/chi của FE đang làm (`wallet_screen.dart` cố ý không gửi `jarId`).
+
+⚠️ **`summary.spending.byJar` vẫn `Reserved` và luôn trả `[]` — đừng dùng.** Báo cáo theo hũ thật nằm ở `GET /finance/reports/jar-target-actual` (FE đã dùng ở `finance_reports_screen.dart` và `wallet_screen.dart`). BE cho biết không ưu tiên điền `byJar` vì đã có report riêng; FE **không** chờ field này.
 
 ### Invitations — **[FLOW ĐỔI HẲN — claim → approve]**
 - `POST /api/v1/families/{familyId}/invitations` — Mời member (FAMILY_MANAGER only). Body `CreateInvitationDto { email, invitedPhone?, familyRole?, relationship? }`.
@@ -430,6 +508,9 @@ coi là "bước 0" duy nhất).
 - `actionType` chính thức, **9 giá trị** (Swagger 2026-08-09): `CREATE_LEDGER_ENTRY`, `CREATE_BUDGET_PLAN`, `CREATE_BUDGET_LINE`, `CREATE_FINANCIAL_GOAL`, `CREATE_GOAL_ALLOCATION`, `CREATE_GOAL_CONTRIBUTION_PLAN`, `ALLOCATE_FUND_BY_MODEL`, `CREATE_TASK`, `CREATE_CALENDAR_EVENT`. Sau confirm các action tài chính phải refresh Wallet/Budget/finance overview — FE gọi `FinanceProvider.fetchAll()`.
 - `status` chính thức, **đúng 4 giá trị**: `PENDING` → `CONFIRMED` (confirm thành công) / `REJECTED` (người dùng từ chối) / `EXPIRED` (quá hạn). **Không có `CANCELED` hay `FAILED`.**
 - Sau confirm thành công, status lưu trên tin nhắn AI gốc là `CONFIRMED` và **`result.id` là id bản ghi vừa tạo** (FE hiện chưa dùng field này — có thể dùng sau để deep-link tới bản ghi).
+  - **[CHỐT BE 2026-08-09]** `result` chỉ có đúng `{ id }` là **cố ý**, không phải tạm thời. FE gọi lại API lấy chi tiết là cách đúng.
+  - **`categoryId` của giao dịch do AI tạo:** chỉ có nếu payload AI gửi kèm. AI tự tra `list_finance_categories`; khớp rõ thì đưa `categoryId`, không khớp thì **để trống**. BE **không** tự suy category lúc confirm.
+  - ⚠️ Hệ quả: giao dịch AI tạo có thể rơi vào "Chưa phân loại" — FE nên gợi ý chọn danh mục ngay sau khi confirm thay vì để người dùng tự phát hiện. **Chưa làm.**
 - **[Sửa 2026-08-09]** `uiHints.displayStyle` của tin nhắn sau khi resolve (confirm/reject) từng có lúc trả sai `INSIGHT_CARD` kèm `content` vẫn y hệt lúc chưa xử lý ("xin xác nhận"), làm FE mất banner kết quả — BE xác nhận đã sửa tận gốc: `REJECTED`/`CONFIRMED`/`EXPIRED` giờ luôn trả đúng `RESULT_CARD`, `content` cập nhật đúng theo trạng thái thật. FE đã bỏ lớp vá tạm (ép cứng `actionCard`), tin thẳng `uiHints.displayStyle`; `_ResultCard` đổi màu/icon theo outcome (không còn mặc định xanh "thành công" cho mọi trường hợp).
 - `expiresAt` là **ISO UTC thật** sinh bằng `Date.toISOString()`, có đuôi `Z`, interceptor **không** convert timezone. FE tính countdown theo UTC bình thường.
 - **Cập nhật 2026-08-07:** `entryDate` của Ledger **cũng là UTC thật**, không còn phải wall-clock local gắn `Z` như ghi nhận trước đây. Verify runtime: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC), sổ thu chi từng hiện `13:18` — lộ ra `WalletProvider.displayEntryDate` tự cắt `Z` rồi đọc số UTC như giờ local, lỗi FE đã sửa (không phải BE). **Support request chưa verify lại** — nếu đụng tới thì phải test runtime riêng, không suy diễn theo ledger.
@@ -553,7 +634,19 @@ Swagger live đã có contract và response example cho mapping/report; source m
   ```
 - `GET /api/v1/wearables/me` **chỉ** dùng để check user hiện có wearable đang `PAIRED` chưa. Nếu trả `null`, mobile phải cho user nhập mã đang hiện trên đồng hồ.
 - Sau khi mobile pair xong, Wear OS poll `GET /wearable-activations/{sessionId}` tới khi `status=PAIRED`, rồi gọi `POST /wearable-activations/{sessionId}/claim` để nhận `accessToken`, `refreshToken`, `user`.
-- FE coi `status=EXPIRED` từ BE là nguồn sự thật duy nhất để hết hạn mã; không tự so `expiresAt` với giờ máy vì emulator Wear OS có thể lệch thời gian.
+- FE coi `status=EXPIRED` từ BE là nguồn sự thật duy nhất để hết hạn mã; không tự so `expiresAt` với giờ máy vì emulator Wear OS có thể lệch thời gian. **BE xác nhận 09/08:** không có cron dọn phiên, BE tính hết hạn ngay lúc `create` / `getStatus` / `claim` — nên cách FE poll `getStatus` rồi tin `status` là đúng.
+- **Vòng đời (BE xác nhận 09/08):** activation session sống **10 phút**. Token cấp cho đồng hồ dùng **chung cơ chế token thường**, không có scope riêng: access **15 phút**, refresh **7 ngày**.
+  - Hệ quả: đồng hồ để yên quá 7 ngày là phải ghép nối lại. FE nên nói thẳng câu này thay vì hiện lỗi xác thực chung chung.
+- **Mã lỗi của `POST /wearable-activations/{sessionId}/claim` (BE xác nhận 09/08 — Swagger chỉ khai 200):**
+
+  | Tình huống | HTTP | `code` / `errorCode` |
+  |---|---|---|
+  | Phiên đã hết hạn | `410` | `ACTIVATION_EXPIRED` |
+  | Đã claim rồi (gọi lần 2) | `409` | `ACTIVATION_ALREADY_CLAIMED` |
+  | Điện thoại chưa nhập mã (còn `PENDING`) | `400` | `ACTIVATION_NOT_PAIRED` |
+  | `sessionId` không tồn tại | `404` | `ACTIVATION_NOT_FOUND` |
+
+  Response lỗi có **cả `code` lẫn `errorCode`**. Bắt theo `code`, **không** bắt theo `message` — message là tiếng Việt và sẽ đổi.
 - Enum đã chốt: `deviceType` `SMARTWATCH | GPS_TRACKER | BLE_DEVICE | SIMULATED_DEVICE`; `pairingStatus` `PAIRED | UNPAIRED | LOST`. `PairWearableDto.deviceIdentifier` unique trong 1 family; `ownerMemberId` chỉ Manager/Deputy. Response `SosWearableDeviceResponseDto`.
 - Nếu `deviceIdentifier` đã được pair bởi user khác trong family, BE trả `409 DEVICE_IDENTIFIER_TAKEN`.
 - Nếu tài khoản đã có wearable `PAIRED`, BE trả `409 WEARABLE_ALREADY_PAIRED`.
