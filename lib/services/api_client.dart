@@ -19,6 +19,12 @@ class ApiException implements Exception {
   final String? code;
   final int? retryAfterSeconds;
   final int? cooldownSeconds;
+  /// Dữ liệu lỗi có cấu trúc BE trả thêm (ví dụ quỹ khả dụng theo kỳ).
+  ///
+  /// Trước đây client chỉ giữ `code`/`message`, làm FE không thể dùng các field
+  /// nghiệp vụ như `requestedAmount`, `availableAmount`, `periodMonth`,
+  /// `periodYear` dù server đã gửi chúng.
+  final Map<String, dynamic> details;
 
   const ApiException(
     this.statusCode,
@@ -26,6 +32,7 @@ class ApiException implements Exception {
     this.code,
     this.retryAfterSeconds,
     this.cooldownSeconds,
+    this.details = const {},
   });
   @override
   String toString() => message;
@@ -53,6 +60,13 @@ class ApiClient {
 
   String? get token => _token;
   String? get familyId => _familyId;
+
+  /// Rotates the access token after a mutation changes its family claims.
+  ///
+  /// A new family changes `familyId` and `familyMemberId` on the server. They
+  /// are embedded in the access token, therefore protected APIs must not keep
+  /// authorizing the pre-creation token while the UI shows the new family.
+  Future<bool> refreshSessionClaims() => _lockedRefresh();
 
   /// Origin của backend (bỏ `/api/v1`) — dùng cho namespace Socket.IO
   /// (`<origin>/notifications`, `<origin>/sos`). Vd
@@ -358,12 +372,19 @@ class ApiClient {
       final cooldownSeconds = _intValue(
         bodyMap?['cooldownSeconds'] ?? details?['cooldownSeconds'],
       );
+      // Giữ cả cấp envelope và khối details/data. Khối lồng ưu tiên vì đó là
+      // nơi BE đặt thông tin nghiệp vụ cụ thể cho từng error code.
+      final errorFields = <String, dynamic>{
+        if (bodyMap != null) ...bodyMap,
+        if (details != null) ...details,
+      };
       throw ApiException(
         response.statusCode,
         message,
         code: code,
         retryAfterSeconds: retryAfterSeconds,
         cooldownSeconds: cooldownSeconds,
+        details: errorFields,
       );
     }
 

@@ -1574,10 +1574,25 @@ class _PendingActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ai = context.watch<AiChatbotProvider>();
+    // `ALLOCATE_FUND_BY_MODEL` chỉ có thể chạy khi family đã có model ACTIVE.
+    // AI/BE vẫn là nguồn quyết định cuối cùng, nhưng chặn sớm ở đây để một
+    // family mới không nhận thẻ "Xác nhận chia quỹ" rồi mới gặp lỗi sau khi
+    // bấm. Dùng `any(isActive)` thay vì `activeModel`: getter đó có fallback
+    // sang model đầu tiên cho một số màn Finance, còn API allocation yêu cầu
+    // đúng model đang áp dụng.
+    final requiresActiveFinanceModel =
+        action.actionType.toUpperCase() == 'ALLOCATE_FUND_BY_MODEL';
+    final hasActiveFinanceModel = context
+        .watch<FinanceProvider>()
+        .models
+        .any((model) => model.isActive);
+    final blockedByMissingFinanceModel =
+        requiresActiveFinanceModel && !hasActiveFinanceModel;
     final busy = stepIndex != null
         ? ai.isStepBusy(messageId, stepIndex!)
         : ai.isActionBusy(messageId);
     final enabled = action.isPending && !busy;
+    final canConfirm = enabled && !blockedByMissingFinanceModel;
     final color = _actionColor;
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1678,7 +1693,7 @@ class _PendingActionCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
-                    onPressed: enabled
+                    onPressed: canConfirm
                         ? () => _confirmAndReload(context)
                         : null,
                     child: busy
@@ -1694,6 +1709,19 @@ class _PendingActionCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (blockedByMissingFinanceModel)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Cần tạo và áp dụng mô hình tài chính trước khi chia quỹ. '
+                  'Hãy vào Mô hình tài chính, sau đó nhắn AI tạo đề xuất mới.',
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: AppColors.danger,
+                  ),
+                ),
+              ),
             // BE xác nhận 2026-08-09: KHÔNG có endpoint "sửa" pending action.
             // Luồng chính thức là mở form tạo dữ liệu tương ứng, điền sẵn từ
             // `pendingAction.preview`, cho người dùng chỉnh trước khi lưu —

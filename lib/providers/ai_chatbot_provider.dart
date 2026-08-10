@@ -692,9 +692,7 @@ class AiChatbotProvider extends ChangeNotifier {
             'Gia đình đã chia quỹ cho kỳ này. Mỗi tháng chỉ được chia một lần, '
                 'kể cả khi đổi mô hình.',
           'INSUFFICIENT_AVAILABLE_FUND' =>
-            'Số tiền chia quỹ vượt quá quỹ khả dụng của kỳ đã chọn. Hãy chọn '
-                '“Chỉnh chia quỹ” để nhập số thấp hơn, hoặc ghi nhận quỹ cho kỳ '
-                'này trước.',
+            _insufficientFundMessage(error.details),
           'NO_ACTIVE_FINANCE_MODEL' =>
             'Gia đình chưa có mô hình tài chính đang áp dụng.',
           'INVALID_JAR_PERCENTAGE' =>
@@ -727,5 +725,33 @@ class AiChatbotProvider extends ChangeNotifier {
       };
     }
     return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  String _insufficientFundMessage(Map<String, dynamic> details) {
+    double? number(String key) {
+      final value = details[key];
+      if (value is num) return value.toDouble();
+      return double.tryParse(value?.toString() ?? '');
+    }
+
+    String money(double value) => value.round().toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]}.',
+    );
+
+    final requested = number('requestedAmount');
+    final available = number('availableAmount');
+    final month = number('periodMonth')?.toInt();
+    final year = number('periodYear')?.toInt();
+    final period = month != null && year != null ? ' kỳ $month/$year' : '';
+    final amounts = requested != null && available != null
+        ? ' Bạn yêu cầu ${money(requested)} ₫, nhưng quỹ khả dụng$period chỉ '
+              'còn ${money(available)} ₫.'
+        : available != null
+        ? ' Quỹ khả dụng$period hiện là ${money(available)} ₫.'
+        : '';
+    return 'Số tiền chia quỹ vượt quá quỹ khả dụng của kỳ đã chọn.$amounts '
+        'Hãy chọn “Chỉnh chia quỹ” để nhập số thấp hơn, hoặc ghi nhận quỹ cho '
+        'kỳ này trước.';
   }
 }

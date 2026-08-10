@@ -2,6 +2,112 @@
 
 Last updated: **2026-08-10**
 
+## Cập nhật cuối phiên 2026-08-10 — Reward nhiệm vụ, phiên family mới và chuẩn bị ảnh Report 6
+
+### Fix FE vừa hoàn tất
+
+1. **Phần thưởng nhiệm vụ hiển thị sai “Chưa đặt thưởng”**
+   - **Triệu chứng:** Sau khi lưu phần thưởng, endpoint `GET /families/{familyId}/tasks`
+     không nhúng `rewardSetting`; danh sách task luôn hiển thị “Chưa đặt thưởng”, dù
+     mở form chi tiết vẫn đọc được dữ liệu thưởng từ endpoint riêng.
+   - **FE đã sửa:**
+     - `TaskProvider.fetchTasks(hydrateRewardSettings: true)` nạp thêm
+       `GET /tasks/{taskId}/reward-setting` cho các task thiếu field này.
+     - Màn `TaskManagementScreen` dùng chế độ hydrate khi mở màn, refresh và retry.
+     - Form Đặt thưởng luôn gọi endpoint chi tiết trước khi quyết định **POST** hay
+       **PATCH**, nên không còn POST nhầm khi reward đã tồn tại.
+   - **Runtime PASS:** task `dọn phòng khách` trước đó báo “Chưa đặt thưởng”; sau
+     build/cài FE mới, card danh sách hiển thị đúng **30.000 ₫**.
+   - **Lưu ý BE:** list endpoint vẫn không trả `rewardSetting`. FE đã bù được cho
+     màn quản lý nhiệm vụ; về lâu dài BE nên cân nhắc embed field này hoặc trả trạng
+     thái có thưởng trong response list để tránh N+1 request.
+
+2. **Nhập tiền thưởng dạng Việt Nam bị hiểu sai**
+   - **Triệu chứng:** `double.tryParse("30.000")` cho giá trị `30.0`, nên người
+     dùng nhập 30.000đ nhưng API nhận 30đ.
+   - **FE đã sửa:** Với `MONEY_RECORD`, loại toàn bộ ký tự không phải chữ số trước
+     khi parse; các loại Điểm/Khác vẫn parse số thập phân bình thường.
+   - **Runtime PASS:** nhập `30.000`, lưu, mở lại form nhận `30000`; card task
+     hiển thị `30.000 ₫`.
+
+3. **Tạo family mới nhưng AI báo không có quyền**
+   - **Nguyên nhân xác nhận từ source:** JWT chứa `familyId`/`familyMemberId`.
+     Trước đây `createFamily()` chỉ đổi state UI và `ApiClient.familyId`, không đổi
+     access token; confirm action AI vẫn gửi claim family cũ nên BE trả 403, dù UI
+     hiển thị Trưởng nhóm.
+   - **FE đã sửa:** Sau khi tạo family, gọi refresh session claims trước khi cho
+     thao tác tiếp. Nếu refresh thất bại, hiển thị hướng dẫn đăng xuất/đăng nhập
+     thay vì để action AI thất bại âm thầm.
+   - **Với account đã tạo family trước bản sửa:** đăng xuất/đăng nhập một lần để
+     token cũ được cấp lại. Nếu vẫn 403 sau đăng nhập lại, cần BE kiểm tra record
+     family membership của account đó.
+
+### Build và kiểm tra hiện tại
+
+- `dart analyze lib/providers/task_provider.dart lib/screens/parent/task_management_screen.dart`:
+  **0 error**; còn 6 cảnh báo deprecated `Radio.groupValue/onChanged` đã có sẵn,
+  không thuộc các thay đổi trên.
+- Đã build debug APK thành công. Vì emulator chỉ còn khoảng 536MB trống, APK debug
+  universal (~241MB) không cài đè được; dùng `--split-per-abi` và cài
+  `app-x86_64-debug.apk` (~86.8MB) thành công, **không mất dữ liệu test**.
+- Flutter launcher có thể để lại `D:\development\flutter\bin\cache\flutter.bat.lock`
+  sau khi terminal timeout. Khi Flutter treo không có output, kiểm tra không còn
+  process Flutter, xóa đúng lock rỗng rồi chạy Flutter tool/build lại.
+
+### Report 6 — kịch bản chụp Mobile App
+
+- Đã tạo [docs/RP6_APP_CAPTURE_SCRIPT.md](docs/RP6_APP_CAPTURE_SCRIPT.md) cho
+  Hình **6.4–6.21**, đúng theo các khung ảnh Report 6.
+- Kịch bản quy định thao tác, điều kiện dữ liệu, tên file cho từng ảnh; chụp
+  đăng nhập/đăng ký (Hình 6.7) ở cuối vì cần đăng xuất.
+- Dữ liệu sẵn có phù hợp để chụp ngay: Home (6.6), Financial model/mapping
+  (6.10), task `dọn phòng khách` có badge `30.000 ₫` (6.13), history/summary
+  finance sau chia quỹ (6.12).
+
+## Cập nhật runtime 2026-08-10 — family mới chưa có mô hình tài chính
+
+Runtime với một tài khoản Manager/family hoàn toàn mới cho thấy AI có thể giải
+thích mô hình 80/20 và gợi ý danh mục, nhưng các câu này **không tạo hay áp dụng
+mô hình thật**. Khi người dùng vẫn yêu cầu chia quỹ, BE lại sinh
+`ALLOCATE_FUND_BY_MODEL`/thẻ chờ xác nhận; endpoint confirm sau đó trả
+`NO_ACTIVE_FINANCE_MODEL` (banner: “Gia đình chưa có mô hình tài chính đang áp
+dụng.”).
+
+- **Cần báo BE:** không sinh pending action chia quỹ khi family không có model
+  `ACTIVE`; AI phải hướng người dùng sang màn **Mô hình tài chính** để tạo và áp
+  dụng model trước. Việc “đề xuất 80/20” bằng text không phải là setup model.
+- **FE đã chặn UX:** thẻ `ALLOCATE_FUND_BY_MODEL` sẽ khóa nút xác nhận khi
+  `FinanceProvider.models` không có model `isActive`, hiển thị hướng dẫn tạo +
+  áp dụng model rồi nhắn AI lại. Nút Hủy vẫn dùng được.
+- **Test lại sau setup thật:** tạo/apply model trên màn Finance, có khoản thu
+  trong đúng kỳ, sau đó gửi `Chia quỹ tháng này ... với tổng tiền 3.000.000đ`;
+  thẻ phải cho xác nhận và không còn `NO_ACTIVE_FINANCE_MODEL`.
+
+## 🔖 Cập nhật BE 2026-08-10 — cần regression AI Chatbox sau khi BE deploy
+
+BE báo đã deploy 4 fix cho các lỗi đang mở:
+
+1. **“Cuối tuần này” multi-turn**: tool giờ đọc context các user message trước;
+   luồng AI hỏi thêm giờ/địa điểm phải normalize về 15–16/08, không còn 13/08.
+2. **`ALLOCATE_FUND_BY_MODEL` bị báo thiếu quyền sai**: thêm prompt guardrail
+   và fallback recover `pendingAction` cho Manager/Deputy yêu cầu chia quỹ kỳ
+   tương lai. FE không cần vá permission notice; cần test lại để xác nhận thẻ
+   thật sự xuất hiện.
+3. **`INSUFFICIENT_AVAILABLE_FUND`**: response lỗi nay có `requestedAmount`,
+   `availableAmount`, `periodMonth`, `periodYear`. **FE đã cập nhật**
+   `ApiException.details` + banner AI để hiển thị số yêu cầu, quỹ khả dụng và
+   kỳ; không còn chỉ nói chung chung “vượt quỹ”.
+4. **`FUND_ALLOCATION_ALREADY_EXISTS`**: BE chuẩn hóa message thành “Kỳ này
+   đã có lần chia quỹ.” FE vẫn map code sang câu giải thích đủ rule một lần/kỳ.
+
+**Cần user regression runtime sau khi cập nhật app:**
+
+- Multi-turn: `Hãy đề xuất lịch đi chơi cuối tuần này` → trả giờ/địa điểm ở
+  message tiếp theo → card phải rơi 15 hoặc 16/08, không phải 13/08.
+- Manager/Deputy: tạo khoản thu tháng 12, rồi `Chia quỹ tháng 12 năm 2026 theo
+  mô hình tài chính đang áp dụng với tổng tiền 100.000đ` → phải sinh card;
+  nếu thiếu quỹ, confirm phải hiện requested/available/period từ BE.
+
 ## 🔖 Cập nhật cuối phiên 2026-08-10 — chốt test AI Chatbox mới nhất, chuẩn bị commit/merge
 
 ### Fix FE đã hoàn tất trong phiên

@@ -173,6 +173,10 @@ class AuthProvider extends ChangeNotifier {
     }
     final fid = family['id']?.toString() ?? family['family']?['id']?.toString();
     if (fid == null) throw Exception('Không lấy được ID gia đình');
+    // The token issued before creating a family still has the old (or empty)
+    // family claims. Refresh it now so AI/calendar authorization uses the
+    // newly-created manager membership, not only the optimistic UI context.
+    final claimsRefreshed = await ApiClient.instance.refreshSessionClaims();
     ApiClient.instance.setFamilyId(fid);
     _user = AppUser.fromJson(
       {
@@ -188,6 +192,14 @@ class AuthProvider extends ChangeNotifier {
       familyRole: 'FAMILY_MANAGER',
     );
     notifyListeners();
+    if (!claimsRefreshed) {
+      // The create operation already succeeded; report a recovery step rather
+      // than leaving the user with a misleading permission error later.
+      throw Exception(
+        'Gia đình đã được tạo nhưng phiên đăng nhập chưa được làm mới. '
+        'Vui lòng đăng xuất và đăng nhập lại trước khi tạo dữ liệu.',
+      );
+    }
   }
 
   // Đăng ký callbacks vào ApiClient: token rotation + force logout
