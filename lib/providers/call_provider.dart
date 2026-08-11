@@ -12,13 +12,15 @@ import '../services/api_client.dart';
 //    BE tự suy ra family/quyền từ `conversationId` hoặc `callId`; điều kiện duy
 //    nhất là người gọi đang là participant còn hoạt động của hội thoại đó.
 //
-// 2. Swagger (bản 236 path ngày 11/08) **chưa khai response schema cho cả 6
-//    endpoint** — chỉ có mỗi request DTO `InitiateCallDto`. Tên field dưới đây
-//    lấy từ tài liệu bàn giao của BE (VQuanCT, Discord #CallVideo 10/08), tức
-//    là nguồn của BE chứ không phải FE tự đoán, nhưng **chưa đối chiếu được
-//    với schema chính thức** → xem `[VERIFY]` trong `API_DOCS.md` mục Calls.
-//    Vì vậy mọi chỗ đọc JSON ở đây đều có fallback và không được ném lỗi khi
-//    thiếu field.
+// 2. Cuộc gọi là luồng thời gian thực: người dùng đang hoảng/đang chờ, không
+//    có cơ hội "thử lại". Nên mọi chỗ đọc JSON ở đây đều có fallback và tuyệt
+//    đối không ném lỗi khi thiếu field — hiển thị thiếu còn hơn sập màn.
+//
+// Đối chiếu schema: bản Swagger 237 path (11/08 đợt 2) **đã khai đủ** cho cả 7
+// endpoint — `CallResponseDto`, `InitiateCallResponseDto`, `JoinCallResponseDto`,
+// `CallActionResponseDto`, `CallHistoryResponseDto`, `CallStatus`,
+// `CallParticipantStatus` + 11 mã lỗi. Model dưới đây khớp field-for-field với
+// các DTO đó, không còn `[VERIFY]` nào treo.
 //
 // Giai đoạn 1 chỉ làm tầng REST + model. Chưa gắn LiveKit (`token`/`livekitUrl`
 // được giữ nguyên để giai đoạn 3 dùng), chưa có signaling Socket.IO `/chat`,
@@ -29,7 +31,16 @@ import '../services/api_client.dart';
 /// đúng bài học từ `referenceType` — enum cứng gặp giá trị lạ sẽ ném lỗi giữa
 /// lúc đang gọi, còn giữ chuỗi thì chỉ là không tô đúng màu.
 ///
-/// Giá trị BE mô tả: RINGING | ONGOING | ENDED | MISSED | DECLINED | CANCELED.
+/// Khớp enum `CallStatus` trong `schema.prisma`:
+/// RINGING | ONGOING | ENDED | MISSED | DECLINED | CANCELED.
+///
+/// - `MISSED`: **đã hoạt động từ 11/08 đợt 2** — BE có job timeout **30 giây**
+///   kể từ `POST /calls`, không ai bắt máy thì tự chuyển `MISSED` và **giải
+///   phóng hội thoại**. Trước đó cuộc gọi nằm `RINGING` vô thời hạn và khoá
+///   luôn hội thoại (không gọi lại được vì `POST /calls` trả 400) — bug thật,
+///   đã được sửa sau khi FE hỏi.
+/// - `CANCELED`: người gọi tự huỷ trước khi có ai bắt máy — **qua `end` hoặc
+///   `leave` đều được**, BE xử lý như nhau.
 class CallStatus {
   const CallStatus._();
 
@@ -50,9 +61,13 @@ class CallStatus {
   static bool isLive(String status) => status == ringing || status == ongoing;
 }
 
-/// Trạng thái của một người trong cuộc gọi.
-/// BE mô tả: INVITED | JOINED | LEFT | DECLINED | NO_ANSWER.
-/// `NO_ANSWER` dành cho gọi nhóm + timeout, BE ghi rõ **bản hiện tại chưa dùng**.
+/// Trạng thái của một người trong cuộc gọi — khớp enum `CallParticipantStatus`
+/// trong `schema.prisma`: INVITED | JOINED | DECLINED | LEFT | NO_ANSWER.
+///
+/// ⚠️ `NO_ANSWER` **vẫn chưa được BE set bao giờ** (xác nhận 11/08 đợt 2):
+/// timeout hiện xử lý ở cấp **cả cuộc gọi** (`Call.status` → `MISSED`), chưa
+/// đánh dấu riêng từng người không trả lời trong gọi nhóm. Đừng làm UI cho
+/// trạng thái này tới khi BE bật lên.
 class CallParticipantStatus {
   const CallParticipantStatus._();
 
@@ -102,6 +117,7 @@ class CallParticipant {
 
   /// Chuỗi gốc của BE — xem [CallParticipantStatus].
   final String status;
+  final DateTime? invitedAt;
   final DateTime? joinedAt;
   final DateTime? leftAt;
   final CallMemberSummary? member;
@@ -111,6 +127,7 @@ class CallParticipant {
     required this.callId,
     required this.memberId,
     required this.status,
+    this.invitedAt,
     this.joinedAt,
     this.leftAt,
     this.member,
@@ -129,6 +146,7 @@ class CallParticipant {
     callId: j['callId']?.toString() ?? '',
     memberId: j['memberId']?.toString() ?? '',
     status: j['status']?.toString() ?? CallParticipantStatus.invited,
+    invitedAt: DateTime.tryParse(j['invitedAt']?.toString() ?? '')?.toLocal(),
     joinedAt: DateTime.tryParse(j['joinedAt']?.toString() ?? '')?.toLocal(),
     leftAt: DateTime.tryParse(j['leftAt']?.toString() ?? '')?.toLocal(),
     member: j['member'] is Map
@@ -148,6 +166,10 @@ class Call {
   final DateTime? startedAt;
   final DateTime? connectedAt;
   final DateTime? endedAt;
+
+  /// BE khai enum 4 giá trị (chữ THƯỜNG, khác hẳn các enum còn lại viết HOA):
+  /// `hangup` | `timeout` | `all_left` | `declined`.
+  /// `timeout` = hết 30 giây không ai bắt máy (đi kèm `status = MISSED`).
   final String? endedReason;
   final CallMemberSummary? initiatedByMember;
   final List<CallParticipant> participants;
@@ -241,6 +263,35 @@ class CallSession {
   );
 }
 
+/// 11 mã lỗi ổn định BE bổ sung ngày 11/08 (đợt 2), khai đủ trong Swagger.
+///
+/// **Bắt theo `code`, KHÔNG bắt theo `message`** — trước đợt này chỉ có message
+/// tiếng Việt thô, mà so chuỗi thì BE sửa một dấu chính tả là FE hỏng im lặng.
+class CallErrorCode {
+  const CallErrorCode._();
+
+  // 400 — POST /calls
+  static const alreadyActive = 'CALL_ALREADY_ACTIVE';
+  static const conversationArchived = 'CONVERSATION_ARCHIVED';
+  static const tooFewMembers = 'CONVERSATION_TOO_FEW_MEMBERS';
+
+  // 400 — join
+  static const alreadyEnded = 'CALL_ALREADY_ENDED';
+
+  // 403
+  static const notFamilyMember = 'NOT_FAMILY_MEMBER';
+  static const notInvited = 'NOT_INVITED';
+  static const notInCall = 'NOT_IN_CALL';
+  static const notInitiator = 'NOT_INITIATOR';
+
+  // 404
+  static const callNotFound = 'CALL_NOT_FOUND';
+  static const conversationNotFound = 'CONVERSATION_NOT_FOUND';
+
+  // 503
+  static const livekitNotConfigured = 'LIVEKIT_NOT_CONFIGURED';
+}
+
 class CallProvider extends ChangeNotifier {
   CallProvider() {
     ApiClient.addSessionResetListener(resetForNewSession);
@@ -269,20 +320,45 @@ class CallProvider extends ChangeNotifier {
   bool get busy => _busy;
   String? get error => _error;
 
-  /// BE trả 503 khi server chưa cấu hình `LIVEKIT_API_KEY/SECRET/URL`. Đây là
-  /// lỗi cấu hình phía server, không phải mạng của người dùng — phải hiện câu
-  /// khác hẳn để khỏi bắt người dùng đi thử lại vô ích.
-  static const _livekitUnconfigured =
-      'Máy chủ chưa bật tính năng gọi video. Vui lòng báo quản trị viên.';
+  /// Câu tiếng Việt cho từng mã lỗi. Ưu tiên `code` (ổn định) hơn `message` của
+  /// BE (có thể đổi chữ bất cứ lúc nào); không khớp mã nào thì mới lùi về
+  /// `message` — vốn cũng đã là tiếng Việt.
+  ///
+  /// `LIVEKIT_NOT_CONFIGURED` là lỗi **cấu hình phía server**, không phải mạng
+  /// của người dùng: cố ý không gợi ý "thử lại" vì thử lại cũng vô ích.
+  static const _messages = {
+    CallErrorCode.alreadyActive: 'Đang có cuộc gọi khác trong hội thoại này.',
+    CallErrorCode.conversationArchived:
+        'Hội thoại đã lưu trữ nên không gọi được.',
+    CallErrorCode.tooFewMembers:
+        'Hội thoại cần ít nhất 2 thành viên đang hoạt động để gọi.',
+    CallErrorCode.alreadyEnded: 'Cuộc gọi đã kết thúc.',
+    CallErrorCode.notFamilyMember: 'Bạn không thuộc gia đình của hội thoại này.',
+    CallErrorCode.notInvited: 'Bạn không có trong cuộc gọi này.',
+    CallErrorCode.notInCall: 'Bạn không ở trong cuộc gọi này.',
+    CallErrorCode.notInitiator:
+        'Chỉ người gọi mới kết thúc được cuộc gọi cho tất cả.',
+    CallErrorCode.callNotFound: 'Không tìm thấy cuộc gọi.',
+    CallErrorCode.conversationNotFound: 'Không tìm thấy hội thoại.',
+    CallErrorCode.livekitNotConfigured:
+        'Máy chủ chưa bật tính năng gọi video. Vui lòng báo quản trị viên.',
+  };
 
   static String messageOf(Object error) {
     if (error is ApiException) {
-      if (error.statusCode == 503) return _livekitUnconfigured;
+      final byCode = _messages[error.code?.toUpperCase()];
+      if (byCode != null) return byCode;
       final m = error.message.trim();
       if (m.isNotEmpty) return m;
     }
     return error.toString().replaceFirst('Exception: ', '');
   }
+
+  /// true khi lỗi là do server chưa bật LiveKit — nơi gọi có thể ẩn hẳn nút gọi
+  /// thay vì cho bấm rồi báo lỗi mãi.
+  static bool isLivekitUnconfigured(Object error) =>
+      error is ApiException &&
+      error.code?.toUpperCase() == CallErrorCode.livekitNotConfigured;
 
   Future<T> _run<T>(Future<T> Function() action) async {
     _busy = true;
@@ -320,22 +396,50 @@ class CallProvider extends ChangeNotifier {
     return CallSession.fromJson(data);
   });
 
+  /// Ba thao tác dưới đây cùng trả `CallActionResponseDto { callId, status }` —
+  /// `status` là trạng thái **sau** thao tác, nên nơi gọi biết ngay kết quả mà
+  /// không phải hỏi lại BE.
+  Future<String> _action(String callId, String verb) => _run(() async {
+    final data = await ApiClient.instance.post('/calls/$callId/$verb', const {});
+    return data['status']?.toString() ?? '';
+  });
+
   /// POST /calls/{callId}/decline — từ chối cuộc gọi đến, không cần đụng
   /// LiveKit.
-  Future<void> decline(String callId) =>
-      _run(() => ApiClient.instance.post('/calls/$callId/decline', const {}));
+  ///
+  /// Gọi 1-1: trả thẳng `DECLINED` vì không còn ai để chờ. Gọi nhóm mà vẫn còn
+  /// người chưa trả lời thì `status` vẫn là `RINGING`/`ONGOING`.
+  Future<String> decline(String callId) => _action(callId, 'decline');
 
   /// POST /calls/{callId}/leave — tự rời cuộc gọi đang diễn ra.
   ///
   /// Đây chỉ là **báo cho BE**; việc rời phòng media là `room.disconnect()`
   /// phía LiveKit, hai việc độc lập nhau và giai đoạn 3 phải gọi cả hai.
-  Future<void> leave(String callId) =>
-      _run(() => ApiClient.instance.post('/calls/$callId/leave', const {}));
+  ///
+  /// ⚠️ Nếu **người khởi tạo** gọi `leave` lúc còn `RINGING` (chưa ai bắt máy)
+  /// thì BE coi như huỷ cuộc gọi và trả `CANCELED` — tương đương [end]. Vì vậy
+  /// không cần bắt nơi gọi phải chọn đúng `leave` hay `end`, dùng cái nào cũng
+  /// an toàn.
+  Future<String> leave(String callId) => _action(callId, 'leave');
 
   /// POST /calls/{callId}/end — kết thúc cho tất cả. **Chỉ người khởi tạo**
-  /// gọi được, người khác nhận 403.
-  Future<void> end(String callId) =>
-      _run(() => ApiClient.instance.post('/calls/$callId/end', const {}));
+  /// gọi được, người khác nhận 403 `NOT_INITIATOR`.
+  ///
+  /// Trả `ENDED` nếu đã từng có người vào phòng, `CANCELED` nếu chưa ai kết nối.
+  Future<String> end(String callId) => _action(callId, 'end');
+
+  /// GET /calls/{callId} — lấy 1 cuộc gọi theo id.
+  ///
+  /// BE bổ sung 11/08 (đợt 2) đúng cho tình huống socket `/chat` reconnect: rớt
+  /// mạng giữa lúc đang đổ chuông thì gọi cái này với `callId` đã lưu để biết
+  /// cuộc gọi còn sống hay đã kết thúc. Trước đó phải lách qua
+  /// `GET /calls/conversations/{cid}?limit=1`.
+  Future<Call> getCall(String callId) => _run(() async {
+    final data = await ApiClient.instance.get('/calls/$callId');
+    return Call.fromJson(
+      data is Map<String, dynamic> ? data : const <String, dynamic>{},
+    );
+  });
 
   // ── Lịch sử ───────────────────────────────────────────────────────────────
 
@@ -372,11 +476,12 @@ class CallProvider extends ChangeNotifier {
     notifyListeners();
   });
 
-  /// Cuộc gọi còn sống gần nhất của một hội thoại.
+  /// Cuộc gọi còn sống gần nhất của một hội thoại — dùng khi FE **chưa có**
+  /// `callId` nào trong tay (vd vừa mở màn chat, muốn biết có cuộc gọi đang
+  /// diễn ra để hiện thanh "Quay lại cuộc gọi").
   ///
-  /// BE **không có** `GET /calls/{callId}`, nên khi socket rớt đúng lúc đang đổ
-  /// chuông thì đây là cách duy nhất lấy lại trạng thái: đọc trang đầu lịch sử
-  /// rồi soi item mới nhất (đúng cách BE hướng dẫn).
+  /// Nếu đã có `callId` (rớt mạng giữa cuộc gọi) thì dùng [getCall] — rẻ hơn và
+  /// chính xác hơn.
   Future<Call?> fetchActiveCall(String conversationId) async {
     await fetchHistory(conversationId, limit: 1);
     if (_history.isEmpty) return null;

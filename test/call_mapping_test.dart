@@ -1,13 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:family_care/providers/call_provider.dart';
+import 'package:family_care/services/api_client.dart';
 
 /// Mapping JSON cho module Calls (gọi video).
 ///
-/// Vì sao cần: Swagger **chưa khai response schema** cho cả 6 endpoint
-/// `/calls/*` (bản 236 path ngày 11/08) — tên field lấy từ tài liệu bàn giao
-/// của BE chứ chưa đối chiếu được với schema chính thức. Đây đúng loại chỗ đã
-/// nhiều lần sinh bug enum/DTO sai trong repo này, nên khoá lại bằng test:
-/// đổi tên field hay đổi kiểu là test đỏ ngay, không đợi tới lúc demo.
+/// Khoá lại contract theo schema chính thức của BE (`CallResponseDto`,
+/// `CallActionResponseDto`, `CallHistoryResponseDto`... — Swagger 237 path,
+/// 11/08 đợt 2). Đây đúng loại chỗ đã nhiều lần sinh bug enum/DTO sai trong
+/// repo này, nên đổi tên field hay đổi kiểu là test đỏ ngay, không đợi tới lúc
+/// demo mới lộ.
 void main() {
   // Payload mẫu lấy từ tài liệu BE bàn giao (Discord #CallVideo, 10/08/2026).
   Map<String, dynamic> fullCallJson() => {
@@ -197,6 +198,64 @@ void main() {
         },
       });
       expect(p.displayName, 'Nguyen Van C');
+    });
+
+    test('đọc invitedAt (schema khai required, từng bị bỏ sót)', () {
+      final p = CallParticipant.fromJson({
+        'invitedAt': '2026-08-10T12:23:11.000Z',
+      });
+      expect(p.invitedAt, isNotNull);
+    });
+  });
+
+  group('CallProvider.messageOf — bắt theo code, không theo message', () {
+    // BE bổ sung 11 mã lỗi ổn định ngày 11/08 (đợt 2). Trước đó FE chỉ có
+    // message tiếng Việt thô; so chuỗi thì BE sửa một dấu chính tả là hỏng.
+    test('mỗi mã lỗi ra một câu riêng, không lẫn nhau', () {
+      final codes = [
+        CallErrorCode.alreadyActive,
+        CallErrorCode.conversationArchived,
+        CallErrorCode.tooFewMembers,
+        CallErrorCode.alreadyEnded,
+        CallErrorCode.notFamilyMember,
+        CallErrorCode.notInvited,
+        CallErrorCode.notInCall,
+        CallErrorCode.notInitiator,
+        CallErrorCode.callNotFound,
+        CallErrorCode.conversationNotFound,
+        CallErrorCode.livekitNotConfigured,
+      ];
+      final seen = <String>{};
+      for (final c in codes) {
+        final msg = CallProvider.messageOf(
+          ApiException(400, 'message thô của BE', code: c),
+        );
+        expect(msg, isNot('message thô của BE'), reason: c);
+        expect(seen.add(msg), isTrue, reason: 'câu bị trùng cho $c');
+      }
+    });
+
+    test('mã lạ (BE thêm sau) → lùi về message của BE, không nuốt lỗi', () {
+      expect(
+        CallProvider.messageOf(
+          ApiException(400, 'Lỗi mới nào đó', code: 'CALL_SOMETHING_NEW'),
+        ),
+        'Lỗi mới nào đó',
+      );
+    });
+
+    test('isLivekitUnconfigured chỉ đúng với đúng mã đó', () {
+      expect(
+        CallProvider.isLivekitUnconfigured(
+          ApiException(503, '', code: CallErrorCode.livekitNotConfigured),
+        ),
+        isTrue,
+      );
+      // 503 nhưng mã khác → không được coi là chưa cấu hình LiveKit.
+      expect(
+        CallProvider.isLivekitUnconfigured(ApiException(503, 'timeout')),
+        isFalse,
+      );
     });
   });
 }
