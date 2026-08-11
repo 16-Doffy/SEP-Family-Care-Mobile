@@ -3,18 +3,21 @@
 **Swagger UI:** https://api.familycare-digital.com/api/docs
 **Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-28 bằng `familycare-swagger-2026-07-28.json`**. FE wiring audit lại sau khi đồng bộ `origin/main` tại `e5aa216`.
 
-> ### 🔄 Cập nhật API mới (2026-08-11) — **236 paths / 303 operations / 262 schemas**
-> Export lại từ Swagger `https://api.familycare-digital.com/api/docs-json`. So với bản 09/08
-> (`229/296/253`), BE bổ sung **module Calls (video call, LiveKit)** — 6 path, chưa wire FE:
-> `POST /calls`, `POST /calls/{callId}/join`, `.../decline`, `.../leave`, `.../end`,
-> `GET /calls/conversations/{conversationId}`. Chỉ có request DTO `InitiateCallDto`, **cả 6 path
-> đều chưa có response schema** trong Swagger.
+> ### 🔄 Cập nhật API mới (2026-08-11 **đợt 2**) — **237 paths / 304 operations / 273 schemas**
+> BE trả lời hết `CAU_HOI_BE_VIDEO_CALL_2026-08-11.md` và ship thêm ngay trong ngày. So với đợt 1
+> cùng ngày (`236/303/262`):
+> - **`GET /calls/{callId}`** — endpoint mới, phục hồi trạng thái sau khi socket reconnect.
+> - **11 schema Calls** (`CallResponseDto`, `InitiateCallResponseDto`, `JoinCallResponseDto`,
+>   `CallActionResponseDto`, `CallHistoryResponseDto`, `CallStatus`, `CallParticipantStatus`...) —
+>   trước đó **cả 6 endpoint đều không có response schema**, chỉ mỗi `InitiateCallDto`.
+> - **11 mã lỗi ổn định** khai đủ trong Swagger (`CALL_ALREADY_ACTIVE`, `LIVEKIT_NOT_CONFIGURED`...).
+> - `NotificationResponseDto.referenceType` **bổ sung `'CALL'`** (nay 12 giá trị) — chỗ Swagger tự
+>   mâu thuẫn ở đợt 1 (enum `NotificationType` có `CALL` mà `referenceType` không có) đã được sửa.
 >
-> `NotificationType` thêm giá trị `CALL` (10 giá trị) và `SendMessageDto.messageType` thêm `CALL`
-> (6 giá trị) — nhưng `NotificationResponseDto.referenceType` **chưa** thêm `CALL` (vẫn 11 giá trị
-> cũ) → lệch ngay trong chính Swagger. Đã gửi câu hỏi đối chiếu: xem `CAU_HOI_BE_2026-08-11.md`.
-> **Chưa code gì cho Video Call ở đợt này** — đang chờ BE xác nhận trước khi wire cứng theo tài
-> liệu Discord (VQuanCT).
+> **Bug thật do bộ câu hỏi phát hiện:** cuộc gọi không ai bắt máy trước đây nằm `RINGING` vô thời hạn
+> và **khoá luôn hội thoại** không gọi lại được. BE đã thêm timeout 30 giây tự chuyển `MISSED`.
+>
+> FE đã cập nhật `call_provider.dart` theo schema chính thức — **không còn `[VERIFY]` nào** cho module này.
 >
 > ### 📌 BE trả lời bộ câu hỏi đối chiếu contract (2026-08-09) — xem `CAU_HOI_BE_2026-08-09.md`
 > Bộ câu hỏi này **chỉ để đối chiếu**, không yêu cầu BE đổi gì. Kết quả: phần lớn FE đã hiểu đúng, gỡ được nhiều `[VERIFY]` treo lâu.
@@ -174,34 +177,70 @@ Provider `call_provider.dart` · media đi thẳng client ↔ **LiveKit Cloud**,
 > **Tuyệt đối không dùng `ApiClient.familyPath()`** — BE tự suy family/quyền từ `conversationId`/`callId`; điều kiện
 > duy nhất là người gọi đang là participant còn hoạt động của hội thoại. Ghép nhầm prefix là silent fail.
 
-- `POST /api/v1/calls` — khởi tạo. Body `InitiateCallDto { conversationId }` (DTO **duy nhất** có trong Swagger).
-  Trả vé vào phòng ngay, **không chờ ai bắt máy**. 400 khi hội thoại đang có cuộc gọi `RINGING`/`ONGOING`, đã `ARCHIVED`, hoặc dưới 2 thành viên active.
-- `POST /api/v1/calls/{callId}/join` — bắt máy, nhận vé. 403 nếu không được mời, 400 nếu cuộc gọi đã kết thúc.
-- `POST /api/v1/calls/{callId}/decline` — từ chối, không cần đụng LiveKit.
-- `POST /api/v1/calls/{callId}/leave` — tự rời. **Chỉ báo BE**; rời phòng media là `room.disconnect()` phía LiveKit — 2 việc độc lập, phải gọi cả hai.
-- `POST /api/v1/calls/{callId}/end` — kết thúc cho tất cả, **chỉ người khởi tạo** (403 cho người khác).
-- `GET /api/v1/calls/conversations/{conversationId}?cursor=&limit=` — lịch sử, cursor pagination mới → cũ.
-- `503` ở `POST /calls` và `.../join` = server **chưa cấu hình** `LIVEKIT_API_KEY/SECRET/URL` — lỗi cấu hình phía server, phải hiện câu khác hẳn lỗi mạng (`CallProvider.messageOf`).
+> ✅ **Chốt contract 2026-08-11 (đợt 2)** — Swagger nay khai **đủ cả 7 endpoint** (thêm `GET /calls/{callId}`), 11 schema
+> (`CallResponseDto`, `InitiateCallResponseDto`, `JoinCallResponseDto`, `CallActionResponseDto`, `CallHistoryResponseDto`,
+> `CallStatus`, `CallParticipantStatus`...) và 11 mã lỗi. **Không còn `[VERIFY]` nào treo cho module này.**
+> Nguồn: `CAU_HOI_BE_VIDEO_CALL_2026-08-11.md` + `CALLS_GUIDE.md`/`CALLS_QA.md` của BE.
+
+- `POST /api/v1/calls` — khởi tạo. Body `InitiateCallDto { conversationId }` → `InitiateCallResponseDto { callId, roomName, token, livekitUrl, call }`.
+  Trả vé vào phòng ngay, **không chờ ai bắt máy**. `callId` ngoài cùng và `call.id` luôn cùng giá trị.
+- `POST /api/v1/calls/{callId}/join` — bắt máy → `JoinCallResponseDto { callId, roomName, token, livekitUrl }` (**không** kèm `call`).
+- `POST /api/v1/calls/{callId}/decline` · `.../leave` · `.../end` — cả 3 trả `CallActionResponseDto { callId, status }`, `status` là trạng thái **sau** thao tác.
+  - `leave` **chỉ báo BE**; rời phòng media là `room.disconnect()` phía LiveKit — 2 việc độc lập, phải gọi cả hai.
+  - ⚠️ **Người khởi tạo gọi `leave` lúc còn `RINGING` → BE trả `CANCELED`**, tương đương `end`. Không cần bắt UI chọn đúng hàm.
+  - `end` chỉ người khởi tạo (403 `NOT_INITIATOR`); trả `ENDED` nếu đã có người vào phòng, `CANCELED` nếu chưa ai kết nối.
+- `GET /api/v1/calls/conversations/{conversationId}?cursor=&limit=` — lịch sử → `CallHistoryResponseDto { items, nextCursor }`.
+  `nextCursor` **luôn có field**, `null` khi hết trang.
+- `GET /api/v1/calls/{callId}` — **[MỚI đợt 2]** lấy 1 cuộc gọi theo id, đúng cho việc phục hồi trạng thái sau khi socket `/chat` reconnect.
+  Trước đó phải lách qua `conversations/{cid}?limit=1`. → `CallProvider.getCall()`.
+
+**Envelope:** có, `TransformInterceptor` global (`main.ts:48`), **không ngoại lệ** cho `/calls/*` → `ApiClient` bóc `data` như mọi module khác.
+
+**Enum (đã có trong `components.schemas`, FE vẫn giữ chuỗi gốc thay vì enum Dart cứng — bài học `referenceType`):**
+- `CallStatus`: `RINGING | ONGOING | ENDED | MISSED | DECLINED | CANCELED`.
+  ⚠️ **`MISSED` nay ĐÃ hoạt động**: BE có job timeout **30 giây** kể từ `POST /calls`, không ai bắt máy thì tự chuyển `MISSED`
+  và **giải phóng hội thoại**. *Trước đợt 2, cuộc gọi nằm `RINGING` vô thời hạn và khoá luôn hội thoại — bug thật, FE hỏi mới lộ ra.*
+- `CallParticipantStatus`: `INVITED | JOINED | DECLINED | LEFT | NO_ANSWER` — **`NO_ANSWER` vẫn chưa bao giờ được set**
+  (timeout xử lý ở cấp cả cuộc gọi, chưa đánh dấu riêng từng người). Đừng làm UI cho trạng thái này.
+- `endedReason`: `hangup | timeout | all_left | declined` — **chữ thường**, khác hẳn mọi enum khác viết HOA.
+
+**11 mã lỗi ổn định** (`CallErrorCode` trong `call_provider.dart`) — **bắt theo `code`, KHÔNG theo `message`**:
+| `code` | HTTP | Endpoint |
+|---|---|---|
+| `CALL_ALREADY_ACTIVE` · `CONVERSATION_ARCHIVED` · `CONVERSATION_TOO_FEW_MEMBERS` | 400 | `POST /calls` |
+| `CALL_ALREADY_ENDED` | 400 | `.../join` |
+| `NOT_FAMILY_MEMBER` | 403 | `POST /calls`, `GET` (cả 2) |
+| `NOT_INVITED` | 403 | `.../join`, `.../decline` |
+| `NOT_IN_CALL` | 403 | `.../leave` |
+| `NOT_INITIATOR` | 403 | `.../end` |
+| `CALL_NOT_FOUND` | 404 | mọi endpoint có `:callId` |
+| `CONVERSATION_NOT_FOUND` | 404 | `POST /calls`, `GET .../conversations/:id` |
+| `LIVEKIT_NOT_CONFIGURED` | 503 | `POST /calls`, `.../join` — lỗi **cấu hình server**, không gợi ý người dùng thử lại |
 
 **Signaling đi nhờ namespace Socket.IO `/chat`** (room `conversation:<id>`), không có namespace riêng: `call:incoming`,
 `call:accepted`, `call:declined`, `call:participant-update`, `call:ended`, kèm `chat:message:new` loại `CALL`.
-⚠️ FE **phải đã connect + `chat:join`** mới nhận được — mà `chat_provider.dart` hiện là **REST polling, chưa có WebSocket nào**,
-nên đây là hạ tầng phải dựng thêm (giai đoạn 2). Không có event client→server nào cho call; mọi hành động đi qua REST ở trên.
+Không có event client→server nào cho call; mọi hành động đi qua REST ở trên.
+- **Vào room: client tự `emit('chat:join', { workspaceId })`** — ⚠️ field tên **`workspaceId`**, KHÔNG phải `conversationId`/`familyId`.
+  **Join 1 lần là đủ cho MỌI hội thoại** trong family; không cần đang mở màn chat nào để nhận `call:incoming`.
+- `participants` trong `call:incoming` là mảng **object đầy đủ**, không phải mảng `memberId`.
+- `/chat` là namespace chat **đầy đủ** (tin nhắn, typing, presence, reaction, pin...), không riêng cho call →
+  **sau này bỏ được REST polling của `chat_provider.dart`**, nhưng đó là thay đổi lớn, để sau đợt bảo vệ.
+- ⚠️ `chat_provider.dart` hiện vẫn **REST polling, chưa có WebSocket nào** → hạ tầng phải dựng ở giai đoạn 2.
 
-**`participant.identity` trong LiveKit = `memberId`** (KHÔNG phải `userId`) — dùng để map với `participants[].memberId`.
+**LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
+trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).
+Đa thiết bị cùng `identity`: BE **không chặn**, theo mặc định LiveKit thiết bị vào sau đá thiết bị cũ.
 
-**`[VERIFY]` — Swagger chưa khai response schema cho CẢ 6 endpoint** (chỉ có `InitiateCallDto`). Tên field dưới đây lấy từ
-tài liệu bàn giao của BE (VQuanCT, Discord #CallVideo 10/08) chứ chưa đối chiếu được schema chính thức; đã hỏi lại trong
-`CAU_HOI_BE_2026-08-11.md`. `call_provider.dart` vì vậy parse phòng thủ, thiếu field không ném lỗi:
-- `CallStatus`: `RINGING | ONGOING | ENDED | MISSED | DECLINED | CANCELED` — `MISSED` BE ghi rõ **bản hiện tại chưa dùng**.
-- `CallParticipantStatus`: `INVITED | JOINED | LEFT | DECLINED | NO_ANSWER` — `NO_ANSWER` cũng **chưa dùng** (dành gọi nhóm + timeout).
-- Cả 2 enum **không tồn tại trong `components.schemas`** → FE giữ **chuỗi gốc**, không map sang enum Dart cứng (bài học `referenceType`).
-- `relatedCallId` trên message loại `CALL`: tài liệu có nhắc, schema không có → chưa dùng.
-- **Không có `GET /calls/{callId}`**: muốn lấy lại trạng thái sau khi socket rớt thì đọc `GET /calls/conversations/{cid}?limit=1`
-  rồi soi `items[0].status` (đúng cách BE hướng dẫn) — `CallProvider.fetchActiveCall()` làm việc này.
+**Push:** `referenceType = "CALL"` (Swagger đã bổ sung vào `NotificationResponseDto`, nay 12 giá trị), `referenceId = callId`.
+Gửi cho mọi participant trừ người gọi, đúng 1 lần lúc khởi tạo. Khi timeout `MISSED`, người **chưa từng bắt máy** nhận thêm
+1 push `body: "Cuộc gọi nhỡ"`. Các case kết thúc khác (`ENDED`/`CANCELED`/`DECLINED`) **không** có push riêng.
 
-**Giới hạn BE tự công bố (bản MVP):** chỉ ổn định cho gọi **1-1**; gọi nhóm dùng chung API nhưng **chưa có timeout tự động**
-cho người không bắt máy.
+**Message log:** `messageType: CALL`, `relatedCallId` là field **top-level** trên Message (schema chat chưa khai nên chưa thấy
+trong Swagger). Chuỗi tóm tắt ("Cuộc gọi video · 5:32") **do BE sinh sẵn** trong `content` — FE hiển thị thẳng, không tự tính.
+Loại tin này **không cho** sửa/thả cảm xúc/ghim (BE trả 400) → UI phải ẩn các nút đó.
+
+**Gọi nhóm:** BE **không chặn** hội thoại `GROUP`; timeout 30 giây áp dụng như nhau cho cả 1-1 lẫn nhóm. Có hiện nút gọi cho
+nhóm hay không là **lựa chọn UI của FE**. Phần còn thiếu cho gọi nhóm chỉ là UX (`NO_ANSWER` riêng từng người), không phải bug chặn.
 
 ### Notifications — **[CHỐT BE 2026-08-09: đủ contract, hết đoán]**
 - `GET /api/v1/families/{familyId}/notifications` — Danh sách thông báo của thành viên hiện tại. Query `unreadOnly` (bool).

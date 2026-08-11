@@ -1,3 +1,28 @@
+> # ✅ ĐÃ CÓ TRẢ LỜI ĐẦY ĐỦ — 2026-08-11 (đợt 2). KHÔNG CÒN TREO.
+>
+> BE đã trả lời **toàn bộ 16 câu** và ship thêm khá nhiều thứ. Giữ file này làm **bản ghi lịch sử**;
+> trạng thái thật hiện nay đọc ở `API_DOCS.md` mục **Calls** (đã cập nhật theo schema chính thức).
+>
+> **BE sửa/bổ sung sau khi đọc file này:**
+> - **Bug thật do câu 5.1 phát hiện:** cuộc gọi không ai bắt máy nằm `RINGING` **vô thời hạn** và
+>   **khoá luôn hội thoại** (không gọi lại được). → Đã sửa: job timeout **30 giây** tự chuyển `MISSED`
+>   và giải phóng hội thoại.
+> - **Endpoint mới `GET /calls/{callId}`** (câu 5.5/6.1) — trước phải lách qua `conversations/{cid}?limit=1`.
+> - `decline`/`leave`/`end` nay trả thêm **`status`** (câu 1.3).
+> - **11 mã lỗi ổn định** `code`/`errorCode` (câu 10.1) — trước chỉ có message tiếng Việt thô.
+> - **Swagger khai đủ 7 endpoint + 11 schema** (câu 1.1/2.1) — trước hoàn toàn trống.
+> - `referenceType` bổ sung `'CALL'` vào `NotificationResponseDto` — đúng chỗ Swagger tự mâu thuẫn ở câu 7.1.
+> - `leave` bởi người khởi tạo lúc `RINGING` nay tương đương `end` → `CANCELED` (câu 5.4).
+> - Thêm push riêng **"Cuộc gọi nhỡ"** cho người chưa bắt máy (câu 7.3).
+> - Xử lý webhook `participant_connection_aborted` cho app bị kill/rớt mạng (câu 5.5).
+>
+> **Đáp án khác với giả định ban đầu của FE, cần nhớ:**
+> - `chat:join` payload là **`{ workspaceId }`** — không phải `conversationId`/`familyId`. Join **1 lần**
+>   là đủ cho mọi hội thoại; không cần mở màn chat mới nhận được `call:incoming`.
+> - `/chat` là namespace chat **đầy đủ** (tin nhắn, typing, presence...), không riêng cho call.
+> - Token LiveKit **TTL 10 phút**, reconnect dùng lại được, không phải gọi `join` lại.
+> - Gọi nhóm: BE **không chặn**, FE tự quyết có hiện nút gọi hay không.
+
 # Câu hỏi cho BE — Video Call (LiveKit), ngày 2026-08-11
 
 **Người hỏi:** FE Mobile (Flutter — app điện thoại; app Wear OS dùng chung codebase nhưng **không** làm gọi video)
