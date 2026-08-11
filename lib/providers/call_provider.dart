@@ -263,6 +263,106 @@ class CallSession {
   );
 }
 
+// ── Payload của 5 event `call:*` trên namespace Socket.IO `/chat` ─────────
+//
+// Không có schema trong Swagger (đây là hợp đồng WebSocket, không phải REST),
+// nên parse phòng thủ như phần REST ở trên: thiếu field thì suy biến êm chứ
+// không ném lỗi giữa lúc đang có cuộc gọi.
+
+/// `call:incoming` — bắn ngay sau khi người gọi tạo cuộc gọi thành công.
+class CallIncomingEvent {
+  final String callId;
+  final String conversationId;
+  final String roomName;
+  final String initiatedByMemberId;
+
+  /// Tên người gọi do BE dựng sẵn — hiển thị thẳng, không tự ghép lại.
+  final String callerName;
+
+  /// ⚠️ BE xác nhận đây là mảng **object đầy đủ**, KHÔNG phải mảng `memberId`.
+  /// Đọc nhầm thành chuỗi thì màn cuộc gọi đến hiện trống trơn mà không báo lỗi.
+  final List<CallParticipant> participants;
+
+  const CallIncomingEvent({
+    required this.callId,
+    required this.conversationId,
+    required this.roomName,
+    required this.initiatedByMemberId,
+    required this.callerName,
+    this.participants = const [],
+  });
+
+  factory CallIncomingEvent.fromJson(Map<String, dynamic> j) =>
+      CallIncomingEvent(
+        callId: j['callId']?.toString() ?? '',
+        conversationId: j['conversationId']?.toString() ?? '',
+        roomName: j['roomName']?.toString() ?? '',
+        initiatedByMemberId: j['initiatedByMemberId']?.toString() ?? '',
+        callerName: j['callerName']?.toString() ?? 'Thành viên',
+        participants: switch (j['participants']) {
+          final List l => l
+              .whereType<Map>()
+              .map(
+                (e) => CallParticipant.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .toList(),
+          _ => const <CallParticipant>[],
+        },
+      );
+}
+
+/// `call:participant-update` — một người vừa vào/rời phòng LiveKit thật sự
+/// (BE xác nhận qua webhook), hoặc vừa gọi `.../leave`.
+///
+/// Dùng chung khuôn cho `call:accepted` và `call:declined` vì cả ba đều chỉ
+/// mang `callId` + `memberId`; riêng hai cái sau không có `status`.
+class CallParticipantUpdateEvent {
+  final String callId;
+  final String memberId;
+
+  /// `JOINED | LEFT` cho `call:participant-update`; rỗng với accepted/declined.
+  final String status;
+
+  const CallParticipantUpdateEvent({
+    required this.callId,
+    required this.memberId,
+    this.status = '',
+  });
+
+  factory CallParticipantUpdateEvent.fromJson(Map<String, dynamic> j) =>
+      CallParticipantUpdateEvent(
+        callId: j['callId']?.toString() ?? '',
+        memberId: j['memberId']?.toString() ?? '',
+        status: j['status']?.toString() ?? '',
+      );
+}
+
+/// `call:ended` — cuộc gọi kết thúc vì bất kỳ lý do gì.
+class CallEndedEvent {
+  final String callId;
+
+  /// Chuỗi gốc — xem [CallStatus]. `MISSED` là hết 30 giây không ai bắt máy.
+  final String status;
+
+  /// `hangup | timeout | all_left | declined` — **chữ thường**.
+  final String? endedReason;
+  final DateTime? endedAt;
+
+  const CallEndedEvent({
+    required this.callId,
+    required this.status,
+    this.endedReason,
+    this.endedAt,
+  });
+
+  factory CallEndedEvent.fromJson(Map<String, dynamic> j) => CallEndedEvent(
+    callId: j['callId']?.toString() ?? '',
+    status: j['status']?.toString() ?? CallStatus.ended,
+    endedReason: j['endedReason']?.toString(),
+    endedAt: DateTime.tryParse(j['endedAt']?.toString() ?? '')?.toLocal(),
+  );
+}
+
 /// 11 mã lỗi ổn định BE bổ sung ngày 11/08 (đợt 2), khai đủ trong Swagger.
 ///
 /// **Bắt theo `code`, KHÔNG bắt theo `message`** — trước đợt này chỉ có message
