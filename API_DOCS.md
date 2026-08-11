@@ -3,6 +3,19 @@
 **Swagger UI:** https://api.familycare-digital.com/api/docs
 **Date:** snapshot 2026-07-07 (118 paths) → **re-verify 2026-07-28 bằng `familycare-swagger-2026-07-28.json`**. FE wiring audit lại sau khi đồng bộ `origin/main` tại `e5aa216`.
 
+> ### 🔄 Cập nhật API mới (2026-08-11) — **236 paths / 303 operations / 262 schemas**
+> Export lại từ Swagger `https://api.familycare-digital.com/api/docs-json`. So với bản 09/08
+> (`229/296/253`), BE bổ sung **module Calls (video call, LiveKit)** — 6 path, chưa wire FE:
+> `POST /calls`, `POST /calls/{callId}/join`, `.../decline`, `.../leave`, `.../end`,
+> `GET /calls/conversations/{conversationId}`. Chỉ có request DTO `InitiateCallDto`, **cả 6 path
+> đều chưa có response schema** trong Swagger.
+>
+> `NotificationType` thêm giá trị `CALL` (10 giá trị) và `SendMessageDto.messageType` thêm `CALL`
+> (6 giá trị) — nhưng `NotificationResponseDto.referenceType` **chưa** thêm `CALL` (vẫn 11 giá trị
+> cũ) → lệch ngay trong chính Swagger. Đã gửi câu hỏi đối chiếu: xem `CAU_HOI_BE_2026-08-11.md`.
+> **Chưa code gì cho Video Call ở đợt này** — đang chờ BE xác nhận trước khi wire cứng theo tài
+> liệu Discord (VQuanCT).
+>
 > ### 📌 BE trả lời bộ câu hỏi đối chiếu contract (2026-08-09) — xem `CAU_HOI_BE_2026-08-09.md`
 > Bộ câu hỏi này **chỉ để đối chiếu**, không yêu cầu BE đổi gì. Kết quả: phần lớn FE đã hiểu đúng, gỡ được nhiều `[VERIFY]` treo lâu.
 >
@@ -129,7 +142,7 @@
 - `GET /api/v1/families/{familyId}/sos/alerts/{alertId}` — Chi tiết 1 alert (kèm phản hồi + vị trí). **[wire FE 2026-07-08]** icon ℹ️ trên alert card → `_SosAlertDetailSheet` (`JsonReportView`).
 - `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/locations` — Gửi 1 điểm vị trí cho alert active. Body `PushSosLocationDto { latitude, longitude, sourceType, accuracy?, recordedAt?, deviceId? }`. **[wire FE 2026-07-07]** `SOSScreen._startLocationStreaming()` — gọi mỗi 20s từ lúc gửi SOS thành công tới khi confirm-safety.
   - `sourceType`: `MOBILE_GPS | WEARABLE_GPS | SIMULATED_GPS`
-- `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/locations/batch` — **[MỚI 07/11]** Gửi NHIỀU điểm 1 lần. Body `PushSosLocationBatchDto { points: PushSosLocationDto[] }`. **[wire FE]** `SosProvider.pushLocationBatch()` — dùng cho buffer offline (đã có method, **chưa nối UI trigger**).
+- `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/locations/batch` — **[MỚI 07/11]** Gửi NHIỀU điểm 1 lần. Body `PushSosLocationBatchDto { points: PushSosLocationDto[] }`. **[wire FE 2026-08-11]** `SosProvider.pushLocationBatch()` trả `bool` (như `pushLocation`) — `SOSScreen._startLocationStreaming()` buffer điểm gửi lỗi vào `_pendingLocationPoints` (cap 50), flush bằng batch ở lần `pushLocation` thành công kế tiếp; buffer xoá khi flush OK hoặc khi dừng stream.
 - `GET /api/v1/families/{familyId}/sos/alerts/{alertId}/location/current` — **[MỚI 07/11]** Vị trí MỚI NHẤT của alert. **[wire FE]** `SosProvider.fetchCurrentLocation()` → gọi từ `sos_screen.dart` để đặt pin ban đầu khi mở màn theo dõi.
 - `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/responses` — Phản hồi. Body `CreateSosResponseDto { responseType, message? }`.
   - `responseType`: chỉ chấp nhận `VIEWED | CONFIRM_SAFE | NEED_HELP` từ thành viên (enum còn có `RESOLVED | CANCELED` nhưng không dùng qua route này).
