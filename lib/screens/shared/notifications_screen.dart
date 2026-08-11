@@ -180,6 +180,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'ALBUM_TAG' => Icons.photo_library_outlined,
     'CALENDAR' => Icons.calendar_month_outlined,
     'CHAT' => Icons.chat_bubble_outline_rounded,
+    // BE thêm giá trị này cùng module gọi video (Swagger 11/08, nay 10 giá trị).
+    'CALL' => Icons.videocam_outlined,
     _ => Icons.notifications_none_rounded,
   };
 }

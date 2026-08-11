@@ -80,6 +80,18 @@ class NotificationRouter {
             : null;
       case 'CONVERSATION':
         return '/$shell/chat';
+      case 'CALL':
+        // BE gửi loại này cho cuộc gọi đến và cuộc gọi nhỡ (`referenceId` là
+        // `callId`), thêm cùng module gọi video ngày 11/08.
+        //
+        // ⚠️ TẠM THỜI đưa về khung chat: **màn hình cuộc gọi chưa được xây**
+        // (giai đoạn 3). Mở chat vẫn hợp lý vì dòng tóm tắt cuộc gọi
+        // (`messageType: CALL`) nằm sẵn trong hội thoại, nên bấm vào thông báo
+        // cuộc gọi nhỡ là thấy ngay ai gọi và lúc nào.
+        //
+        // Khi có màn gọi rồi thì đổi thành mở thẳng cuộc gọi kèm `callId` —
+        // `CallProvider.getCall()` đã sẵn sàng cho việc đó.
+        return '/$shell/chat';
       case 'SUPPORT_REQUEST':
         // BE bắt đầu gửi loại này từ 09/08/2026: tạo yêu cầu → báo
         // Manager/Deputy, duyệt/từ chối → báo lại chính người gửi. Nên **mọi
