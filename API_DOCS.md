@@ -164,8 +164,44 @@ Base: `/api/v1/families/{familyId}/chat/...` · provider `chat_provider.dart` ·
 - `POST .../messages/{id}/reactions` · `DELETE .../messages/{id}/reactions/{emoji}`
 - `POST .../messages/{id}/pin` · `DELETE .../messages/{id}/pin`
 - `POST /chat/conversations/{cid}/read` (đánh dấu đã đọc)
-- `messageType`: `TEXT | IMAGE | FILE | LOCATION | SOS_QUICK_MESSAGE`. `[VERIFY]` giới hạn `limit`, encode emoji URL, có nên chuyển WS realtime.
+- `messageType`: `TEXT | IMAGE | FILE | LOCATION | SOS_QUICK_MESSAGE | CALL` — **`CALL` là giá trị mới (Swagger 11/08)**, BE bắn kèm khi cuộc gọi kết thúc để log "Cuộc gọi video · 5:32" trong khung chat; loại tin này **không cho** sửa/thả cảm xúc/ghim (BE trả 400). `[VERIFY]` giới hạn `limit`, encode emoji URL, có nên chuyển WS realtime.
 - ✅ **Tin an toàn nhanh (2026-07-13, verify live)**: FE gửi `messageType: SOS_QUICK_MESSAGE` tường minh trong `SendMessageDto` — nút khiên cạnh ô nhập chat mở sheet 4 tin mẫu, bubble hiển thị nổi bật màu cam kèm nhãn "TIN AN TOÀN". BE echo đúng `messageType` trong response (đã test server thật).
+
+### Calls — gọi video qua LiveKit **[BE ship 2026-08-10, FE đang wire theo giai đoạn]**
+Provider `call_provider.dart` · media đi thẳng client ↔ **LiveKit Cloud**, BE chỉ ký token + phát tín hiệu.
+
+> ⚠️ **KHÁC MỌI MODULE KHÁC: endpoint là top-level `/api/v1/calls/...`, KHÔNG nằm dưới `/families/{familyId}`.**
+> **Tuyệt đối không dùng `ApiClient.familyPath()`** — BE tự suy family/quyền từ `conversationId`/`callId`; điều kiện
+> duy nhất là người gọi đang là participant còn hoạt động của hội thoại. Ghép nhầm prefix là silent fail.
+
+- `POST /api/v1/calls` — khởi tạo. Body `InitiateCallDto { conversationId }` (DTO **duy nhất** có trong Swagger).
+  Trả vé vào phòng ngay, **không chờ ai bắt máy**. 400 khi hội thoại đang có cuộc gọi `RINGING`/`ONGOING`, đã `ARCHIVED`, hoặc dưới 2 thành viên active.
+- `POST /api/v1/calls/{callId}/join` — bắt máy, nhận vé. 403 nếu không được mời, 400 nếu cuộc gọi đã kết thúc.
+- `POST /api/v1/calls/{callId}/decline` — từ chối, không cần đụng LiveKit.
+- `POST /api/v1/calls/{callId}/leave` — tự rời. **Chỉ báo BE**; rời phòng media là `room.disconnect()` phía LiveKit — 2 việc độc lập, phải gọi cả hai.
+- `POST /api/v1/calls/{callId}/end` — kết thúc cho tất cả, **chỉ người khởi tạo** (403 cho người khác).
+- `GET /api/v1/calls/conversations/{conversationId}?cursor=&limit=` — lịch sử, cursor pagination mới → cũ.
+- `503` ở `POST /calls` và `.../join` = server **chưa cấu hình** `LIVEKIT_API_KEY/SECRET/URL` — lỗi cấu hình phía server, phải hiện câu khác hẳn lỗi mạng (`CallProvider.messageOf`).
+
+**Signaling đi nhờ namespace Socket.IO `/chat`** (room `conversation:<id>`), không có namespace riêng: `call:incoming`,
+`call:accepted`, `call:declined`, `call:participant-update`, `call:ended`, kèm `chat:message:new` loại `CALL`.
+⚠️ FE **phải đã connect + `chat:join`** mới nhận được — mà `chat_provider.dart` hiện là **REST polling, chưa có WebSocket nào**,
+nên đây là hạ tầng phải dựng thêm (giai đoạn 2). Không có event client→server nào cho call; mọi hành động đi qua REST ở trên.
+
+**`participant.identity` trong LiveKit = `memberId`** (KHÔNG phải `userId`) — dùng để map với `participants[].memberId`.
+
+**`[VERIFY]` — Swagger chưa khai response schema cho CẢ 6 endpoint** (chỉ có `InitiateCallDto`). Tên field dưới đây lấy từ
+tài liệu bàn giao của BE (VQuanCT, Discord #CallVideo 10/08) chứ chưa đối chiếu được schema chính thức; đã hỏi lại trong
+`CAU_HOI_BE_2026-08-11.md`. `call_provider.dart` vì vậy parse phòng thủ, thiếu field không ném lỗi:
+- `CallStatus`: `RINGING | ONGOING | ENDED | MISSED | DECLINED | CANCELED` — `MISSED` BE ghi rõ **bản hiện tại chưa dùng**.
+- `CallParticipantStatus`: `INVITED | JOINED | LEFT | DECLINED | NO_ANSWER` — `NO_ANSWER` cũng **chưa dùng** (dành gọi nhóm + timeout).
+- Cả 2 enum **không tồn tại trong `components.schemas`** → FE giữ **chuỗi gốc**, không map sang enum Dart cứng (bài học `referenceType`).
+- `relatedCallId` trên message loại `CALL`: tài liệu có nhắc, schema không có → chưa dùng.
+- **Không có `GET /calls/{callId}`**: muốn lấy lại trạng thái sau khi socket rớt thì đọc `GET /calls/conversations/{cid}?limit=1`
+  rồi soi `items[0].status` (đúng cách BE hướng dẫn) — `CallProvider.fetchActiveCall()` làm việc này.
+
+**Giới hạn BE tự công bố (bản MVP):** chỉ ổn định cho gọi **1-1**; gọi nhóm dùng chung API nhưng **chưa có timeout tự động**
+cho người không bắt máy.
 
 ### Notifications — **[CHỐT BE 2026-08-09: đủ contract, hết đoán]**
 - `GET /api/v1/families/{familyId}/notifications` — Danh sách thông báo của thành viên hiện tại. Query `unreadOnly` (bool).
