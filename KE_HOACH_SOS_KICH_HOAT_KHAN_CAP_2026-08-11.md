@@ -4,10 +4,16 @@
 **Trạng thái repo lúc lập kế hoạch:** `origin/giap` = `55ac2bb`, `flutter test` 440/440 pass,
 `flutter analyze --no-fatal-infos` 0 error.
 
-> ### ⚠️ ĐỌC MỤC 1 TRƯỚC — hướng làm đã ĐỔI so với ý tưởng ban đầu
-> Yêu cầu gốc là "bấm nút nguồn 5 lần". **Đã thử nghiệm thực tế và phải loại bỏ** — xem mục 1.
-> Cơ chế chính nay là **lắc mạnh điện thoại**. Phần hạ tầng (foreground service, mở màn đè lên màn
-> khóa) giữ nguyên vì dùng chung cho mọi cơ chế kích hoạt.
+> ### ⚠️ ĐỌC MỤC 1 TRƯỚC — có **hai** cơ chế, đã đo thực tế trên máy Oppo
+> Yêu cầu gốc "bấm nút nguồn 5 lần" **làm được**, nhưng **không phải bằng cách tự đếm** — mà bằng
+> cách **bám theo app SOS của hệ điều hành**. Đã đo bằng `adb logcat` trên OPPO CPH2159 / Android 13
+> ngày 11/08, số liệu thật ở mục 1.3.
+>
+> - **Cơ chế A — Lắc mạnh:** chạy trên mọi máy, không cần quyền đặc biệt. **Làm trước.**
+> - **Cơ chế B — Bám theo Emergency SOS hệ thống:** cho đúng trải nghiệm "bấm nguồn 5 lần", nhưng
+>   phụ thuộc hãng máy và cần quyền đặc biệt. **Làm sau, tùy chọn.**
+>
+> Cả hai dùng chung một foreground service.
 
 ---
 
@@ -31,35 +37,101 @@ không cần nhìn.
 
 ---
 
-## 1. Vì sao KHÔNG dùng "bấm nút nguồn 5 lần" — đã kiểm chứng thực tế
+## 1. "Bấm nút nguồn 5 lần" — làm được, nhưng phải đổi cách nghĩ
 
-### 1.1 Bằng chứng
+### 1.1 Vì sao KHÔNG tự đếm số lần bấm
 
-Thử trên **điện thoại Oppo thật (ColorOS)** ngày 11/08: bấm nút nguồn 5 lần → **hệ điều hành hiện
-màn Emergency SOS riêng của nó**, kèm 3 số khẩn cấp Việt Nam **113 / 115 / 114**.
+Thử trên **OPPO CPH2159 / Android 13 (ColorOS)** ngày 11/08: bấm nút nguồn 5 lần → **hệ điều hành
+mở màn Emergency SOS riêng của nó**, kèm 3 số khẩn cấp **113 / 115 / 114**.
 
-Tức là cử chỉ này **đã bị hệ thống chiếm**.
+Cử chỉ này **đã bị hệ thống chiếm**. Kể cả app đếm đủ 5 lần rồi bắn full-screen intent, màn SOS của
+app vẫn phải tranh chỗ với màn khẩn cấp hệ thống — **system UI luôn thắng**. Người dùng nhìn thấy
+bảng quay số của máy, còn đếm ngược của app bị che: **tệ hơn cả không làm gì**, vì họ tưởng app đã
+gửi mà thực ra chưa.
 
-### 1.2 Ba lý do phải loại bỏ
+> Ghi chú: đo log cho thấy nút nguồn **vẫn** tạo chu kỳ bật/tắt màn hình bình thường
+> (`Going to sleep due to power_button` → `Waking up ... WAKE_REASON_POWER_BUTTON`), nên **về kỹ
+> thuật** cách đếm `ACTION_SCREEN_ON/OFF` chạy được. Loại nó là vì **va chạm giao diện**, không phải
+> vì không đếm được.
 
-1. **Va chạm giao diện không thể thắng.** Kể cả app đếm đủ 5 lần và bắn full-screen intent, màn SOS
-   của app phải tranh chỗ với màn khẩn cấp của hệ thống. **System UI luôn thắng.** Người dùng nhìn
-   thấy bảng quay số 113/115/114, còn đếm ngược của app bị che — tệ hơn cả không làm gì, vì họ tưởng
-   app đã gửi mà thực ra chưa.
-2. **Số broadcast không còn đáng tin.** Khi hệ thống chiếm cử chỉ, màn hình không bật/tắt theo nhịp
-   bình thường nữa, nên cách đếm `ACTION_SCREEN_ON`/`OFF` có thể không bao giờ đủ 5.
-3. **Không có API để hook vào.** Android không cho app đăng ký làm "nhà cung cấp SOS" cho Emergency
-   SOS hệ thống. Không có cửa nào khác.
+### 1.2 Cách đúng: đừng tranh với hệ thống, hãy bám theo nó
 
-### 1.3 Đã cân nhắc và loại các cách chữa cháy
+Thay vì tự đếm, **phát hiện đúng lúc màn Emergency SOS của hệ thống bật lên** rồi gửi cảnh báo cho
+gia đình. Hệ thống lo phần gọi 113/115/114, app lo phần báo người thân — **hai việc bổ sung nhau**.
+
+### 1.3 Số liệu đo được (OPPO CPH2159, Android 13, ngày 11/08)
+
+**Luồng thật gồm 2 activity**, khởi động bởi chính hệ thống (uid 1000):
+
+```
+START u0 {act=oplus.intent.action.LAUNCH_SOS_HELPER
+          cmp=com.oplus.sos/.ui.LaunchEmergencyCallActivity  mCallingUid=1000} from uid 1000
+START u0 {cmp=com.oplus.sos/.ui.EmergencyCallDetailActivity  mCallingUid=10114} from uid 10114
+```
+
+Activity thứ hai xuất hiện **~93 ms** sau activity thứ nhất.
+
+**Xác nhận hoạt động cả khi MÁY ĐANG KHÓA** — đây là điều kiện then chốt vì tình huống thật là máy
+khóa để trong túi:
+
+```
+onKeyguardStateChanged: isShowing:true secure:true     ← máy thật sự đang khóa
+Changing focus from null to Window{... com.oplus.sos/...EmergencyCallDetailActivity}
+```
+
+**Kết luận đo được:**
+
+| Điều cần biết | Kết quả |
+|---|---|
+| Màn SOS là Activity hay lớp phủ? | **Activity thật**, chiếm focus, nằm trong task stack → **quan sát được** |
+| Có chạy khi máy khóa không? | **Có**, `keyguard isShowing:true secure:true` |
+| Package | `com.oplus.sos` |
+| Class | `.ui.LaunchEmergencyCallActivity` → `.ui.EmergencyCallDetailActivity` |
+| Hệ thống có bắn **thông báo** không? | **KHÔNG** — đã grep log, trống hoàn toàn |
+| Có chặn được bằng `intent-filter` không? | **KHÔNG** — là lệnh gọi component **tường minh** (`cmp=...`) |
+
+### 1.4 Còn đúng 2 cách bắt tín hiệu
+
+Vì không có thông báo và không chặn được intent, chỉ còn:
+
+| Cách | Cơ chế | Ưu | Nhược |
+|---|---|---|---|
+| **`AccessibilityService`** | Nhận `TYPE_WINDOW_STATE_CHANGED`, lọc `packageName == "com.oplus.sos"` | **Tức thì**, hướng sự kiện nên **không tốn pin** khi rảnh | Màn xin quyền ghi *"toàn quyền kiểm soát thiết bị"* — đáng sợ với người già. Google Play hạn chế gắt (đồ án phát APK trực tiếp nên không vướng) |
+| **`UsageStatsManager`** | Poll `queryEvents()` tìm `ACTIVITY_RESUMED` của `com.oplus.sos` | Quyền **đỡ đáng sợ hơn**, không dính tiếng xấu accessibility | Phải **poll liên tục** → tốn pin; trễ ~1 giây; dữ liệu có thể bị gom lô |
+
+**Khuyến nghị: `AccessibilityService`.** Đây là tính năng khẩn cấp nên độ trễ quan trọng, và hướng
+sự kiện thì không tốn pin khi không có gì xảy ra — ngược hẳn với poll mỗi giây suốt ngày.
+
+### 1.5 Đã cân nhắc và loại
 
 | Cách | Vì sao loại |
 |---|---|
-| Bảo người dùng **tắt Emergency SOS** của máy | Bắt người dùng tắt một tính năng an toàn để dùng tính năng an toàn khác. Vô lý, và giải thích trước hội đồng rất dở. |
-| Đổi sang **4 hoặc 6 lần bấm** | Người dùng bấm 5 lần theo phản xạ vẫn kích hoạt hệ thống. Mỗi hãng đặt ngưỡng khác nhau → không có con số nào an toàn trên mọi máy. |
-| `AccessibilityService.onKeyEvent()` | Hệ thống lọc phím nguồn **trước** khi phân phối cho accessibility. Ngoài ra Play Store cấm dùng accessibility sai mục đích. |
-| Phím âm lượng | Không nhận được sự kiện khi màn hình tắt/khóa. |
-| Nút tai nghe (`MediaSession`) | Chạy được cả khi khóa máy, nhưng **phải cắm tai nghe** — không hợp với người cao tuổi. |
+| **Tự đếm `SCREEN_ON/OFF`** | Đếm được nhưng va chạm giao diện với màn SOS hệ thống — xem 1.1 |
+| **`NotificationListenerService`** | Đã đo: hệ thống **không bắn thông báo nào** khi kích hoạt SOS |
+| **`intent-filter` bắt `LAUNCH_SOS_HELPER`** | Đã đo: gọi component tường minh, không qua phân giải intent |
+| Bảo người dùng **tắt Emergency SOS** của máy | Bắt tắt một tính năng an toàn để dùng tính năng an toàn khác. Vô lý, và giải thích trước hội đồng rất dở |
+| Đổi sang **4 hoặc 6 lần bấm** | Người dùng bấm 5 lần theo phản xạ vẫn kích hoạt hệ thống. Mỗi hãng đặt ngưỡng khác nhau |
+| `AccessibilityService.onKeyEvent()` | Hệ thống lọc phím nguồn **trước** khi phân phối cho accessibility. Chỉ dùng được sự kiện **cửa sổ**, không dùng được sự kiện **phím** |
+| Phím âm lượng | Không nhận được sự kiện khi màn hình tắt/khóa |
+| Nút tai nghe (`MediaSession`) | Chạy được cả khi khóa máy, nhưng **phải cắm tai nghe** — không hợp người cao tuổi |
+
+### 1.6 Giới hạn lớn nhất của cơ chế B: phụ thuộc hãng máy
+
+`com.oplus.sos` là của **OPPO / OnePlus / Realme** (nhóm OPlus). Samsung, Xiaomi, máy Android gốc
+dùng package **khác hoàn toàn**, chưa đo.
+
+→ Phải viết dạng **danh sách package cấu hình được**, không hardcode một chuỗi. Khởi điểm:
+
+```kotlin
+val EMERGENCY_PACKAGES = setOf(
+    "com.oplus.sos",        // OPPO / OnePlus / Realme — ĐÃ ĐO XÁC NHẬN 11/08
+    // Dưới đây là PHỎNG ĐOÁN, chưa đo. Phải xác minh trước khi tin:
+    "com.samsung.android.emergency",
+    "com.android.emergency",     // Android gốc
+)
+```
+
+**Không được ghi trong tài liệu là "chạy trên mọi máy Android".** Chỉ khẳng định đúng máy đã đo.
 
 ### 1.4 Điều này làm RÕ giá trị của app, không phải làm yếu đi
 
@@ -71,7 +143,7 @@ Hai thứ **bổ sung cho nhau**, không thay thế nhau. Nên ghi ý này vào 
 
 ---
 
-## 2. Cơ chế đã chọn: LẮC MẠNH điện thoại
+## 2. Cơ chế A: LẮC MẠNH điện thoại — làm trước
 
 ### 2.1 Vì sao là lắc
 
@@ -316,6 +388,107 @@ máy là mất tính năng mà không biết. **Không chặn demo.**
 
 ---
 
+## 4B. Cơ chế B — bám theo Emergency SOS hệ thống (tùy chọn, làm sau cơ chế A)
+
+> Chỉ làm sau khi cơ chế A đã chạy ổn. Đây là phần cho đúng trải nghiệm **"bấm nút nguồn 5 lần"**
+> mà người dùng yêu cầu ban đầu. Số liệu đo ở mục 1.3.
+
+### 4B.1 Accessibility service
+
+**File mới:** `android/app/src/main/kotlin/com/familycare/family_care/EmergencyWatchService.kt`
+
+```kotlin
+class EmergencyWatchService : AccessibilityService() {
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg !in EMERGENCY_PACKAGES) return
+        // Chống bắn lặp: màn SOS hệ thống đổi focus nhiều lần liên tiếp
+        // (đã thấy trong log: focus nhảy qua lại 4 lần trong ~1 giây).
+        if (SystemClock.elapsedRealtime() - lastTrigger < COOLDOWN_MS) return
+        lastTrigger = SystemClock.elapsedRealtime()
+        SosGuardService.fireSos(this, reason = "system_emergency_sos")
+    }
+    override fun onInterrupt() {}
+}
+```
+
+> ⚠️ **Chống bắn lặp là bắt buộc, không phải tối ưu.** Log đo được cho thấy focus của
+> `EmergencyCallDetailActivity` **nhảy qua lại 4 lần trong khoảng 1 giây** (`Changing focus from ...
+> to null` rồi ngược lại). Không chặn thì app gửi 4 cảnh báo SOS cho cùng một sự việc.
+
+**File mới:** `android/app/src/main/res/xml/emergency_watch_config.xml`
+
+```xml
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="100"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/emergency_watch_description" />
+```
+
+> `canRetrieveWindowContent="false"` — ta **chỉ cần tên package**, không đọc nội dung màn hình. Khai
+> đúng mức tối thiểu để màn xin quyền bớt đáng sợ và để trả lời được câu "app có đọc trộm màn hình
+> không?" nếu hội đồng hỏi.
+
+**Manifest:**
+
+```xml
+<service
+    android:name=".EmergencyWatchService"
+    android:exported="false"
+    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+    <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+    </intent-filter>
+    <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/emergency_watch_config" />
+</service>
+```
+
+### 4B.2 Hành vi khi phát hiện — KHÔNG hiện đếm ngược
+
+Đây là điểm khác cơ chế A, và là lý do cơ chế B khả thi:
+
+> **Gửi SOS NGAY**, rồi bắn thông báo `IMPORTANCE_HIGH`:
+> **"Đã gửi cảnh báo cho gia đình — HỦY"**
+
+Vì màn Emergency SOS của hệ thống đang chiếm màn hình, hiện đếm ngược cũng **không ai nhìn thấy**.
+Mà bấm nguồn 5 lần thì ý định đã quá rõ, không cần hỏi lại.
+
+Nút **HỦY** gọi `PATCH .../sos/alerts/{alertId}/cancel` mà BE đã có. Giữ thông báo ít nhất **60 giây**
+để người bấm nhầm kịp thấy.
+
+> Khác biệt quan trọng so với cơ chế A: cơ chế A hiện màn đếm ngược **trước khi** gửi; cơ chế B gửi
+> trước rồi cho **hủy sau**. Hai luồng ngược nhau, đừng gộp code làm một.
+
+### 4B.3 Bật/tắt và xin quyền
+
+- Công tắc riêng trong Cài đặt SOS: **"Gửi SOS khi bấm nút nguồn 5 lần"**, mặc định **TẮT**.
+- Bật lên → kiểm tra service đã được cấp quyền chưa; chưa thì mở
+  `Settings.ACTION_ACCESSIBILITY_SETTINGS` kèm dialog hướng dẫn tìm đúng mục.
+- **Nói thẳng trong dialog** rằng màn hệ thống sẽ ghi *"toàn quyền kiểm soát thiết bị"*, và app
+  **chỉ đọc tên ứng dụng đang mở**, không đọc nội dung. Người dùng thấy chữ đó mà không được báo
+  trước sẽ hoảng và bỏ.
+- Kiểm tra quyền còn hay không bằng `AccessibilityManager.getEnabledAccessibilityServiceList()` —
+  người dùng có thể tắt bất cứ lúc nào trong Cài đặt, app phải phản ánh đúng trạng thái thật chứ
+  không tin vào cờ đã lưu.
+
+### 4B.4 Kiểm thử riêng cho cơ chế B
+
+| # | Kịch bản | Kỳ vọng |
+|---|---|---|
+| B1 | Chưa cấp quyền, bật công tắc | Mở đúng màn Cài đặt trợ năng, công tắc **không** tự bật |
+| B2 | Khóa máy, bấm nguồn 5 lần | Gửi **đúng 1** cảnh báo (không phải 4 — xem 4B.1) |
+| B3 | Bấm HỦY trên thông báo | Cảnh báo chuyển `CANCELED` trên BE |
+| B4 | Bấm 5 lần hai đợt cách nhau 5 giây | Đợt 2 bị cooldown chặn |
+| B5 | Tắt quyền trong Cài đặt hệ thống | Công tắc trong app phản ánh đúng là đã tắt |
+| B6 | Máy **không phải OPPO** (nếu mượn được) | Không kích hoạt — ghi lại package của máy đó |
+
+---
+
 ## 5. Manifest và quyền (targetSdk 36 — sai là crash lúc chạy)
 
 ```xml
@@ -452,22 +625,34 @@ Mở màn hệ thống bằng `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTI
 
 | Bước | Nội dung | Dừng lại báo cáo? |
 |---|---|---|
+| **CƠ CHẾ A — lắc mạnh (làm trước)** | | |
 | 1 | Spike 4.0 — đo cảm biến khi màn hình tắt | ✅ **Bắt buộc dừng, báo số đo** |
 | 2 | `ShakeDetector` + `FallDetector` Kotlin + JVM test | Không |
 | 3 | Service + manifest, build APK chạy được | Không |
 | 4 | Full-screen intent + `showWhenLocked` | ✅ **Dừng nếu Android 14+ chặn quyền** |
 | 5 | MethodChannel + 2 công tắc trong Cài đặt SOS | Không |
 | 6 | Chạy bảng kiểm thử 7.2 trên máy thật | ✅ **Dừng, báo kết quả ca 6, 7, 11, 12** |
-| 7 | Cập nhật `docs/DEMO_GUIDE.md` | Không |
+| **CƠ CHẾ B — bấm nguồn 5 lần (chỉ làm khi A đã ổn)** | | |
+| 7 | `EmergencyWatchService` + config XML + manifest | Không |
+| 8 | Luồng gửi-ngay + thông báo HỦY (4B.2) | Không |
+| 9 | Công tắc + dialog xin quyền trợ năng (4B.3) | Không |
+| 10 | Bảng kiểm thử 4B.4 trên máy Oppo | ✅ **Dừng, báo kết quả B2 và B6** |
+| **CHUNG** | | |
+| 11 | Cập nhật `docs/DEMO_GUIDE.md` | Không |
 
 **Ước lượng:** bước 1 khoảng 30 phút. Bước 2-5 là phần chính. Bước 6 **phải làm trên máy thật**,
-không có cách rút ngắn — và ca 6, 7 (đi bộ, đi xe máy) cần ra ngoài thật.
+không rút ngắn được — ca 6, 7 (đi bộ, đi xe máy) cần ra ngoài thật.
+
+**Nếu thiếu thời gian:** làm xong cơ chế A là đã đủ demo. Cơ chế B là phần "wow" nhưng phụ thuộc
+hãng máy nên rủi ro cao hơn — **đừng hy sinh độ ổn định của A để kịp B**.
 
 ---
 
 ## 11. Những gì kế hoạch này KHÔNG giải quyết — nói thẳng
 
-- **Bấm nút nguồn 5 lần** → **không làm được**, hệ thống đã chiếm. Xem mục 1.
+- **Bấm nút nguồn 5 lần trên máy KHÔNG phải OPPO/OnePlus/Realme** → chưa đo, gần như chắc chắn
+  **không chạy** vì package khác. Xem 1.6. Cơ chế A (lắc) không có giới hạn này.
+- **Người dùng không chịu cấp quyền trợ năng** → cơ chế B không hoạt động, không có đường vòng.
 - **Máy đã tắt nguồn hẳn** → không có cách nào. Không phần mềm nào làm được.
 - **OEM giết service** → giảm thiểu bằng hướng dẫn bỏ tối ưu pin, **không loại bỏ được**.
 - **Không có mạng** → SOS không gửi đi được. `SOSScreen` đã có dialog báo lỗi kèm tọa độ GPS để
