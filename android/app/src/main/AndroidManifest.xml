@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Thông báo hệ thống (Android 13+ bắt buộc xin runtime) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Spike SOS nền: foreground service giữ gia tốc kế chạy khi khóa màn hình. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -57,6 +62,14 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <service
+            android:name=".SosGuardService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="sos_sensor_guard" />
+        </service>
     </application>
 
     <queries>

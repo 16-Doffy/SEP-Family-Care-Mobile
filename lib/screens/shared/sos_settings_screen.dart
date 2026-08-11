@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
+import '../../services/sos_guard_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
@@ -19,6 +21,10 @@ class SosSettingsScreen extends StatefulWidget {
 }
 
 class _SosSettingsScreenState extends State<SosSettingsScreen> {
+  bool _sosGuardSpikeRunning = false;
+  bool _sosGuardSpikeBusy = false;
+  String? _sosGuardSpikeError;
+
   @override
   void initState() {
     super.initState();
@@ -27,8 +33,44 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
         final sos = context.read<SosProvider>();
         sos.fetchSettings();
         sos.fetchEmergencyContacts();
+        _refreshSosGuardSpike();
       }
     });
+  }
+
+  Future<void> _refreshSosGuardSpike() async {
+    if (!kDebugMode || !SosGuardService.isSupported) return;
+    try {
+      final running = await SosGuardService.isSpikeRunning();
+      if (!mounted) return;
+      setState(() {
+        _sosGuardSpikeRunning = running;
+        _sosGuardSpikeError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sosGuardSpikeError = e.toString());
+    }
+  }
+
+  Future<void> _toggleSosGuardSpike(bool enabled) async {
+    if (_sosGuardSpikeBusy) return;
+    setState(() {
+      _sosGuardSpikeBusy = true;
+      _sosGuardSpikeError = null;
+    });
+    try {
+      final ok = enabled
+          ? await SosGuardService.startSpike()
+          : await SosGuardService.stopSpike();
+      if (!mounted) return;
+      setState(() => _sosGuardSpikeRunning = ok ? enabled : false);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _sosGuardSpikeError = e.toString());
+    } finally {
+      if (mounted) setState(() => _sosGuardSpikeBusy = false);
+    }
   }
 
   Future<void> _showContactForm([EmergencyContact? contact]) async {
@@ -291,6 +333,21 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
                       ? (v) => _toggle(s.copyWith(locationRequired: v))
                       : null,
                 ),
+                if (kDebugMode && SosGuardService.isSupported)
+                  _tile(
+                    icon: Icons.sensors_rounded,
+                    title: 'Thử SOS nền bằng cảm biến',
+                    subtitle: [
+                      'Bật rồi khóa màn hình, sau đó xem adb logcat -s SOSSHAKE.',
+                      if (_sosGuardSpikeBusy) 'Đang đổi trạng thái...',
+                      if (_sosGuardSpikeError != null)
+                        'Lỗi: $_sosGuardSpikeError',
+                    ].join(' '),
+                    value: _sosGuardSpikeRunning,
+                    onChanged: _sosGuardSpikeBusy
+                        ? null
+                        : (v) => _toggleSosGuardSpike(v),
+                  ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
