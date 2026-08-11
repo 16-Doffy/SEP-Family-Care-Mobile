@@ -32,6 +32,12 @@ class _SOSScreenState extends State<SOSScreen>
   double? _localLat, _localLng; // GPS lưu local khi API chưa có
   String? _sentAlertId; // id alert vừa tạo, để Đóng/confirm-safety đúng alert
   Timer? _locationStreamTimer; // gửi vị trí định kỳ trong lúc alert đang active
+  // Điểm gửi lỗi (mất mạng tạm thời) được giữ lại để flush bằng
+  // pushLocationBatch ở lần gửi thành công kế tiếp — tránh mất hẳn vị trí SOS
+  // chỉ vì rớt mạng vài chục giây. Cap để không phình vô hạn nếu mất mạng dài.
+  static const _maxPendingLocationPoints = 50;
+  final List<({double lat, double lng, double? accuracy, DateTime? recordedAt})>
+  _pendingLocationPoints = [];
   /// Một controller chạy 0→1 **không đảo chiều**: ba vòng sóng lấy cùng giá trị
   /// này nhưng lệch pha 1/3 nên lan ra nối tiếp nhau như radar, thay vì cùng
   /// phình ra thu vào. Lấy theo hiệu ứng nút SOS trên đồng hồ.
@@ -85,23 +91,48 @@ class _SOSScreenState extends State<SOSScreen>
 
   void _startLocationStreaming(String alertId) {
     _locationStreamTimer?.cancel();
+    _pendingLocationPoints.clear();
     _locationStreamTimer = Timer.periodic(const Duration(seconds: 20), (
       _,
     ) async {
       final pos = await _getLocation();
       if (pos == null || !mounted) return;
-      await context.read<SosProvider>().pushLocation(
+      final sosProvider = context.read<SosProvider>();
+      final ok = await sosProvider.pushLocation(
         alertId,
         pos.latitude,
         pos.longitude,
         accuracy: pos.accuracy,
       );
+      if (!mounted) return;
+      if (!ok) {
+        _pendingLocationPoints.add((
+          lat: pos.latitude,
+          lng: pos.longitude,
+          accuracy: pos.accuracy,
+          recordedAt: DateTime.now(),
+        ));
+        if (_pendingLocationPoints.length > _maxPendingLocationPoints) {
+          _pendingLocationPoints.removeAt(0);
+        }
+        return;
+      }
+      // Gửi điểm hiện tại thành công → thử flush luôn các điểm còn tồn đọng
+      // từ lúc mất mạng trước đó.
+      if (_pendingLocationPoints.isNotEmpty) {
+        final flushed = await sosProvider.pushLocationBatch(
+          alertId,
+          List.of(_pendingLocationPoints),
+        );
+        if (mounted && flushed) _pendingLocationPoints.clear();
+      }
     });
   }
 
   void _stopLocationStreaming() {
     _locationStreamTimer?.cancel();
     _locationStreamTimer = null;
+    _pendingLocationPoints.clear();
   }
 
   // ── Hold-to-send countdown ───────────────────────────────────────────────
