@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../services/sos_location.dart';
@@ -16,8 +17,34 @@ import '../../utils/sos_alert_location.dart';
 import '../../widgets/json_report_view.dart';
 import 'sos_settings_screen.dart';
 
+/// Path home theo role — cùng bảng ánh xạ với `computeRedirect`
+/// (`app_router.dart`). Tách hàm thuần để unit test được.
+String homePathForRole(UserRole? role) => switch (role) {
+  UserRole.manager => '/manager/home',
+  UserRole.deputy => '/deputy/home',
+  _ => '/member/home',
+};
+
+/// Quay lại màn trước; nếu stack rỗng (mở thẳng từ lối tắt `/sos-quick` nên
+/// đây là route duy nhất) thì về home theo role, vì `context.pop()` lúc đó
+/// ném "There is nothing to pop".
+void backOrHome(BuildContext context) {
+  if (context.canPop()) {
+    context.pop();
+    return;
+  }
+  context.go(homePathForRole(context.read<AuthProvider>().user?.role));
+}
+
 class SOSScreen extends StatefulWidget {
-  const SOSScreen({super.key});
+  /// [autoTrigger] = mở từ **lối tắt ngoài màn hình chính** (route phẳng
+  /// `/sos-quick`, xem `android/app/src/main/res/xml/shortcuts.xml`): tự chạy
+  /// đếm ngược rồi gửi SOS, người dùng không phải giữ nút. Mặc định `false`
+  /// cho nhánh shell `/{role}/sos` — giữ nguyên hành vi giữ-3-giây cũ.
+  const SOSScreen({super.key, this.autoTrigger = false});
+
+  final bool autoTrigger;
+
   @override
   State<SOSScreen> createState() => _SOSScreenState();
 }
@@ -26,6 +53,10 @@ class _SOSScreenState extends State<SOSScreen>
     with SingleTickerProviderStateMixin {
   bool _sent = false;
   bool _sending = false;
+  /// Đang đếm ngược **tự động** (vào từ lối tắt) chứ không phải do giữ nút.
+  /// Khác biệt duy nhất: nhấc tay/chạm màn không hủy được, chỉ nút HỦY mới
+  /// dừng — vì người dùng có bấm giữ gì đâu mà "thả ra".
+  bool _autoCountdown = false;
   bool _apiOk = false; // true nếu BE nhận được SOS
   int? _countdown;
   Timer? _countTimer;
@@ -68,6 +99,9 @@ class _SOSScreenState extends State<SOSScreen>
       context.read<SosProvider>().fetchAlerts();
       // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
       context.read<SosProvider>().fetchEmergencyContacts();
+      // Vào từ lối tắt → đếm ngược ngay, không chờ thao tác nào. Chạy sau
+      // frame đầu để _pulseCtrl đã sẵn sàng cho _onPressStart().
+      if (widget.autoTrigger && mounted) _startAutoCountdown();
     });
   }
 
@@ -137,7 +171,29 @@ class _SOSScreenState extends State<SOSScreen>
 
   // ── Hold-to-send countdown ───────────────────────────────────────────────
 
+  // Đếm ngược tự động cho lối tắt: dùng lại y hệt bộ đếm 3 giây của nút giữ,
+  // chỉ khác cách hủy (nút HỦY thay vì nhấc tay).
+  void _startAutoCountdown() {
+    setState(() => _autoCountdown = true);
+    _onPressStart();
+  }
+
+  void _cancelAutoCountdown() {
+    _countTimer?.cancel();
+    setState(() {
+      _autoCountdown = false;
+      _countdown = null;
+    });
+    _pulseCtrl.repeat();
+  }
+
   void _onPressStart() {
+    // Đang đếm ngược tự động thì chạm vào nút không được khởi động lại bộ đếm.
+    if (_autoCountdown && _countdown != null) return;
+    // Hủy bộ đếm cũ trước khi tạo cái mới: chạm nhanh hai lần trước đây tạo
+    // hai Timer song song mà không hủy cái đầu → _triggerSOS() chạy 2 lần →
+    // gửi 2 cảnh báo cho cùng một sự việc.
+    _countTimer?.cancel();
     _pulseCtrl.stop();
     setState(() => _countdown = 3);
     _countTimer = Timer.periodic(const Duration(seconds: 1), (t) {
@@ -152,6 +208,8 @@ class _SOSScreenState extends State<SOSScreen>
   }
 
   void _onPressEnd() {
+    // Chế độ tự động: không có "nhấc tay" nào để hủy — chỉ nút HỦY mới dừng.
+    if (_autoCountdown) return;
     _countTimer?.cancel();
     setState(() => _countdown = null);
     _pulseCtrl.repeat();
@@ -168,6 +226,7 @@ class _SOSScreenState extends State<SOSScreen>
     setState(() {
       _sending = true;
       _countdown = null;
+      _autoCountdown = false;
     });
     final sosProvider = context.read<SosProvider>();
     // Chốt chặn cuối: dù _getLocation có kẹt ở tầng platform channel thì SOS
@@ -496,7 +555,9 @@ class _SOSScreenState extends State<SOSScreen>
                         ),
                       ),
                       Text(
-                        _countdown != null
+                        _autoCountdown
+                            ? 'Đang gửi SOS...'
+                            : _countdown != null
                             ? 'Thả ra để hủy'
                             : 'Giữ 3 giây để gửi SOS',
                         style: GoogleFonts.inter(
@@ -504,6 +565,36 @@ class _SOSScreenState extends State<SOSScreen>
                           color: _sosMuted,
                         ),
                       ),
+                      // Vào từ lối tắt thì không có thao tác "thả tay" để hủy —
+                      // phải có nút thật, đủ to để bấm trúng lúc hoảng.
+                      if (_autoCountdown) ...[
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: 200,
+                          height: 52,
+                          child: OutlinedButton(
+                            onPressed: _cancelAutoCountdown,
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(
+                                color: AppColors.sos,
+                                width: 2,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(26),
+                              ),
+                            ),
+                            child: Text(
+                              'HỦY',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.sos,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1332,7 +1423,9 @@ class _SOSScreenState extends State<SOSScreen>
   );
 
   Widget _backBtn(BuildContext context) => GestureDetector(
-    onTap: () => context.pop(),
+    // Vào từ lối tắt (`/sos-quick`) thì đây là route DUY NHẤT trong stack —
+    // context.pop() sẽ ném "There is nothing to pop". Rơi về home theo role.
+    onTap: () => backOrHome(context),
     child: Container(
       width: 40,
       height: 40,

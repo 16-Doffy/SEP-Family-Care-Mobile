@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icon lối tắt SOS: nền tròn đỏ + dấu chấm than trắng.
+     Màu #DC2626 = AppColors.sos (lib/theme/app_colors.dart) để lối tắt ngoài
+     màn hình chính trông cùng một hệ với nút SOS trong app. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#DC2626"
+        android:pathData="M54,54m-52,0a52,52 0,1 1,104 0a52,52 0,1 1,-104 0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M47,26h14v42h-14z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,81m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
+</vector>

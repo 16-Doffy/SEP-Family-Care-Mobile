@@ -39,6 +39,12 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Lối tắt SOS: giữ icon app → "Gửi SOS khẩn cấp"; kéo ra màn
+                 hình chính thành nút 1 chạm. Bắt buộc khai trên chính activity
+                 có MAIN/LAUNCHER ở trên. Xem res/xml/shortcuts.xml. -->
+            <meta-data
+              android:name="android.app.shortcuts"
+              android:resource="@xml/shortcuts" />
             <!-- Deep link lời mời: familycare://app/join?token=... — mở thẳng
                  màn Tham gia gia đình, không cần BE host trang web /join -->
             <intent-filter>

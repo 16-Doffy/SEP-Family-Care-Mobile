@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lối tắt SOS — giữ icon app trên màn hình chính sẽ hiện "Gửi SOS khẩn cấp";
+  người dùng kéo lối tắt đó ra màn hình chính là thành nút SOS 1 chạm mà không
+  cần viết App Widget.
+
+  Mở deep link `familycare://app/sos-quick` (khớp intent-filter scheme
+  `familycare` host `app` đã có sẵn trong AndroidManifest.xml) → route phẳng
+  `/sos-quick` trong lib/navigation/app_router.dart → SOSScreen(autoTrigger:
+  true) tự đếm ngược 3 giây rồi gửi, có nút HỦY to nếu chạm nhầm.
+
+  ⚠️ targetPackage PHẢI khớp `applicationId` trong android/app/build.gradle.kts.
+  Hiện là `com.company.familycare` — giá trị TẠM đổi ngày 20/07 cho khớp
+  google-services.json mà BE cấp. Comment ở build.gradle.kts (dòng ~34) nói rõ
+  sẽ đổi lại về `com.familycare.family_care` khi BE thêm package đúng vào
+  Firebase project. **Đổi bên đó thì phải sửa cả dòng dưới đây**, nếu không lối
+  tắt sẽ im lặng không mở được app (không có lỗi build, không có crash).
+
+  targetClass đi theo `namespace` (com.familycare.family_care) nên KHÔNG đổi
+  cùng applicationId.
+
+  Static shortcut cần API 25+; minSdk của dự án là 24 nên máy API 24 chỉ đơn
+  giản không thấy lối tắt, không crash.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="sos_quick"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_sos"
+        android:shortcutShortLabel="@string/shortcut_sos_short"
+        android:shortcutLongLabel="@string/shortcut_sos_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.company.familycare"
+            android:targetClass="com.familycare.family_care.MainActivity"
+            android:data="familycare://app/sos-quick" />
+    </shortcut>
+</shortcuts>

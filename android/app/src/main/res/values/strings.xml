@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nhãn lối tắt SOS (res/xml/shortcuts.xml). Static shortcut BẮT BUỘC
+         dùng string resource, không nhận chuỗi viết thẳng trong XML.
+
+         shortcutShortLabel hiện ngay dưới icon khi người dùng kéo lối tắt ra
+         màn hình chính nên phải thật ngắn (Android khuyến nghị <= 10 ký tự),
+         shortcutLongLabel hiện trong menu giữ icon app. -->
+    <string name="shortcut_sos_short">Gửi SOS</string>
+    <string name="shortcut_sos_long">Gửi SOS khẩn cấp</string>
+</resources>

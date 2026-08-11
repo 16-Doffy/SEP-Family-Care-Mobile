@@ -329,6 +329,20 @@ GoRouter createRouter(AuthProvider auth) {
         builder: (_, _) => const TabSettingsScreen(),
       ),
       GoRoute(path: '/wearables', builder: (_, _) => const WearablesScreen()),
+      // Lối tắt SOS ngoài màn hình chính (giữ icon app → "Gửi SOS", hoặc kéo
+      // lối tắt ra màn hình chính thành nút 1 chạm). Khai ở
+      // `android/app/src/main/res/xml/shortcuts.xml` → deep link
+      // `familycare://app/sos-quick` → tự đếm ngược 3 giây rồi gửi.
+      //
+      // CỐ Ý là route PHẲNG, không nằm trong shell nào: `computeRedirect` chỉ
+      // chặn theo `/manager/`, `/deputy/` và các tập shell, nên đường này đi
+      // qua được cho cả 3 role mà không phải sửa hàm đó. Chưa đăng nhập thì
+      // vẫn bị đá về `/login` như mọi route khác, và cold-start được
+      // `pendingDeepLink` phát lại sau splash.
+      GoRoute(
+        path: '/sos-quick',
+        builder: (_, _) => const SOSScreen(autoTrigger: true),
+      ),
       if (kDebugMode)
         GoRoute(
           path: '/debug/status',
