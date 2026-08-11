@@ -591,45 +591,78 @@ là tính năng của máy, không phải của app (xem mục 1).
 **Ghi kết quả kịch bản 6, 7, 11, 12 vào `docs/DEMO_GUIDE.md`** — bốn cái này quyết định có nên demo
 tính năng này trước hội đồng hay không.
 
-### 7.3 🔴 NGHI VẤN CHƯA GIẢI QUYẾT — đếm ngược có chạy tiếp khi màn hình tắt không?
+### 7.3 🔴 HAI LỖI ĐÃ XÁC NHẬN BẰNG ĐO THỰC TẾ — phải sửa trước khi xây tiếp
 
-**Đây là việc phải làm SỚM, trước khi xây thêm gì trên nền đếm ngược.**
+Đo ngày 11/08 trên **OPPO CPH2159 / Android 13** (bản debug cài 19:31) + **máy ảo `emulator-5554`**
+đóng vai người thân, điều khiển bằng `adb`, chụp màn hình cả hai máy làm bằng chứng.
 
-**Quan sát thực tế ngày 11/08** (OPPO CPH2159, bản debug cài lúc 19:31):
+#### Đối chứng: luồng đầu-cuối CHẠY ĐÚNG khi màn hình sáng
 
-Bắn deep link `familycare://app/sos-quick` hai lần lúc 20:59:52 và 21:00:03 bằng adb. Log
-`ActivityTaskManager` xác nhận intent được giao đủ cả hai lần, và đã kiểm chứng riêng rằng deep
-link **luôn** điều hướng đúng sang màn đếm ngược ở **cả hai** trường hợp (app tắt hẳn và app đang
-chạy — chụp màn hình làm bằng).
+Giữ màn hình sáng suốt quá trình (bắn liên tục `KEYCODE_WAKEUP`), bắn deep link
+`familycare://app/sos-quick` → máy người thân nhận đủ:
+- Banner đỏ **"SOS Zap đang cần trợ giúp!"**
+- Thông báo **"Cảnh báo SOS — Zap đã kích hoạt SOS"**
+- Bản đồ vẽ **"Đường tới Điểm SOS · 12653.8 km"** → **GPS thật được gửi kèm đúng**
 
-**Nhưng sau đó màn hình chính của app báo "Cả nhà an toàn — không có cảnh báo nào".** Tức là dù đã
-điều hướng đúng và có tới 11 giây giữa hai lần bắn, **không cảnh báo nào được tạo** — trong khi đếm
-ngược chỉ 3 giây.
+→ Bản thân luồng gửi SOS **không có vấn đề gì**. Hai lỗi dưới đây nằm ở chỗ khác.
 
-**Giả thuyết:** lúc đó màn hình điện thoại đang tắt. Android bóp nghẹt tiến trình nền, `Timer` của
-đếm ngược **đứng lại**, không bao giờ chạy tới 0.
+#### 🔴 LỖI 1 — Tắt màn hình giữa lúc đếm ngược thì SOS KHÔNG BAO GIỜ được gửi
 
-**Vì sao nghiêm trọng:** đúng kịch bản người dùng thật — bấm lối tắt SOS rồi bỏ máy vào túi, màn
-hình tắt → **SOS không bao giờ được gửi, và không có lỗi nào hiện ra**. Người dùng tưởng đã báo
-được cho gia đình. Với tính năng khẩn cấp thì đây là loại hỏng tệ nhất.
+**Cách tái hiện (đã chạy, kết quả nhất quán):**
+1. App đang mở, máy đã mở khóa
+2. Bắn deep link → màn SOS hiện, đếm ngược bắt đầu
+3. Sau 1,2 giây (đếm ngược còn ~2) → `KEYCODE_SLEEP` tắt màn hình
+4. Chờ 15 giây → kiểm tra máy người thân
 
-**Ca kiểm thử phải chạy:**
+**Kết quả:** máy người thân **không nhận được gì** — không banner, không nhãn SOS trong danh sách
+thành viên, bản đồ không có điểm SOS. Máy gửi thì quay về màn khóa.
+
+So sánh trực tiếp, **chỉ khác đúng một biến**:
+
+| Lần chạy | Màn hình | Kết quả |
+|---|---|---|
+| Đối chứng | **Sáng** suốt quá trình | ✅ Người thân nhận ngay |
+| Ca 13 | **Tắt** lúc còn ~2 giây | ❌ Không có gì |
+
+**Vì sao nghiêm trọng:** đúng kịch bản thật — bấm lối tắt SOS rồi bỏ máy vào túi, màn hình tắt →
+**SOS không bao giờ được gửi, và không có lỗi nào hiện ra**. Người dùng tưởng đã báo được cho gia
+đình. Với tính năng khẩn cấp thì đây là kiểu hỏng tệ nhất có thể.
+
+**Hai hướng sửa** (chọn hướng ít thay đổi hơn, theo quy tắc mục 9):
+1. **Giữ `PARTIAL_WAKE_LOCK`** trong lúc đếm ngược, nhả ngay sau khi gửi xong hoặc khi người dùng
+   hủy. Chỉ giữ 3 giây nên gần như không tốn pin.
+2. **Bỏ đếm ngược khi vào từ nền**: phát hiện app không ở foreground thì gửi ngay rồi cho hủy qua
+   thông báo — tức dùng đúng luồng của cơ chế B (mục 4B.2).
+
+#### 🔴 LỖI 2 — Bắn deep link lần thứ hai vào cùng route thì KHÔNG kích hoạt lại đếm ngược
+
+**Phát hiện tình cờ khi chạy ca 14.** Sau khi ca 13 bị cắt ngang, màn SOS bị kẹt ở trạng thái chờ
+(nút hiện chữ "SOS", chữ dưới *"Giữ 3 giây để gửi SOS"*) — **không đếm ngược, không báo lỗi, không
+phải màn đã gửi**. Bắn deep link lần nữa vào đúng `/sos-quick`: **vẫn đứng im**.
+
+**Nguyên nhân:** go_router thấy vị trí đích **trùng vị trí hiện tại** nên không dựng lại widget →
+`initState` không chạy lại → `autoTrigger` không bao giờ được gọi.
+
+**Vì sao nghiêm trọng:** người dùng bấm lối tắt SOS, thấy đếm ngược, bấm HỦY (hoặc bị cắt ngang như
+trên). Sau đó bấm lối tắt **lần nữa** → **không có gì xảy ra**. Không lỗi, không phản hồi. Đây là
+lỗi của **lối tắt hiện tại đã phát hành**, không riêng gì cơ chế B.
+
+**Hướng sửa gợi ý:** đừng dựa vào `initState` để kích hoạt. Cho deep link mang tham số thay đổi mỗi
+lần (ví dụ `/sos-quick?t=<timestamp>`) để go_router coi là vị trí mới, **hoặc** bắt sự kiện điều
+hướng ở tầng router và kích hoạt lại đếm ngược ngay cả khi widget được tái dùng.
+
+#### Ca kiểm thử phải chạy lại sau khi sửa
 
 | # | Kịch bản | Kỳ vọng |
 |---|---|---|
-| 13 | Bấm lối tắt SOS → **tắt màn hình ngay** → chờ 10 giây → bật lại | SOS **đã được gửi**, người nhà nhận được |
-| 14 | Bấm lối tắt SOS → **bấm Home** (app xuống nền) → chờ 10 giây | SOS **đã được gửi** |
-| 15 | Bấm lối tắt SOS → để yên màn hình sáng | SOS gửi sau đúng 3 giây (đối chứng — đã biết là chạy) |
+| 13 | Lối tắt SOS → **tắt màn hình ngay** → chờ 15 giây | SOS **đã được gửi** |
+| 14 | Lối tắt SOS → **bấm Home** (màn hình vẫn sáng) → chờ 15 giây | SOS **đã được gửi** |
+| 15 | Lối tắt SOS → để yên màn hình sáng | Gửi sau đúng 3 giây *(đã xác nhận chạy)* |
+| 16 | Lối tắt SOS → **bấm HỦY** → bấm lối tắt **lần nữa** | Đếm ngược **chạy lại từ đầu** |
+| 17 | Lối tắt SOS 2 lần liên tiếp thật nhanh | Chỉ **một** cảnh báo được tạo, không phải hai |
 
-**Nếu ca 13/14 thất bại, hai hướng xử lý** (chọn hướng ít thay đổi hơn, theo quy tắc mục 9):
-
-1. **Giữ wakelock ngắn** trong lúc đếm ngược: xin `PARTIAL_WAKE_LOCK` khi vào màn SOS, nhả ngay sau
-   khi gửi xong hoặc khi người dùng hủy. Chỉ giữ 3 giây nên gần như không tốn pin.
-2. **Bỏ đếm ngược khi vào từ nền**: nếu phát hiện app không ở foreground thì gửi ngay rồi cho hủy
-   qua thông báo — tức dùng đúng luồng của cơ chế B (mục 4B.2).
-
-**Không được bỏ qua ca này** vì "trên máy mình bấm thấy chạy" — lúc test tay thì màn hình luôn
-sáng, đúng cái điều kiện che mất lỗi.
+> **Không được bỏ qua các ca này** vì "bấm tay thấy chạy" — lúc test tay thì màn hình luôn sáng và
+> thường chỉ bấm một lần, đúng hai điều kiện che mất cả hai lỗi trên.
 
 ---
 
@@ -674,7 +707,7 @@ Mở màn hệ thống bằng `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTI
 | Bước | Nội dung | Dừng lại báo cáo? |
 |---|---|---|
 | **VIỆC 0 — làm TRƯỚC MỌI THỨ** | | |
-| 0 | Chạy ca 13/14/15 ở mục 7.3 — đếm ngược có sống khi màn tắt không | ✅ **Bắt buộc dừng, báo kết quả** |
+| 0 | **Sửa 2 lỗi đã xác nhận ở mục 7.3** (tắt màn hình → mất SOS; bắn deep link lần 2 → không kích hoạt lại), rồi chạy lại ca 13–17 | ✅ **Bắt buộc dừng, báo kết quả** |
 | **CƠ CHẾ A — lắc mạnh (làm trước)** | | |
 | 1 | Spike 4.0 — đo cảm biến khi màn hình tắt | ✅ **Bắt buộc dừng, báo số đo** |
 | 2 | `ShakeDetector` + `FallDetector` Kotlin + JVM test | Không |
@@ -690,14 +723,15 @@ Mở màn hệ thống bằng `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTI
 | **CHUNG** | | |
 | 11 | Cập nhật `docs/DEMO_GUIDE.md` | Không |
 
-**Ước lượng:** bước 0 khoảng 15 phút (chỉ cần APK đang cài, không phải viết code). Bước 1 khoảng 30
-phút. Bước 2-5 là phần chính. Bước 6 **phải làm trên máy thật**, không rút ngắn được — ca 6, 7
-(đi bộ, đi xe máy) cần ra ngoài thật.
+**Ước lượng:** bước 1 khoảng 30 phút. Bước 2-5 là phần chính. Bước 6 **phải làm trên máy thật**,
+không rút ngắn được — ca 6, 7 (đi bộ, đi xe máy) cần ra ngoài thật.
 
-> **Vì sao bước 0 đứng trước cả spike cảm biến:** nó kiểm tra nền móng chung của **cả hai** cơ chế.
-> Nếu đếm ngược không sống được khi màn tắt thì luồng gửi SOS phải sửa trước, làm xong cơ chế A rồi
-> mới phát hiện thì phải quay lại sửa cả hai. Và bước này **không cần viết dòng code nào** — APK
-> đang cài trên máy đã đủ để đo.
+> **Vì sao bước 0 đứng trước cả spike cảm biến:** hai lỗi ở mục 7.3 nằm ở **luồng gửi SOS dùng
+> chung** cho cả lối tắt hiện có, cơ chế A và cơ chế B. Không sửa trước thì mọi thứ xây lên trên đều
+> thừa hưởng lỗi, và làm xong cơ chế A rồi mới phát hiện thì phải quay lại sửa cả hai.
+>
+> **Lỗi 2 còn ảnh hưởng tính năng ĐANG PHÁT HÀNH** (lối tắt màn hình chính, commit `e01e0e4`) —
+> đây là lý do nó được xếp lên trước mọi việc khác chứ không phải vì cơ chế mới.
 
 **Nếu thiếu thời gian:** làm xong cơ chế A là đã đủ demo. Cơ chế B là phần "wow" nhưng phụ thuộc
 hãng máy nên rủi ro cao hơn — **đừng hy sinh độ ổn định của A để kịp B**.
@@ -716,7 +750,9 @@ hãng máy nên rủi ro cao hơn — **đừng hy sinh độ ổn định của
   tạo được**, không giúp cho việc tạo mới.
 - **Lắc nhầm** → giảm bằng đếm ngược 3 giây + ngưỡng đã hiệu chỉnh, không loại bỏ hẳn. BE có sẵn
   `FALSE_ALARM` và `cancel` để đóng lại.
-- **Đếm ngược khi màn hình tắt** → **chưa biết có chạy không**, xem 7.3. Đây là ẩn số lớn nhất còn
-  lại của cả kế hoạch; phải đo trước khi tin vào bất kỳ luồng nào có đếm ngược.
+- **Đếm ngược khi màn hình tắt** → **đã xác nhận HỎNG**, xem lỗi 1 mục 7.3. Chưa sửa thì mọi luồng
+  có đếm ngược đều không đáng tin.
+- **Bấm lối tắt lần thứ hai** → **đã xác nhận KHÔNG phản hồi**, xem lỗi 2 mục 7.3. Ảnh hưởng cả
+  tính năng đang phát hành.
 - **Người ngã bất tỉnh úp mặt xuống, máy trong túi chật** → gia tốc kế vẫn bắt được cú va đập, nhưng
   nếu máy bị kẹt không rơi tự do thì có thể không nhận ra. Không có giải pháp phần mềm thuần.
