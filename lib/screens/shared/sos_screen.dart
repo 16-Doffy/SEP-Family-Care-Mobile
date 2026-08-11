@@ -49,8 +49,28 @@ class SOSScreen extends StatefulWidget {
   State<SOSScreen> createState() => _SOSScreenState();
 }
 
+/// Đang đếm ngược tự động mà app bị đẩy xuống nền (tắt màn hình, bấm Home,
+/// màn khóa bật lên) thì **phải gửi SOS ngay**, không chờ đếm hết.
+///
+/// Đo thực tế 11/08 trên OPPO CPH2159: tắt màn hình lúc đếm ngược còn ~2 giây
+/// thì **người thân không nhận được gì** — Android bóp nghẹt tiến trình nền nên
+/// `Timer` không bao giờ chạy tới 0. Cùng thao tác đó với màn hình sáng thì
+/// người thân nhận ngay. Đây là kiểu hỏng tệ nhất cho tính năng khẩn cấp: im
+/// lặng, không lỗi, người dùng tưởng đã báo được cho gia đình.
+///
+/// Người vừa bấm SOS rồi bỏ máy vào túi thì rõ ràng **không định bấm HỦY** —
+/// nên gửi sớm vài giây là hành vi đúng, không phải đánh đổi.
+///
+/// Tách hàm thuần để unit test được (xem `test/sos_quick_shortcut_test.dart`).
+bool shouldSendSosOnPause({
+  required AppLifecycleState state,
+  required bool autoCountdown,
+  required int? countdown,
+}) =>
+    state == AppLifecycleState.paused && autoCountdown && countdown != null;
+
 class _SOSScreenState extends State<SOSScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   bool _sent = false;
   bool _sending = false;
   /// Đang đếm ngược **tự động** (vào từ lối tắt) chứ không phải do giữ nút.
@@ -89,6 +109,7 @@ class _SOSScreenState extends State<SOSScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2600),
@@ -107,10 +128,27 @@ class _SOSScreenState extends State<SOSScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pulseCtrl.dispose();
     _countTimer?.cancel();
     _locationStreamTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!shouldSendSosOnPause(
+      state: state,
+      autoCountdown: _autoCountdown,
+      countdown: _countdown,
+    )) {
+      return;
+    }
+    // Chờ nốt đếm ngược là mất luôn cảnh báo — xem [shouldSendSosOnPause].
+    _countTimer?.cancel();
+    // Rút ngắn hạn chờ GPS: tiến trình sắp bị bóp nghẹt, chờ 15 giây như luồng
+    // thường thì có khi không kịp gửi. Không có toạ độ vẫn phải gửi được.
+    _triggerSOS(locationTimeout: const Duration(seconds: 3));
   }
 
   // Gửi vị trí mỗi 20s cho tới khi alert được đóng (confirm-safety) hoặc màn
@@ -221,7 +259,11 @@ class _SOSScreenState extends State<SOSScreen>
   // services/sos_location.dart để phát hiện té ngã dùng chung, không nhân bản.
   Future<Position?> _getLocation() => resolveSosPosition();
 
-  Future<void> _triggerSOS() async {
+  /// [locationTimeout] rút ngắn khi gửi từ nền — xem [didChangeAppLifecycleState].
+  Future<void> _triggerSOS({
+    Duration locationTimeout = const Duration(seconds: 15),
+  }) async {
+    if (_sending) return; // chặn gọi chồng (đếm ngược xong đúng lúc app pause)
     _countTimer?.cancel();
     setState(() {
       _sending = true;
@@ -230,9 +272,9 @@ class _SOSScreenState extends State<SOSScreen>
     });
     final sosProvider = context.read<SosProvider>();
     // Chốt chặn cuối: dù _getLocation có kẹt ở tầng platform channel thì SOS
-    // vẫn phải được gửi đi sau tối đa 15s (không có tọa độ cũng gửi).
+    // vẫn phải được gửi đi sau [locationTimeout] (không có tọa độ cũng gửi).
     final pos = await _getLocation().timeout(
-      const Duration(seconds: 15),
+      locationTimeout,
       onTimeout: () => null,
     );
     // Lưu GPS local trước để hiển thị dù API có lỗi
