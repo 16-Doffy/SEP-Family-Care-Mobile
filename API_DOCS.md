@@ -258,8 +258,8 @@ nhóm hay không là **lựa chọn UI của FE**. Phần còn thiếu cho gọi
 **Field của 1 notification** (BE xác nhận 09/08, `notifications.service.ts` + `notifications.types.ts`):
 `id`, `familyId`, `recipientMemberId`, `type`, `priority`, `title`, `body`, `referenceType`, `referenceId`, `isRead`, `readAt`, `createdAt`.
 
-**`type` — enum `NotificationType`** (9 giá trị): `SOS | GENERAL | ALBUM_TAG | JOIN_REQUEST | MEMBER | TASK | CALENDAR | FINANCE | CHAT`.
-FE dùng `type == 'SOS'` để bật banner đỏ toàn cục (`family_shell.dart`) và đẩy push mức ưu tiên cao (`push_service.dart`) — **đã verify khớp**. Bảng icon ở `notifications_screen.dart` phủ đủ 9 giá trị.
+**`type` — enum `NotificationType`** (**10 giá trị**, `CALL` thêm 11/08): `SOS | GENERAL | ALBUM_TAG | JOIN_REQUEST | MEMBER | TASK | CALENDAR | FINANCE | CHAT | CALL`.
+FE dùng `type == 'SOS'` để bật banner đỏ toàn cục (`family_shell.dart`) và đẩy push mức ưu tiên cao (`push_service.dart`) — **đã verify khớp**. Bảng icon ở `notifications_screen.dart` phủ đủ **10** giá trị (`CALL` → `videocam_outlined`).
 
 **`priority` — enum `NotificationPriority`** (4 giá trị): `LOW | NORMAL | HIGH | CRITICAL`.
 ⚠️ **Không có `MEDIUM`.** `AppNotification.fromJson` từng mặc định `'MEDIUM'`; `accentColor` bắt cả `'MEDIUM' || 'NORMAL'` nên không vỡ, nhưng mặc định đúng phải là `'NORMAL'`.
@@ -280,6 +280,7 @@ Nghĩa là BE thêm giá trị mới bất cứ lúc nào mà không có gì bá
 | `FINANCIAL_GOAL` | `FinancialGoal.id` | `/manager/goal-detail?goalId={id}` |
 | `CONVERSATION` | `Conversation.id` | `/{shell}/chat` |
 | `SUPPORT_REQUEST` **[MỚI 09/08]** | `SpendingSupportRequest.id` | `/finance/support-requests` — **mọi role**, vì người nhận kết quả duyệt là chính requester (thường là Member) |
+| `CALL` **[MỚI 11/08]** | `Call.id` | `/{shell}/chat` — **mọi role**. ⚠️ **Tạm thời**: màn hình cuộc gọi chưa xây (GĐ3), mở chat vì dòng tóm tắt cuộc gọi (`messageType: CALL`) nằm sẵn trong hội thoại. Có màn gọi rồi thì đổi sang mở thẳng cuộc gọi kèm `callId` |
 | `null` | — | không điều hướng |
 
 **Payload FCM** (`fcm-notification.channel.ts`) — phần `data` gồm: `title`, `body`, `notificationId`, `type`, `familyId`, `referenceType`, `referenceId`.
