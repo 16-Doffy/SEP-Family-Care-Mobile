@@ -153,6 +153,27 @@ final _managerShellPaths = _shellPathsOf('manager');
 final _deputyShellPaths = _shellPathsOf('deputy');
 final _memberShellPaths = _shellPathsOf('member');
 
+/// Vị trí đích cho một lần kích hoạt SOS nhanh — **khác nhau ở mỗi lần gọi**.
+///
+/// Lối tắt ngoài màn hình chính luôn bắn đúng một URI cố định
+/// (`familycare://app/sos-quick`). Nếu route đó dựng màn hình trực tiếp thì
+/// go_router thấy vị trí đích **trùng vị trí hiện tại** nên không dựng lại
+/// widget → `initState` không chạy lại → đếm ngược không bao giờ bắt đầu.
+///
+/// Đo thực tế 11/08 trên OPPO CPH2159: bấm lối tắt, hủy, rồi bấm lại →
+/// **không có gì xảy ra**, không lỗi, không phản hồi. Gắn thêm token đổi theo
+/// thời gian là mỗi lần kích hoạt thành một vị trí mới, buộc dựng lại màn hình.
+///
+/// ⚠️ **Chỉ dùng mốc thời gian là KHÔNG đủ.** Đồng hồ hệ thống có độ phân giải
+/// giới hạn (test trên Windows: 50 lần gọi liên tiếp sinh ra token trùng nhau),
+/// nên hai lần kích hoạt sát nhau sẽ tái tạo đúng cái lỗi đang sửa. Bộ đếm tăng
+/// dần bảo đảm khác nhau trong cùng một phiên chạy; mốc thời gian lo phần khác
+/// nhau giữa các lần mở lại app.
+int _sosQuickSeq = 0;
+
+String sosQuickFreshPath() =>
+    '/sos-quick/${DateTime.now().microsecondsSinceEpoch}-${++_sosQuickSeq}';
+
 // Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
 // riêng để unit test được mà không cần render cây widget thật.
 String? computeRedirect({
@@ -339,8 +360,12 @@ GoRouter createRouter(AuthProvider auth) {
       // qua được cho cả 3 role mà không phải sửa hàm đó. Chưa đăng nhập thì
       // vẫn bị đá về `/login` như mọi route khác, và cold-start được
       // `pendingDeepLink` phát lại sau splash.
+      //
+      // `/sos-quick` KHÔNG dựng màn hình mà chuyển tiếp sang `/sos-quick/:token`
+      // với token đổi mỗi lần — xem [sosQuickFreshPath] để biết vì sao.
+      GoRoute(path: '/sos-quick', redirect: (_, _) => sosQuickFreshPath()),
       GoRoute(
-        path: '/sos-quick',
+        path: '/sos-quick/:token',
         builder: (_, _) => const SOSScreen(autoTrigger: true),
       ),
       if (kDebugMode)
