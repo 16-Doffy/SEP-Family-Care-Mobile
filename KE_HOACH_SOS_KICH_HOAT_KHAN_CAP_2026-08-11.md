@@ -628,11 +628,32 @@ So sánh trực tiếp, **chỉ khác đúng một biến**:
 **SOS không bao giờ được gửi, và không có lỗi nào hiện ra**. Người dùng tưởng đã báo được cho gia
 đình. Với tính năng khẩn cấp thì đây là kiểu hỏng tệ nhất có thể.
 
-**Hai hướng sửa** (chọn hướng ít thay đổi hơn, theo quy tắc mục 9):
-1. **Giữ `PARTIAL_WAKE_LOCK`** trong lúc đếm ngược, nhả ngay sau khi gửi xong hoặc khi người dùng
-   hủy. Chỉ giữ 3 giây nên gần như không tốn pin.
-2. **Bỏ đếm ngược khi vào từ nền**: phát hiện app không ở foreground thì gửi ngay rồi cho hủy qua
-   thông báo — tức dùng đúng luồng của cơ chế B (mục 4B.2).
+**Đã thử sửa ở tầng Dart và ĐO LẠI — KHÔNG đủ.** Commit `89c314e` trên `giap` cho gửi ngay khi nhận
+trạng thái `paused` thay vì chờ đếm hết. Đo lại vẫn hỏng, và đã loại được mọi cách giải thích khác:
+
+| Kiểm tra | Kết quả |
+|---|---|
+| Đếm ngược có thật sự đang chạy trước khi tắt màn? | ✅ Có — ảnh chụp thấy số **1** |
+| Mạng còn không khi màn hình tắt? | ✅ Còn — `ping` API 16 ms, WiFi giữ kết nối |
+| Cảnh báo có tới người thân? | ❌ **Không** |
+
+**Vì sao vá ở Dart không cứu được:** `_triggerSOS()` phải `await` GPS rồi mới `await` HTTP. Mỗi
+`await` là một lần nhường quyền — tiến trình đã bị đóng băng thì không bao giờ chạy tiếp. Rút timeout
+GPS xuống 3 giây **không giải quyết được**, vì vấn đề không nằm ở độ dài chờ.
+
+> ⚠️ **`wakelock_plus` KHÔNG dùng được.** Trên Android nó đặt `FLAG_KEEP_SCREEN_ON` — chỉ ngăn màn
+> hình **tự** tắt, không ngăn được người dùng **chủ động** bấm nút nguồn. Đúng tình huống đang hỏng.
+
+**Việc Codex phải làm — cần Kotlin, gộp vào foreground service ở mục 4.1:**
+
+1. **`PARTIAL_WAKE_LOCK`** giữ CPU chạy trong lúc đếm ngược và trong lúc gọi API; nhả ngay khi gửi
+   xong hoặc người dùng hủy. Cần quyền `android.permission.WAKE_LOCK`. Chỉ giữ vài giây nên không
+   đáng kể về pin. **Đây là hướng chính.**
+2. Hoặc **đẩy hẳn việc gửi SOS vào foreground service** — service không bị đóng băng nên không cần
+   wakelock riêng. Tốn công hơn nhưng dùng lại được cho cả cơ chế A và B.
+
+Phần đã vá được ở Dart (`89c314e`) **vẫn giữ**, không xung đột: nó cứu trường hợp app xuống nền mà
+màn hình còn sáng. Chỉ cần bổ sung wakelock cho trường hợp tắt màn hình.
 
 #### 🔴 LỖI 2 — Bắn deep link lần thứ hai vào cùng route thì KHÔNG kích hoạt lại đếm ngược
 
@@ -707,7 +728,7 @@ Mở màn hệ thống bằng `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTI
 | Bước | Nội dung | Dừng lại báo cáo? |
 |---|---|---|
 | **VIỆC 0 — làm TRƯỚC MỌI THỨ** | | |
-| 0 | **Sửa 2 lỗi đã xác nhận ở mục 7.3** (tắt màn hình → mất SOS; bắn deep link lần 2 → không kích hoạt lại), rồi chạy lại ca 13–17 | ✅ **Bắt buộc dừng, báo kết quả** |
+| 0 | **Thêm `PARTIAL_WAKE_LOCK` cho lỗi 1** ở mục 7.3 rồi chạy lại ca 13–17. *(Lỗi 2 đã sửa xong ở `giap` commit `38d063b`; phần Dart của lỗi 1 ở `89c314e` — nhớ merge `giap` vào trước khi làm.)* | ✅ **Bắt buộc dừng, báo kết quả** |
 | **CƠ CHẾ A — lắc mạnh (làm trước)** | | |
 | 1 | Spike 4.0 — đo cảm biến khi màn hình tắt | ✅ **Bắt buộc dừng, báo số đo** |
 | 2 | `ShakeDetector` + `FallDetector` Kotlin + JVM test | Không |
