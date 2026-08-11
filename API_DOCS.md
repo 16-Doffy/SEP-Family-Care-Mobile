@@ -225,7 +225,13 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
 - `participants` trong `call:incoming` là mảng **object đầy đủ**, không phải mảng `memberId`.
 - `/chat` là namespace chat **đầy đủ** (tin nhắn, typing, presence, reaction, pin...), không riêng cho call →
   **sau này bỏ được REST polling của `chat_provider.dart`**, nhưng đó là thay đổi lớn, để sau đợt bảo vệ.
-- ⚠️ `chat_provider.dart` hiện vẫn **REST polling, chưa có WebSocket nào** → hạ tầng phải dựng ở giai đoạn 2.
+- ✅ **[GĐ2 xong 2026-08-11]** `lib/services/chat_socket_service.dart` — transport Socket.IO cho `/chat`,
+  viết theo đúng khuôn `NotificationSocketService` (tự quản reconnect/backoff để mỗi lần thử lại đọc token mới nhất).
+  Nghe đủ 5 event `call:*` + `chat:message:new`; models `CallIncomingEvent`/`CallParticipantUpdateEvent`/`CallEndedEvent`
+  ở `call_provider.dart`, có test khoá contract (`test/call_socket_event_test.dart`).
+  **Chưa đăng ký vào cây provider** — GĐ3 mới nối vào LiveKit + UI.
+- ⚠️ `chat_provider.dart` vẫn **REST polling 5 giây/lần**. Bỏ polling để dùng hẳn `/chat` là thay đổi lớn,
+  cố ý để **sau đợt bảo vệ**.
 
 **LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
 trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).
