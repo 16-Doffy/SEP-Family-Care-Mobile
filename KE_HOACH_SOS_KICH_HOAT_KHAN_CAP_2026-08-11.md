@@ -1,13 +1,23 @@
-# Kế hoạch build — Kích hoạt SOS khi không mở được app
+# Kế hoạch build — Foreground service: kích hoạt SOS + giữ cuộc gọi video sống nền
 
-**Ngày lập:** 2026-08-11 · **Người lập:** phiên Claude Code (nhánh `giap`) · **Người thực hiện:** Codex
-**Trạng thái repo lúc lập kế hoạch:** `origin/giap` = `55ac2bb`, `flutter test` 440/440 pass,
-`flutter analyze --no-fatal-infos` 0 error.
+**Ngày lập:** 2026-08-11 · **Cập nhật:** 2026-08-12 (gộp thêm phần Video Call) · **Người lập:** phiên
+Claude Code (nhánh `giap`) · **Người thực hiện:** Codex
+**Trạng thái repo lúc cập nhật 12/08:** `flutter test` 464/464 pass, `flutter analyze --no-fatal-infos`
+0 error. Video Call đã xong đủ GĐ1–4 (REST/model → signaling Socket.IO → LiveKit UI → nối dây provider),
+xem `API_DOCS.md` mục Calls. **Giới hạn còn lại của Call chính là thứ kế hoạch này giải quyết**: cuộc
+gọi rớt khi khoá màn hình/xuống nền giữa chừng.
 
 > ### ⚠️ ĐỌC MỤC 1 TRƯỚC — hướng làm đã ĐỔI so với ý tưởng ban đầu
 > Yêu cầu gốc là "bấm nút nguồn 5 lần". **Đã thử nghiệm thực tế và phải loại bỏ** — xem mục 1.
 > Cơ chế chính nay là **lắc mạnh điện thoại**. Phần hạ tầng (foreground service, mở màn đè lên màn
 > khóa) giữ nguyên vì dùng chung cho mọi cơ chế kích hoạt.
+
+> ### 📎 GỘP THÊM 12/08 — Video Call cũng cần foreground service
+> Đây là **lý do gộp hai việc vào một kế hoạch**: cả SOS (mục 1–11) và Call (mục 12, thêm mới) đều cần
+> foreground service để sống qua lúc màn hình tắt — làm chung một đợt để không tốn công dựng hạ tầng
+> (channel notification, `MethodChannel` bridge, cách khai `<service>` trong manifest...) hai lần.
+> **Nhưng đây là 2 SERVICE KHÁC NHAU**, không gộp chung 1 class — xem lý do ở 12.2. Nếu chỉ có thời
+> gian làm một trong hai, **ưu tiên SOS** (an toàn tính mạng > trải nghiệm cuộc gọi).
 
 ---
 
@@ -387,7 +397,8 @@ là tính năng của máy, không phải của app (xem mục 1).
 - **JVM test `ShakeDetector` + `FallDetector`** — xem 4.2. Đây là phần logic duy nhất test máy được,
   phải phủ kỹ, đặc biệt các ca **báo nhầm**.
 - `flutter analyze --no-fatal-infos` → **0 error**.
-- `flutter test` → **không được thấp hơn 440**.
+- `flutter test` → **không được thấp hơn số hiện tại lúc bắt đầu làm** (464 tính đến 12/08 — chạy
+  `flutter test` đo lại trước khi sửa gì, đừng tin cứng con số này vì có thể lệch theo thời gian).
 - `flutter build apk --debug` phải chạy được (thêm service + quyền, dễ vỡ manifest merge).
 
 ### 7.2 Máy thật (không tự động được)
@@ -463,6 +474,10 @@ Mở màn hệ thống bằng `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTI
 **Ước lượng:** bước 1 khoảng 30 phút. Bước 2-5 là phần chính. Bước 6 **phải làm trên máy thật**,
 không có cách rút ngắn — và ca 6, 7 (đi bộ, đi xe máy) cần ra ngoài thật.
 
+> **Phần Video Call (mục 12) là luồng riêng, làm sau hoặc xen kẽ đều được** — không phụ thuộc bước nào
+> ở trên, chỉ dùng chung kinh nghiệm dựng `Service`/`MethodChannel`/notification channel. Nếu thiếu
+> thời gian, **làm xong SOS (1–10) trước rồi mới tới mục 12** — đúng thứ tự ưu tiên đã nói ở đầu file.
+
 ---
 
 ## 11. Những gì kế hoạch này KHÔNG giải quyết — nói thẳng
@@ -477,3 +492,176 @@ không có cách rút ngắn — và ca 6, 7 (đi bộ, đi xe máy) cần ra ng
   `FALSE_ALARM` và `cancel` để đóng lại.
 - **Người ngã bất tỉnh úp mặt xuống, máy trong túi chật** → gia tốc kế vẫn bắt được cú va đập, nhưng
   nếu máy bị kẹt không rơi tự do thì có thể không nhận ra. Không có giải pháp phần mềm thuần.
+
+---
+
+## 12. MỞ RỘNG — Video Call: giữ cuộc gọi sống khi khoá màn hình/xuống nền
+
+### 12.1 Bối cảnh
+
+Video Call đã xong đủ 4 giai đoạn (REST/model → signaling Socket.IO `/chat` → LiveKit UI → nối dây
+provider), xem `API_DOCS.md` mục **Calls**. Giới hạn còn lại duy nhất, đã ghi rõ trong đó:
+
+> Cuộc gọi **chưa chạy nền** — tắt màn hình/bấm Home giữa cuộc gọi sẽ rớt kết nối LiveKit.
+
+Nguyên nhân **giống hệt** lỗi "tắt màn hình mất SOS" đã chẩn đoán ở mục 0 của kế hoạch này: Android
+đóng băng tiến trình vài giây sau khi app xuống nền, kết nối WebRTC (audio/video) của LiveKit chết
+theo. Cách chữa cũng là **foreground service** — đây là lý do gộp hai việc vào một kế hoạch.
+
+**File liên quan (đã có sẵn, không cần đọc lại từ đầu):**
+- `lib/services/livekit_room_service.dart` — `connect({url, token})`/`disconnect()`/
+  `setCameraEnabled()`/`setMicrophoneEnabled()`. Đây là nơi bắt/nhả foreground service của Call.
+- `lib/screens/shared/active_call_screen.dart` — gọi `LivekitRoomService.instance.connect(...)` rồi
+  `setCameraEnabled(true)` + `setMicrophoneEnabled(true)` ngay sau khi kết nối thành công (trong
+  `_connect()`). **Không sửa file này** — điểm nối nằm ở `livekit_room_service.dart`.
+- `lib/providers/call_provider.dart` — `leave(callId)`/`end(callId)` báo BE kết thúc cuộc gọi, độc lập
+  với việc rời phòng LiveKit.
+
+### 12.2 Vì sao KHÔNG gộp chung 1 Service với SOS
+
+Hai lý do kỹ thuật, không phải sở thích:
+
+1. **`foregroundServiceType` khác nhau và bị Android 14 (API 34) ép đúng thực tế đang dùng.** `SosGuardService`
+   khai `specialUse` (theo dõi cảm biến). Call cần khai `camera|microphone` — hệ thống **ném lỗi runtime**
+   (`MissingForegroundServiceTypeException`/`SecurityException`) nếu service không khai đúng loại đang thật sự
+   dùng. Gộp chung 1 service nghĩa là **lúc SOS chạy một mình** (không gọi video) service đó vẫn mang nhãn
+   `camera|microphone` dù chẳng dùng camera/mic gì cả — sai bản chất, và Google Play (nếu sau này phát hành)
+   sẽ từ chối lý do khai báo không khớp hành vi thật.
+2. **Vòng đời khác hẳn nhau.** `SosGuardService` là dịch vụ **bật/tắt bằng công tắc**, sống liên tục nhiều
+   giờ/ngày một khi người dùng bật (mục 4.4). Foreground service của Call chỉ nên sống **đúng trong lúc đang
+   gọi** — bắt đầu lúc `LivekitRoomService.connect()`, kết thúc lúc `.disconnect()`, thường chỉ vài phút.
+   Gộp chung nghĩa là logic bật/tắt của hai luồng hoàn toàn khác nhau đan vào cùng một class → dễ vỡ, khó test.
+
+**Vẫn dùng chung được:** notification channel builder, cách khai `<service>` trong manifest, cách bọc
+`MethodChannel` phía Dart, và **`MainActivity.kt` chỉ cần sửa 1 lần** — `setShowWhenLocked(true)` +
+`setTurnScreenOn(true)` đã thêm cho SOS ở mục 4.3 **tự động có lợi cho Call luôn** (màn cuộc gọi đang mở mà
+khoá/mở lại máy thì không bị đẩy về màn khoá trước) — **không cần sửa gì thêm ở đây**.
+
+### 12.3 Kiến trúc
+
+```
+ActiveCallScreen._connect()
+        │
+        ▼
+LivekitRoomService.connect(url, token)
+        │
+        ├──► (MỚI) CallGuardService.start()  ── foreground service, type camera|microphone
+        │            │                            PHẢI chạy trước bước dưới, xem 12.4 lưu ý thứ tự
+        │            ▼
+        │    Notification "Đang trong cuộc gọi video" (IMPORTANCE_LOW, không kêu/rung)
+        │
+        ▼
+room.connect(url, token)  ──► setCameraEnabled(true) ──► setMicrophoneEnabled(true)
+        (không đổi — code Dart đã có sẵn)
+
+
+LivekitRoomService.disconnect()
+        │
+        ├──► room.disconnect() + room.dispose()   (không đổi)
+        └──► (MỚI) CallGuardService.stop()
+```
+
+### 12.4 Các bước thực hiện
+
+**File mới:** `android/app/src/main/kotlin/com/familycare/family_care/CallGuardService.kt`
+
+- `onCreate()`: tạo notification channel **riêng** với channel của SOS (mục 4.1) —
+  `IMPORTANCE_LOW`, nội dung cố định *"Đang trong cuộc gọi video"* (không cần tên người gọi — tránh
+  phải truyền dữ liệu UI xuyên qua tầng transport, xem ghi chú ở 12.1).
+- `onStartCommand()`: `startForeground(NOTIF_ID, notification, FOREGROUND_SERVICE_TYPE_CAMERA or FOREGROUND_SERVICE_TYPE_MICROPHONE)`,
+  trả `START_NOT_STICKY` (khác SOS — service này **không nên** tự khởi động lại nếu bị hệ thống giết
+  giữa chừng, vì lúc đó cuộc gọi coi như đã rớt, tự bật lại một service rỗng không giúp được gì).
+- `onDestroy()`: không cần dọn gì thêm (không giữ sensor listener như SOS).
+
+> ⚠️ **Thứ tự bắt buộc, dễ sai nhất mục này:** phải `startForeground()` xong **trước khi** app thật sự
+> dùng camera/microphone. Từ Android 14, gọi API camera/mic mà chưa có foreground service loại tương
+> ứng đang chạy sẽ bị hệ thống chặn. Nghĩa là bên Dart phải **await** lệnh start service xong rồi mới
+> gọi `room.connect()` — không chạy song song, không "fire and forget".
+
+**File mới:** `lib/services/call_guard_service.dart` — bọc `MethodChannel`
+(`com.familycare.family_care/call_guard`, đặt tên khác kênh của `sos_guard` ở mục 4.4 để hai bên độc
+lập): `Future<void> start()`, `Future<void> stop()`.
+
+**File sửa:** `MainActivity.kt` — đăng ký thêm 1 `MethodChannel` handler cho `call_guard` (cạnh handler
+`sos_guard` đã có từ mục 4.4, không đụng vào handler đó).
+
+**File sửa:** `lib/services/livekit_room_service.dart`:
+```dart
+Future<Room> connect({required String url, required String token}) async {
+  await disconnect();
+  await CallGuardService.instance.start(); // MỚI — chờ xong mới connect()
+  final room = Room();
+  final listener = room.createListener();
+  _room = room;
+  _listener = listener;
+  try {
+    await room.connect(url, token);
+  } catch (_) {
+    await disconnect();
+    rethrow;
+  }
+  return room;
+}
+
+Future<void> disconnect() async {
+  final listener = _listener;
+  final room = _room;
+  _listener = null;
+  _room = null;
+  if (listener != null) await listener.dispose();
+  if (room != null) {
+    await room.disconnect();
+    await room.dispose();
+  }
+  await CallGuardService.instance.stop(); // MỚI
+}
+```
+Đây là **toàn bộ phần sửa Dart** — `active_call_screen.dart` và `call_provider.dart` không cần đụng
+vào, vì cả hai đều gọi vào `LivekitRoomService` chứ không tự quản kết nối.
+
+### 12.5 Manifest và quyền
+
+```xml
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<!-- dùng chung với dòng đã thêm ở mục 5 cho SOS, không khai trùng 2 lần -->
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+```
+
+`CAMERA` và `RECORD_AUDIO` **đã có sẵn** (thêm từ bước 3a của Video Call, xem `API_DOCS.md`), không
+thêm lại.
+
+```xml
+<service
+    android:name=".CallGuardService"
+    android:exported="false"
+    android:foregroundServiceType="camera|microphone" />
+```
+
+### 12.6 Kiểm thử
+
+Không có logic thuần nào để unit test ở đây (khác `ShakeDetector`/`FallDetector` của SOS) — toàn bộ
+giá trị nằm ở hành vi thật của Android, phải test trên máy:
+
+| # | Kịch bản | Kỳ vọng |
+|---|---|---|
+| 1 | Đang gọi, khoá màn hình 10 giây, mở lại | Vẫn nghe thấy nhau, video khôi phục |
+| 2 | Đang gọi, bấm Home rồi mở app khác 30 giây, quay lại | Cuộc gọi vẫn sống |
+| 3 | Đang gọi, vuốt tắt app khỏi đa nhiệm | Cuộc gọi rớt (chấp nhận được — khác SOS, người dùng
+    chủ động thoát thì coi như họ muốn dừng gọi; **không cố giữ bằng mọi giá**) |
+| 4 | Kết thúc cuộc gọi bình thường (bấm nút đỏ) | Thông báo `CallGuardService` biến mất ngay |
+| 5 | `flutter analyze --no-fatal-infos` → 0 error; `flutter test` → không thấp hơn baseline lúc bắt đầu |
+
+**Ghi chú ca 3:** khác hẳn triết lý của SOS (phải sống bằng mọi giá vì là tính năng an toàn tính
+mạng), cuộc gọi video ưu tiên **đơn giản, ít rủi ro** hơn — vuốt tắt app khỏi đa nhiệm là hành động chủ
+động của người dùng, không cần cố sống sót qua đó.
+
+### 12.7 Những gì mục 12 KHÔNG giải quyết
+
+- **Nút "Kết thúc cuộc gọi" ngay trên thanh thông báo** — nice-to-have, không làm ở đợt này. Cần
+  `PendingIntent`/`BroadcastReceiver` gọi ngược lại `CallProvider.leave()` (cần `FlutterEngine` đang
+  chạy), phức tạp hơn hẳn nút "Tắt" của SOS (chỉ cần dừng service). **Không chặn demo** — mở lại app là
+  bấm được nút đỏ trong `ActiveCallScreen`.
+- **OEM diệt service mạnh tay** (Xiaomi/Oppo tối ưu pin) — giống mục 11 của SOS, giảm thiểu bằng hướng
+  dẫn bỏ tối ưu pin, không loại bỏ được hoàn toàn.
+- **Cuộc gọi khi máy đang trong cuộc gọi thoại GSM khác** — ngoài phạm vi, chưa có yêu cầu xử lý.
