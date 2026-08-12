@@ -7,9 +7,11 @@ import 'package:provider/provider.dart';
 import '../models/tab_option.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
+import '../providers/call_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/tab_config_provider.dart';
+import '../screens/shared/incoming_call_screen.dart';
 import '../services/api_client.dart';
 import '../services/fall_detector_service.dart';
 import '../services/local_notification_service.dart';
@@ -55,6 +57,8 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   // app ở foreground — xem ghi chú trong FallDetectorService.
   bool _fallDialogOpen = false;
   bool _appInForeground = true;
+  CallProvider? _call; // giữ ref để dùng trong dispose
+  bool _incomingCallScreenOpen = false;
 
   @override
   void initState() {
@@ -78,6 +82,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         ..onTransient = _showTransientNotif;
       _notif!.fetchUnreadCount();
       _notif!.startRealtime();
+      // Cuộc gọi video (Socket.IO /chat) — sống suốt phiên như /notifications
+      // ở trên, để nhận được cuộc gọi đến bất kể đang ở tab nào.
+      _call = context.read<CallProvider>()..onIncomingCall = _onIncomingCall;
+      _call!.startRealtime();
       // Cấu hình thanh nav nằm trong secure storage → đọc bất đồng bộ. Chưa
       // đọc xong thì tabsFor() trả mặc định của role, nên thanh nav vẫn dựng
       // được ngay, không chờ.
@@ -108,7 +116,42 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       _notif!.onTransient = null;
     }
     _notif?.stopRealtime();
+    if (_call?.onIncomingCall == _onIncomingCall) {
+      _call!.onIncomingCall = null;
+    }
+    _call?.stopRealtime();
     super.dispose();
+  }
+
+  /// `call:incoming` từ socket `/chat` — mở màn cuộc gọi đến, trừ khi đó là
+  /// cuộc gọi do chính mình vừa khởi tạo (workspace join theo cả gia đình nên
+  /// người gọi cũng nhận lại chính event của mình).
+  void _onIncomingCall(CallIncomingEvent event) {
+    if (!mounted || _incomingCallScreenOpen) return;
+    final myUserId = context.read<AuthProvider>().user?.id;
+    String? initiatorUserId;
+    for (final p in event.participants) {
+      if (p.memberId == event.initiatedByMemberId) {
+        initiatorUserId = p.member?.userId;
+        break;
+      }
+    }
+    // Không xác định được người gọi thì vẫn hiện màn — thà thừa còn hơn bỏ
+    // sót cuộc gọi thật; chỉ chặn khi CHẮC CHẮN đó là cuộc gọi của chính mình.
+    if (initiatorUserId != null && initiatorUserId == myUserId) return;
+
+    _incomingCallScreenOpen = true;
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => IncomingCallScreen(
+              callId: event.callId,
+              conversationId: event.conversationId,
+              callerName: event.callerName,
+            ),
+          ),
+        )
+        .whenComplete(() => _incomingCallScreenOpen = false);
   }
 
   // Toast in-app cho notification realtime (persisted + push-only). Nút "Xem"

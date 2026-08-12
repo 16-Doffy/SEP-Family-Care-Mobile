@@ -4,12 +4,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/call_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/app_feature_icon.dart';
 import '../../widgets/avatar_widget.dart';
+import 'active_call_screen.dart';
 import 'chat_search_screen.dart';
 import 'chat_shared_content_screen.dart';
 
@@ -27,6 +29,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollCtrl = ScrollController();
   ChatProvider? _chat; // cache để dispose không phải lookup context
   bool _uploading = false;
+  bool _startingCall = false;
 
   static const _avatarColors = [
     AppColors.avatarBlue,
@@ -874,6 +877,32 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Gọi video cho hội thoại 1-1 đang mở — người khởi tạo vào phòng LiveKit
+  /// ngay (không chờ bắt máy), khớp `POST /calls` của BE.
+  Future<void> _startCall() async {
+    final conv = context.read<ChatProvider>().active;
+    if (_startingCall || conv == null) return;
+    setState(() => _startingCall = true);
+    try {
+      final session = await context.read<CallProvider>().initiate(conv.id);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ActiveCallScreen(
+            session: session,
+            peerName: conv.displayName(
+              context.read<AuthProvider>().user?.id ?? '',
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      _snackErr(e);
+    } finally {
+      if (mounted) setState(() => _startingCall = false);
+    }
+  }
+
   void _showPinnedSheet() async {
     final chat = context.read<ChatProvider>();
     List<ChatMessage> pinned = [];
@@ -1007,6 +1036,22 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         centerTitle: false,
         actions: [
+          if (chat.active?.type == 'PRIVATE')
+            IconButton(
+              tooltip: 'Gọi video',
+              icon: _startingCall
+                  ? const SizedBox(
+                      width: 21,
+                      height: 21,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(
+                      Icons.videocam_outlined,
+                      color: AppColors.textMuted,
+                      size: 21,
+                    ),
+              onPressed: _startingCall ? null : _startCall,
+            ),
           IconButton(
             tooltip: 'Tìm trong tin nhắn',
             icon: const Icon(

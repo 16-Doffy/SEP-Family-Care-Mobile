@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
+import '../services/chat_socket_service.dart';
 
 // ════════════════════════════════════════════════════════════════════════
 // CallProvider — module Calls (gọi video qua LiveKit), BE ship 2026-08-10.
@@ -22,9 +23,10 @@ import '../services/api_client.dart';
 // `CallParticipantStatus` + 11 mã lỗi. Model dưới đây khớp field-for-field với
 // các DTO đó, không còn `[VERIFY]` nào treo.
 //
-// Giai đoạn 1 chỉ làm tầng REST + model. Chưa gắn LiveKit (`token`/`livekitUrl`
-// được giữ nguyên để giai đoạn 3 dùng), chưa có signaling Socket.IO `/chat`,
-// và provider này CHƯA được đăng ký vào cây provider ở `main.dart`.
+// GĐ1: tầng REST + model. GĐ2: signaling Socket.IO `/chat` (`ChatSocketService`).
+// GĐ3: LiveKit (`incoming_call_screen.dart`/`active_call_screen.dart`). GĐ4:
+// nối `startRealtime()`/`onIncomingCall` vào `family_shell.dart`, đăng ký
+// provider này ở `main.dart` — xong đủ 4 giai đoạn.
 // ════════════════════════════════════════════════════════════════════════
 
 /// Trạng thái cuộc gọi. Giữ **chuỗi gốc** của BE thay vì enum Dart cứng: đây
@@ -401,10 +403,12 @@ class CallProvider extends ChangeNotifier {
   /// suốt vòng đời app, không dọn thì người đăng nhập sau thấy lịch sử gọi của
   /// người trước.
   void resetForNewSession() {
+    stopRealtime();
     _history = [];
     _historyCursor = null;
     _busy = false;
     _error = null;
+    _lastEndedCallId = null;
     notifyListeners();
   }
 
@@ -412,6 +416,12 @@ class CallProvider extends ChangeNotifier {
   String? _historyCursor;
   bool _busy = false;
   String? _error;
+  bool _realtimeOn = false;
+
+  /// `callId` của cuộc gọi vừa nhận `call:ended` — màn hình đang mở cho cuộc
+  /// gọi đó (`IncomingCallScreen`/`ActiveCallScreen`) so khớp rồi tự đóng.
+  /// Không phải state bền vững, chỉ là tín hiệu một-lần qua `notifyListeners`.
+  String? _lastEndedCallId;
 
   List<Call> get history => _history;
 
@@ -419,6 +429,39 @@ class CallProvider extends ChangeNotifier {
   String? get historyCursor => _historyCursor;
   bool get busy => _busy;
   String? get error => _error;
+  String? get lastEndedCallId => _lastEndedCallId;
+
+  /// UI tầng shell gắn vào để hiện `IncomingCallScreen` khi có `call:incoming`
+  /// — provider không tự điều hướng (không có BuildContext).
+  void Function(CallIncomingEvent event)? onIncomingCall;
+
+  // ── Realtime (Socket.IO /chat, event `call:*`) ───────────────────────────
+  //
+  // Chỉ 2 event cần nối ở tầng app-wide: `call:incoming` (mở màn cuộc gọi
+  // đến) và `call:ended` (đóng màn đang mở nếu đúng cuộc gọi). Các event còn
+  // lại (`call:accepted`, `call:participant-update`) đã được suy ra từ chính
+  // `RoomEvent` của LiveKit ngay trong `ActiveCallScreen` — nối lại ở đây là
+  // trùng lặp không cần thiết.
+  void startRealtime() {
+    if (_realtimeOn) return;
+    _realtimeOn = true;
+    final svc = ChatSocketService.instance;
+    svc.onCallIncoming = (e) => onIncomingCall?.call(e);
+    svc.onCallEnded = (e) {
+      _lastEndedCallId = e.callId;
+      notifyListeners();
+    };
+    svc.connect();
+  }
+
+  void stopRealtime() {
+    if (!_realtimeOn) return;
+    _realtimeOn = false;
+    final svc = ChatSocketService.instance;
+    svc.onCallIncoming = null;
+    svc.onCallEnded = null;
+    svc.disconnect();
+  }
 
   /// Câu tiếng Việt cho từng mã lỗi. Ưu tiên `code` (ổn định) hơn `message` của
   /// BE (có thể đổi chữ bất cứ lúc nào); không khớp mã nào thì mới lùi về
