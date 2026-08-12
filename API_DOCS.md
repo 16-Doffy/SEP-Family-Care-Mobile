@@ -229,7 +229,6 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   viết theo đúng khuôn `NotificationSocketService` (tự quản reconnect/backoff để mỗi lần thử lại đọc token mới nhất).
   Nghe đủ 5 event `call:*` + `chat:message:new`; models `CallIncomingEvent`/`CallParticipantUpdateEvent`/`CallEndedEvent`
   ở `call_provider.dart`, có test khoá contract (`test/call_socket_event_test.dart`).
-  **Chưa đăng ký vào cây provider** — GĐ3 mới nối vào LiveKit + UI.
 - ⚠️ `chat_provider.dart` vẫn **REST polling 5 giây/lần**. Bỏ polling để dùng hẳn `/chat` là thay đổi lớn,
   cố ý để **sau đợt bảo vệ**.
 
@@ -241,10 +240,23 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   (`connect`/`disconnect`/bật-tắt camera-mic). Không bọc thêm tầng trừu tượng quanh `Room`/`RoomEvent`:
   nơi gọi tự `room.createListener()` (đã expose qua `.events`) rồi `.on<T>()` theo đúng API gốc LiveKit.
   `connect()` tự dọn phòng cũ trước — không bao giờ để tồn tại 2 phòng cùng lúc.
+- ✅ **[3c xong 12/08]** `lib/screens/shared/incoming_call_screen.dart` (Từ chối/Nghe) và
+  `active_call_screen.dart` (video người kia phủ kín màn qua `VideoTrackRenderer`, video mình khung nhỏ
+  cố định góc trên-phải, mic/camera/kết thúc). Chỉ 1-1: không lưới nhiều người, không chia sẻ màn hình,
+  không ghi hình, không chat trong cuộc gọi. Nút gọi ở `chat_screen.dart` (AppBar) chỉ hiện khi
+  `conversation.type == 'PRIVATE'`.
+- ✅ **[3d xong 12/08]** `CallProvider` đăng ký vào cây provider ở `main.dart`; `startRealtime()`/`stopRealtime()`
+  nối `ChatSocketService` theo đúng khuôn `NotificationProvider`. `family_shell.dart` gọi `startRealtime()`
+  lúc mở app (sống suốt phiên như `/notifications`), `call:incoming` → mở `IncomingCallScreen` — **tự lọc bỏ
+  cuộc gọi của chính mình** bằng cách so `initiatedByMemberId` với `participants[].member.userId` (workspace
+  join theo cả gia đình nên người gọi cũng nhận lại event của chính mình, không có field nào đánh dấu sẵn).
+  `call:ended` phát qua `CallProvider.lastEndedCallId` (tín hiệu một-lần, không phải state bền) — cả
+  `IncomingCallScreen` lẫn `ActiveCallScreen` tự đóng khi khớp `callId`, bắt được cả case người kia từ chối
+  **trước khi từng vào phòng LiveKit** (lúc đó không có `RoomEvent` nào báo, chỉ socket mới biết).
 - **Giới hạn đã chốt:** cuộc gọi **chưa chạy nền** (tắt màn hình/bấm Home giữa cuộc gọi sẽ rớt). Cần
   foreground service + `FOREGROUND_SERVICE_MICROPHONE`/`CAMERA` (Android 14+), gom vào cùng đợt foreground
-  service của tính năng SOS (nhánh `sos-shake`) để không viết hai lần.
-- **Còn lại của GĐ3:** 3c (2 màn hình: cuộc gọi đến, đang gọi) và 3d (nối dây provider + socket + UI).
+  service của tính năng SOS (nhánh `sos-shake`) để không viết hai lần. **Đủ 4 giai đoạn (GĐ1–4) — còn lại
+  chỉ là giới hạn nền này.**
 
 **LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
 trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).
