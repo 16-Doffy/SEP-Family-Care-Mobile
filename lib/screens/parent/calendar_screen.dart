@@ -987,7 +987,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
         }).toList(),
       );
     }
-    final max = _viewMode == _CalendarViewMode.stacked ? 2 : 3;
+    // Ô ngày cao cố định 118px: số ngày (40+4) + padding (20) chỉ còn ~54px
+    // cho vùng sự kiện — vừa đúng 2 pill (19px + 3px đệm = 22px/pill), 3 pill
+    // (66px) tràn khung ~13px (bug UI thật, phát hiện 2026-08-09 khi 1 ngày
+    // có 3 sự kiện). Giới hạn 2 cho mọi chế độ không phải compact (compact
+    // dùng chấm tròn riêng, xử lý ở nhánh trên).
+    final max = 2;
     return Column(
       children: events.take(max).map((event) {
         return Padding(

@@ -135,6 +135,23 @@ class FamilyTask {
 
   bool get isRecurring => taskType == 'RECURRING';
 
+  FamilyTask copyWith({RewardSetting? rewardSetting}) => FamilyTask(
+    id: id,
+    title: title,
+    description: description,
+    taskCategoryId: taskCategoryId,
+    taskCategoryName: taskCategoryName,
+    taskType: taskType,
+    priority: priority,
+    status: status,
+    dueAt: dueAt,
+    createdByMemberId: createdByMemberId,
+    createdByName: createdByName,
+    createdAt: createdAt,
+    rewardSetting: rewardSetting ?? this.rewardSetting,
+    schedule: schedule,
+  );
+
   factory FamilyTask.fromJson(Map<String, dynamic> j) {
     final cat = j['taskCategory'] is Map
         ? j['taskCategory'] as Map
@@ -527,6 +544,7 @@ class TaskProvider extends ChangeNotifier {
     String? taskCategoryId,
     String? priority,
     String? taskType,
+    bool hydrateRewardSettings = false,
   }) async {
     loading = true;
     error = null;
@@ -542,6 +560,21 @@ class TaskProvider extends ChangeNotifier {
       });
       final data = await ApiClient.instance.get('/families/$_fid/tasks$qs');
       tasks = _list(data).map(FamilyTask.fromJson).toList();
+      // The list endpoint currently may omit rewardSetting. Only the task
+      // management list needs that detail for its reward badge, so hydrate it
+      // there instead of showing the misleading “Chưa đặt thưởng” state.
+      if (hydrateRewardSettings && tasks.isNotEmpty) {
+        final listedTasks = tasks;
+        tasks = await Future.wait(
+          listedTasks.map((task) async {
+            if (task.rewardSetting != null) return task;
+            final setting = await fetchRewardSetting(task.id);
+            return setting == null
+                ? task
+                : task.copyWith(rewardSetting: setting);
+          }),
+        );
+      }
     } catch (e) {
       error = e.toString();
     } finally {
@@ -922,6 +955,20 @@ class TaskProvider extends ChangeNotifier {
           'autoCreateSettlement': autoCreateSettlement,
         });
     await fetchTasks();
+    await _hydrateRewardSetting(taskId);
+  }
+
+  /// The task-list response may omit `rewardSetting` even though the separate
+  /// reward-setting endpoint has just accepted it. Hydrate that field after a
+  /// refresh so the parent task card does not falsely show “Chưa đặt thưởng”.
+  Future<void> _hydrateRewardSetting(String taskId) async {
+    final setting = await fetchRewardSetting(taskId);
+    if (setting == null) return;
+    final index = tasks.indexWhere((task) => task.id == taskId);
+    if (index < 0) return;
+    tasks = List<FamilyTask>.from(tasks)
+      ..[index] = tasks[index].copyWith(rewardSetting: setting);
+    notifyListeners();
   }
 
   // ── Reward settlement ────────────────────────────────────────────────────
@@ -1141,6 +1188,7 @@ class TaskProvider extends ChangeNotifier {
           'autoCreateSettlement': ?autoCreateSettlement,
         });
     await fetchTasks();
+    await _hydrateRewardSetting(taskId);
   }
 
   Future<void> deleteRewardSetting(String taskId) async {

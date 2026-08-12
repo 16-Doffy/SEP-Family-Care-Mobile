@@ -55,6 +55,19 @@ void main() {
   });
 
   group('effectiveDisplayStyle — fallback khi thiếu uiHints (dữ liệu cũ)', () {
+    test('nhiều pendingActions không có uiHints vẫn là action plan', () {
+      final message = AiMessage.fromJson({
+        'id': 'plan-1',
+        'senderType': 'AI',
+        'content': 'Kế hoạch',
+        'pendingActions': [
+          {'actionType': 'CREATE_TASK'},
+          {'actionType': 'CREATE_CALENDAR_EVENT'},
+        ],
+      });
+      expect(message.effectiveDisplayStyle, AiDisplayStyle.actionPlanCard);
+    });
+
     test(
       'không có uiHints, có pendingAction → actionCard (đúng hành vi cũ)',
       () {
@@ -246,6 +259,27 @@ void main() {
         final fields = action.displayFields;
         expect(fields.map((f) => f.key), contains('amount'));
         expect(fields.firstWhere((f) => f.key == 'amount').label, 'Số tiền');
+      },
+    );
+
+    test(
+      'preview cũ có categoryId (BE Sprint 2026-08-09 — AI tự gán danh mục) '
+      'vẫn được nhận diện, không bị rơi mất khỏi displayFields',
+      () {
+        final action = AiPendingAction.fromJson({
+          'messageId': 'm1',
+          'actionType': 'CREATE_LEDGER_ENTRY',
+          'preview': {
+            'amount': 45000,
+            'categoryId': 'cat-an-uong',
+            'note': 'Cà phê sáng',
+          },
+        });
+        final fields = action.displayFields;
+        final category = fields.where((f) => f.key == 'categoryId');
+        expect(category, isNotEmpty);
+        expect(category.first.label, 'Danh mục');
+        expect(category.first.value, 'cat-an-uong');
       },
     );
 

@@ -52,7 +52,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       context.read<FamilyProvider>().fetchMembers();
       // Cho badge thanh toán: đếm settlement chờ trả/tranh chấp trên icon AppBar.
       tasks.fetchRewardSettlements();
-      await tasks.fetchTasks();
+      await tasks.fetchTasks(hydrateRewardSettings: true);
       if (!mounted) return;
       // GET /tasks không trả kèm assignment → nạp thêm để item hiện người làm
       // và thời gian. Chạy sau khi có danh sách để biết cần nạp task nào.
@@ -205,7 +205,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               Expanded(
                 child: _errorView(
                   taskState.error!,
-                  () => taskState.fetchTasks(),
+                  () => taskState.fetchTasks(hydrateRewardSettings: true),
                 ),
               )
             else ...[
@@ -241,7 +241,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: () => taskState.fetchTasks(),
+                  onRefresh: () =>
+                      taskState.fetchTasks(hydrateRewardSettings: true),
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     children: [
@@ -1685,17 +1686,37 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   // ── Reward setting ────────────────────────────────────────────────────────
 
-  void _showRewardSettingSheet(BuildContext context, FamilyTask task) {
-    String rewardType = task.rewardSetting?.rewardType ?? 'MONEY_RECORD';
+  Future<void> _showRewardSettingSheet(
+    BuildContext context,
+    FamilyTask task,
+  ) async {
+    // The task list does not guarantee embedding rewardSetting. Read the
+    // dedicated endpoint before deciding POST versus PATCH.
+    final existingReward =
+        await context.read<TaskProvider>().fetchRewardSetting(task.id) ??
+        task.rewardSetting;
+    if (!context.mounted) return;
+    String rewardType = existingReward?.rewardType ?? 'MONEY_RECORD';
     final amountCtrl = TextEditingController(
-      text: task.rewardSetting?.rewardAmount.toStringAsFixed(0) ?? '',
+      text: existingReward?.rewardAmount.toStringAsFixed(0) ?? '',
     );
     final descCtrl = TextEditingController(
-      text: task.rewardSetting?.rewardDescription ?? '',
+      text: existingReward?.rewardDescription ?? '',
     );
-    bool autoSettle = task.rewardSetting?.autoCreateSettlement ?? true;
+    bool autoSettle = existingReward?.autoCreateSettlement ?? true;
     bool submitting = false;
     String? sheetError;
+
+    double? parseRewardAmount() {
+      final raw = amountCtrl.text.trim();
+      if (raw.isEmpty) return null;
+      // Vietnamese currency is commonly entered as "30.000". Dart parses that
+      // as the decimal number 30.0, so normalize money to digits before send.
+      if (rewardType == 'MONEY_RECORD') {
+        return double.tryParse(raw.replaceAll(RegExp(r'[^0-9]'), ''));
+      }
+      return double.tryParse(raw.replaceAll(',', '.'));
+    }
 
     showModalBottomSheet(
       context: context,
@@ -1817,13 +1838,11 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                           try {
                             final tp = context.read<TaskProvider>();
                             // PATCH nếu task đã có reward-setting (sửa), POST nếu chưa (tạo mới).
-                            if (task.rewardSetting != null) {
+                            if (existingReward != null) {
                               await tp.updateRewardSetting(
                                 task.id,
                                 rewardType: rewardType,
-                                rewardAmount: double.tryParse(
-                                  amountCtrl.text.trim(),
-                                ),
+                                rewardAmount: parseRewardAmount(),
                                 rewardDescription: descCtrl.text.trim(),
                                 autoCreateSettlement: autoSettle,
                               );
@@ -1831,9 +1850,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                               await tp.setRewardSetting(
                                 task.id,
                                 rewardType: rewardType,
-                                rewardAmount: double.tryParse(
-                                  amountCtrl.text.trim(),
-                                ),
+                                rewardAmount: parseRewardAmount(),
                                 rewardDescription: descCtrl.text.trim(),
                                 autoCreateSettlement: autoSettle,
                               );
@@ -1859,7 +1876,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                           ),
                         )
                       : Text(
-                          task.rewardSetting != null ? 'Lưu thay đổi' : 'Lưu',
+                          existingReward != null ? 'Lưu thay đổi' : 'Lưu',
                           style: GoogleFonts.inter(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -1868,7 +1885,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         ),
                 ),
               ),
-              if (task.rewardSetting != null) ...[
+              if (existingReward != null) ...[
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
@@ -2406,9 +2423,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
     final assignee = switch (active.length) {
       0 => 'Chưa giao cho ai',
-      1 => active.first.assignedToName?.trim().isNotEmpty == true
-          ? active.first.assignedToName!.trim()
-          : 'Thành viên',
+      1 =>
+        active.first.assignedToName?.trim().isNotEmpty == true
+            ? active.first.assignedToName!.trim()
+            : 'Thành viên',
       _ => '${active.length} người được giao',
     };
 
@@ -2437,11 +2455,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         // Tên người giao có thể chỉ nằm ở assignment chứ không ở task.
         active
             .map(
-              (a) => _resolveName(
-                context,
-                a.assignedByName,
-                a.assignedByMemberId,
-              ),
+              (a) =>
+                  _resolveName(context, a.assignedByName, a.assignedByMemberId),
             )
             .whereType<String>()
             .firstOrNull;

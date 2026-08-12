@@ -633,6 +633,13 @@ coi là "bước 0" duy nhất).
   - ⚠️ Hệ quả: giao dịch AI tạo có thể rơi vào "Chưa phân loại" — FE nên gợi ý chọn danh mục ngay sau khi confirm thay vì để người dùng tự phát hiện. **Chưa làm.**
 - **[Sửa 2026-08-09]** `uiHints.displayStyle` của tin nhắn sau khi resolve (confirm/reject) từng có lúc trả sai `INSIGHT_CARD` kèm `content` vẫn y hệt lúc chưa xử lý ("xin xác nhận"), làm FE mất banner kết quả — BE xác nhận đã sửa tận gốc: `REJECTED`/`CONFIRMED`/`EXPIRED` giờ luôn trả đúng `RESULT_CARD`, `content` cập nhật đúng theo trạng thái thật. FE đã bỏ lớp vá tạm (ép cứng `actionCard`), tin thẳng `uiHints.displayStyle`; `_ResultCard` đổi màu/icon theo outcome (không còn mặc định xanh "thành công" cho mọi trường hợp).
 - `expiresAt` là **ISO UTC thật** sinh bằng `Date.toISOString()`, có đuôi `Z`, interceptor **không** convert timezone. FE tính countdown theo UTC bình thường.
+- **[Cập nhật BE 2026-08-10]** Resolver ngày tương đối giờ đọc cả context
+  message user trước đó. Luồng AI hỏi thêm giờ/địa điểm cho “cuối tuần này”
+  phải normalize về 15–16/08 (không còn lệch 13/08); cần regression runtime.
+- **[Cập nhật BE 2026-08-10]** `ALLOCATE_FUND_BY_MODEL` có guardrail quyền
+  riêng và fallback recover `pendingAction`: Manager/Deputy yêu cầu chia quỹ
+  tháng tương lai không còn bị trả text `PERMISSION_NOTICE` sai; cần regression
+  runtime để xác nhận luôn có thẻ xác nhận.
 - **Cập nhật 2026-08-07:** `entryDate` của Ledger **cũng là UTC thật**, không còn phải wall-clock local gắn `Z` như ghi nhận trước đây. Verify runtime: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC), sổ thu chi từng hiện `13:18` — lộ ra `WalletProvider.displayEntryDate` tự cắt `Z` rồi đọc số UTC như giờ local, lỗi FE đã sửa (không phải BE). **Support request chưa verify lại** — nếu đụng tới thì phải test runtime riêng, không suy diễn theo ledger.
 - **[Sửa 2026-08-09]** `CREATE_LEDGER_ENTRY` từng lỗi chập chờn không sinh `pendingAction` (AI tự báo lỗi định dạng ngày). Nguyên nhân: `entryDate` do AI sinh ra không ổn định format. BE đã normalize trước khi validate: `YYYY-MM-DD` → `YYYY-MM-DDT00:00:00+07:00`; datetime thiếu timezone → tự thêm `+07:00`; text/ngày không parse được → fallback ngày hiện tại theo giờ VN. Cần test lại luồng "Ghi khoản chi ... hôm nay/tuần này" để xác nhận đã hết chập chờn.
 - **[Sửa 2026-08-09]** Thông báo từ chối quyền (`PERMISSION_NOTICE`, "Bạn không có quyền...") từng mất dấu tiếng Việt không nhất quán — BE xác nhận đã sửa, giờ có dấu đầy đủ.
@@ -924,6 +931,12 @@ Schema chính thức trong OpenAPI: `DetectedFaceSuggestionResponseDto` (`faceId
 - Handle: `400` model thiếu hũ/tổng tỷ lệ khác 100% (`INVALID_JAR_PERCENTAGE`) hoặc vượt quỹ khả dụng (`INSUFFICIENT_AVAILABLE_FUND`); `404` không có model ACTIVE/modelId sai; `409` kỳ đã chia. `401` thiếu/hết token; `403` `FAMILY_MEMBER` hoặc tài khoản chưa verify (chỉ Manager/Deputy đã verify được chia quỹ + activate + xem lịch sử).
 - Response `201 Created`, envelope `{success, message, data}`; FE render kết quả chính từ `data.items`. `data.entries` là ledger audit.
 - Handle theo code ổn định: `INVALID_FINANCE_MODEL`, `INVALID_JAR_PERCENTAGE`, `INSUFFICIENT_AVAILABLE_FUND`, `NO_ACTIVE_FINANCE_MODEL`, `FUND_ALLOCATION_ALREADY_EXISTS`.
+- **[Cập nhật BE 2026-08-10]** Error `INSUFFICIENT_AVAILABLE_FUND` nay trả
+  thêm `requestedAmount`, `availableAmount`, `periodMonth`, `periodYear`.
+  `ApiException.details` giữ các field này để banner AI nêu chính xác số tiền
+  yêu cầu, quỹ còn lại và kỳ bị từ chối.
+- **[Cập nhật BE 2026-08-10]** `FUND_ALLOCATION_ALREADY_EXISTS` dùng message
+  chuẩn: `Kỳ này đã có lần chia quỹ.`
 - FE chỉ chặn `amount` vượt số dư khi đã tải được quỹ khả dụng; BE vẫn phải validate số dư ở server để chống request trực tiếp/race condition.
 - Đây là phân loại nội bộ tiền hiện có. Ledger entry sinh ra có `entryType=ADJUSTMENT`, `sourceType=MODEL_FUND_ALLOCATION`; FE giữ để audit nhưng không cộng/trừ khỏi tổng quỹ.
 

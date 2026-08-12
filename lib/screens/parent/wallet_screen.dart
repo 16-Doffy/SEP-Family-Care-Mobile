@@ -655,7 +655,7 @@ class _WalletScreenState extends State<WalletScreen> {
       _sectionCard(
         title: jarInfo.rows.isEmpty
             ? 'Phân bổ thu nhập'
-            : 'Phân bổ thu nhập theo mô hình',
+            : 'Theo dõi chi tiêu theo mô hình',
         child: jarInfo.rows.isEmpty
             // Chưa có mô hình đang áp dụng → giữ cách chia cũ (thu/chi/dư).
             ? Row(
@@ -733,6 +733,15 @@ class _WalletScreenState extends State<WalletScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text(
+                          'Theo các khoản chi thực tế đã gán danh mục; không phải số tiền đã chia quỹ.',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            height: 1.35,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         for (final e in jarInfo.rows.asMap().entries) ...[
                           _waffleLegend(
                             e.value.name,
