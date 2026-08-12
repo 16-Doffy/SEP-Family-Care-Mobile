@@ -32,6 +32,7 @@ import '../screens/shared/wearables_screen.dart';
 import '../screens/shared/ai_assistant_screen.dart';
 import '../screens/shared/change_password_screen.dart';
 import '../screens/shared/debug_status_screen.dart';
+import '../screens/shared/incoming_call_screen.dart';
 
 // New screens
 import '../screens/parent/subscription_screen.dart';
@@ -183,6 +184,11 @@ int _sosImmediateSeq = 0;
 
 String sosImmediateFreshPath() =>
     '/sos-immediate/${DateTime.now().microsecondsSinceEpoch}-${++_sosImmediateSeq}';
+
+int _incomingCallSeq = 0;
+
+String incomingCallFreshPath(String callId) =>
+    '/incoming-call/${DateTime.now().microsecondsSinceEpoch}-${++_incomingCallSeq}?callId=${Uri.encodeQueryComponent(callId)}';
 
 // Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
 // riêng để unit test được mà không cần render cây widget thật.
@@ -389,6 +395,12 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/sos-immediate/:token',
         builder: (_, _) => const SOSScreen(immediate: true),
       ),
+      GoRoute(
+        path: '/incoming-call/:token',
+        builder: (_, state) => IncomingCallEntryScreen(
+          callId: state.uri.queryParameters['callId'] ?? '',
+        ),
+      ),
       if (kDebugMode)
         GoRoute(
           path: '/debug/status',
@@ -546,7 +558,8 @@ GoRouter createRouter(AuthProvider auth) {
             goalId: state.uri.queryParameters['goalId'] ?? '',
             // surplus=1: mở sẵn sheet phân bổ số dư (đi từ màn tổng quan tài chính).
             autoOpenSurplus: state.uri.queryParameters['surplus'] == '1',
-            surplusPeriod: (year != null && month != null && month >= 1 && month <= 12)
+            surplusPeriod:
+                (year != null && month != null && month >= 1 && month <= 12)
                 ? FinancePeriod(year, month)
                 : null,
           );

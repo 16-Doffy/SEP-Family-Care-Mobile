@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/user.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/call_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/avatar_widget.dart';
@@ -9,19 +12,25 @@ import 'active_call_screen.dart';
 
 /// Màn hình cuộc gọi đến — mở khi nhận `call:incoming` qua socket `/chat`.
 ///
-/// Module BE chỉ hỗ trợ ổn định gọi 1-1 (xem `CAU_HOI_BE_VIDEO_CALL_2026-08-11.md`
-/// mục 9) nên màn này không có danh sách người tham gia, không có nút "thêm
-/// người" — chỉ Từ chối / Nghe.
+/// Màn này dùng chung cho 1-1 và gọi nhóm. Với nhóm, socket `call:incoming`
+/// đã có participant object để FE hiển thị ngữ cảnh cơ bản; vẫn chỉ có hai
+/// hành động Từ chối / Nghe, chưa có invite thêm người trong lúc gọi.
 class IncomingCallScreen extends StatefulWidget {
   final String callId;
   final String conversationId;
   final String callerName;
+  final String? conversationName;
+  final String conversationType;
+  final Map<String, String> participantNames;
 
   const IncomingCallScreen({
     super.key,
     required this.callId,
     required this.conversationId,
     required this.callerName,
+    this.conversationName,
+    this.conversationType = 'PRIVATE',
+    this.participantNames = const {},
   });
 
   @override
@@ -31,6 +40,21 @@ class IncomingCallScreen extends StatefulWidget {
 class _IncomingCallScreenState extends State<IncomingCallScreen> {
   bool _responding = false;
   CallProvider? _callProvider;
+
+  bool get _isGroupCall =>
+      widget.conversationType == 'GROUP' || widget.participantNames.length > 2;
+
+  String get _title {
+    if (!_isGroupCall) return widget.callerName;
+    final name = widget.conversationName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    return 'Cuộc gọi nhóm';
+  }
+
+  int get _memberCount {
+    final count = widget.participantNames.length + 1;
+    return count < 2 ? 2 : count;
+  }
 
   @override
   void initState() {
@@ -83,8 +107,13 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) =>
-              ActiveCallScreen(session: session, peerName: widget.callerName),
+          builder: (_) => ActiveCallScreen(
+            session: session,
+            peerName: widget.callerName,
+            conversationName: widget.conversationName,
+            conversationType: widget.conversationType,
+            participantNames: widget.participantNames,
+          ),
         ),
       );
     } catch (e) {
@@ -108,7 +137,9 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
               children: [
                 const Spacer(flex: 2),
                 Text(
-                  'Cuộc gọi video đến',
+                  _isGroupCall
+                      ? 'Cuộc gọi video nhóm đến'
+                      : 'Cuộc gọi video đến',
                   style: GoogleFonts.inter(
                     fontSize: 15,
                     color: Colors.white70,
@@ -125,7 +156,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  widget.callerName,
+                  _title,
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     fontSize: 22,
@@ -133,6 +164,17 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                     color: Colors.white,
                   ),
                 ),
+                if (_isGroupCall) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '${widget.callerName} đang gọi · $_memberCount thành viên',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: Colors.white60,
+                    ),
+                  ),
+                ],
                 const Spacer(flex: 3),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -152,6 +194,129 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Entry route cho notification/deep link CALL khi app mở từ nền hoặc cold
+/// start. Payload push có thể chỉ có `referenceId = callId`, nên màn này fetch
+/// lại call trước rồi mới dựng [IncomingCallScreen].
+class IncomingCallEntryScreen extends StatefulWidget {
+  final String callId;
+
+  const IncomingCallEntryScreen({super.key, required this.callId});
+
+  @override
+  State<IncomingCallEntryScreen> createState() =>
+      _IncomingCallEntryScreenState();
+}
+
+class _IncomingCallEntryScreenState extends State<IncomingCallEntryScreen> {
+  Future<Call>? _future;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.callId.isNotEmpty) {
+      _future = context.read<CallProvider>().getCall(widget.callId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.callId.isEmpty) {
+      return _CallUnavailableScreen(message: 'Thiếu mã cuộc gọi.');
+    }
+    return FutureBuilder<Call>(
+      future: _future!,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            backgroundColor: Color(0xFF111827),
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snap.hasError) {
+          return _CallUnavailableScreen(
+            message: CallProvider.messageOf(snap.error!),
+          );
+        }
+
+        final call = snap.data!;
+        if (!call.isLive) {
+          return const _CallUnavailableScreen(
+            message: 'Cuộc gọi này đã kết thúc.',
+          );
+        }
+
+        final myUser = context.read<AuthProvider>().user;
+        final callerName = call.initiatedByMember?.name ?? 'Thành viên';
+        final participantNames = {
+          for (final p in call.participants)
+            if (p.member?.userId != myUser?.id) p.memberId: p.displayName,
+        };
+        final isGroup = call.participants.length > 2;
+        return IncomingCallScreen(
+          callId: call.id,
+          conversationId: call.conversationId,
+          callerName: callerName,
+          conversationType: isGroup ? 'GROUP' : 'PRIVATE',
+          participantNames: participantNames,
+        );
+      },
+    );
+  }
+}
+
+class _CallUnavailableScreen extends StatelessWidget {
+  final String message;
+
+  const _CallUnavailableScreen({required this.message});
+
+  String _chatPath(UserRole? role) => switch (role) {
+    UserRole.manager => '/manager/chat',
+    UserRole.deputy => '/deputy/chat',
+    UserRole.member => '/member/chat',
+    _ => '/login',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final role = context.read<AuthProvider>().user?.role;
+    return Scaffold(
+      backgroundColor: const Color(0xFF111827),
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.videocam_off_rounded,
+                  color: Colors.white54,
+                  size: 52,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => context.go(_chatPath(role)),
+                  child: const Text('Về chat'),
+                ),
               ],
             ),
           ),
