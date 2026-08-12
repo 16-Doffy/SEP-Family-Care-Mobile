@@ -233,6 +233,19 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
 - ⚠️ `chat_provider.dart` vẫn **REST polling 5 giây/lần**. Bỏ polling để dùng hẳn `/chat` là thay đổi lớn,
   cố ý để **sau đợt bảo vệ**.
 
+**Giai đoạn 3 — kết nối phòng LiveKit:**
+- ✅ **[3a xong 11/08]** `livekit_client: ^2.11.0` + quyền `RECORD_AUDIO`/`MODIFY_AUDIO_SETTINGS`/`BLUETOOTH_CONNECT`.
+  Đã build + cài lên máy thật, mở app qua nhiều màn hình không crash — rủi ro của việc thêm 19 package native
+  (gồm `flutter_webrtc`) đã kiểm chứng trực tiếp.
+- ✅ **[3b xong 11/08]** `lib/services/livekit_room_service.dart` — singleton quản lý vòng đời `Room`
+  (`connect`/`disconnect`/bật-tắt camera-mic). Không bọc thêm tầng trừu tượng quanh `Room`/`RoomEvent`:
+  nơi gọi tự `room.createListener()` (đã expose qua `.events`) rồi `.on<T>()` theo đúng API gốc LiveKit.
+  `connect()` tự dọn phòng cũ trước — không bao giờ để tồn tại 2 phòng cùng lúc.
+- **Giới hạn đã chốt:** cuộc gọi **chưa chạy nền** (tắt màn hình/bấm Home giữa cuộc gọi sẽ rớt). Cần
+  foreground service + `FOREGROUND_SERVICE_MICROPHONE`/`CAMERA` (Android 14+), gom vào cùng đợt foreground
+  service của tính năng SOS (nhánh `sos-shake`) để không viết hai lần.
+- **Còn lại của GĐ3:** 3c (2 màn hình: cuộc gọi đến, đang gọi) và 3d (nối dây provider + socket + UI).
+
 **LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
 trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).
 Đa thiết bị cùng `identity`: BE **không chặn**, theo mặc định LiveKit thiết bị vào sau đá thiết bị cũ.
