@@ -98,6 +98,39 @@ void main() {
       );
     });
 
+    test('calendar pending action giữ nguyên content chuẩn BE 2026-08-10', () {
+      final provider = AiChatbotProvider();
+      const content =
+          'Mình đã tạo đề xuất lịch. Vui lòng kiểm tra thông tin và xác nhận '
+          'trên ứng dụng để hoàn tất nhé.';
+
+      provider.appendSendResponse({
+        'aiMessage': {
+          'id': 'calendar-pending-1',
+          'senderType': 'AI',
+          'content': content,
+          'uiHints': {'displayStyle': 'ACTION_CARD'},
+        },
+        'pendingAction': {
+          'messageId': 'calendar-pending-1',
+          'actionType': 'CREATE_CALENDAR_EVENT',
+          'status': 'PENDING',
+          'preview': {
+            'title': 'Đi dã ngoại',
+            'startTime': '2026-08-15T15:00:00+07:00',
+            'endTime': '2026-08-15T18:00:00+07:00',
+            'location': 'Công viên Ánh Sáng',
+          },
+        },
+      });
+
+      final message = provider.messages.single;
+      expect(message.content, content);
+      expect(message.pendingAction?.actionType, 'CREATE_CALENDAR_EVENT');
+      expect(message.pendingAction?.status, 'PENDING');
+      expect(message.effectiveDisplayStyle, AiDisplayStyle.actionCard);
+    });
+
     test('chỉ có content phẳng ở gốc', () {
       final provider = AiChatbotProvider();
       provider.appendSendResponse({

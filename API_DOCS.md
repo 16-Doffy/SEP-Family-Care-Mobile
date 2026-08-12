@@ -640,6 +640,18 @@ coi là "bước 0" duy nhất).
   riêng và fallback recover `pendingAction`: Manager/Deputy yêu cầu chia quỹ
   tháng tương lai không còn bị trả text `PERMISSION_NOTICE` sai; cần regression
   runtime để xác nhận luôn có thẻ xác nhận.
+- **[Cập nhật BE 2026-08-10 — content PENDING chuẩn hóa]** Khi response có
+  `pendingAction`/`pendingActions[]` với `status = PENDING`, BE không dùng lại
+  text do model sinh tự do mà trả content chuẩn theo `actionType`. Riêng
+  `CREATE_CALENDAR_EVENT` trả: “Mình đã tạo đề xuất lịch. Vui lòng kiểm tra
+  thông tin và xác nhận trên ứng dụng để hoàn tất nhé.” FE giữ nguyên content
+  server trả về và render thẻ dựa trên cấu trúc action, không suy đoán theo chữ.
+- **[BE fix verified 2026-08-12 — calendar participants]** Với
+  `CREATE_CALENDAR_EVENT`, prompt “cho cả nhà”/“cả gia đình”/“mọi người” được BE map
+  sang toàn bộ member `ACTIVE`; nếu không nêu participant thì thêm người tạo. ID do AI
+  trả phải được xác thực thuộc member active trước khi tạo pending action. Runtime đã
+  xác nhận proposal mới tạo lịch cho cả nhà confirm thành công; FE vẫn chỉ gửi
+  `messageId` vào endpoint confirm và không tự tạo participant payload.
 - **Cập nhật 2026-08-07:** `entryDate` của Ledger **cũng là UTC thật**, không còn phải wall-clock local gắn `Z` như ghi nhận trước đây. Verify runtime: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC), sổ thu chi từng hiện `13:18` — lộ ra `WalletProvider.displayEntryDate` tự cắt `Z` rồi đọc số UTC như giờ local, lỗi FE đã sửa (không phải BE). **Support request chưa verify lại** — nếu đụng tới thì phải test runtime riêng, không suy diễn theo ledger.
 - **[Sửa 2026-08-09]** `CREATE_LEDGER_ENTRY` từng lỗi chập chờn không sinh `pendingAction` (AI tự báo lỗi định dạng ngày). Nguyên nhân: `entryDate` do AI sinh ra không ổn định format. BE đã normalize trước khi validate: `YYYY-MM-DD` → `YYYY-MM-DDT00:00:00+07:00`; datetime thiếu timezone → tự thêm `+07:00`; text/ngày không parse được → fallback ngày hiện tại theo giờ VN. Cần test lại luồng "Ghi khoản chi ... hôm nay/tuần này" để xác nhận đã hết chập chờn.
 - **[Sửa 2026-08-09]** Thông báo từ chối quyền (`PERMISSION_NOTICE`, "Bạn không có quyền...") từng mất dấu tiếng Việt không nhất quán — BE xác nhận đã sửa, giờ có dấu đầy đủ.

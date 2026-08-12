@@ -1,6 +1,87 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-10**
+Last updated: **2026-08-12**
+
+## Xác nhận runtime 2026-08-12 — Calendar AI participant payload (BE FIX VERIFIED)
+
+- BE đã sửa `CalendarAiTools` đúng theo thông báo: prompt có “cho cả nhà”/“cả gia đình”/
+  “mọi người” lấy toàn bộ member `ACTIVE`; không nêu người tham gia thì thêm người tạo;
+  participant ID do AI trả phải thuộc member đang active mới được tạo pending action.
+- **Đã test runtime thành công bằng proposal mới** (không dùng lại proposal cũ đã hết hạn):
+  “Tạo lịch đi dã ngoại 15h đến 18h ngày 15/08/2026 tại Công viên Ánh Sáng cho cả nhà.”
+  Card `CREATE_CALENDAR_EVENT` ở trạng thái `PENDING` trả content chuẩn, bấm **Xác nhận tạo
+  lịch** thành công, chuyển sang “Đã thực hiện đề xuất”, rồi sự kiện **Đi dã ngoại** xuất hiện
+  trong Calendar list với 15/08, 15:00–18:00, Công viên Ánh Sáng.
+- Lỗi cũ “Sự kiện cần ít nhất một người tham gia” chỉ áp dụng cho pending proposal được tạo
+  trước khi BE deploy và/hoặc đã hết hạn; không tái hiện với proposal mới. **Không cần sửa FE**:
+  FE chỉ confirm bằng `messageId` và reload conversation, không tự tạo hay làm mất participant
+  payload.
+
+## Cập nhật cuối phiên 2026-08-10 — Report 6, ảnh minh chứng và AI Chatbox
+
+### Report 6 — trạng thái file và ảnh đã chèn
+
+- **File nguồn đã chỉnh:** `D:\Desktop\BÁO-CÁO-NEW\Report6_Software User Guides (1).docx`.
+  Không dùng `rp6.docx` để chuyển sang bản báo cáo chung, vì file đó không phải bản đã
+  được bổ sung ảnh.
+- Đã phục hồi ảnh sau khi phát hiện thao tác xóa bảng placeholder đã xóa theo một số ảnh
+  nằm trong bảng. Bản hiện tại có **13 ảnh nhúng thực sự** trong DOCX (đã kiểm tra
+  `word/media/*`), kích thước khoảng 5.9 MB.
+- Backup trước khi phục hồi: `D:\Desktop\BÁO-CÁO-NEW\Report6_Software User Guides (1).before-image-restore.docx`.
+- Ảnh đã được đặt lại ngoài bảng placeholder, trước caption tương ứng: Hình **6.6, 6.7,
+  6.10, 6.11, 6.12, 6.13, 6.15, 6.17, 6.18, 6.19, 6.21** (Hình 6.21 có ảnh Hồ sơ và
+  Khai báo tài chính tháng).
+- Khi chuyển sang Google Docs: **upload trực tiếp DOCX đã chỉnh**, mở bằng Google Docs,
+  rồi chỉ copy `3. User Manual` sang file chung. Không copy toàn bộ nội dung trực tiếp từ
+  Word; ảnh inline/bảng có thể mất. Bản Google Docs đã upload trước đó không tự cập nhật.
+- Ảnh còn cần chụp/điền: **6.1–6.4** (DB/Backend/Web/Flutter runtime), **6.8** (family
+  invite/join), **6.14** (AI calendar pending), **6.16** (chat family test sạch),
+  **6.20** (AI multi-turn có Sửa/Hủy/Xác nhận), và **6.22–6.30** (Web Admin).
+
+### AI Chatbox — kết quả đối chiếu mới nhất
+
+- **[BE BUG] Calendar content mâu thuẫn pending action:** yêu cầu tạo lịch có thể trả
+  `pendingAction: CREATE_CALENDAR_EVENT`/thẻ xác nhận hoàn chỉnh nhưng `content` lại nói
+  “Mình chưa tạo được thẻ xác nhận…” và còn nhắc đến loại giao dịch/số tiền. FE đã được
+  đối chiếu: không suy luận action từ chữ; chỉ render card khi BE gửi
+  `pendingAction`/`pendingActions[]`. **BE đã báo sửa:** với action `PENDING`, content
+  được chuẩn hóa theo actionType; calendar phải trả “Mình đã tạo đề xuất lịch. Vui lòng
+  kiểm tra thông tin và xác nhận trên ứng dụng để hoàn tất nhé.” FE thêm regression test
+  parse/render đúng payload mới; còn cần test runtime sau khi app nhận BE deploy mới.
+- **[BE BUG] Expense proposal thiếu pending action:** prompt ghi khoản chi có lúc chỉ trả
+  text yêu cầu “xác nhận trên ứng dụng”, không trả `pendingAction CREATE_LEDGER_ENTRY`,
+  nên FE không thể dựng nút xác nhận. Luồng khoản thu cùng chức năng hoạt động. BE phải
+  trả action đầy đủ hoặc nói rõ lý do không tạo được đề xuất.
+- **[BE BUG] Jar target vs actual:** sau chia quỹ 3.000.000đ theo 80/20, target đúng phải
+  Spending 2.400.000đ/Savings 600.000đ. Ledger expense 100.000đ map đúng vào Spending,
+  nhưng endpoint report từng trả target 80.000đ/20.000đ. Đây là lỗi tính `targetAmount`
+  của BE; không phải FE tự phân bổ khoản chi.
+- Hình AI calendar có câu content mâu thuẫn chỉ dùng làm bằng chứng bug, **không** dùng
+  làm Hình 6.14 của User Manual. Hình 6.14 phải là luồng sạch có title/time/location và
+  nút Hủy/Xác nhận/Chỉnh.
+- **[BE FIX VERIFIED 2026-08-12] Calendar thiếu người tham gia:** BE đã map “cho cả nhà”
+  sang các member `ACTIVE` và có fallback người tạo. Proposal mới xác nhận thành công,
+  chuyển sang trạng thái hoàn tất và tạo được sự kiện trong Calendar. Card cũ tạo trước khi
+  deploy/hết hạn không dùng để kết luận hồi quy; FE không cần thay đổi payload participant.
+
+### Domain cần gửi BE để cấu hình
+
+- **Web Frontend production (CORS / `WEB_URL`):** `https://family-care-admin.vercel.app`.
+- **Web local development:** `http://localhost:3000`.
+- **Mobile không có HTTPS domain:** deep-link callback là `familycare://app` (Android
+  manifest: scheme `familycare`, host `app`). Ví dụ:
+  `familycare://app/payment-success`, `familycare://app/payment-failed`,
+  `familycare://app/join?code=<CODE>`.
+- Không dùng API URL làm FE origin. Dùng Web URL cho CORS/`WEB_URL`; dùng deep-link riêng
+  cho redirect/callback về Mobile.
+
+### Ghi chú cài đặt Report 6
+
+- Nội dung hướng dẫn cài đặt phải theo source hiện tại: Backend là **Node.js/TypeScript,
+  Express/Prisma và pnpm**, không phải Spring Boot/Maven/PilahubApplication. Mobile là
+  Flutter (`flutter pub get`, `flutter run`), không phải `npm run android`.
+- Hình 6.4 cần chứng cứ runtime: terminal có `Syncing files to device…` và emulator đang
+  mở FamilyCare; ảnh Device Manager là bằng chứng bổ trợ về AVD, không thay thế ảnh app.
 
 ## Cập nhật cuối phiên 2026-08-10 — Reward nhiệm vụ, phiên family mới và chuẩn bị ảnh Report 6
 
