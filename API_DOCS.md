@@ -242,9 +242,12 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   `connect()` tự dọn phòng cũ trước — không bao giờ để tồn tại 2 phòng cùng lúc.
 - ✅ **[3c xong 12/08]** `lib/screens/shared/incoming_call_screen.dart` (Từ chối/Nghe) và
   `active_call_screen.dart` (video người kia phủ kín màn qua `VideoTrackRenderer`, video mình khung nhỏ
-  cố định góc trên-phải, mic/camera/kết thúc). Chỉ 1-1: không lưới nhiều người, không chia sẻ màn hình,
-  không ghi hình, không chat trong cuộc gọi. Nút gọi ở `chat_screen.dart` (AppBar) chỉ hiện khi
-  `conversation.type == 'PRIVATE'`.
+  cố định góc trên-phải, mic/camera/kết thúc).
+- ✅ **[Group call FE xong 12/08]** BE không chặn `GROUP` nên FE đã mở nút gọi cho cả hội thoại nhóm
+  đang active, truyền metadata participant vào `ActiveCallScreen`, đổi remote track sang map theo
+  `participant.identity = memberId`, và render grid cho gọi nhóm. 1-1 vẫn giữ layout cũ; group không tự
+  đóng màn chỉ vì một participant rời phòng, chỉ đóng khi phòng không còn remote participant/có `call:ended`.
+  Chưa có invite thêm người trong lúc gọi, chia sẻ màn hình, ghi hình hoặc chat trong cuộc gọi.
 - ✅ **[3d xong 12/08]** `CallProvider` đăng ký vào cây provider ở `main.dart`; `startRealtime()`/`stopRealtime()`
   nối `ChatSocketService` theo đúng khuôn `NotificationProvider`. `family_shell.dart` gọi `startRealtime()`
   lúc mở app (sống suốt phiên như `/notifications`), `call:incoming` → mở `IncomingCallScreen` — **tự lọc bỏ
@@ -257,6 +260,20 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   foreground service + `FOREGROUND_SERVICE_MICROPHONE`/`CAMERA` (Android 14+), gom vào cùng đợt foreground
   service của tính năng SOS (nhánh `sos-shake`) để không viết hai lần. **Đủ 4 giai đoạn (GĐ1–4) — còn lại
   chỉ là giới hạn nền này.**
+- **Giới hạn KHÁC, mới đo được 12/08 trên máy Oppo + emulator thật — cuộc gọi ĐẾN khi app đang nền:**
+  `IncomingCallScreen` chỉ tự mở khi app đang **foreground** với socket `/chat` đang sống
+  (`family_shell.dart._onIncomingCall`, xem 3d). App backgrounded (bấm Home, chưa bị kill) thì `call:incoming`
+  không tới được Flutter — người nhận **chỉ thấy notification FCM thường** (tiêu đề "Cuộc gọi video đến"),
+  không có nút Nghe/Từ chối trên notification, không tự mở màn nào. FE đã nối tap `referenceType=CALL`
+  → `/incoming-call/:token?callId=...` → `GET /calls/{callId}` → dựng `IncomingCallScreen` nếu call còn
+  live, nhưng **chưa thể tự bung full-screen khi app đang nền** nếu BE vẫn gửi FCM dạng `notification`
+  message. **Khác hẳn** giới hạn "chưa chạy
+  nền" ở trên (giới hạn đó là cuộc gọi ĐANG DIỄN RA bị rớt; đây là cuộc gọi CHƯA AI BẮT MÁY không hiện được
+  màn trả lời) — cùng nhóm nguyên nhân (không có foreground service/full-screen-intent cho luồng gọi đến)
+  nhưng là gap riêng, muốn sửa đúng cần làm tương tự mẫu `SosAlertLauncher`/`EmergencySosWatcherService` đã
+  làm cho SOS (`KE_HOACH_SOS_KICH_HOAT_KHAN_CAP_2026-08-11.md`): FCM data message ưu tiên cao → native
+  service dựng notification `setFullScreenIntent()` kèm nút Nghe/Từ chối → mở `IncomingCallScreen` kể cả
+  app đã bị kill. Đây là việc **quy mô tương đương "Cơ chế B"**, chưa làm, chỉ mới xác nhận và ghi lại.
 
 **LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
 trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).
@@ -270,8 +287,9 @@ Gửi cho mọi participant trừ người gọi, đúng 1 lần lúc khởi t�
 trong Swagger). Chuỗi tóm tắt ("Cuộc gọi video · 5:32") **do BE sinh sẵn** trong `content` — FE hiển thị thẳng, không tự tính.
 Loại tin này **không cho** sửa/thả cảm xúc/ghim (BE trả 400) → UI phải ẩn các nút đó.
 
-**Gọi nhóm:** BE **không chặn** hội thoại `GROUP`; timeout 30 giây áp dụng như nhau cho cả 1-1 lẫn nhóm. Có hiện nút gọi cho
-nhóm hay không là **lựa chọn UI của FE**. Phần còn thiếu cho gọi nhóm chỉ là UX (`NO_ANSWER` riêng từng người), không phải bug chặn.
+**Gọi nhóm:** BE **không chặn** hội thoại `GROUP`; timeout 30 giây áp dụng như nhau cho cả 1-1 lẫn nhóm. FE đã mở
+nút gọi nhóm và render grid nhiều participant. Phần còn thiếu là UX nâng cao (`NO_ANSWER` riêng từng người,
+invite thêm người trong lúc gọi, giới hạn số người tối đa), không phải bug chặn.
 
 ### Notifications — **[CHỐT BE 2026-08-09: đủ contract, hết đoán]**
 - `GET /api/v1/families/{familyId}/notifications` — Danh sách thông báo của thành viên hiện tại. Query `unreadOnly` (bool).
