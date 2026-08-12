@@ -123,17 +123,102 @@ Cần test trên máy thật trước khi demo hội đồng:
 
 | # | Kịch bản | Trạng thái |
 |---|---|---|
-| 1 | Tắt màn hình 2 phút, lắc mạnh | Chưa test trên máy thật |
+| 1 | Khóa màn hình, lắc mạnh | **Đã test trên Oppo CPH2159 thật (12/08) — PASS.** Log xác nhận `SosGuardService` bắt được lắc, bắn notification `familycare_sos_guard_alert` có `fullscreenIntent` hợp lệ, deep link `familycare://app/sos-quick` mở đúng. Máy đang khóa lúc lắc nên hệ thống chỉ hiện notification thường (không tự mở full-screen đè màn khóa) — đây là hành vi chuẩn của Android `setFullScreenIntent`, không phải lỗi (xem ghi chú bên dưới) |
+| 1b | Mở khóa, lắc mạnh | **Đã test trên Oppo CPH2159 thật (12/08) — PASS.** Người dùng xác nhận chuyển đúng tới màn SOS đếm ngược |
 | 2 | Đi bộ 5 phút, để máy trong túi | Chưa test trên máy thật |
 | 3 | Đi xe máy 5 phút đường xóc | Chưa test trên máy thật |
 | 4 | Để máy Oppo tắt màn hình 30 phút | Chưa test trên máy thật |
-| 5 | Android 14+ chưa cấp full-screen intent → hiện nút "Cấp quyền ngay", bấm vào mở đúng màn cài đặt | Chưa test trên máy thật |
+| 5 | Android 14+ chưa cấp full-screen intent → hiện nút "Cấp quyền ngay", bấm vào mở đúng màn cài đặt | Chưa test trên máy thật (máy test là Android 13 nên không áp dụng giới hạn này) |
 | 6 | Đang gọi video, khóa màn hình 10 giây, mở lại | Chưa test trên máy thật |
 | 7 | Đang gọi video, bấm Home 30 giây, quay lại | Chưa test trên máy thật |
-| 8 | Lắc mạnh khi máy trong túi quần | Có rung mạnh cảm nhận được không |
-| 9 | Bật lắc/té ngã, đăng xuất, đăng nhập tài khoản khác | Service phải dừng, không còn thông báo thường trực |
+| 8 | Lắc mạnh khi máy trong túi quần | Có rung mạnh cảm nhận được không — chưa test riêng |
+| 9 | Bật lắc/té ngã, đăng xuất, đăng nhập tài khoản khác | Service phải dừng, không còn thông báo thường trực — chưa test riêng |
+
+**Ghi chú ca 1 (quan trọng, giải thích trước khi demo):** `setFullScreenIntent()` chỉ tự mở đè lên màn
+hình khi máy **thật sự đang khóa/tắt màn tại đúng thời điểm bắn thông báo**. Nếu người dùng đang thao
+tác máy (kể cả chỉ vừa mở khóa ra) thì Android chỉ hiện notification thường, cần chạm để mở — đây là
+hành vi mặc định của hệ thống, đã kiểm tra `fullscreenIntent` trong `dumpsys notification` không phải
+`null` nên code đúng. Khi demo, nên khóa hẳn màn hình vài giây rồi mới lắc để thấy được hành vi tự mở
+đè màn khóa.
+
+**Bug đã phát hiện và ĐÃ SỬA (12/08):** công tắc "Lắc mạnh để mở SOS" trong Cài đặt SOS đôi khi hiện
+lại OFF ngay sau khi bật, dù `SosGuardService` đã chạy thật (đã xác nhận qua `dumpsys` lúc bắt được
+bug — service sống, notification thường trực hiện đúng, lắc vẫn hoạt động). Nguyên nhân: sau khi gọi
+native `start()`, code gọi lại `_loadGuardStatus()` ngay lập tức trong khi `startForegroundService()`
+phía Kotlin chưa kịp chạy xong `onStartCommand()` để cập nhật cờ trạng thái, nên đọc lại giá trị cũ
+(`false`) và ghi đè lên UI đã bật đúng trước đó. Đã sửa ở `_setGuard()`
+(`lib/screens/shared/sos_settings_screen.dart`): bỏ lệnh gọi lại `_loadGuardStatus()` thừa sau khi
+`start()` thành công, tin vào state optimistic đã set trước đó; chỉ đồng bộ lại khi có lỗi thật.
+**Đã build lại + cài lại + test trên chính máy Oppo CPH2159, xác nhận công tắc hiện đúng ngay lập
+tức** (không cần chờ resume app nữa), `SosGuardService` vẫn chạy thật qua `dumpsys`. `flutter test`
+478/478 pass, `flutter analyze` 0 lỗi sau khi sửa.
 
 Không coi tính năng SOS nền là đã sẵn sàng demo công khai nếu các ca trên chưa có kết quả trên máy thật.
+
+### Bám theo Emergency SOS hệ thống (chỉ ColorOS) — thêm 2026-08-12 — 🛑 KHÔNG DEMO ĐƯỢC, xem bên dưới
+
+Người dùng yêu cầu giữ thao tác "bấm nguồn 5 lần", nhưng bằng kỹ thuật khác với cách đã bị loại bỏ
+ở lần thử đầu (chặn phím nguồn — bị hệ thống lọc trước, không lách được). Cách mới: app dùng
+`EmergencySosWatcherService` (`AccessibilityService`, chỉ theo dõi sự kiện đổi màn hình đang hiện,
+**không đọc nội dung màn hình**) để phát hiện lúc màn Emergency SOS của ColorOS
+(`com.oplus.sos`) vừa xuất hiện — do bấm nguồn 5 lần hoặc tự mở tay đều được — rồi tự gửi SOS của
+app **ngay lập tức, không đếm ngược, không nút hủy** (vì màn hệ thống đang chiếm chỗ, không vẽ đè
+UI xác nhận được).
+
+- Bật/tắt: **Cài đặt SOS → Bám theo Emergency SOS của máy** → nút mở Cài đặt Trợ năng (app không tự
+  bật hộ được, đây là giới hạn của hệ điều hành).
+- Chỉ có tác dụng trên ColorOS (Oppo/Realme/OnePlus). Máy hãng khác: mục vẫn hiện trong Cài đặt SOS
+  nhưng bật lên cũng không có tác dụng gì (không lỗi, không crash).
+- Chi tiết kiến trúc + toàn bộ danh sách chưa-kiểm-chứng: xem mục 13 của
+  `KE_HOACH_SOS_KICH_HOAT_KHAN_CAP_2026-08-11.md`.
+
+**Đã chạy sạch:** `flutter analyze` 0 lỗi, `flutter test` 478/478 pass, Gradle
+`compileDebugKotlin` + `testDebugUnitTest` (JVM test cho `EmergencySosMatcher`) build thành công.
+
+**Đã test trên 2 máy ảo (HOH, MEM):** app cài/chạy sạch, `EmergencySosWatcherService` được
+`PackageManager` nhận đúng và **chạy thật** khi bật (chỉ bật được trên emulator, xem lý do bên
+dưới); deep link `/sos-immediate` vào thẳng màn gửi ngay, **không đếm ngược**, đúng thiết kế — kể cả
+tình cờ xác nhận được cả luồng gửi SOS thật tới BE. Nhưng đây chỉ xác nhận phần UI/route, **không**
+xác nhận được phần quan trọng nhất: tự phát hiện màn Emergency SOS thật (emulator không có
+`com.oplus.sos`).
+
+**🛑 Test trên máy Oppo CPH2159 thật (12/08) — phát hiện CHẶN THẬT, không phải "chưa test":**
+
+Vào Cài đặt > Trợ năng > Family Care để bật thì bị chặn ngay bởi hộp thoại hệ thống **"Chế độ cài
+đặt bị hạn chế"** — cơ chế "Restricted settings" của Android 13+ chống lạm dụng Accessibility Service,
+áp dụng cho **mọi** app cài qua APK trực tiếp/ADB (không phải lỗi riêng của app này).
+
+Đã thử hết các cách mở khoá thường dùng, **đều thất bại trên máy này**: menu "Cho phép cài đặt bị
+hạn chế" chuẩn AOSP không tồn tại trong menu 3 chấm của App info trên bản ColorOS này; cài lại APK
+giả installer Play Store không có tác dụng; `adb shell settings put secure
+enabled_accessibility_services` bị từ chối quyền (`WRITE_SECURE_SETTINGS`); `adb shell appops set
+... ACCESS_RESTRICTED_SETTINGS allow` cũng bị từ chối quyền (`MANAGE_APP_OPS_MODES`); không tìm thấy
+đường mở khoá thay thế trong Cài đặt hệ thống hay app Trung tâm bảo mật OPPO.
+
+**Đã xác nhận lại bằng tay thật (12/08):** người dùng tự chạm màn hình thật (không qua ADB) vào
+Cài đặt > Trợ năng > Family Care, bấm nút gạt — hiện đúng y hệt hộp thoại "Chế độ cài đặt bị hạn
+chế", chỉ có nút OK. **Không phải do ADB giả lập chạm — chặn thật ở cấp hệ điều hành, tay thật cũng
+vậy.**
+
+**Kết luận: hiện KHÔNG demo được Cơ chế B trên máy Oppo CPH2159 này ở dạng APK trực tiếp — không
+phải vì code lỗi, mà vì chính sách hệ điều hành chặn từ bước bật quyền.** Xem đầy đủ + hướng ra còn
+lại (máy/bản ColorOS khác; phát hành qua kênh tin cậy) ở mục 13.7 của kế hoạch.
+
+| # | Kịch bản | Trạng thái |
+|---|---|---|
+| 10 | Bật Trợ năng cho `EmergencySosWatcherService` | **Bị chặn** — "Chế độ cài đặt bị hạn chế", xem chi tiết ở trên |
+| 11 | Bấm nguồn 5 lần → màn Emergency SOS hiện → `SOSScreen(immediate)` tự mở, gửi tới BE | Không test được (phụ thuộc ca 10) |
+| 12 | Chưa bật Trợ năng, bấm nguồn 5 lần | Đúng thiết kế theo suy luận (chưa bật được Trợ năng nên chắc chắn không phản ứng) |
+| 13 | Bấm nguồn 5 lần 2 lần liên tiếp trong 30 giây | Không test được (phụ thuộc ca 10) |
+| 14 | Tên gói/lớp `com.oplus.sos` có còn đúng như đã nhớ lại từ lần đo trước không | Chưa đối chiếu lại — không tới được bước này vì bị chặn từ ca 10 |
+
+**Không demo tính năng này trước hội đồng ở trạng thái hiện tại.** Nếu bị hỏi, trả lời bằng phát
+hiện thật này: đây là giới hạn nền tảng Android 13+ đã biết đối với app cài ngoài Play Store, không
+phải thiếu sót thiết kế — tương tự cách mục 1 của kế hoạch đã trình bày lý do loại "chặn phím nguồn".
+
+Không demo tính năng này trước hội đồng nếu ca 10–11 chưa chạy được trên máy Oppo thật ít nhất một
+lần — đây là phần rủi ro nhất vì phụ thuộc tên gói/lớp nội bộ của OEM mà Google không công bố chính
+thức.
 
 ## Known Issues
 
