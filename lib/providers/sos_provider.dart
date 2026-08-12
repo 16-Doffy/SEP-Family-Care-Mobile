@@ -589,15 +589,16 @@ class SosProvider extends ChangeNotifier {
 
   // POST .../sos/alerts/{alertId}/locations/batch — gửi nhiều điểm vị trí một
   // lần (BE bổ sung 2026-07-10; thiết bị buffer khi offline rồi flush — dành
-  // cho Wear OS / mất mạng tạm thời).
-  Future<void> pushLocationBatch(
+  // cho Wear OS / mất mạng tạm thời). Trả `bool` như `pushLocation` để caller
+  // biết flush thành công hay chưa (còn giữ buffer để thử lại lần sau).
+  Future<bool> pushLocationBatch(
     String alertId,
     List<({double lat, double lng, double? accuracy, DateTime? recordedAt})>
     points, {
     String sourceType = 'MOBILE_GPS',
   }) async {
     final fid = _fid;
-    if (fid == null || points.isEmpty) return;
+    if (fid == null || points.isEmpty) return false;
     try {
       await ApiClient.instance.post(
         '/families/$fid/sos/alerts/$alertId/locations/batch',
@@ -615,8 +616,10 @@ class SosProvider extends ChangeNotifier {
           ],
         },
       );
+      return true;
     } catch (e) {
       debugPrint('SosProvider: pushLocationBatch failed: $e');
+      return false;
     }
   }
 

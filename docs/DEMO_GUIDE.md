@@ -59,9 +59,26 @@ Lưu ý migration: nếu tài khoản test còn wearable `PAIRED` bằng định
 3. Màn cảnh báo đếm ngược 20 giây; bấm **Con ổn/Đã ổn** để hủy trước khi gửi, hoặc bấm **Gửi SOS**.
 4. Mỗi lần gửi event `HEART_RATE_ABNORMAL` có thể tạo SOS thật theo rule BE hiện tại. Khi demo, hãy báo trước cho cả nhóm vì mobile người nhà sẽ nhận cảnh báo thật.
 
+### 6. Demo lối tắt SOS trên điện thoại (không cần mở app)
+
+Điểm cần nói khi demo: SOS mà bắt mở app rồi tìm tab thì trong tình huống thật
+là quá chậm. Lối tắt bỏ hẳn bước điều hướng.
+
+1. Trên màn hình chính, **giữ icon Family Care** → hiện mục **“Gửi SOS khẩn cấp”**.
+2. Ấn vào là app mở **thẳng** màn SOS và **tự đếm ngược 3 giây** rồi gửi — không
+   phải giữ nút, không qua trang chủ.
+3. Bấm **HỦY** trong lúc đếm ngược để chứng minh chạm nhầm không tạo báo động giả.
+4. Ấn tượng hơn: **kéo mục “Gửi SOS” đó ra màn hình chính** → thành nút SOS đỏ
+   độc lập, từ đó **1 chạm** là chạy luôn kịch bản trên.
+
+> Lối tắt cần Android 7.1 (API 25) trở lên. Máy API 24 sẽ không thấy mục này —
+> `minSdk` của dự án là 24 nên không crash, chỉ là không có lối tắt.
+
 ## Expected Result
 
 - Đồng hồ ghép thành công bằng mã `FCW-XXXXXX`.
+- Giữ icon app trên điện thoại thấy lối tắt “Gửi SOS khẩn cấp”; ấn vào mở thẳng
+  màn SOS đang đếm ngược, có nút HỦY.
 - SOS thủ công và SOS cảm biến tạo cảnh báo mà không phải chờ GPS trước.
 - Đồng hồ hiển thị trạng thái GPS: “Đang lấy vị trí…”, “Đã có vị trí”, hoặc “Không lấy được GPS đồng hồ”.
 - Mobile hiển thị bản đồ từ `locationPoints`, nhãn “Vị trí từ đồng hồ/điện thoại/giả lập”, và đường đi khi có từ 2 điểm hợp lệ.
@@ -76,6 +93,47 @@ Lưu ý migration: nếu tài khoản test còn wearable `PAIRED` bằng định
 | Cảm biến SOS không gửi được | Tài khoản Wear phải đã ghép wearable; màn chính sẽ hiện “Chưa ghép thiết bị” nếu chưa đủ điều kiện. |
 | Người nhận mở chi tiết SOS quá sớm chưa thấy bản đồ | Sheet chi tiết có retry `location/current`; chờ vài giây hoặc mở lại chi tiết. |
 | Nhịp tim giả lập tạo cảnh báo thật | Đây là rule BE đã chốt cho `HEART_RATE_ABNORMAL`; không bấm demo nếu chưa báo trước. |
+| Giữ icon app không thấy lối tắt SOS | Máy phải Android 7.1+ (API 25). Vừa cài đè bản cũ thì một số launcher cần khởi động lại launcher hoặc gỡ/cài lại mới nạp `shortcuts.xml`. |
+| Ấn lối tắt nhưng app mở ở trang chủ thay vì màn SOS | Launcher không truyền URI `familycare://app/sos-quick`. Kiểm tra `targetPackage` trong `res/xml/shortcuts.xml` có khớp `applicationId` ở `android/app/build.gradle.kts` không — hai giá trị này hiện KHÁC nhau và phải sửa cùng lúc. |
+
+## SOS nền và Call foreground service
+
+Cập nhật 2026-08-12:
+
+- Mobile Android đã có `SosGuardService` foreground service riêng cho SOS nền. Công tắc nằm trong **Cài đặt SOS -> Bảo vệ SOS trên máy này**:
+  - `Lắc mạnh để mở SOS`
+  - `Theo dõi té ngã khi chạy nền`
+- Khi phát hiện lắc/té ngã, service mở deep link `familycare://app/sos-quick`; màn SOS vẫn đếm ngược 3 giây và có nút hủy.
+- Mobile Android đã có `CallGuardService` foreground service riêng cho cuộc gọi video, bật khi `LivekitRoomService.connect()` và tắt khi `disconnect()`.
+- Hai service tách riêng vì `foregroundServiceType` khác nhau: SOS dùng `specialUse`, Call dùng `camera|microphone`.
+
+**Sửa thêm 2026-08-12 (Claude Code review lại bản Codex):** 3 lỗ hổng đã vá ở tầng code, **chưa verify
+trên máy thật**:
+- `SosGuardService` không kiểm tra `canUseFullScreenIntent()` (Android 14+) và có một dòng
+  `pendingIntent.send()` thủ công không phải fallback hợp lệ (bị chặn bởi giới hạn
+  background-activity-launch) — đã bỏ dòng đó, thêm nhánh kiểm tra quyền thật: có quyền thì để hệ
+  thống tự mở màn qua `setFullScreenIntent`, không có quyền thì chỉ bắn thông báo phải chạm tay kèm nút
+  "Cấp quyền ngay" (mở `ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT`) trong Cài đặt SOS.
+- Service không dừng khi đăng xuất (rủi ro thiết bị dùng chung: người sau đăng nhập "thừa hưởng" cảm
+  biến của người trước) — đã nối `SosGuardService` vào `ApiClient.addSessionResetListener`.
+- Thiếu quyền `VIBRATE` nên rung chống báo động giả không hoạt động — đã thêm quyền + rung tường minh
+  (mẫu rung riêng, tắt rung mặc định của channel để không rung chồng 2 lần).
+
+Cần test trên máy thật trước khi demo hội đồng:
+
+| # | Kịch bản | Trạng thái |
+|---|---|---|
+| 1 | Tắt màn hình 2 phút, lắc mạnh | Chưa test trên máy thật |
+| 2 | Đi bộ 5 phút, để máy trong túi | Chưa test trên máy thật |
+| 3 | Đi xe máy 5 phút đường xóc | Chưa test trên máy thật |
+| 4 | Để máy Oppo tắt màn hình 30 phút | Chưa test trên máy thật |
+| 5 | Android 14+ chưa cấp full-screen intent → hiện nút "Cấp quyền ngay", bấm vào mở đúng màn cài đặt | Chưa test trên máy thật |
+| 6 | Đang gọi video, khóa màn hình 10 giây, mở lại | Chưa test trên máy thật |
+| 7 | Đang gọi video, bấm Home 30 giây, quay lại | Chưa test trên máy thật |
+| 8 | Lắc mạnh khi máy trong túi quần | Có rung mạnh cảm nhận được không |
+| 9 | Bật lắc/té ngã, đăng xuất, đăng nhập tài khoản khác | Service phải dừng, không còn thông báo thường trực |
+
+Không coi tính năng SOS nền là đã sẵn sàng demo công khai nếu các ca trên chưa có kết quả trên máy thật.
 
 ## Known Issues
 

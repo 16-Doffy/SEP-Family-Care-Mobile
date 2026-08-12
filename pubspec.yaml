@@ -50,6 +50,8 @@ dependencies:
   firebase_messaging: ^16.4.3
   firebase_auth: ^6.1.0
   google_sign_in: ^6.3.0
+  livekit_client: ^2.11.0
+  permission_handler: ^13.0.1
 
 dev_dependencies:
   flutter_test:

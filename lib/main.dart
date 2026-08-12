@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/album_provider.dart';
 import 'providers/ai_chatbot_provider.dart';
+import 'providers/call_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/calendar_provider.dart';
 import 'providers/tab_config_provider.dart';
@@ -50,6 +51,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => SupportRequestProvider()),
         ChangeNotifierProvider(create: (_) => ThemeModeController()..load()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProvider(create: (_) => CallProvider()),
         ChangeNotifierProvider(create: (_) => CalendarProvider()),
         ChangeNotifierProvider(create: (_) => TabConfigProvider()),
         ChangeNotifierProvider(create: (_) => WearableProvider()),

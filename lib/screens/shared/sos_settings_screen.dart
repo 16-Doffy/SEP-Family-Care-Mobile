@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
+import '../../services/sos_guard_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
@@ -19,6 +20,9 @@ class SosSettingsScreen extends StatefulWidget {
 }
 
 class _SosSettingsScreenState extends State<SosSettingsScreen> {
+  SosGuardStatus _guardStatus = SosGuardStatus.off;
+  bool _guardLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -27,8 +31,83 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
         final sos = context.read<SosProvider>();
         sos.fetchSettings();
         sos.fetchEmergencyContacts();
+        _loadGuardStatus();
       }
     });
+  }
+
+  Future<void> _loadGuardStatus() async {
+    setState(() => _guardLoading = true);
+    try {
+      final status = await SosGuardService.instance.getStatus();
+      if (!mounted) return;
+      setState(() => _guardStatus = status);
+    } finally {
+      if (mounted) setState(() => _guardLoading = false);
+    }
+  }
+
+  Future<void> _setGuard({bool? shakeEnabled, bool? fallEnabled}) async {
+    final nextShake = shakeEnabled ?? _guardStatus.shakeEnabled;
+    final nextFall = fallEnabled ?? _guardStatus.fallEnabled;
+    setState(() {
+      _guardLoading = true;
+      _guardStatus = SosGuardStatus(
+        running: nextShake || nextFall,
+        shakeEnabled: nextShake,
+        fallEnabled: nextFall,
+      );
+    });
+    try {
+      await SosGuardService.instance.start(
+        shakeEnabled: nextShake,
+        fallEnabled: nextFall,
+      );
+      await _loadGuardStatus();
+    } catch (e) {
+      await _loadGuardStatus();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Không bật được bảo vệ SOS: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openBatterySettings() async {
+    try {
+      await SosGuardService.instance.openBatteryOptimizationSettings();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Không mở được cài đặt pin: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openFullScreenIntentSettings() async {
+    try {
+      await SosGuardService.instance.openFullScreenIntentSettings();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Không mở được cài đặt quyền: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
   }
 
   Future<void> _showContactForm([EmergencyContact? contact]) async {
@@ -247,6 +326,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
                     'Chỉ Trưởng nhóm hoặc Phó nhóm mới thay đổi được cài đặt '
                     'SOS. Bạn đang xem ở chế độ chỉ đọc.',
                   ),
+                _deviceGuardSection(),
                 _tile(
                   icon: Icons.notifications_active_rounded,
                   title: 'Bật SOS',
@@ -269,13 +349,12 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
                 _tile(
                   icon: Icons.accessibility_new_rounded,
                   title: 'Tự cảnh báo khi phát hiện té ngã',
-                  // Nói rõ giới hạn: chỉ chạy khi app đang mở. Muốn chạy nền
-                  // phải có foreground service — xem
-                  // DE_XUAT_BE_SOS_FALL_DETECTION_2026-08-04.md.
+                  // Cài đặt cấp gia đình. Muốn điện thoại này theo dõi nền thì
+                  // bật thêm công tắc cục bộ ở nhóm "Bảo vệ SOS trên máy này".
                   subtitle:
                       'Điện thoại dùng gia tốc kế để nhận biết cú ngã, có 10 '
-                      'giây để bạn bấm "Tôi ổn" trước khi gửi. Chỉ hoạt động '
-                      'khi ứng dụng đang mở.',
+                      'giây để bạn bấm "Tôi ổn" trước khi gửi. Cài đặt này áp '
+                      'dụng cho quy tắc SOS của gia đình.',
                   value: s.autoCreateAlertFromFall,
                   onChanged: canEdit
                       ? (v) => _toggle(s.copyWith(autoCreateAlertFromFall: v))
@@ -364,6 +443,104 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
             ),
     );
   }
+
+  Widget _deviceGuardSection() => Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: AppColors.progressTrack),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.shield_rounded, color: AppColors.sos),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Bảo vệ SOS trên máy này',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            if (_guardLoading)
+              const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Khi bật, Android sẽ hiển thị thông báo thường trực để Family Care '
+          'có thể theo dõi cảm biến kể cả lúc khóa màn hình.',
+          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 8),
+        _tile(
+          icon: Icons.vibration_rounded,
+          title: 'Lắc mạnh để mở SOS',
+          subtitle:
+              'Lắc điện thoại nhiều nhịp trong khoảng ngắn để mở màn SOS đếm ngược 3 giây.',
+          value: _guardStatus.shakeEnabled,
+          onChanged: _guardLoading ? null : (v) => _setGuard(shakeEnabled: v),
+        ),
+        _tile(
+          icon: Icons.accessibility_new_rounded,
+          title: 'Theo dõi té ngã khi chạy nền',
+          subtitle:
+              'Dùng gia tốc kế trong foreground service. Vẫn giữ màn đếm ngược để hủy báo nhầm.',
+          value: _guardStatus.fallEnabled,
+          onChanged: _guardLoading ? null : (v) => _setGuard(fallEnabled: v),
+        ),
+        if ((_guardStatus.shakeEnabled || _guardStatus.fallEnabled) &&
+            !_guardStatus.fullScreenIntentGranted)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.dangerLight,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Chưa có quyền mở màn hình khẩn cấp. Khi lắc/té ngã, máy chỉ '
+                  'bắn được thông báo phải chạm tay, không tự mở màn SOS đè '
+                  'lên màn khóa được.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.dangerDark,
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _openFullScreenIntentSettings,
+                    child: const Text('Cấp quyền ngay'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _openBatterySettings,
+            icon: const Icon(Icons.battery_saver_rounded),
+            label: const Text('Mở cài đặt tối ưu pin'),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _note(String text) => Container(
     margin: const EdgeInsets.only(bottom: 12),

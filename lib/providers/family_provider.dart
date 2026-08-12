@@ -186,6 +186,51 @@ class FamilyProvider extends ChangeNotifier {
     await fetchMembers();
   }
 
+  /// Quan hệ mà BE giới hạn mỗi gia đình chỉ được có đúng 1 người.
+  static const exclusiveRelations = {'FATHER', 'MOTHER'};
+
+  /// Các quan hệ độc nhất đã có người giữ → `{'FATHER': 'Ba An'}`.
+  ///
+  /// Hàm thuần, tách khỏi provider để unit test được
+  /// (`test/member_relationship_test.dart`).
+  ///
+  /// Chỉ để chặn trước ở UI cho người dùng hiểu lý do; **BE mới là nguồn sự
+  /// thật** (409 `FAMILY_ALREADY_HAS_FATHER` / `FAMILY_ALREADY_HAS_MOTHER`),
+  /// vì danh sách này chỉ là bản chụp trong bộ nhớ và có thể đã cũ.
+  /// [exceptUserId] = người đang được sửa, không tự chặn chính mình.
+  static Map<String, String> takenExclusiveRelationsIn(
+    List<FamilyMember> members, {
+    String? exceptUserId,
+  }) {
+    final taken = <String, String>{};
+    for (final m in members) {
+      // Member bị xóa mềm vẫn nằm trong danh sách BE trả về; tính cả họ thì
+      // vai trò Bố/Mẹ bị khóa vĩnh viễn dù thực tế không còn ai giữ.
+      if (m.status != 'ACTIVE' || m.userId == exceptUserId) continue;
+      final relation = m.relation.toUpperCase();
+      if (exclusiveRelations.contains(relation)) {
+        taken[relation] = m.name.isEmpty ? 'Thành viên khác' : m.name;
+      }
+    }
+    return taken;
+  }
+
+  Map<String, String> takenExclusiveRelations({String? exceptUserId}) =>
+      takenExclusiveRelationsIn(_members, exceptUserId: exceptUserId);
+
+  // PATCH /families/{familyId}/members/{userId}/relationship — Manager sửa quan
+  // hệ gia đình của 1 thành viên (MANAGER only, Deputy nhận 403).
+  // Trước khi có endpoint này, chọn nhầm lúc duyệt vào nhà là kẹt vĩnh viễn.
+  Future<void> updateRelationship(String userId, String relationship) async {
+    final familyId = ApiClient.instance.familyId;
+    if (familyId == null) throw Exception('Chưa có familyId');
+    await ApiClient.instance.patch(
+      '/families/$familyId/members/$userId/relationship',
+      {'relationship': relationship},
+    );
+    await fetchMembers();
+  }
+
   // POST /families/{familyId}/transfer-ownership — trao quyền Trưởng nhóm cho
   // thành viên khác (FAMILY_MANAGER only). Body { targetUserId, confirm }.
   // Sau khi trao, người gọi không còn là Trưởng nhóm → refetch để cập nhật role.

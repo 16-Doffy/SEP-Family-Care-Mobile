@@ -36,6 +36,10 @@ android {
         // Package "đúng" của app là com.familycare.family_care (= namespace).
         // Khi BE thêm com.familycare.family_care vào Firebase project
         // familycare-387d1 và cấp file mới → đổi lại dòng này về cũ.
+        // ⚠️ ĐỔI DÒNG NÀY THÌ PHẢI SỬA CẢ `android:targetPackage` trong
+        // src/main/res/xml/shortcuts.xml (lối tắt SOS ngoài màn hình chính).
+        // Không khớp thì lối tắt im lặng không mở được app: không lỗi build,
+        // không crash, chỉ là bấm vào không có gì xảy ra.
         applicationId = "com.company.familycare"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -78,6 +82,7 @@ kotlin {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    testImplementation("junit:junit:4.13.2")
 }
 
 flutter {

@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../services/sos_location.dart';
@@ -16,22 +17,78 @@ import '../../utils/sos_alert_location.dart';
 import '../../widgets/json_report_view.dart';
 import 'sos_settings_screen.dart';
 
+/// Path home theo role — cùng bảng ánh xạ với `computeRedirect`
+/// (`app_router.dart`). Tách hàm thuần để unit test được.
+String homePathForRole(UserRole? role) => switch (role) {
+  UserRole.manager => '/manager/home',
+  UserRole.deputy => '/deputy/home',
+  _ => '/member/home',
+};
+
+/// Quay lại màn trước; nếu stack rỗng (mở thẳng từ lối tắt `/sos-quick` nên
+/// đây là route duy nhất) thì về home theo role, vì `context.pop()` lúc đó
+/// ném "There is nothing to pop".
+void backOrHome(BuildContext context) {
+  if (context.canPop()) {
+    context.pop();
+    return;
+  }
+  context.go(homePathForRole(context.read<AuthProvider>().user?.role));
+}
+
 class SOSScreen extends StatefulWidget {
-  const SOSScreen({super.key});
+  /// [autoTrigger] = mở từ **lối tắt ngoài màn hình chính** (route phẳng
+  /// `/sos-quick`, xem `android/app/src/main/res/xml/shortcuts.xml`): tự chạy
+  /// đếm ngược rồi gửi SOS, người dùng không phải giữ nút. Mặc định `false`
+  /// cho nhánh shell `/{role}/sos` — giữ nguyên hành vi giữ-3-giây cũ.
+  const SOSScreen({super.key, this.autoTrigger = false});
+
+  final bool autoTrigger;
+
   @override
   State<SOSScreen> createState() => _SOSScreenState();
 }
 
+/// Đang đếm ngược tự động mà app bị đẩy xuống nền (tắt màn hình, bấm Home,
+/// màn khóa bật lên) thì **phải gửi SOS ngay**, không chờ đếm hết.
+///
+/// Đo thực tế 11/08 trên OPPO CPH2159: tắt màn hình lúc đếm ngược còn ~2 giây
+/// thì **người thân không nhận được gì** — Android bóp nghẹt tiến trình nền nên
+/// `Timer` không bao giờ chạy tới 0. Cùng thao tác đó với màn hình sáng thì
+/// người thân nhận ngay. Đây là kiểu hỏng tệ nhất cho tính năng khẩn cấp: im
+/// lặng, không lỗi, người dùng tưởng đã báo được cho gia đình.
+///
+/// Người vừa bấm SOS rồi bỏ máy vào túi thì rõ ràng **không định bấm HỦY** —
+/// nên gửi sớm vài giây là hành vi đúng, không phải đánh đổi.
+///
+/// Tách hàm thuần để unit test được (xem `test/sos_quick_shortcut_test.dart`).
+bool shouldSendSosOnPause({
+  required AppLifecycleState state,
+  required bool autoCountdown,
+  required int? countdown,
+}) =>
+    state == AppLifecycleState.paused && autoCountdown && countdown != null;
+
 class _SOSScreenState extends State<SOSScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   bool _sent = false;
   bool _sending = false;
+  /// Đang đếm ngược **tự động** (vào từ lối tắt) chứ không phải do giữ nút.
+  /// Khác biệt duy nhất: nhấc tay/chạm màn không hủy được, chỉ nút HỦY mới
+  /// dừng — vì người dùng có bấm giữ gì đâu mà "thả ra".
+  bool _autoCountdown = false;
   bool _apiOk = false; // true nếu BE nhận được SOS
   int? _countdown;
   Timer? _countTimer;
   double? _localLat, _localLng; // GPS lưu local khi API chưa có
   String? _sentAlertId; // id alert vừa tạo, để Đóng/confirm-safety đúng alert
   Timer? _locationStreamTimer; // gửi vị trí định kỳ trong lúc alert đang active
+  // Điểm gửi lỗi (mất mạng tạm thời) được giữ lại để flush bằng
+  // pushLocationBatch ở lần gửi thành công kế tiếp — tránh mất hẳn vị trí SOS
+  // chỉ vì rớt mạng vài chục giây. Cap để không phình vô hạn nếu mất mạng dài.
+  static const _maxPendingLocationPoints = 50;
+  final List<({double lat, double lng, double? accuracy, DateTime? recordedAt})>
+  _pendingLocationPoints = [];
   /// Một controller chạy 0→1 **không đảo chiều**: ba vòng sóng lấy cùng giá trị
   /// này nhưng lệch pha 1/3 nên lan ra nối tiếp nhau như radar, thay vì cùng
   /// phình ra thu vào. Lấy theo hiệu ứng nút SOS trên đồng hồ.
@@ -52,6 +109,7 @@ class _SOSScreenState extends State<SOSScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2600),
@@ -62,15 +120,35 @@ class _SOSScreenState extends State<SOSScreen>
       context.read<SosProvider>().fetchAlerts();
       // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
       context.read<SosProvider>().fetchEmergencyContacts();
+      // Vào từ lối tắt → đếm ngược ngay, không chờ thao tác nào. Chạy sau
+      // frame đầu để _pulseCtrl đã sẵn sàng cho _onPressStart().
+      if (widget.autoTrigger && mounted) _startAutoCountdown();
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pulseCtrl.dispose();
     _countTimer?.cancel();
     _locationStreamTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!shouldSendSosOnPause(
+      state: state,
+      autoCountdown: _autoCountdown,
+      countdown: _countdown,
+    )) {
+      return;
+    }
+    // Chờ nốt đếm ngược là mất luôn cảnh báo — xem [shouldSendSosOnPause].
+    _countTimer?.cancel();
+    // Rút ngắn hạn chờ GPS: tiến trình sắp bị bóp nghẹt, chờ 15 giây như luồng
+    // thường thì có khi không kịp gửi. Không có toạ độ vẫn phải gửi được.
+    _triggerSOS(locationTimeout: const Duration(seconds: 3));
   }
 
   // Gửi vị trí mỗi 20s cho tới khi alert được đóng (confirm-safety) hoặc màn
@@ -85,28 +163,75 @@ class _SOSScreenState extends State<SOSScreen>
 
   void _startLocationStreaming(String alertId) {
     _locationStreamTimer?.cancel();
+    _pendingLocationPoints.clear();
     _locationStreamTimer = Timer.periodic(const Duration(seconds: 20), (
       _,
     ) async {
       final pos = await _getLocation();
       if (pos == null || !mounted) return;
-      await context.read<SosProvider>().pushLocation(
+      final sosProvider = context.read<SosProvider>();
+      final ok = await sosProvider.pushLocation(
         alertId,
         pos.latitude,
         pos.longitude,
         accuracy: pos.accuracy,
       );
+      if (!mounted) return;
+      if (!ok) {
+        _pendingLocationPoints.add((
+          lat: pos.latitude,
+          lng: pos.longitude,
+          accuracy: pos.accuracy,
+          recordedAt: DateTime.now(),
+        ));
+        if (_pendingLocationPoints.length > _maxPendingLocationPoints) {
+          _pendingLocationPoints.removeAt(0);
+        }
+        return;
+      }
+      // Gửi điểm hiện tại thành công → thử flush luôn các điểm còn tồn đọng
+      // từ lúc mất mạng trước đó.
+      if (_pendingLocationPoints.isNotEmpty) {
+        final flushed = await sosProvider.pushLocationBatch(
+          alertId,
+          List.of(_pendingLocationPoints),
+        );
+        if (mounted && flushed) _pendingLocationPoints.clear();
+      }
     });
   }
 
   void _stopLocationStreaming() {
     _locationStreamTimer?.cancel();
     _locationStreamTimer = null;
+    _pendingLocationPoints.clear();
   }
 
   // ── Hold-to-send countdown ───────────────────────────────────────────────
 
+  // Đếm ngược tự động cho lối tắt: dùng lại y hệt bộ đếm 3 giây của nút giữ,
+  // chỉ khác cách hủy (nút HỦY thay vì nhấc tay).
+  void _startAutoCountdown() {
+    setState(() => _autoCountdown = true);
+    _onPressStart();
+  }
+
+  void _cancelAutoCountdown() {
+    _countTimer?.cancel();
+    setState(() {
+      _autoCountdown = false;
+      _countdown = null;
+    });
+    _pulseCtrl.repeat();
+  }
+
   void _onPressStart() {
+    // Đang đếm ngược tự động thì chạm vào nút không được khởi động lại bộ đếm.
+    if (_autoCountdown && _countdown != null) return;
+    // Hủy bộ đếm cũ trước khi tạo cái mới: chạm nhanh hai lần trước đây tạo
+    // hai Timer song song mà không hủy cái đầu → _triggerSOS() chạy 2 lần →
+    // gửi 2 cảnh báo cho cùng một sự việc.
+    _countTimer?.cancel();
     _pulseCtrl.stop();
     setState(() => _countdown = 3);
     _countTimer = Timer.periodic(const Duration(seconds: 1), (t) {
@@ -121,6 +246,8 @@ class _SOSScreenState extends State<SOSScreen>
   }
 
   void _onPressEnd() {
+    // Chế độ tự động: không có "nhấc tay" nào để hủy — chỉ nút HỦY mới dừng.
+    if (_autoCountdown) return;
     _countTimer?.cancel();
     setState(() => _countdown = null);
     _pulseCtrl.repeat();
@@ -132,17 +259,22 @@ class _SOSScreenState extends State<SOSScreen>
   // services/sos_location.dart để phát hiện té ngã dùng chung, không nhân bản.
   Future<Position?> _getLocation() => resolveSosPosition();
 
-  Future<void> _triggerSOS() async {
+  /// [locationTimeout] rút ngắn khi gửi từ nền — xem [didChangeAppLifecycleState].
+  Future<void> _triggerSOS({
+    Duration locationTimeout = const Duration(seconds: 15),
+  }) async {
+    if (_sending) return; // chặn gọi chồng (đếm ngược xong đúng lúc app pause)
     _countTimer?.cancel();
     setState(() {
       _sending = true;
       _countdown = null;
+      _autoCountdown = false;
     });
     final sosProvider = context.read<SosProvider>();
     // Chốt chặn cuối: dù _getLocation có kẹt ở tầng platform channel thì SOS
-    // vẫn phải được gửi đi sau tối đa 15s (không có tọa độ cũng gửi).
+    // vẫn phải được gửi đi sau [locationTimeout] (không có tọa độ cũng gửi).
     final pos = await _getLocation().timeout(
-      const Duration(seconds: 15),
+      locationTimeout,
       onTimeout: () => null,
     );
     // Lưu GPS local trước để hiển thị dù API có lỗi
@@ -465,7 +597,9 @@ class _SOSScreenState extends State<SOSScreen>
                         ),
                       ),
                       Text(
-                        _countdown != null
+                        _autoCountdown
+                            ? 'Đang gửi SOS...'
+                            : _countdown != null
                             ? 'Thả ra để hủy'
                             : 'Giữ 3 giây để gửi SOS',
                         style: GoogleFonts.inter(
@@ -473,6 +607,36 @@ class _SOSScreenState extends State<SOSScreen>
                           color: _sosMuted,
                         ),
                       ),
+                      // Vào từ lối tắt thì không có thao tác "thả tay" để hủy —
+                      // phải có nút thật, đủ to để bấm trúng lúc hoảng.
+                      if (_autoCountdown) ...[
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: 200,
+                          height: 52,
+                          child: OutlinedButton(
+                            onPressed: _cancelAutoCountdown,
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(
+                                color: AppColors.sos,
+                                width: 2,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(26),
+                              ),
+                            ),
+                            child: Text(
+                              'HỦY',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.sos,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1301,7 +1465,9 @@ class _SOSScreenState extends State<SOSScreen>
   );
 
   Widget _backBtn(BuildContext context) => GestureDetector(
-    onTap: () => context.pop(),
+    // Vào từ lối tắt (`/sos-quick`) thì đây là route DUY NHẤT trong stack —
+    // context.pop() sẽ ném "There is nothing to pop". Rơi về home theo role.
+    onTap: () => backOrHome(context),
     child: Container(
       width: 40,
       height: 40,
