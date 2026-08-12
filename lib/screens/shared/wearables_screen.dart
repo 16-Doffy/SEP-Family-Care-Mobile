@@ -737,9 +737,18 @@ class _WearablesScreenState extends State<WearablesScreen> {
     return raw;
   }
 
-  Future<String?> _askWearCode() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
+  // KHÔNG dùng TextEditingController ở đây. showDialog() hoàn tất ngay khi
+  // route bị pop, nhưng cây widget của dialog (gồm TextField bên trong) chỉ
+  // bị hủy SAU khi animation đóng chạy xong — dispose() ngay sau await là
+  // hủy controller trong lúc EditableText vẫn còn sống. Dialog mất focus lúc
+  // đóng thì FocusManager gọi clearComposing() trên controller đã dispose,
+  // ném "A TextEditingController was used after being disposed", kéo theo
+  // '_dependents.isEmpty' làm cả màn hình đỏ (xác nhận bằng stack trace thật
+  // 12/08, không phải suy đoán). Dùng biến String cập nhật ở onChanged thay
+  // vì controller là tránh hẳn cả lớp lỗi này.
+  Future<String?> _askWearCode() {
+    var code = '';
+    return showDialog<String>(
       context: context,
       builder: (ctx) {
         var canSave = false;
@@ -751,7 +760,6 @@ class _WearablesScreenState extends State<WearablesScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
-                  controller: controller,
                   autofocus: true,
                   textCapitalization: TextCapitalization.characters,
                   textInputAction: TextInputAction.done,
@@ -761,7 +769,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
                     border: OutlineInputBorder(),
                   ),
                   onChanged: (value) {
-                    final code = _normalizeWearCode(value);
+                    code = _normalizeWearCode(value);
                     setDialogState(() {
                       canSave = _canSubmitWearCode(code);
                       looksLikeWearCode =
@@ -769,8 +777,10 @@ class _WearablesScreenState extends State<WearablesScreen> {
                     });
                   },
                   onSubmitted: (value) {
-                    final code = _normalizeWearCode(value);
-                    if (_canSubmitWearCode(code)) Navigator.pop(ctx, code);
+                    final normalized = _normalizeWearCode(value);
+                    if (_canSubmitWearCode(normalized)) {
+                      Navigator.pop(ctx, normalized);
+                    }
                   },
                 ),
                 if (canSave && !looksLikeWearCode) ...[
@@ -789,10 +799,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
               ),
               FilledButton(
                 onPressed: canSave
-                    ? () => Navigator.pop(
-                        ctx,
-                        _normalizeWearCode(controller.text),
-                      )
+                    ? () => Navigator.pop(ctx, code)
                     : null,
                 child: const Text('Kết nối'),
               ),
@@ -801,8 +808,6 @@ class _WearablesScreenState extends State<WearablesScreen> {
         );
       },
     );
-    controller.dispose();
-    return result;
   }
 
   Future<void> _connectWearable() async {
