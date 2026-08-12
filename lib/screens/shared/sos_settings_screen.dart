@@ -19,13 +19,15 @@ class SosSettingsScreen extends StatefulWidget {
   State<SosSettingsScreen> createState() => _SosSettingsScreenState();
 }
 
-class _SosSettingsScreenState extends State<SosSettingsScreen> {
+class _SosSettingsScreenState extends State<SosSettingsScreen>
+    with WidgetsBindingObserver {
   SosGuardStatus _guardStatus = SosGuardStatus.off;
   bool _guardLoading = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final sos = context.read<SosProvider>();
@@ -34,6 +36,20 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
         _loadGuardStatus();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Bật/tắt EmergencySosWatcherService chỉ làm được trong Cài đặt hệ thống
+  // (Trợ năng), ngoài app — quay lại màn này phải đọc lại trạng thái thật,
+  // không thì công tắc hiện sai so với thực tế.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) _loadGuardStatus();
   }
 
   Future<void> _loadGuardStatus() async {
@@ -63,7 +79,13 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
         shakeEnabled: nextShake,
         fallEnabled: nextFall,
       );
-      await _loadGuardStatus();
+      // Không gọi lại _loadGuardStatus() ở đây: startForegroundService() phía Kotlin
+      // chạy bất đồng bộ, onStartCommand() có thể chưa kịp cập nhật cờ trạng thái khi
+      // đọc lại ngay — đọc phải giá trị cũ rồi ghi đè mất trạng thái optimistic vừa bật
+      // đúng ở trên (đo được trên máy Oppo thật 12/08: công tắc nhảy về OFF dù service
+      // đã chạy). Tin vào state optimistic; chỉ đồng bộ lại khi có lỗi thật (nhánh catch).
+      if (!mounted) return;
+      setState(() => _guardLoading = false);
     } catch (e) {
       await _loadGuardStatus();
       if (!mounted) return;
@@ -103,6 +125,22 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
         SnackBar(
           content: Text(
             'Không mở được cài đặt quyền: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openAccessibilitySettings() async {
+    try {
+      await SosGuardService.instance.openAccessibilitySettings();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Không mở được Cài đặt Trợ năng: ${e.toString().replaceFirst('Exception: ', '')}',
           ),
           backgroundColor: AppColors.danger,
         ),
@@ -327,6 +365,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
                     'SOS. Bạn đang xem ở chế độ chỉ đọc.',
                   ),
                 _deviceGuardSection(),
+                _emergencyWatcherSection(),
                 _tile(
                   icon: Icons.notifications_active_rounded,
                   title: 'Bật SOS',
@@ -536,6 +575,92 @@ class _SosSettingsScreenState extends State<SosSettingsScreen> {
             onPressed: _openBatterySettings,
             icon: const Icon(Icons.battery_saver_rounded),
             label: const Text('Mở cài đặt tối ưu pin'),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  // Tách riêng khỏi _deviceGuardSection() vì đây là cơ chế kích hoạt HOÀN
+  // TOÀN khác (bám theo màn Emergency SOS của hệ thống, không phải cảm biến
+  // gia tốc), độc lập bật/tắt, và app không tự bật hộ được — chỉ mở đúng màn
+  // Cài đặt hệ thống để người dùng tự bật.
+  Widget _emergencyWatcherSection() => Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+    decoration: BoxDecoration(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: AppColors.progressTrack),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.emergency_share_rounded, color: AppColors.sos),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Bám theo Emergency SOS của máy',
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _guardStatus.emergencyWatcherEnabled
+                    ? AppColors.safeLight
+                    : AppColors.neutralBg,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                _guardStatus.emergencyWatcherEnabled ? 'Đã bật' : 'Chưa bật',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _guardStatus.emergencyWatcherEnabled
+                      ? AppColors.safeDark
+                      : AppColors.textMuted,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Khi máy tự mở màn Cấp cứu khẩn cấp của Android (ví dụ sau khi bấm '
+          'nút nguồn nhiều lần), Family Care tự gửi SOS ngay cho gia đình — '
+          'không cần mở app, không đếm ngược. Chỉ hoạt động trên một số máy '
+          'Oppo/Realme/OnePlus (ColorOS); máy hãng khác bật công tắc này '
+          'cũng không có tác dụng gì.',
+          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Cần bật thủ công trong Cài đặt hệ thống > Trợ năng — app không tự '
+          'bật hộ được (quyền hệ thống).',
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontStyle: FontStyle.italic,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _openAccessibilitySettings,
+            icon: const Icon(Icons.accessibility_new_rounded),
+            label: Text(
+              _guardStatus.emergencyWatcherEnabled
+                  ? 'Mở cài đặt Trợ năng'
+                  : 'Bật ngay trong Cài đặt Trợ năng',
+            ),
           ),
         ),
       ],

@@ -174,6 +174,16 @@ int _sosQuickSeq = 0;
 String sosQuickFreshPath() =>
     '/sos-quick/${DateTime.now().microsecondsSinceEpoch}-${++_sosQuickSeq}';
 
+/// Y hệt [sosQuickFreshPath] nhưng cho nguồn kích hoạt
+/// `EmergencySosWatcherService` (`/sos-immediate` → `SOSScreen(immediate:
+/// true)`) — cần bộ đếm RIÊNG, dùng chung `_sosQuickSeq` sẽ vô tình làm hai
+/// nguồn kích hoạt "dùng chung" tính duy nhất của token, có thể trùng nhau
+/// nếu cả hai bắn gần như đồng thời.
+int _sosImmediateSeq = 0;
+
+String sosImmediateFreshPath() =>
+    '/sos-immediate/${DateTime.now().microsecondsSinceEpoch}-${++_sosImmediateSeq}';
+
 // Logic redirect thuần (không phụ thuộc BuildContext/GoRouterState) — tách
 // riêng để unit test được mà không cần render cây widget thật.
 String? computeRedirect({
@@ -367,6 +377,17 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(
         path: '/sos-quick/:token',
         builder: (_, _) => const SOSScreen(autoTrigger: true),
+      ),
+      // Nguồn kích hoạt riêng: `EmergencySosWatcherService` bắn khi phát hiện
+      // màn Emergency SOS của hệ thống (ColorOS). Gửi thẳng, không đếm ngược
+      // — xem doc comment `SOSScreen.immediate`.
+      GoRoute(
+        path: '/sos-immediate',
+        redirect: (_, _) => sosImmediateFreshPath(),
+      ),
+      GoRoute(
+        path: '/sos-immediate/:token',
+        builder: (_, _) => const SOSScreen(immediate: true),
       ),
       if (kDebugMode)
         GoRoute(

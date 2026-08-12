@@ -41,9 +41,20 @@ class SOSScreen extends StatefulWidget {
   /// `/sos-quick`, xem `android/app/src/main/res/xml/shortcuts.xml`): tự chạy
   /// đếm ngược rồi gửi SOS, người dùng không phải giữ nút. Mặc định `false`
   /// cho nhánh shell `/{role}/sos` — giữ nguyên hành vi giữ-3-giây cũ.
-  const SOSScreen({super.key, this.autoTrigger = false});
+  ///
+  /// [immediate] = mở từ `EmergencySosWatcherService` (route phẳng
+  /// `/sos-immediate`) khi hệ thống phát hiện màn Emergency SOS của máy đang
+  /// chiếm màn hình — gửi SOS NGAY, bỏ qua đếm ngược 3 giây/nút hủy, vì lúc
+  /// đó không hiện được UI đó cho người dùng thao tác. Không dùng chung với
+  /// [autoTrigger].
+  const SOSScreen({
+    super.key,
+    this.autoTrigger = false,
+    this.immediate = false,
+  });
 
   final bool autoTrigger;
+  final bool immediate;
 
   @override
   State<SOSScreen> createState() => _SOSScreenState();
@@ -120,6 +131,12 @@ class _SOSScreenState extends State<SOSScreen>
       context.read<SosProvider>().fetchAlerts();
       // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
       context.read<SosProvider>().fetchEmergencyContacts();
+      // Hệ thống phát hiện Emergency SOS đang chiếm màn hình → gửi thẳng,
+      // không đếm ngược (không có UI nào hiện được lúc đó để người dùng hủy).
+      if (widget.immediate && mounted) {
+        _triggerSOS();
+        return;
+      }
       // Vào từ lối tắt → đếm ngược ngay, không chờ thao tác nào. Chạy sau
       // frame đầu để _pulseCtrl đã sẵn sàng cho _onPressStart().
       if (widget.autoTrigger && mounted) _startAutoCountdown();
@@ -286,7 +303,9 @@ class _SOSScreenState extends State<SOSScreen>
     }
     try {
       final alertId = await sosProvider.sendSos(
-        message: 'SOS khẩn cấp từ ứng dụng Family Care',
+        message: widget.immediate
+            ? 'SOS khẩn cấp — phát hiện qua màn hình Cấp cứu khẩn cấp của máy'
+            : 'SOS khẩn cấp từ ứng dụng Family Care',
         address: sosAddressOf(pos),
         latitude: pos?.latitude,
         longitude: pos?.longitude,

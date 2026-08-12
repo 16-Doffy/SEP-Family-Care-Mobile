@@ -80,6 +80,21 @@
             android:name=".CallGuardService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
+        <!-- Bám theo màn Emergency SOS của hệ thống (chỉ ColorOS — xem
+             EmergencySosMatcher). AccessibilityService, không phải foreground
+             service — người dùng tự bật thủ công trong Cài đặt > Trợ năng,
+             app không tự bật được. -->
+        <service
+            android:name=".EmergencySosWatcherService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/emergency_sos_watcher_config" />
+        </service>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

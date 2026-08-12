@@ -118,6 +118,49 @@ void main() {
     }
   });
 
+  group('sosImmediateFreshPath — nguồn EmergencySosWatcherService', () {
+    // Cùng lý do với sosQuickFreshPath: mỗi lần bắn phải là một vị trí mới
+    // để go_router dựng lại SOSScreen(immediate: true), không thì phát hiện
+    // Emergency SOS lần hai sẽ im lặng không làm gì.
+    test('mỗi lần gọi ra một vị trí KHÁC nhau', () {
+      final paths = {for (var i = 0; i < 50; i++) sosImmediateFreshPath()};
+      expect(
+        paths.length,
+        50,
+        reason: 'trùng đường dẫn là go_router sẽ không dựng lại màn hình',
+      );
+    });
+
+    test('vẫn nằm dưới /sos-immediate/ để khớp route đã khai', () {
+      expect(sosImmediateFreshPath(), startsWith('/sos-immediate/'));
+    });
+
+    test('bộ đếm độc lập với sosQuickFreshPath — không trùng nhau', () {
+      final quick = {for (var i = 0; i < 20; i++) sosQuickFreshPath()};
+      final immediate = {for (var i = 0; i < 20; i++) sosImmediateFreshPath()};
+      expect(quick.intersection(immediate), isEmpty);
+    });
+
+    for (final (role, label) in [
+      (UserRole.manager, 'Trưởng nhóm'),
+      (UserRole.deputy, 'Phó nhóm'),
+      (UserRole.member, 'Thành viên'),
+    ]) {
+      test('$label vào được đường dẫn có token, không bị chặn', () {
+        expect(
+          computeRedirect(
+            restoring: false,
+            loggedIn: true,
+            hasFamily: true,
+            role: role,
+            loc: sosImmediateFreshPath(),
+          ),
+          isNull,
+        );
+      });
+    }
+  });
+
   group('shouldSendSosOnPause — lỗi 1: tắt màn hình là mất cảnh báo', () {
     // Đo 11/08: tắt màn hình lúc đếm ngược còn ~2 giây thì người thân KHÔNG
     // nhận được gì; cùng thao tác với màn hình sáng thì nhận ngay.
