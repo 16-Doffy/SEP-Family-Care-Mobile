@@ -1,3 +1,25 @@
+> # ✅ ĐÃ CÓ TRẢ LỜI ĐẦY ĐỦ — 2026-08-12 (Nghĩa, đợt 3). KHÔNG CÒN TREO.
+>
+> BE đã trả lời **toàn bộ 7 câu** (A.1–A.4, B.3, B.5, B.6) và đã **triển khai xong** đề xuất chính ở
+> Phần B. Giữ file này làm **bản ghi lịch sử**; trạng thái thật hiện nay đọc ở `API_DOCS.md` mục
+> **Calls** (đã cập nhật theo cấu trúc payload chính thức).
+>
+> **Tóm tắt phần quan trọng nhất (B.3):** push "cuộc gọi đến" (`referenceType=CALL` lúc `initiate()`)
+> nay là **data-only message** — đúng đề xuất của FE, không cần sửa cấu trúc. `callEventType:
+> "incoming" | "missed"` đã được thêm vào `data` để phân biệt 2 loại push (B.6). Thiết kế opt-in qua
+> field `dataOnly`, không ảnh hưởng `referenceType` khác (B.5).
+>
+> **Việc còn lại là phía FE**, chưa BE: dựng notification `setFullScreenIntent()` kèm nút
+> Nghe/Từ chối từ payload data này (`firebaseBackgroundHandler` phía Flutter), theo đúng mẫu
+> `SosAlertLauncher`/`EmergencySosWatcherService` đã làm cho SOS. Chỉ có hiệu lực trên **Android**
+> — iOS cần VoIP Push (PushKit), ngoài phạm vi đợt này.
+>
+> **Đáp án khác với giả định ban đầu của FE, cần nhớ:**
+> - A.2: BE **không đặt giới hạn cứng** số người tối đa trong 1 cuộc gọi nhóm — giới hạn thực tế (nếu
+>   có) tới từ gói LiveKit Cloud, không phải từ code BE.
+> - `GET /calls/{callId}` dùng chung `callInclude` với `POST /calls` → `participants[]` **đầy đủ y
+>   hệt**, không rút gọn theo số người (A.3, A.4).
+
 # Câu hỏi & đề xuất cho BE — Video Call: gọi nhóm + push cuộc gọi đến, ngày 2026-08-12
 
 **Người hỏi:** FE Mobile (Flutter)

@@ -208,7 +208,13 @@ kết thúc bằng `MISSED` hay không.
 
 ### 3.2 Cuộc gọi ĐẾN không hiện màn khi app đang chạy nền
 
-#### 3.2.1 Đã kiểm chứng thật — không phải suy đoán
+> ### ✅ CẬP NHẬT 12/08 (đợt 3) — BE ĐÃ GỠ CHỐT CHẶN Ở MỤC 3.2.3
+> Nghĩa (BE) đã trả lời đầy đủ file `CAU_HOI_BE_VIDEO_CALL_NHOM_VA_PUSH_2026-08-12.md` và **đã
+> triển khai xong** đề xuất data-only message cho push "cuộc gọi đến". Mục 3.2.3 dưới đây **không
+> còn là việc cần hỏi** — đọc thẳng "Cấu trúc payload đã xác nhận" ngay sau mục 3.2.2 rồi làm tiếp
+> mục 3.2.4. Route `/incoming-call/:token` + `IncomingCallEntryScreen` (nhắc ở 3.2.4) **đã có sẵn**
+> từ đợt code 12/08 trước đó — chỉ còn thiếu đúng phần native Android dựng full-screen-intent từ
+> payload data mới này.
 
 Phiên làm việc 12/08 đã **tái hiện trực tiếp** vấn đề user báo cáo, bằng cách gọi thật giữa Oppo
 CPH2159 và 1 emulator, dùng `adb`:
@@ -260,27 +266,43 @@ toàn quyền xử lý cho `firebaseBackgroundHandler` (kể cả khi app đã b
 `@pragma('vm:entry-point')`), và code Kotlin/Dart tự quyết định vẽ full-screen-intent notification y
 hệt cách `SosAlertLauncher` đã làm.
 
-#### 3.2.3 Cần BE xác nhận — đây RẤT CÓ THỂ là chỗ phải viết đề xuất BE (Rule 2)
+#### 3.2.3 ✅ ĐÃ ĐƯỢC BE XÁC NHẬN VÀ TRIỂN KHAI (12/08, đợt 3) — không còn cần hỏi
 
-Đổi từ "notification message" sang "data message" là quyết định **phía server** (server code build
-payload gửi cho FCM) — FE không tự đổi được. Trước khi code bất kỳ dòng Kotlin/Dart nào cho mục
-này, Codex phải:
+BE (Nghĩa) xác nhận đã đổi push `referenceType=CALL` loại "cuộc gọi đến" sang **data-only message**
+(không có khối `notification`), thiết kế opt-in qua field `dataOnly` trong
+`EphemeralNotificationInput`, chỉ bật ở `CallsService.initiate()`, **không ảnh hưởng** các
+`referenceType` khác (SOS, TASK, CALENDAR...) vì chúng không set field này — đúng câu trả lời cho
+B.5 trong file câu hỏi.
 
-1. Xác nhận với BE: cuộc gọi (`referenceType = CALL`) có thể gửi push dạng **data-only** (không có
-   khối `notification`) được không? Nếu BE dùng chung 1 hàm build payload cho MỌI loại thông báo
-   (SOS, CALL, TASK...) thì đổi riêng cho CALL có ảnh hưởng các loại khác không?
-2. Nếu BE xác nhận làm được → cần BE đổi cho **đúng loại `CALL`**, giữ nguyên `notification` block
-   cho các loại khác (đổi hết sang data-only sẽ phá `LocalNotificationService`/`PushService` đang
-   hoạt động ổn định cho SOS, TASK, CALENDAR...).
-3. Nếu BE **không** làm được (constraint kỹ thuật, hoặc không muốn đổi vì rủi ro ảnh hưởng module
-   khác) → dừng lại, viết đề xuất BE theo đúng khuôn Rule 2 (method, path/thông tin liên quan, mức
-   độ Bắt buộc/Nên có), không tự chế cách lách phía FE (không có cách lách hợp lệ — nhận diện
-   "notification message" ở phía Dart rồi tự huỷ nó đi để vẽ lại là không khả thi, vì thời điểm
-   Android đã tự vẽ xong thì FE không còn quyền can thiệp).
+**Cấu trúc `data` thật đã xác nhận** (khớp gần như y hệt đề xuất của FE, KHÔNG cần đoán nữa):
 
-**Đây là lý do việc này được xếp ngang hàng "Cơ chế B" của SOS về độ khó** — không chỉ là code
-Kotlin, còn phụ thuộc BE đổi cách gửi push, và **nội dung phụ thuộc BE nên PHẢI hỏi trước khi ước
-lượng thời gian/cam kết làm xong**.
+```json
+{
+  "referenceType": "CALL",
+  "referenceId": "<callId>",
+  "callId": "<callId>",
+  "conversationId": "<conversationId>",
+  "callerName": "<tên người gọi, tiếng Việt>",
+  "conversationType": "PRIVATE hoặc GROUP",
+  "conversationName": "<rỗng nếu PRIVATE>",
+  "callEventType": "incoming",
+  "title": "<tên người gọi>",
+  "body": "Cuộc gọi video đến",
+  "notificationId": "",
+  "type": "CALL",
+  "familyId": "<familyId>"
+}
+```
+
+⚠️ **Push "Cuộc gọi nhỡ" là push RIÊNG, KHÁC bản chất** — vẫn giữ dạng notification message bình
+thường (Android tự vẽ, không cần full-screen-intent, vì chỉ là thông tin không cần hành động ngay).
+Phân biệt 2 loại bằng field `callEventType: "incoming" | "missed"` trong `data`. **Đừng viết code
+full-screen-intent cho case `"missed"`** — chỉ áp dụng cho `"incoming"`.
+
+**Việc còn lại — chỉ còn phần FE/native Android, không còn phụ thuộc BE nữa:** dựng
+`Notification.Builder` với `setFullScreenIntent()` trong `firebaseBackgroundHandler` khi nhận được
+message có `data.callEventType == "incoming"`, theo đúng mẫu `SosAlertLauncher`/
+`EmergencySosWatcherService` đã làm cho SOS. Xem kiến trúc cụ thể ở mục 3.2.4.
 
 #### 3.2.4 Kiến trúc đề xuất (SAU KHI BE xác nhận data-only) — mô phỏng đúng mẫu SOS
 
@@ -309,12 +331,14 @@ MainActivity đã có sẵn setShowWhenLocked(true)/setTurnScreenOn(true) từ S
 kế hoạch SOS) — TỰ ĐỘNG có lợi cho luồng này, không cần sửa lại
         │
         ▼
-go_router: thêm route /incoming-call/:token (mẫu sosImmediateFreshPath() — token đổi mỗi
-lần để go_router luôn dựng lại màn dù bấm 2 cuộc gọi liên tiếp)
+go_router: /incoming-call/:token?callId=... — ĐÃ CÓ SẴN (đợt code 12/08 trước), KHÔNG
+cần làm lại. PendingIntent chỉ cần trỏ deep link familycare://app/incoming-call/<token
+mới>?callId=<callId>, dùng đúng hàm incomingCallFreshPath(callId) đã có trong
+app_router.dart
         │
         ▼
-IncomingCallScreen mở đè lên màn khoá — ĐÃ CÓ SẴN, không cần sửa UI, chỉ cần route mới
-truyền đúng callId/conversationId/callerName vào
+IncomingCallEntryScreen fetch GET /calls/{callId} → dựng IncomingCallScreen nếu call
+còn live — ĐÃ CÓ SẴN, không cần sửa UI, chỉ cần notification native trỏ đúng deep link
 ```
 
 **Cảnh báo quan trọng, đọc kỹ trước khi chọn `CATEGORY_CALL`:** comment trong `CallGuardService.kt`
@@ -342,8 +366,8 @@ luận ở trên, ghi rõ kết quả thật đo được vào tài liệu test 
 
 #### 3.2.5 Việc CẦN hỏi user trước khi code
 
-- Có chấp nhận trì hoãn việc này tới khi BE xác nhận xong data-only message không, hay ưu tiên làm
-  mục 3.1 (gọi nhóm) trước vì không phụ thuộc BE?
+- ~~Có chấp nhận trì hoãn việc này tới khi BE xác nhận xong data-only message không~~ — **hết hiệu
+  lực, BE đã xác nhận + triển khai xong (mục 3.2.3)**. Có thể bắt đầu code phần native ngay.
 - Nút Nghe/Từ chối ngay trên notification (không cần mở app trước) — có bắt buộc ngay đợt này
   không, hay chỉ cần full-screen-intent mở `IncomingCallScreen` là đủ (người dùng bấm Nghe/Từ chối
   trong app như bình thường)? Làm nút trực tiếp trên notification cần thêm
@@ -377,8 +401,9 @@ luận ở trên, ghi rõ kết quả thật đo được vào tài liệu test 
 - [ ] Đọc lại **toàn bộ** `lib/screens/shared/chat_screen.dart` hiện tại — số dòng trong tài liệu
       này có thể đã lệch do các phiên sau chỉnh sửa thêm. Tìm bằng nội dung (`_startCall`,
       `PRIVATE`), đừng tin cứng số dòng.
-- [ ] Xác nhận với BE (không tự đoán) về khả năng gửi FCM data-only cho `referenceType = CALL`
-      (mục 3.2.3) — đây là điều kiện tiên quyết cho toàn bộ mục 3.2.
+- [x] ~~Xác nhận với BE về khả năng gửi FCM data-only cho `referenceType = CALL`~~ — **đã xác nhận
+      + đã triển khai 12/08 (đợt 3)**, xem cấu trúc payload thật ở mục 3.2.3. Không còn là việc cần
+      làm, chỉ cần đọc lại payload cho đúng trước khi code native.
 - [ ] Tự kiểm tra hành vi thật của `Notification.CATEGORY_CALL` trên máy Oppo CPH2159 (hoặc máy
       Android thật khác nếu Oppo không còn khả dụng) trước khi quyết định dùng hay không — đừng
       suy luận từ mục 3.2.4 mà không đo lại.
