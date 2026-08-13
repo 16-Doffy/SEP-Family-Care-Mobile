@@ -481,3 +481,110 @@ Phần tự bung `IncomingCallScreen` khi app đang background/khoá màn hình 
 - `dart format`: đã chạy cho các file sửa.
 - `flutter analyze`: không có error/warning mới; còn 23 `info` cũ ngoài phạm vi video call.
 - `flutter test`: 478/478 pass.
+
+---
+
+## 9. Cập nhật Claude 13/08 — đã code phần full-screen-intent, TEST THẬT CHƯA XONG, giao Codex tiếp
+
+Sau khi BE (Nghĩa) xác nhận + triển khai xong data-only message cho push "cuộc gọi đến" (mục 3.2.3
+đã đánh dấu ✅), Claude đã code phần FE còn thiếu — **nhưng test trên máy/emulator thật cho kết quả
+CHƯA ĐÚNG như kỳ vọng và chưa kịp debug xong do hết thời gian phiên làm việc**. Đọc kỹ mục này trước
+khi làm tiếp, đừng tưởng nhầm là đã xong.
+
+### 9.1 Đã code — chọn hướng KHÔNG dùng native Kotlin/MethodChannel
+
+**Quyết định kiến trúc quan trọng, khác với gợi ý ban đầu ở mục 3.2.4:** kế hoạch gốc gợi ý mô
+phỏng `SosAlertLauncher` (Kotlin thuần, tự build `Notification` + `PendingIntent` trỏ deep link).
+Sau khi phân tích kỹ, Claude **không đi hướng đó** vì lý do kỹ thuật cụ thể:
+
+`firebase_messaging` xử lý background message bằng cách tạo một **`FlutterEngine` headless riêng**
+(không phải engine của `MainActivity`), rồi gọi `GeneratedPluginRegistrant.registerWith(engine)` —
+hàm này chỉ đăng ký các **plugin thật khai trong `pubspec.yaml`**, KHÔNG chạy
+`MainActivity.configureFlutterEngine()`. Nghĩa là một `MethodChannel` tự tạo thủ công trong
+`MainActivity` (như `sos_guard`/`call_guard` hiện có) **sẽ không tồn tại** trên engine headless này
+— gọi từ `firebaseBackgroundHandler` sẽ ném `MissingPluginException` hoặc im lặng không chạy. Đây
+là lý do SOS phải dùng `Service` Kotlin (chạy độc lập, không cần MethodChannel từ isolate nền) —
+nhưng cuộc gọi đến chỉ cần chạy **một lần, ngắn** lúc có push, không cần sống liên tục như cảm biến
+SOS, nên không cần tới `Service` riêng.
+
+**Hướng đã chọn:** dùng `flutter_local_notifications` (đã có sẵn trong `pubspec.yaml`, đã dùng cho
+`LocalNotificationService`) — đây LÀ một plugin thật, ĐƯỢC đăng ký đúng trên engine headless, nên
+gọi được từ `firebaseBackgroundHandler`. Package này hỗ trợ sẵn `fullScreenIntent: true` trong
+`AndroidNotificationDetails`.
+
+**File đã sửa:**
+
+- `lib/services/local_notification_service.dart`:
+  - Thêm channel `_callChannel` (`incoming_call`, `Importance.max`).
+  - Thêm `showIncomingCall({callId, callerName})` — build `AndroidNotificationDetails` với
+    `fullScreenIntent: true`, `category: AndroidNotificationCategory.call`, `ongoing: true`,
+    `timeoutAfter: 30000` (khớp `RINGING_TIMEOUT_MS` 30s phía BE), `payload: 'CALL|$callId'` —
+    **tái dùng đúng khuôn `referenceType|referenceId`** mọi notification khác trong app đang dùng,
+    để tận dụng lại toàn bộ pipeline điều hướng có sẵn (`onTapPayload` →
+    `_onNotificationTapPayload` ở `family_shell.dart` → `NotificationRouter.routeFor` →
+    `/incoming-call/:token?callId=...` — route đã có sẵn từ mục 8.2, không cần sửa gì thêm).
+  - Trong `init()`: thêm gọi `_plugin.getNotificationAppLaunchDetails()` để bắt case **app bị kill
+    hẳn, mở lên nhờ full-screen-intent** — nếu không có bước này, tap/launch lúc app chưa chạy sẽ
+    KHÔNG tự bắn `onDidReceiveNotificationResponse` (plugin vừa mới `init()` xong, không "nhớ" được
+    sự kiện xảy ra trước đó). Cùng khuôn với `PushService.getInitialMessage()` đã có cho FCM.
+- `lib/services/push_service.dart`:
+  - `firebaseBackgroundHandler`: thêm `WidgetsFlutterBinding.ensureInitialized()` (bắt buộc để dùng
+    plugin từ isolate nền), kiểm tra `data['type'] == 'CALL' && data['callEventType'] == 'incoming'`
+    → gọi `showIncomingCall`. Case khác giữ nguyên hành vi cũ (chỉ log).
+  - `onMessage.listen` (foreground): thêm guard bỏ qua `type == 'CALL'` — socket `call:incoming` đã
+    tự mở `IncomingCallScreen` nhanh hơn hẳn push lúc app đang mở, bắn thêm banner ở đây là thừa và
+    gây rối mắt (banner chồng lên đúng lúc màn cuộc gọi đến vừa mở).
+
+**Đã kiểm chứng:** `flutter analyze --no-fatal-infos` 0 lỗi (cả 2 file), `flutter test` 478/478
+pass — không đổi so với baseline mục 8.4.
+
+### 9.2 ⚠️ TEST THẬT — kết quả CHƯA đúng, chưa debug xong
+
+Test bằng cách gọi thật giữa 2 emulator (`HOH`/`MEM`, tài khoản "Zap" gọi "Zap MEM 2"), dùng
+`adb logcat`/screenshot, KHÔNG chỉ tin code đọc bằng mắt:
+
+- **Ca 1 — app B đang foreground:** ✅ PASS, không có gì hỏng. Socket vẫn tự mở
+  `IncomingCallScreen` bình thường, không thấy banner cục bộ nào chồng lên (guard ở `onMessage`
+  hoạt động đúng, không tạo `LocalNotif` dư).
+- **Ca 2 — app B đã bấm Home (background, CHƯA kill):** ❌ **KHÔNG đạt kỳ vọng.** Gọi từ A → B chỉ
+  thấy một banner hệ thống hiện trên màn hình chính ("Zap · now 🔔 / Cuộc gọi video đến"), **app
+  KHÔNG tự bung `IncomingCallScreen`** — đúng loại kết quả mà tính năng này phải sửa, nghĩa là
+  `fullScreenIntent` chưa hoạt động như thiết kế trên môi trường test này.
+- **Nguyên nhân: CHƯA XÁC ĐỊNH ĐƯỢC.** Đang đọc logcat để tìm log `debugPrint('Push(bg): ...')`
+  (dòng đầu tiên trong `firebaseBackgroundHandler`, PHẢI luôn in ra nếu hàm này được gọi — không có
+  dòng này nghĩa là hàm chưa từng chạy) thì **cả 2 emulator bất ngờ crash/tắt hẳn** (process biến
+  mất hoàn toàn, không phải do code — nghi do giới hạn tài nguyên máy chạy nhiều app+2 emulator một
+  lúc). Hết thời gian/token của phiên nên dừng lại ở đây, CHƯA kết luận được nguyên nhân thật.
+- **Quan sát phụ chưa giải thích được:** ở ca 1 (foreground) cũng thấy đúng banner tương tự ("Zap ·
+  now 🔔") thoáng qua dù đã thêm guard `if (type == 'CALL') return;` — không tìm thấy log nào của
+  app xác nhận đây là do code của mình tạo ra (không có `debugPrint`/`LocalNotif: show` nào khớp
+  thời điểm). Có thể đây là noti hệ thống không liên quan (built-in emulator/Google Play services),
+  cũng có thể là dấu hiệu cho thấy Android VẪN tự vẽ gì đó dù BE nói là data-only — **cần xác minh
+  bằng cách log thẳng `message.notification` (không chỉ `message.data`) trong cả
+  `firebaseBackgroundHandler` lẫn `onMessage.listen`** để biết chắc payload thật nhận được có khối
+  `notification` hay không, đừng tin lời BE mà không tự đo lại (đúng tinh thần Rule 1 — luôn verify
+  bằng log thật).
+
+### 9.3 Việc Codex cần làm tiếp — theo đúng thứ tự
+
+1. **Đọc lại toàn bộ mục 9.1** để hiểu code hiện tại đã ở trạng thái nào (2 file, đã phân tích rõ
+   lý do không dùng Kotlin/MethodChannel — đừng đổi hướng lại trừ khi có lý do mới).
+2. Cài lại APK debug (`flutter build apk --debug`) lên **1 thiết bị/emulator thật**, gọi 1 cuộc thật
+   từ thiết bị khác lúc app B đang background, rồi **ngay lập tức** chạy
+   `adb logcat -d | grep -i -E "flutter|Push\(bg\)|LocalNotif"` — tìm dòng `Push(bg): ... data=...`.
+   - **Có dòng đó, `data` chứa đúng `type=CALL, callEventType=incoming`:** hàm đã chạy đúng, vậy lỗi
+     nằm ở bước `showIncomingCall`/`fullScreenIntent` không tự launch được — kiểm tra tiếp quyền
+     `USE_FULL_SCREEN_INTENT` (`SosAlertLauncher.hasFullScreenIntentPermission()` có thể gọi lại để
+     đối chiếu, quyền này dùng chung toàn app không phải riêng theo notification category), và thử
+     bỏ `category: AndroidNotificationCategory.call` xem có phải category này gây vấn đề không (test
+     A/B, ghi rõ kết quả).
+   - **Không có dòng đó:** `firebaseBackgroundHandler` chưa từng chạy — kiểm tra payload FCM thật
+     nhận được có đúng data-only không (log thẳng `message.notification == null` hay không ngay
+     dòng đầu hàm, TRƯỚC bất kỳ điều kiện nào), đối chiếu với BE xem push thật đang gửi type gì.
+3. Xác minh lại quan sát phụ ở 9.2 (banner lạ lúc foreground) trước khi coi guard `onMessage` là
+   đúng — có thể cần sửa thêm nếu Android vẫn tự vẽ gì đó ngoài kiểm soát của `onMessage.listen`.
+4. Sau khi ca 2 (background) pass thật, làm tiếp ca 3 (app bị kill hẳn) — ghi rõ kết quả vào bảng ở
+   mục 6, đừng bỏ qua.
+5. **Không đổi hướng kiến trúc (quay lại Kotlin/MethodChannel) trừ khi đã chứng minh được
+   `flutter_local_notifications` không thể làm được** — hướng hiện tại ít rủi ro hơn (không cần
+   plugin/Service Kotlin mới, không cần quyền/manifest mới), chỉ cần debug đúng chỗ.

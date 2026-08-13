@@ -270,11 +270,14 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   **BE xác nhận đã đổi (đợt 3, 12/08):** push "cuộc gọi đến" (`referenceType=CALL`, lúc `initiate()`)
   nay là **data-only message** (không có khối `notification`, Android không tự vẽ) — thiết kế opt-in
   qua field `dataOnly` trong `EphemeralNotificationInput`, chỉ `CallsService.initiate()` bật, không
-  ảnh hưởng `referenceType` khác. Cấu trúc `data` nhận được, xem mục "Push" bên dưới. **Việc còn lại
-  là phần FE/native Android** (chưa làm): dựng notification `setFullScreenIntent()` kèm nút
-  Nghe/Từ chối trong `firebaseBackgroundHandler`, theo đúng mẫu `SosAlertLauncher`/
-  `EmergencySosWatcherService` đã làm cho SOS (`KE_HOACH_SOS_KICH_HOAT_KHAN_CAP_2026-08-11.md`).
+  ảnh hưởng `referenceType` khác. Cấu trúc `data` nhận được, xem mục "Push" bên dưới.
   ⚠️ **Chỉ có hiệu lực trên Android** — iOS cần VoIP Push (PushKit), cơ chế khác hẳn, ngoài phạm vi.
+  ⚠️ **13/08 — FE đã code phần dựng full-screen-intent (`local_notification_service.dart` +
+  `push_service.dart`, dùng `flutter_local_notifications` thay vì Kotlin/MethodChannel — lý do kỹ
+  thuật xem `KE_HOACH_VIDEO_CALL_NHOM_VA_CUOC_GOI_DEN_NEN_2026-08-12.md` mục 9.1), nhưng test thật
+  trên emulator cho kết quả CHƯA đúng (app không tự bung màn khi backgrounded, chỉ thấy banner hệ
+  thống) và CHƯA debug ra nguyên nhân (2 emulator crash giữa chừng lúc đang đọc log) — xem mục 9.2
+  của file kế hoạch đó để biết chính xác cần làm gì tiếp, đừng coi tính năng này là đã xong.**
 
 **LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
 trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).
