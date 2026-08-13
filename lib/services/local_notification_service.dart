@@ -36,7 +36,8 @@ class LocalNotificationService {
   static const _callChannel = AndroidNotificationChannel(
     'incoming_call',
     'Cuộc gọi video đến',
-    description: 'Tự mở màn nhận cuộc gọi khi có người gọi video, kể cả lúc khoá máy.',
+    description:
+        'Tự mở màn nhận cuộc gọi khi có người gọi video, kể cả lúc khoá máy.',
     importance: Importance.max,
   );
 
@@ -71,8 +72,22 @@ class LocalNotificationService {
       await android.createNotificationChannel(_sosChannel);
       await android.createNotificationChannel(_generalChannel);
       await android.createNotificationChannel(_callChannel);
-      // Android 13+ bắt buộc xin quyền runtime POST_NOTIFICATIONS.
-      await android.requestNotificationsPermission();
+      // Android 13+ bắt buộc xin quyền runtime POST_NOTIFICATIONS — NHƯNG chỉ
+      // xin được khi có Activity thật (màn hình để hiện hộp thoại xin quyền).
+      // `init()` cũng chạy từ `firebaseBackgroundHandler` (isolate nền riêng
+      // của FCM, không có Activity nào cả) — gọi ở đó ném
+      // NullPointerException từ `ContextCompat.checkSelfPermission` (đo được
+      // thật qua logcat 13/08: "Attempt to invoke virtual method ... on a
+      // null object reference"), văng ra khỏi `init()` TRƯỚC dòng `_ready =
+      // true`, nên `showIncomingCall()` không bao giờ chạy tới `_plugin.show()`
+      // — đây là nguyên nhân thật của việc cuộc gọi đến không tự bung màn khi
+      // app chạy nền. Đến lúc có push thì quyền chắc chắn đã được xin từ lần
+      // mở app trước đó (foreground), nên bọc try/catch bỏ qua an toàn.
+      try {
+        await android.requestNotificationsPermission();
+      } catch (e) {
+        debugPrint('LocalNotif: requestNotificationsPermission bỏ qua (không có Activity?): $e');
+      }
     }
     _ready = true;
     debugPrint('LocalNotif: sẵn sàng');
@@ -151,19 +166,34 @@ class LocalNotificationService {
   /// (route đã có sẵn). `timeoutAfter` khớp `RINGING_TIMEOUT_MS` 30 giây phía
   /// BE — quá giờ đó cuộc gọi coi như nhỡ, không cần noti nằm lì thêm.
   ///
-  /// ⚠️ **Chưa test trên máy Oppo thật** (khác các phần khác trong đợt 12/08,
-  /// vốn đều đã gọi thật giữa 2 máy để xác nhận) — cần một cuộc gọi thật lúc
-  /// app B đã bị kill hẳn để kiểm chứng `fullScreenIntent` + cold-start launch
-  /// details hoạt động đúng, đặc biệt `AndroidNotificationCategory.call` có
-  /// gây thanh lạ/vỡ hình trên ROM ColorOS hay không (xem cảnh báo tương tự
-  /// đã gặp với `CATEGORY_CALL` + foreground service ở `CallGuardService.kt`
-  /// — tình huống ở đây khác, chưa có foreground service `camera|microphone`
-  /// nào chạy lúc noti này bắn ra, nhưng vẫn nên đo lại chứ không suy luận).
+  /// ⚠️ **Đã test bằng cuộc gọi thật giữa 2 emulator (13/08), app B ở nền
+  /// (background, chưa kill):** log xác nhận `firebaseBackgroundHandler` nhận
+  /// đúng payload data-only và gọi tới đây, nhưng `init()` (gọi lần đầu trong
+  /// isolate nền riêng của FCM, không có Activity) từng ném lỗi ở bước xin
+  /// quyền thông báo, chặn luôn `_plugin.show()` phía dưới — đã sửa (xem
+  /// comment trong `init()`). Vẫn **CHƯA test lại sau khi sửa** và **chưa
+  /// test ca app bị kill hẳn** — cả hai cần làm trước khi coi là xong. Trên
+  /// máy Oppo thật cũng chưa test riêng `AndroidNotificationCategory.call`
+  /// có gây thanh lạ/vỡ hình như từng gặp với `CATEGORY_CALL` +
+  /// `CallGuardService.kt` hay không (tình huống khác — chưa có foreground
+  /// service `camera|microphone` chạy lúc noti này bắn ra — nhưng nên đo lại
+  /// chứ không suy luận).
   Future<void> showIncomingCall({
     required String callId,
     required String callerName,
   }) async {
-    if (!_ready) await init();
+    try {
+      if (!_ready) await init();
+    } catch (e) {
+      // Không để lỗi init() (vd thiếu Activity lúc gọi từ isolate nền) chặn
+      // hẳn cuộc gọi đến — channel/plugin có thể vẫn đủ để `_plugin.show()`
+      // chạy được dù `_ready` chưa lên `true`, cứ thử tiếp thay vì bỏ cuộc.
+      debugPrint('LocalNotif: init() lỗi trước showIncomingCall, vẫn thử show: $e');
+    }
+    debugPrint(
+      'LocalNotif: showIncomingCall request callId=$callId '
+      'caller=$callerName fullScreenIntent=true',
+    );
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _callChannel.id,
@@ -187,6 +217,7 @@ class LocalNotificationService {
         notificationDetails: details,
         payload: 'CALL|$callId',
       );
+      debugPrint('LocalNotif: showIncomingCall displayed callId=$callId');
     } catch (e) {
       debugPrint('LocalNotif: showIncomingCall thất bại: $e');
     }

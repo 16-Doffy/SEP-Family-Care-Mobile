@@ -21,17 +21,38 @@ import 'local_notification_service.dart';
 /// nền này (isolate riêng, khác isolate chính của app).
 @pragma('vm:entry-point')
 Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
-  debugPrint('Push(bg): ${message.messageId} data=${message.data}');
-  final type = (message.data['type'] ?? '').toString().toUpperCase();
-  final eventType = message.data['callEventType']?.toString();
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Push(bg): Firebase init skipped/failed: $e');
+  }
+
+  final n = message.notification;
+  debugPrint(
+    'Push(bg): ${message.messageId} notification='
+    '${n == null ? 'null' : '${n.title}|${n.body}'} data=${message.data}',
+  );
+  final type = (message.data['type'] ?? message.data['referenceType'] ?? '')
+      .toString()
+      .toUpperCase();
+  final eventType = (message.data['callEventType'] ?? '')
+      .toString()
+      .toLowerCase();
   if (type != 'CALL' || eventType != 'incoming') return;
 
-  final callId = message.data['callId']?.toString() ?? '';
+  final callId =
+      message.data['callId']?.toString() ??
+      message.data['referenceId']?.toString() ??
+      '';
   if (callId.isEmpty) return;
-  WidgetsFlutterBinding.ensureInitialized();
+  debugPrint('Push(bg): incoming CALL -> show full-screen callId=$callId');
   await LocalNotificationService.instance.showIncomingCall(
     callId: callId,
-    callerName: message.data['callerName']?.toString() ?? 'Thành viên',
+    callerName:
+        message.data['callerName']?.toString() ??
+        message.data['title']?.toString() ??
+        'Thành viên',
   );
 }
 
@@ -66,18 +87,22 @@ class PushService {
         return;
       }
 
-      FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
-
       // App đang mở: FCM KHÔNG tự vẽ notification → tự bắn bằng local
       // notification để vẫn có chuông + khay như lúc ở nền.
       FirebaseMessaging.onMessage.listen((m) {
-        final type = (m.data['type'] ?? '').toString().toUpperCase();
+        final n = m.notification;
+        debugPrint(
+          'Push(fg): ${m.messageId} notification='
+          '${n == null ? 'null' : '${n.title}|${n.body}'} data=${m.data}',
+        );
+        final type = (m.data['type'] ?? m.data['referenceType'] ?? '')
+            .toString()
+            .toUpperCase();
         // Cuộc gọi đến lúc app đang mở: socket `call:incoming` (CallProvider,
         // xem family_shell.dart) đã tự mở IncomingCallScreen theo thời gian
         // thực, nhanh hơn hẳn push. Bắn thêm banner ở đây là thừa — chồng lên
         // đúng lúc màn cuộc gọi đến vừa mở, không phải lỗi nhưng gây rối mắt.
         if (type == 'CALL') return;
-        final n = m.notification;
         final title = n?.title ?? m.data['title'] ?? 'Family Care';
         final body = n?.body ?? m.data['body'] ?? '';
         LocalNotificationService.instance.show(
