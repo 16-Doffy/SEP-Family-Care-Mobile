@@ -272,12 +272,16 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   qua field `dataOnly` trong `EphemeralNotificationInput`, chỉ `CallsService.initiate()` bật, không
   ảnh hưởng `referenceType` khác. Cấu trúc `data` nhận được, xem mục "Push" bên dưới.
   ⚠️ **Chỉ có hiệu lực trên Android** — iOS cần VoIP Push (PushKit), cơ chế khác hẳn, ngoài phạm vi.
-  ⚠️ **13/08 — FE đã code phần dựng full-screen-intent (`local_notification_service.dart` +
-  `push_service.dart`, dùng `flutter_local_notifications` thay vì Kotlin/MethodChannel — lý do kỹ
-  thuật xem `KE_HOACH_VIDEO_CALL_NHOM_VA_CUOC_GOI_DEN_NEN_2026-08-12.md` mục 9.1), nhưng test thật
-  trên emulator cho kết quả CHƯA đúng (app không tự bung màn khi backgrounded, chỉ thấy banner hệ
-  thống) và CHƯA debug ra nguyên nhân (2 emulator crash giữa chừng lúc đang đọc log) — xem mục 9.2
-  của file kế hoạch đó để biết chính xác cần làm gì tiếp, đừng coi tính năng này là đã xong.**
+  ✅ **13/08 — Đã code + đã sửa lỗi + đã xác nhận hoạt động đúng bằng cuộc gọi thật lúc máy đang
+  KHOÁ MÀN HÌNH** (`local_notification_service.dart` + `push_service.dart`, dùng
+  `flutter_local_notifications` thay vì Kotlin/MethodChannel — lý do kỹ thuật + toàn bộ diễn biến
+  debug xem `KE_HOACH_VIDEO_CALL_NHOM_VA_CUOC_GOI_DEN_NEN_2026-08-12.md` mục 9–10). Lỗi ban đầu:
+  `LocalNotificationService.init()` gọi `requestNotificationsPermission()` cần Activity, nhưng
+  `firebaseBackgroundHandler` chạy trong isolate nền không có Activity → ném exception chặn
+  `_plugin.show()` không bao giờ chạy tới — đã sửa bằng try/catch. **Còn thiếu:** test ca app bị
+  kill hẳn (không chỉ backgrounded), test trên máy Oppo/ColorOS thật (mọi test 13/08 đều trên
+  emulator), nút Từ chối trên màn full-screen-intent bấm không phản ứng lúc test (chưa rõ bug thật
+  hay do thao tác emulator) — xem checklist đầy đủ ở mục 10.4 file kế hoạch.
 
 **LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
 trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).

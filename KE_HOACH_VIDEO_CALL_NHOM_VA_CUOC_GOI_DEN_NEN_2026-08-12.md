@@ -484,12 +484,15 @@ Phần tự bung `IncomingCallScreen` khi app đang background/khoá màn hình 
 
 ---
 
-## 9. Cập nhật Claude 13/08 — đã code phần full-screen-intent, TEST THẬT CHƯA XONG, giao Codex tiếp
+## 9. Cập nhật Claude 13/08 — đã code phần full-screen-intent, TEST THẬT lần 1 chưa đúng (đã sửa xong, xem mục 10)
 
 Sau khi BE (Nghĩa) xác nhận + triển khai xong data-only message cho push "cuộc gọi đến" (mục 3.2.3
 đã đánh dấu ✅), Claude đã code phần FE còn thiếu — **nhưng test trên máy/emulator thật cho kết quả
 CHƯA ĐÚNG như kỳ vọng và chưa kịp debug xong do hết thời gian phiên làm việc**. Đọc kỹ mục này trước
 khi làm tiếp, đừng tưởng nhầm là đã xong.
+
+> **Cập nhật: nguyên nhân đã tìm ra và sửa xong, xem mục 10.** Giữ nguyên mục 9 làm bản ghi lịch sử
+> (kiến trúc đã chọn, log thật lúc còn lỗi) — không xoá, vì mục 10 tham chiếu ngược lại đây.
 
 ### 9.1 Đã code — chọn hướng KHÔNG dùng native Kotlin/MethodChannel
 
@@ -588,3 +591,85 @@ Test bằng cách gọi thật giữa 2 emulator (`HOH`/`MEM`, tài khoản "Zap
 5. **Không đổi hướng kiến trúc (quay lại Kotlin/MethodChannel) trừ khi đã chứng minh được
    `flutter_local_notifications` không thể làm được** — hướng hiện tại ít rủi ro hơn (không cần
    plugin/Service Kotlin mới, không cần quyền/manifest mới), chỉ cần debug đúng chỗ.
+
+---
+
+## 10. Cập nhật Claude 13/08 (tiếp) — ✅ ĐÃ TÌM RA NGUYÊN NHÂN + SỬA XONG + XÁC NHẬN HOẠT ĐỘNG
+
+Codex đã tiếp tục từ mục 9 (thêm log chi tiết, đăng ký `onBackgroundMessage` sớm ở `main()`, nhận
+diện CALL chắc hơn) nhưng chưa lấy được logcat thật để kết luận nguyên nhân (môi trường Codex bị
+treo ở bước `flutter test`/`adb devices`). Claude tiếp tục từ đó, tự dựng lại 2 emulator, cài bản
+mới nhất, gọi thật và đọc logcat trực tiếp.
+
+### 10.1 Nguyên nhân thật — xác nhận bằng log, không phải suy đoán
+
+```
+FlutterFire Messaging: An error occurred in your background messaging handler:
+PlatformException: java.lang.NullPointerException: Attempt to invoke virtual method
+'int android.content.Context.checkPermission(...)' on a null object reference
+    at androidx.core.content.ContextCompat.checkSelfPermission
+    at FlutterLocalNotificationsPlugin.requestNotificationsPermission
+    at FlutterLocalNotificationsPlugin.onMethodCall
+```
+
+`LocalNotificationService.init()` gọi `android.requestNotificationsPermission()` — dòng này cần một
+**Activity thật** để hiện hộp thoại xin quyền (hoặc kiểm tra quyền qua Activity context). Khi
+`init()` chạy từ `firebaseBackgroundHandler` (isolate nền riêng của FCM, **không có Activity nào
+cả**), lệnh này ném `NullPointerException`, văng thẳng ra khỏi `init()` **trước dòng `_ready =
+true`**. Vì `showIncomingCall()` gọi `await init();` **không có try/catch bọc quanh**, lỗi này
+propagate tiếp ra khỏi `firebaseBackgroundHandler` — `_plugin.show()` (dòng thật sự tạo notification
+full-screen) **không bao giờ được gọi tới**. Đây là nguyên nhân thật, không liên quan gì đến
+`fullScreenIntent`/quyền `USE_FULL_SCREEN_INTENT`/BE — thuần là một lỗi logic phía FE.
+
+### 10.2 Đã sửa — `lib/services/local_notification_service.dart`
+
+1. Bọc `await android.requestNotificationsPermission();` trong `init()` bằng try/catch riêng — lỗi
+   ở bước này (thường do thiếu Activity) không còn chặn phần còn lại của `init()`. Hợp lý vì lúc có
+   push tới, quyền thông báo chắc chắn đã được xin từ lần mở app trước đó (foreground).
+2. Thêm try/catch phòng thủ quanh `await init();` ngay trong `showIncomingCall()` — nếu `init()`
+   vẫn lỗi vì lý do khác trong tương lai, vẫn cứ thử gọi `_plugin.show()` thay vì bỏ cuộc hẳn.
+
+### 10.3 ✅ Đã xác nhận hoạt động đúng bằng cuộc gọi thật (13/08, 2 emulator HOH+MEM)
+
+- **Log xác nhận luồng chạy sạch, không còn exception:** `LocalNotif: requestNotificationsPermission
+  bỏ qua (không có Activity?)` → `LocalNotif: sẵn sàng` → `LocalNotif: showIncomingCall request` →
+  `LocalNotif: showIncomingCall displayed`.
+- **Ca app background, màn hình vẫn ĐANG MỞ (bấm Home):** chỉ hiện banner hệ thống, không tự bung
+  màn — **đây là hành vi ĐÚNG theo thiết kế của Android** (`setFullScreenIntent` chỉ tự phóng
+  Activity khi máy đang khoá/tắt màn; máy đang mở + đang dùng thì Android cố tình chỉ hiện heads-up
+  để không giật người dùng ra khỏi việc đang làm). Lần test trước ở mục 9.2 kết luận "KHÔNG đạt kỳ
+  vọng" là **do đo sai kịch bản** (chỉ bấm Home, chưa khoá màn) chứ không phải do tính năng.
+- **Ca máy đang KHOÁ MÀN HÌNH thật (nhấn nút nguồn khoá máy), gọi từ máy khác:** ✅ **`IncomingCallScreen`
+  tự mở đè lên màn khoá**, hiện đúng "Cuộc gọi video nhóm đến / Cuộc gọi nhóm / Zap đang gọi · 3
+  thành viên" (test này gọi nhầm vào hội thoại nhóm, nhưng qua đó xác nhận luôn cả routing group-call
+  từ push hoạt động đúng). Đây là kịch bản quan trọng nhất và đã PASS.
+- Cuộc gọi timeout tự thành `MISSED` phía BE sau 30s (do không bấm Nghe/Từ chối kịp trong lúc debug),
+  kiểm tra lại phía người gọi: không có cảnh báo/trạng thái treo nào, mọi thứ sạch.
+
+### 10.4 Việc CHƯA làm xong — checklist cho lần sau
+
+- [ ] **Ca app bị KILL HẲN** (vuốt tắt khỏi đa nhiệm, không chỉ bấm Home) rồi mới có cuộc gọi tới —
+  chưa test. Đây là kịch bản còn lại duy nhất chưa biết kết quả trong bảng kiểm thử mục 6.
+- [ ] **Test trên máy Oppo CPH2159 thật (ColorOS)** — mọi test ngày 13/08 đều trên emulator.
+  `AndroidNotificationCategory.call` **chưa được đối chiếu lại trên ColorOS** — máy này từng có tiền
+  lệ xấu với `Notification.CATEGORY_CALL` kết hợp foreground service (xem `CallGuardService.kt`
+  dòng 78–85); tình huống ở đây khác (không có foreground service `camera|microphone` chạy lúc noti
+  này bắn), nhưng **phải tự đo lại, đừng suy luận là an toàn.**
+- [ ] **Gọi nhóm thật với ≥3 người cùng vào** (video/audio thật qua LiveKit, không chỉ đúng route và
+  hiện đúng tên) — chưa test. Mục 8.1/9 mới xác nhận phần route/UI, chưa xác nhận layout lưới +
+  track LiveKit hoạt động đúng khi có nhiều người thật cùng lúc.
+- [ ] **Nút "Từ chối" trên `IncomingCallScreen` lúc mở từ full-screen-intent** — trong lúc test,
+  bấm vào nút Từ chối không có phản ứng (phải force-stop app để dọn màn). **Chưa xác định được đây
+  là bug thật hay do bấm sai toạ độ trên emulator** — cần thử lại, nếu vẫn tái hiện thì đây là bug
+  cần sửa (có thể liên quan `PopScope(canPop: false)` hoặc theo dõi sự kiện chạm bị chặn bởi lớp
+  hiển thị đè lên màn khoá).
+- [ ] **Quan sát phụ ở mục 9.2** (banner "Zap · now 🔔" xuất hiện cả lúc foreground dù đã có guard)
+  — nhiều khả năng đã được giải thích bởi phát hiện ở 10.3 (máy chưa khoá thì Android tự hiện
+  heads-up thay vì full-screen, đúng thiết kế) nhưng **chưa xác nhận dứt điểm bằng log
+  `message.notification` cho đúng lần test đó** — nên coi là đã giải quyết nhưng chưa 100% chắc chắn.
+- [ ] Nút Nghe/Từ chối trực tiếp trên notification (không cần mở app) — vẫn cố tình chưa làm, xem
+  mục 3.2.5, để ngỏ hỏi user có cần ngay không.
+- [ ] **Cập nhật lại bảng kiểm thử mục 6** với kết quả ca 4 (background/khoá màn — PASS, ghi rõ điều
+  kiện đúng là "khoá màn" chứ không phải chỉ "background") — đang để dữ liệu cũ (mục 9) lẫn với kết
+  quả mới, nên gộp lại cho rõ khi có thời gian.
+- [ ] Toàn bộ mục 10 này **chưa commit**.
