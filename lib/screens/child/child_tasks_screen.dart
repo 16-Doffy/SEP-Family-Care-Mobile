@@ -33,7 +33,9 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   List<TaskAssignment> _filtered(List<TaskAssignment> list) {
     switch (_filter) {
       case 'Chờ làm':
-        // BE dùng ASSIGNED cho assignment mới giao (enum: ASSIGNED|IN_PROGRESS|...)
+        // ASSIGNED là assignment mới giao; IN_PROGRESS vẫn nằm trong nhóm việc
+        // cần người dùng xử lý. Giữ PENDING trong danh sách để người nhận thấy
+        // việc đang chờ kích hoạt, nhưng không cho bấm Bắt đầu (contract BE).
         return list
             .where(
               (a) =>
@@ -392,6 +394,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
 
   Widget _assignmentCard(BuildContext context, TaskAssignment a) {
     final cat = a.task?.taskCategoryName;
+    final effectiveDueAt = a.dueAt ?? a.task?.dueAt;
+    final isOverdue = _isOverdue(a, effectiveDueAt);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -461,7 +465,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      if (cat != null || a.dueAt != null)
+                      if (cat != null || effectiveDueAt != null || isOverdue)
                         Row(
                           children: [
                             if (cat != null)
@@ -472,20 +476,32 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                   color: AppColors.textMuted,
                                 ),
                               ),
-                            if (cat != null && a.dueAt != null)
+                            if (cat != null && effectiveDueAt != null)
                               const Text(
                                 ' · ',
                                 style: TextStyle(color: AppColors.textMuted),
                               ),
-                            if (a.dueAt != null)
+                            if (effectiveDueAt != null)
                               Text(
-                                'Hạn: ${_fmtDate(a.dueAt!)}',
+                                'Hạn: ${_fmtDate(effectiveDueAt)}',
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
                                   color: AppColors.textMuted,
                                 ),
                               ),
                           ],
+                        ),
+                      if (isOverdue)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            'Quá hạn',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.danger,
+                            ),
+                          ),
                         ),
                       if (a.task?.isRecurring == true &&
                           a.task?.schedule != null)
@@ -563,7 +579,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
             ),
           ),
 
-          if (a.status == 'ASSIGNED' || a.status == 'PENDING')
+          if (a.status == 'ASSIGNED')
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: SizedBox(
@@ -716,6 +732,14 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   }
 
   String _fmtDate(DateTime d) => '${d.day}/${d.month}';
+
+  bool _isOverdue(TaskAssignment a, DateTime? dueAt) {
+    if (dueAt == null) return false;
+    return dueAt.isBefore(DateTime.now()) &&
+        a.status != 'APPROVED' &&
+        a.status != 'CANCELED' &&
+        a.status != 'REJECTED';
+  }
 
   /// Dòng "Người giao" cho thành viên biết ai giao việc này.
   ///

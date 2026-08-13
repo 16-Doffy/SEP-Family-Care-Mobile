@@ -208,7 +208,7 @@ class TaskAssignment {
   final DateTime? startAt;
   final DateTime? dueAt;
   final String
-  status; // PENDING|IN_PROGRESS|SUBMITTED|APPROVED|REJECTED|CANCELED|UNAVAILABLE
+  status; // PENDING|ASSIGNED|IN_PROGRESS|SUBMITTED|APPROVED|REJECTED|CANCELED|UNAVAILABLE
   final RewardSetting? rewardSetting;
   final FamilyTask? task;
   final String?
@@ -306,6 +306,7 @@ class TaskAssignment {
   };
 
   String get statusLabel => switch (status) {
+    'PENDING' => 'Chờ kích hoạt',
     'ASSIGNED' => 'Chờ làm',
     'IN_PROGRESS' => 'Đang làm',
     'SUBMITTED' => 'Chờ duyệt',
@@ -833,6 +834,17 @@ class TaskProvider extends ChangeNotifier {
   }
 
   Future<void> startAssignment(String assignmentId) async {
+    // BE chỉ cho phép chuyển ASSIGNED -> IN_PROGRESS. Kiểm tra lại trạng thái
+    // mới nhất trước khi gọi endpoint để UI không gửi một yêu cầu chắc chắn bị
+    // từ chối khi assignment vẫn PENDING hoặc đã được bắt đầu ở thiết bị khác.
+    final assignment = await getAssignmentDetail(assignmentId);
+    if (assignment != null && assignment.status != 'ASSIGNED') {
+      throw StateError(
+        assignment.status == 'PENDING'
+            ? 'Công việc đang chờ được giao, chưa thể bắt đầu.'
+            : 'Công việc không còn ở trạng thái được giao.',
+      );
+    }
     await ApiClient.instance.patch(
       '/families/$_fid/tasks/assignments/$assignmentId/start',
       {},
