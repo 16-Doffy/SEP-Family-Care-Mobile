@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:family_care/models/ai_chatbot.dart';
 import 'package:family_care/providers/ai_chatbot_provider.dart';
 
 /// Đọc response của `POST .../ai-chatbot/conversations/:id/messages`.
