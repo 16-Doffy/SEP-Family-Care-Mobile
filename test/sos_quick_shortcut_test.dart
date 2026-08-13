@@ -220,16 +220,62 @@ void main() {
         AppLifecycleState.hidden,
       ]) {
         expect(
-          shouldSendSosOnPause(
-            state: s,
-            autoCountdown: true,
-            countdown: 2,
-          ),
+          shouldSendSosOnPause(state: s, autoCountdown: true, countdown: 2),
           isFalse,
           reason: '$s không được coi là "bỏ máy vào túi"',
         );
       }
     });
+  });
+
+  group('SOS lock-screen flow — chỉ thao tác trong giao diện SOS', () {
+    test('lối lắc/té ngã và Emergency SOS đều khóa đường thoát route', () {
+      expect(
+        shouldLockSosRouteExit(autoTrigger: true, immediate: false),
+        isTrue,
+      );
+      expect(
+        shouldLockSosRouteExit(autoTrigger: false, immediate: true),
+        isTrue,
+      );
+      expect(
+        shouldLockSosRouteExit(autoTrigger: false, immediate: false),
+        isFalse,
+      );
+    });
+
+    test(
+      'lối lắc/té ngã luôn ưu tiên màn gửi SOS, không bị list cảnh báo chen vào',
+      () {
+        expect(
+          shouldShowSenderSosFlow(
+            autoTrigger: true,
+            immediate: false,
+            autoCountdown: false,
+            countdown: null,
+          ),
+          isTrue,
+        );
+        expect(
+          shouldShowSenderSosFlow(
+            autoTrigger: false,
+            immediate: false,
+            autoCountdown: true,
+            countdown: 2,
+          ),
+          isTrue,
+        );
+        expect(
+          shouldShowSenderSosFlow(
+            autoTrigger: false,
+            immediate: false,
+            autoCountdown: false,
+            countdown: null,
+          ),
+          isFalse,
+        );
+      },
+    );
   });
 
   group('homePathForRole', () {
