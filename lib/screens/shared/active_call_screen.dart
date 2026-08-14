@@ -12,21 +12,26 @@ import '../../widgets/avatar_widget.dart';
 
 /// Màn hình đang gọi — GĐ3 bước 3c của tính năng Video Call.
 ///
-/// Chỉ hỗ trợ gọi 1-1 (đúng phạm vi BE đã xác nhận): video của người kia phủ
-/// kín màn hình, video của mình là khung nhỏ **cố định** góc trên-phải (không
-/// kéo-thả) — không có lưới nhiều người, không chia sẻ màn hình, không ghi
-/// hình, không chat trong lúc gọi.
+/// Hỗ trợ cả 1-1 và gọi nhóm: 1-1 giữ layout remote full-screen + local
+/// preview, còn nhóm dùng grid nhiều ô. Không có invite thêm người trong lúc
+/// gọi, chia sẻ màn hình, ghi hình hoặc chat trong lúc gọi.
 ///
 /// Màn này tự kết nối LiveKit qua [LivekitRoomService] (đã có sẵn từ bước 3b)
 /// bằng [session] được [CallProvider.initiate]/`.join()` trả về ở màn trước.
 class ActiveCallScreen extends StatefulWidget {
   final CallSession session;
   final String peerName;
+  final String? conversationName;
+  final String conversationType;
+  final Map<String, String> participantNames;
 
   const ActiveCallScreen({
     super.key,
     required this.session,
     required this.peerName,
+    this.conversationName,
+    this.conversationType = 'PRIVATE',
+    this.participantNames = const {},
   });
 
   @override
@@ -34,8 +39,10 @@ class ActiveCallScreen extends StatefulWidget {
 }
 
 class _ActiveCallScreenState extends State<ActiveCallScreen> {
-  VideoTrack? _remoteVideoTrack;
+  final Map<String, VideoTrack> _remoteVideoTracks = {};
+  final Set<String> _remoteParticipantIds = {};
   VideoTrack? _localVideoTrack;
+  String? _localIdentity;
 
   bool _micOn = true;
   bool _camOn = true;
@@ -48,6 +55,18 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   Duration _duration = Duration.zero;
 
   CallProvider? _callProvider;
+
+  bool get _isGroupCall =>
+      widget.conversationType == 'GROUP' || widget.participantNames.length > 2;
+
+  String get _title {
+    if (_isGroupCall) {
+      final name = widget.conversationName?.trim();
+      if (name != null && name.isNotEmpty) return name;
+      return 'Cuộc gọi nhóm';
+    }
+    return widget.peerName;
+  }
 
   @override
   void initState() {
@@ -79,22 +98,23 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
         url: widget.session.livekitUrl,
         token: widget.session.token,
       );
-      await LivekitRoomService.instance.setCameraEnabled(true);
-      await LivekitRoomService.instance.setMicrophoneEnabled(true);
       LivekitRoomService.instance.events
-        ?..on<ParticipantConnectedEvent>((_) => _markPeerJoined())
+        ?..on<ParticipantConnectedEvent>(_onParticipantConnected)
         ..on<TrackSubscribedEvent>(_onTrackSubscribed)
         ..on<TrackUnsubscribedEvent>(_onTrackUnsubscribed)
         ..on<LocalTrackPublishedEvent>(_onLocalTrackPublished)
-        ..on<ParticipantDisconnectedEvent>((_) => _onPeerLeft())
-        ..on<RoomDisconnectedEvent>((_) => _onPeerLeft());
+        ..on<ParticipantDisconnectedEvent>(_onParticipantDisconnected)
+        ..on<RoomDisconnectedEvent>((_) => _onRoomDisconnected());
+      await LivekitRoomService.instance.setCameraEnabled(true);
+      await LivekitRoomService.instance.setMicrophoneEnabled(true);
 
       // Người khác có thể đã ở trong phòng trước khi listener được gắn (vd
       // mình là người nghe máy, vào phòng sau).
-      final alreadyThere =
-          LivekitRoomService.instance.room?.remoteParticipants.isNotEmpty ??
-          false;
-      if (alreadyThere) _markPeerJoined();
+      final room = LivekitRoomService.instance.room;
+      _localIdentity = room?.localParticipant?.identity;
+      final remoteIds = room?.remoteParticipants.keys ?? const Iterable.empty();
+      _remoteParticipantIds.addAll(remoteIds);
+      if (_remoteParticipantIds.isNotEmpty) _markPeerJoined();
       if (!mounted) return;
       setState(() => _connecting = false);
     } catch (e) {
@@ -115,16 +135,25 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     });
   }
 
+  void _onParticipantConnected(ParticipantConnectedEvent event) {
+    _remoteParticipantIds.add(event.participant.identity);
+    _markPeerJoined();
+    if (mounted) setState(() {});
+  }
+
   void _onTrackSubscribed(TrackSubscribedEvent event) {
     if (!mounted || event.track is! VideoTrack) return;
-    setState(() => _remoteVideoTrack = event.track as VideoTrack);
+    setState(() {
+      _remoteParticipantIds.add(event.participant.identity);
+      _remoteVideoTracks[event.participant.identity] =
+          event.track as VideoTrack;
+    });
+    _markPeerJoined();
   }
 
   void _onTrackUnsubscribed(TrackUnsubscribedEvent event) {
     if (!mounted || event.track is! VideoTrack) return;
-    if (_remoteVideoTrack == event.track) {
-      setState(() => _remoteVideoTrack = null);
-    }
+    setState(() => _remoteVideoTracks.remove(event.participant.identity));
   }
 
   void _onLocalTrackPublished(LocalTrackPublishedEvent event) {
@@ -133,9 +162,24 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     setState(() => _localVideoTrack = track as VideoTrack);
   }
 
-  /// Người kia rời phòng LiveKit (rớt mạng hoặc bấm kết thúc) — gọi 1-1 nên
-  /// coi như cuộc gọi đã xong, tự đóng màn thay vì để treo màn hình đen.
-  void _onPeerLeft() {
+  /// Một remote participant rời phòng LiveKit. Với 1-1 thì coi như cuộc gọi đã
+  /// xong; với group chỉ đóng khi từng có người vào rồi phòng không còn remote
+  /// participant nào.
+  void _onParticipantDisconnected(ParticipantDisconnectedEvent event) {
+    if (!mounted || _ending) return;
+    _remoteParticipantIds.remove(event.participant.identity);
+    _remoteVideoTracks.remove(event.participant.identity);
+    final stillHasRemote =
+        LivekitRoomService.instance.room?.remoteParticipants.isNotEmpty ??
+        _remoteParticipantIds.isNotEmpty;
+    if (!_isGroupCall || (_peerJoined && !stillHasRemote)) {
+      _hangUp(showEndedMessage: true);
+      return;
+    }
+    setState(() {});
+  }
+
+  void _onRoomDisconnected() {
     if (!mounted || _ending) return;
     _hangUp(showEndedMessage: true);
   }
@@ -165,9 +209,9 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
     await LivekitRoomService.instance.disconnect();
     if (!mounted) return;
     if (showEndedMessage) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cuộc gọi đã kết thúc.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Cuộc gọi đã kết thúc.')));
     }
     Navigator.of(context).pop();
   }
@@ -203,19 +247,28 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         body: Stack(
+          // Scaffold.body đưa constraints LỎNG (loose) xuống, và Stack mặc
+          // định (StackFit.loose) tự co theo child KHÔNG bọc Positioned —
+          // ở đây chỉ có top bar là child trần, nên cả Stack co lại vừa
+          // đúng kích thước nhỏ của top bar, kéo theo toàn bộ nội dung dồn
+          // lên một dải nhỏ phía trên, phần còn lại lộ nền đen của Scaffold
+          // (đo được trên máy Oppo/MEM thật 12/08). StackFit.expand ép
+          // Stack luôn lấp đầy toàn bộ body.
+          fit: StackFit.expand,
           children: [
-            Positioned.fill(child: _remoteView()),
+            Positioned.fill(child: _isGroupCall ? _groupView() : _remoteView()),
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: _topBar(),
               ),
             ),
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 76,
-              right: 16,
-              child: _localPreview(),
-            ),
+            if (!_isGroupCall)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 76,
+                right: 16,
+                child: _localPreview(),
+              ),
             Positioned(
               left: 0,
               right: 0,
@@ -229,7 +282,9 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   }
 
   Widget _remoteView() {
-    final track = _remoteVideoTrack;
+    final track = _remoteVideoTracks.values.isNotEmpty
+        ? _remoteVideoTracks.values.first
+        : null;
     if (track != null) {
       return VideoTrackRenderer(track, fit: VideoViewFit.cover);
     }
@@ -242,6 +297,67 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
         size: 96,
       ),
     );
+  }
+
+  Widget _groupView() {
+    final localIdentity = _localIdentity;
+    final ids = <String>{
+      ...widget.participantNames.keys.where((id) => id != localIdentity),
+      ..._remoteParticipantIds,
+    }.toList()..sort((a, b) => _nameFor(a).compareTo(_nameFor(b)));
+
+    final tiles = <Widget>[
+      _VideoTile(
+        name: 'Tôi',
+        track: (_localVideoTrack != null && _camOn) ? _localVideoTrack : null,
+        muted: !_camOn,
+        isLocal: true,
+      ),
+      for (final id in ids)
+        _VideoTile(
+          name: _nameFor(id),
+          track: _remoteVideoTracks[id],
+          muted: _remoteVideoTracks[id] == null,
+        ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final count = tiles.length;
+        final wide = constraints.maxWidth >= 520;
+        final crossAxisCount = count <= 1
+            ? 1
+            : wide
+            ? (count >= 5 ? 3 : 2)
+            : 2;
+        return Container(
+          color: const Color(0xFF111827),
+          padding: EdgeInsets.fromLTRB(
+            12,
+            MediaQuery.of(context).padding.top + 78,
+            12,
+            120,
+          ),
+          child: GridView.builder(
+            physics: const BouncingScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: wide ? 1.35 : 0.78,
+            ),
+            itemCount: tiles.length,
+            itemBuilder: (_, i) => tiles[i],
+          ),
+        );
+      },
+    );
+  }
+
+  String _nameFor(String identity) {
+    final direct = widget.participantNames[identity];
+    if (direct != null && direct.trim().isNotEmpty) return direct;
+    return 'Thành viên';
   }
 
   Widget _localPreview() {
@@ -284,7 +400,7 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
         children: [
           Expanded(
             child: Text(
-              widget.peerName,
+              _title,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(
                 fontSize: 16,
@@ -329,6 +445,83 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
             size: 56,
             iconSize: 24,
             onPressed: _toggleCam,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideoTile extends StatelessWidget {
+  final String name;
+  final VideoTrack? track;
+  final bool muted;
+  final bool isLocal;
+
+  const _VideoTile({
+    required this.name,
+    required this.track,
+    required this.muted,
+    this.isLocal = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.trim().isNotEmpty ? name.trim()[0] : '?';
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            color: const Color(0xFF1F2937),
+            alignment: Alignment.center,
+            child: track != null
+                ? VideoTrackRenderer(track!, fit: VideoViewFit.cover)
+                : AvatarWidget(
+                    initial: initial,
+                    color: isLocal
+                        ? AppColors.primary500
+                        : AppColors.avatarBlue,
+                    size: 72,
+                  ),
+          ),
+          Positioned(
+            left: 8,
+            right: 8,
+            bottom: 8,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: Colors.black.withValues(alpha: 0.42),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                child: Row(
+                  children: [
+                    if (muted) ...[
+                      const Icon(
+                        Icons.videocam_off_rounded,
+                        color: Colors.white70,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        name,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),

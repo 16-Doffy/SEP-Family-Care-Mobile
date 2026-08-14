@@ -41,9 +41,20 @@ class SOSScreen extends StatefulWidget {
   /// `/sos-quick`, xem `android/app/src/main/res/xml/shortcuts.xml`): tự chạy
   /// đếm ngược rồi gửi SOS, người dùng không phải giữ nút. Mặc định `false`
   /// cho nhánh shell `/{role}/sos` — giữ nguyên hành vi giữ-3-giây cũ.
-  const SOSScreen({super.key, this.autoTrigger = false});
+  ///
+  /// [immediate] = mở từ `EmergencySosWatcherService` (route phẳng
+  /// `/sos-immediate`) khi hệ thống phát hiện màn Emergency SOS của máy đang
+  /// chiếm màn hình — gửi SOS NGAY, bỏ qua đếm ngược 3 giây/nút hủy, vì lúc
+  /// đó không hiện được UI đó cho người dùng thao tác. Không dùng chung với
+  /// [autoTrigger].
+  const SOSScreen({
+    super.key,
+    this.autoTrigger = false,
+    this.immediate = false,
+  });
 
   final bool autoTrigger;
+  final bool immediate;
 
   @override
   State<SOSScreen> createState() => _SOSScreenState();
@@ -66,13 +77,25 @@ bool shouldSendSosOnPause({
   required AppLifecycleState state,
   required bool autoCountdown,
   required int? countdown,
-}) =>
-    state == AppLifecycleState.paused && autoCountdown && countdown != null;
+}) => state == AppLifecycleState.paused && autoCountdown && countdown != null;
+
+bool shouldLockSosRouteExit({
+  required bool autoTrigger,
+  required bool immediate,
+}) => autoTrigger || immediate;
+
+bool shouldShowSenderSosFlow({
+  required bool autoTrigger,
+  required bool immediate,
+  required bool autoCountdown,
+  required int? countdown,
+}) => autoTrigger || immediate || autoCountdown || countdown != null;
 
 class _SOSScreenState extends State<SOSScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   bool _sent = false;
   bool _sending = false;
+
   /// Đang đếm ngược **tự động** (vào từ lối tắt) chứ không phải do giữ nút.
   /// Khác biệt duy nhất: nhấc tay/chạm màn không hủy được, chỉ nút HỦY mới
   /// dừng — vì người dùng có bấm giữ gì đâu mà "thả ra".
@@ -89,6 +112,7 @@ class _SOSScreenState extends State<SOSScreen>
   static const _maxPendingLocationPoints = 50;
   final List<({double lat, double lng, double? accuracy, DateTime? recordedAt})>
   _pendingLocationPoints = [];
+
   /// Một controller chạy 0→1 **không đảo chiều**: ba vòng sóng lấy cùng giá trị
   /// này nhưng lệch pha 1/3 nên lan ra nối tiếp nhau như radar, thay vì cùng
   /// phình ra thu vào. Lấy theo hiệu ứng nút SOS trên đồng hồ.
@@ -105,6 +129,16 @@ class _SOSScreenState extends State<SOSScreen>
       : AppColors.white.withValues(alpha: 0.96);
   Color get _sosControlBorder =>
       _dark ? Colors.white24 : AppColors.progressTrack.withValues(alpha: 0.9);
+  bool get _lockRouteExit => shouldLockSosRouteExit(
+    autoTrigger: widget.autoTrigger,
+    immediate: widget.immediate,
+  );
+  bool get _showSenderSosFlow => shouldShowSenderSosFlow(
+    autoTrigger: widget.autoTrigger,
+    immediate: widget.immediate,
+    autoCountdown: _autoCountdown,
+    countdown: _countdown,
+  );
 
   @override
   void initState() {
@@ -120,6 +154,12 @@ class _SOSScreenState extends State<SOSScreen>
       context.read<SosProvider>().fetchAlerts();
       // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
       context.read<SosProvider>().fetchEmergencyContacts();
+      // Hệ thống phát hiện Emergency SOS đang chiếm màn hình → gửi thẳng,
+      // không đếm ngược (không có UI nào hiện được lúc đó để người dùng hủy).
+      if (widget.immediate && mounted) {
+        _triggerSOS();
+        return;
+      }
       // Vào từ lối tắt → đếm ngược ngay, không chờ thao tác nào. Chạy sau
       // frame đầu để _pulseCtrl đã sẵn sàng cho _onPressStart().
       if (widget.autoTrigger && mounted) _startAutoCountdown();
@@ -286,7 +326,9 @@ class _SOSScreenState extends State<SOSScreen>
     }
     try {
       final alertId = await sosProvider.sendSos(
-        message: 'SOS khẩn cấp từ ứng dụng Family Care',
+        message: widget.immediate
+            ? 'SOS khẩn cấp — phát hiện qua màn hình Cấp cứu khẩn cấp của máy'
+            : 'SOS khẩn cấp từ ứng dụng Family Care',
         address: sosAddressOf(pos),
         latitude: pos?.latitude,
         longitude: pos?.longitude,
@@ -388,19 +430,20 @@ class _SOSScreenState extends State<SOSScreen>
         ),
         actions: [
           if (hasGps)
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _openMaps(_localLat!, _localLng!, 'Vị trí của tôi');
-              },
-              child: Text(
-                'Mở Maps',
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF1A73E8),
-                  fontWeight: FontWeight.w700,
+            if (!_lockRouteExit)
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _openMaps(_localLat!, _localLng!, 'Vị trí của tôi');
+                },
+                child: Text(
+                  'Mở Maps',
+                  style: GoogleFonts.inter(
+                    color: const Color(0xFF1A73E8),
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(
@@ -480,14 +523,29 @@ class _SOSScreenState extends State<SOSScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_sending) return _loadingScreen();
-    if (_sent) return _sentScreen(context);
-
-    final activeAlerts = context.watch<SosProvider>().activeAlerts;
-    if (activeAlerts.isNotEmpty) {
-      return _incomingAlertsScreen(context, activeAlerts);
+    Widget screen;
+    if (_sending) {
+      screen = _loadingScreen();
+    } else if (_sent) {
+      screen = _sentScreen(context);
+    } else if (_showSenderSosFlow) {
+      screen = _sosButton(context);
+    } else {
+      final activeAlerts = context.watch<SosProvider>().activeAlerts;
+      screen = activeAlerts.isNotEmpty
+          ? _incomingAlertsScreen(context, activeAlerts)
+          : _sosButton(context);
     }
-    return _sosButton(context);
+    // Vào từ lắc/té ngã/Emergency SOS hệ thống (autoTrigger/immediate) — khác
+    // hẳn lúc mở tay từ tab SOS trong shell, ở đây người dùng không chủ động
+    // chọn xem màn này, có thể đang mở đè lên màn khoá (setShowWhenLocked ở
+    // MainActivity.onCreate()). Nút Back/vuốt-về hệ thống trước đây KHÔNG bị
+    // chặn, nên thoát được khỏi màn SOS mà không qua đúng luồng Hủy/Đóng
+    // (_cancelSOS gọi confirm-safety phía server) — chặn lại, giống hệt
+    // PopScope(canPop: false) đã dùng cho IncomingCallScreen. Vào bình thường
+    // từ tab SOS thì vẫn cho back như cũ.
+    if (!_lockRouteExit) return screen;
+    return PopScope(canPop: false, child: screen);
   }
 
   // ── SOS button screen (member / sender) ──────────────────────────────────
@@ -1331,36 +1389,39 @@ class _SOSScreenState extends State<SOSScreen>
                     ),
                   ),
                   const SizedBox(height: 4),
-                  // Mở Bản đồ lớn in-app
-                  SizedBox(
-                    width: double.infinity,
-                    height: 44,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1A73E8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  // Mở Bản đồ lớn in-app. Ẩn trong flow lắc/té ngã trên màn
+                  // khóa để người dùng không rời khỏi giao diện SOS khi chưa
+                  // mở khóa máy.
+                  if (!_lockRouteExit)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A73E8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
                         ),
-                        elevation: 0,
-                      ),
-                      onPressed: () {
-                        context.push('/map?lat=$_localLat&lng=$_localLng');
-                      },
-                      icon: const Icon(
-                        Icons.map_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      label: Text(
-                        'Xem bản đồ lớn trong ứng dụng',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
+                        onPressed: () {
+                          context.push('/map?lat=$_localLat&lng=$_localLng');
+                        },
+                        icon: const Icon(
+                          Icons.map_rounded,
                           color: Colors.white,
+                          size: 18,
+                        ),
+                        label: Text(
+                          'Xem bản đồ lớn trong ứng dụng',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
-                  ),
                 ] else ...[
                   const SizedBox(height: 12),
                   Text(
@@ -1430,7 +1491,9 @@ class _SOSScreenState extends State<SOSScreen>
     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
     child: Row(
       children: [
-        _backBtn(context),
+        _lockRouteExit
+            ? const SizedBox(width: 40, height: 40)
+            : _backBtn(context),
         Expanded(
           child: Center(
             child: Text(
@@ -1445,21 +1508,27 @@ class _SOSScreenState extends State<SOSScreen>
         ),
         // Cài đặt SOS (bật/tắt, báo cả nhà, té ngã, vị trí) — thay chỗ trống
         // cân bằng nút back trước đây.
-        GestureDetector(
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const SosSettingsScreen())),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _sosControl,
-            ),
-            alignment: Alignment.center,
-            child: Icon(Icons.settings_rounded, size: 20, color: _sosText),
-          ),
-        ),
+        _lockRouteExit
+            ? const SizedBox(width: 40, height: 40)
+            : GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SosSettingsScreen()),
+                ),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _sosControl,
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.settings_rounded,
+                    size: 20,
+                    color: _sosText,
+                  ),
+                ),
+              ),
       ],
     ),
   );

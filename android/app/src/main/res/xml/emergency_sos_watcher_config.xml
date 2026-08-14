@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cấu hình cho EmergencySosWatcherService — chỉ lắng nghe sự kiện đổi màn
+     hình (window state change), KHÔNG đọc nội dung màn hình
+     (canRetrieveWindowContent="false") vì không cần và để giảm mức độ quyền
+     xin. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="100"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/emergency_sos_watcher_description" />

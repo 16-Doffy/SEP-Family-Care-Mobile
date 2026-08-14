@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/auth_provider.dart';
@@ -28,9 +29,12 @@ import 'providers/theme_mode_controller.dart';
 import 'theme/app_surface_colors.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
+import 'services/push_service.dart';
 import 'wear/wear_root.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
   runApp(
     MultiProvider(
       providers: [

@@ -1,17 +1,59 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'api_client.dart';
 import 'local_notification_service.dart';
 
 /// Handler chạy trong **isolate riêng** khi app ở nền/đã tắt. Bắt buộc là
 /// top-level function + @pragma('vm:entry-point') nếu không release build sẽ
-/// tree-shake mất. Ở đây chỉ log: Android tự vẽ notification cho message có
-/// khối `notification`, không cần FE làm gì thêm.
+/// tree-shake mất.
+///
+/// Mặc định (mọi loại trừ CALL): chỉ log — Android tự vẽ notification cho
+/// message có khối `notification`, không cần FE làm gì thêm.
+///
+/// Riêng `referenceType=CALL` + `callEventType=incoming` (xem `API_DOCS.md`
+/// mục Calls > Push): BE gửi **data-only message** (không có khối
+/// `notification`) đúng cho mục đích này — Android không tự vẽ gì, FE tự
+/// dựng notification `fullScreenIntent` để mở thẳng màn nhận cuộc gọi kể cả
+/// lúc khoá máy/app đã bị kill hẳn. `WidgetsFlutterBinding.ensureInitialized()`
+/// bắt buộc phải gọi trước khi dùng `flutter_local_notifications` từ isolate
+/// nền này (isolate riêng, khác isolate chính của app).
 @pragma('vm:entry-point')
 Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
-  debugPrint('Push(bg): ${message.messageId} data=${message.data}');
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Push(bg): Firebase init skipped/failed: $e');
+  }
+
+  final n = message.notification;
+  debugPrint(
+    'Push(bg): ${message.messageId} notification='
+    '${n == null ? 'null' : '${n.title}|${n.body}'} data=${message.data}',
+  );
+  final type = (message.data['type'] ?? message.data['referenceType'] ?? '')
+      .toString()
+      .toUpperCase();
+  final eventType = (message.data['callEventType'] ?? '')
+      .toString()
+      .toLowerCase();
+  if (type != 'CALL' || eventType != 'incoming') return;
+
+  final callId =
+      message.data['callId']?.toString() ??
+      message.data['referenceId']?.toString() ??
+      '';
+  if (callId.isEmpty) return;
+  debugPrint('Push(bg): incoming CALL -> show full-screen callId=$callId');
+  await LocalNotificationService.instance.showIncomingCall(
+    callId: callId,
+    callerName:
+        message.data['callerName']?.toString() ??
+        message.data['title']?.toString() ??
+        'Thành viên',
+  );
 }
 
 /// FCM push — kênh DUY NHẤT nhận được thông báo khi **app ở nền hoặc đã tắt**
@@ -45,18 +87,28 @@ class PushService {
         return;
       }
 
-      FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
-
       // App đang mở: FCM KHÔNG tự vẽ notification → tự bắn bằng local
       // notification để vẫn có chuông + khay như lúc ở nền.
       FirebaseMessaging.onMessage.listen((m) {
         final n = m.notification;
+        debugPrint(
+          'Push(fg): ${m.messageId} notification='
+          '${n == null ? 'null' : '${n.title}|${n.body}'} data=${m.data}',
+        );
+        final type = (m.data['type'] ?? m.data['referenceType'] ?? '')
+            .toString()
+            .toUpperCase();
+        // Cuộc gọi đến lúc app đang mở: socket `call:incoming` (CallProvider,
+        // xem family_shell.dart) đã tự mở IncomingCallScreen theo thời gian
+        // thực, nhanh hơn hẳn push. Bắn thêm banner ở đây là thừa — chồng lên
+        // đúng lúc màn cuộc gọi đến vừa mở, không phải lỗi nhưng gây rối mắt.
+        if (type == 'CALL') return;
         final title = n?.title ?? m.data['title'] ?? 'Family Care';
         final body = n?.body ?? m.data['body'] ?? '';
         LocalNotificationService.instance.show(
           title: title,
           body: body,
-          isSos: (m.data['type'] ?? '').toString().toUpperCase() == 'SOS',
+          isSos: type == 'SOS',
           payload: _payloadOf(m),
         );
       });

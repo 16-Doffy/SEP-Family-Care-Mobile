@@ -8,4 +8,9 @@
          shortcutLongLabel hiện trong menu giữ icon app. -->
     <string name="shortcut_sos_short">Gửi SOS</string>
     <string name="shortcut_sos_long">Gửi SOS khẩn cấp</string>
+
+    <!-- Hiện trong Cài đặt > Trợ năng của Android khi người dùng bật dịch vụ
+         này — phải nói thật, đúng những gì app làm (chỉ đọc tên màn hình
+         đang mở, không đọc nội dung màn hình nào). -->
+    <string name="emergency_sos_watcher_description">Family Care theo dõi khi màn hình Cấp cứu khẩn cấp của điện thoại xuất hiện (ví dụ sau khi bấm nút nguồn nhiều lần), để tự động báo ngay cho gia đình mà không cần mở app. Chỉ hoạt động trên một số dòng máy Oppo/Realme/OnePlus (ColorOS). Family Care không đọc nội dung màn hình hay bất kỳ ứng dụng nào khác.</string>
 </resources>

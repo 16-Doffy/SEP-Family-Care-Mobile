@@ -878,10 +878,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// Gọi video cho hội thoại 1-1 đang mở — người khởi tạo vào phòng LiveKit
-  /// ngay (không chờ bắt máy), khớp `POST /calls` của BE.
+  /// ngay (không chờ bắt máy), khớp `POST /calls` của BE. BE không chặn
+  /// `GROUP`, nên UI truyền thêm metadata hội thoại để màn gọi tự render grid.
   Future<void> _startCall() async {
     final conv = context.read<ChatProvider>().active;
     if (_startingCall || conv == null) return;
+    final myUserId = context.read<AuthProvider>().user?.id ?? '';
     setState(() => _startingCall = true);
     try {
       final session = await context.read<CallProvider>().initiate(conv.id);
@@ -890,14 +892,28 @@ class _ChatScreenState extends State<ChatScreen> {
         MaterialPageRoute(
           builder: (_) => ActiveCallScreen(
             session: session,
-            peerName: conv.displayName(
-              context.read<AuthProvider>().user?.id ?? '',
-            ),
+            peerName: conv.displayName(myUserId),
+            conversationName: conv.displayName(myUserId),
+            conversationType: conv.type,
+            participantNames: {
+              for (final p in conv.participants)
+                if (p.userId != myUserId) p.memberId: p.name,
+            },
           ),
         ),
       );
     } catch (e) {
-      _snackErr(e);
+      // Dùng CallProvider.messageOf() thay vì _snackErr(e) chung: map theo
+      // `code` ổn định (vd CALL_ALREADY_ACTIVE → "Đang có cuộc gọi khác
+      // trong hội thoại này."), không phải message thô của BE — đây là chỗ
+      // trước đây bị bỏ sót nên báo "đang bận" không rõ ràng.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(CallProvider.messageOf(e)),
+          backgroundColor: AppColors.danger,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _startingCall = false);
     }
@@ -1036,7 +1052,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         centerTitle: false,
         actions: [
-          if (chat.active?.type == 'PRIVATE')
+          if (chat.active != null && chat.active?.isArchived != true)
             IconButton(
               tooltip: 'Gọi video',
               icon: _startingCall
@@ -1059,9 +1075,9 @@ class _ChatScreenState extends State<ChatScreen> {
               color: AppColors.textMuted,
               size: 21,
             ),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ChatSearchScreen()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const ChatSearchScreen())),
           ),
           IconButton(
             tooltip: 'Nội dung đã chia sẻ',
@@ -1320,6 +1336,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _bubble(ChatMessage m, bool isMe, bool showSender) {
+    // Log cuộc gọi: dòng hệ thống giữa màn, không phải bong bóng chat — để
+    // không lẫn với tin nhắn thường, và vì BE trả 400 khi Sửa/Thả cảm
+    // xúc/Ghim loại tin này (API_DOCS.md mục Calls > "Message log") nên
+    // không gắn onLongPress mở menu như tin thường.
+    if (m.messageType == 'CALL') return _callLogRow(m);
     // Tin an toàn nhanh: bubble cam nổi bật, chữ tối dù là tin của mình
     final isSos = m.messageType == 'SOS_QUICK_MESSAGE' && !m.isDeleted;
     // Gộp reaction theo payload: {reaction: count}
@@ -1600,6 +1621,43 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Dòng log cuộc gọi (nhỡ/kết thúc/từ chối/huỷ) — nội dung chữ do BE sinh
+  /// sẵn (`API_DOCS.md`: "chuỗi tóm tắt do BE sinh sẵn trong content — FE
+  /// hiển thị thẳng, không tự tính"), FE chỉ chọn icon/màu qua từ khoá "nhỡ"
+  /// để không phải đoán tên enum/field chưa được xác nhận cho từng trạng
+  /// thái khác (BE chưa khai đủ trong Swagger).
+  Widget _callLogRow(ChatMessage m) {
+    final isMissed = m.content.contains('nhỡ');
+    final color = isMissed ? AppColors.danger : AppColors.textMuted;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.neutralBg,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isMissed ? Icons.call_missed_rounded : Icons.videocam_rounded,
+                size: 14,
+                color: color,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                m.content,
+                style: GoogleFonts.inter(fontSize: 12, color: color),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

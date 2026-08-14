@@ -1,6 +1,6 @@
 package com.familycare.family_care
 
-import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -49,7 +49,8 @@ class MainActivity : FlutterActivity() {
                             "running" to SosGuardService.running,
                             "shakeEnabled" to SosGuardService.shakeEnabled,
                             "fallEnabled" to SosGuardService.fallEnabled,
-                            "fullScreenIntentGranted" to hasFullScreenIntentPermission(),
+                            "fullScreenIntentGranted" to SosAlertLauncher.hasFullScreenIntentPermission(this),
+                            "emergencyWatcherEnabled" to isEmergencyWatcherEnabled(),
                         ),
                     )
                 }
@@ -61,6 +62,11 @@ class MainActivity : FlutterActivity() {
                     openFullScreenIntentSettings()
                     result.success(null)
                 }
+                "openAccessibilitySettings" -> {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    result.success(null)
+                }
+                "isEmergencyWatcherEnabled" -> result.success(isEmergencyWatcherEnabled())
                 else -> result.notImplemented()
             }
         }
@@ -100,14 +106,16 @@ class MainActivity : FlutterActivity() {
         startForegroundCompat(Intent(this, CallGuardService::class.java))
     }
 
-    /// Từ Android 14 (API 34), app phải được người dùng cấp thủ công mới mở
-    /// được Activity full-screen từ notification khi máy khóa/nền. Kiểm tra
-    /// đúng bằng `canUseFullScreenIntent()` — máy cũ hơn không có giới hạn
-    /// này nên luôn coi như đã có quyền.
-    private fun hasFullScreenIntentPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
-        val manager = getSystemService(NotificationManager::class.java)
-        return manager.canUseFullScreenIntent()
+    /// So khớp `ENABLED_ACCESSIBILITY_SERVICES` (danh sách phân tách bởi `:`)
+    /// để biết người dùng đã tự bật EmergencySosWatcherService trong Cài đặt
+    /// > Trợ năng chưa — app không có cách nào tự bật hộ, chỉ đọc trạng thái.
+    private fun isEmergencyWatcherEnabled(): Boolean {
+        val expected = ComponentName(this, EmergencySosWatcherService::class.java).flattenToString()
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        ) ?: return false
+        return enabled.splitToSequence(':').any { it.equals(expected, ignoreCase = true) }
     }
 
     private fun openFullScreenIntentSettings() {

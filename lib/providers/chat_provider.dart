@@ -62,13 +62,19 @@ class ChatMessage {
   final String senderUserId;
   final String senderName;
   final String content;
-  final String messageType; // TEXT | IMAGE | FILE | LOCATION | SOS_QUICK_MESSAGE
+  // TEXT | IMAGE | FILE | LOCATION | SOS_QUICK_MESSAGE | CALL
+  final String messageType;
   final DateTime? sentAt;
   final bool isDeleted;
   final bool isEdited;
   final bool isPinned;
   final List<ChatAttachment> attachments;
   final List<ChatReaction> reactions;
+
+  /// Chỉ có khi [messageType] là `CALL` — trỏ tới `Call.id` (xem
+  /// `call_provider.dart`). BE xác nhận field này tồn tại nhưng **chưa khai
+  /// trong Swagger** (`API_DOCS.md` mục Calls > "Message log").
+  final String? relatedCallId;
 
   const ChatMessage({
     required this.id,
@@ -83,6 +89,7 @@ class ChatMessage {
     this.isPinned = false,
     this.attachments = const [],
     this.reactions = const [],
+    this.relatedCallId,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) {
@@ -110,6 +117,7 @@ class ChatMessage {
           .whereType<Map>()
           .map((e) => ChatReaction.fromJson(Map<String, dynamic>.from(e)))
           .toList(),
+      relatedCallId: j['relatedCallId']?.toString(),
     );
   }
 }

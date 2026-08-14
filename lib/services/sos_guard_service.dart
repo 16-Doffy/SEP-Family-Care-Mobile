@@ -15,11 +15,18 @@ class SosGuardStatus {
   /// `true`. UI dùng cờ này để hiện nút "Cấp quyền" khi cần.
   final bool fullScreenIntentGranted;
 
+  /// Người dùng đã tự bật `EmergencySosWatcherService` trong Cài đặt > Trợ
+  /// năng chưa — app không tự bật hộ được, chỉ đọc trạng thái để hiện đúng
+  /// UI. Luôn `false` trên máy không phải ColorOS (không sai, chỉ là tính
+  /// năng này không có tác dụng ở đó — xem `EmergencySosMatcher`).
+  final bool emergencyWatcherEnabled;
+
   const SosGuardStatus({
     required this.running,
     required this.shakeEnabled,
     required this.fallEnabled,
     this.fullScreenIntentGranted = true,
+    this.emergencyWatcherEnabled = false,
   });
 
   factory SosGuardStatus.fromMap(Map<Object?, Object?> map) => SosGuardStatus(
@@ -27,6 +34,7 @@ class SosGuardStatus {
     shakeEnabled: map['shakeEnabled'] == true,
     fallEnabled: map['fallEnabled'] == true,
     fullScreenIntentGranted: map['fullScreenIntentGranted'] != false,
+    emergencyWatcherEnabled: map['emergencyWatcherEnabled'] == true,
   );
 
   static const off = SosGuardStatus(
@@ -96,5 +104,26 @@ class SosGuardService {
   Future<void> openFullScreenIntentSettings() async {
     if (!_supported) return;
     await _channel.invokeMethod<void>('openFullScreenIntentSettings');
+  }
+
+  /// Mở Cài đặt > Trợ năng của Android để người dùng tự bật
+  /// `EmergencySosWatcherService` — app không có cách nào tự bật hộ, đây là
+  /// quyền hệ thống chặn không cho làm vậy.
+  Future<void> openAccessibilitySettings() async {
+    if (!_supported) return;
+    await _channel.invokeMethod<void>('openAccessibilitySettings');
+  }
+
+  /// Đọc riêng trạng thái bật/tắt của `EmergencySosWatcherService` — dùng khi
+  /// chỉ cần refresh 1 cờ (ví dụ lúc quay lại app sau khi vào Cài đặt hệ
+  /// thống) mà không cần gọi lại toàn bộ [getStatus].
+  Future<bool> isEmergencyWatcherEnabled() async {
+    if (!_supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('isEmergencyWatcherEnabled') ??
+          false;
+    } on MissingPluginException {
+      return false;
+    }
   }
 }

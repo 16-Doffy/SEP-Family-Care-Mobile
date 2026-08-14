@@ -242,9 +242,12 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   `connect()` tự dọn phòng cũ trước — không bao giờ để tồn tại 2 phòng cùng lúc.
 - ✅ **[3c xong 12/08]** `lib/screens/shared/incoming_call_screen.dart` (Từ chối/Nghe) và
   `active_call_screen.dart` (video người kia phủ kín màn qua `VideoTrackRenderer`, video mình khung nhỏ
-  cố định góc trên-phải, mic/camera/kết thúc). Chỉ 1-1: không lưới nhiều người, không chia sẻ màn hình,
-  không ghi hình, không chat trong cuộc gọi. Nút gọi ở `chat_screen.dart` (AppBar) chỉ hiện khi
-  `conversation.type == 'PRIVATE'`.
+  cố định góc trên-phải, mic/camera/kết thúc).
+- ✅ **[Group call FE xong 12/08]** BE không chặn `GROUP` nên FE đã mở nút gọi cho cả hội thoại nhóm
+  đang active, truyền metadata participant vào `ActiveCallScreen`, đổi remote track sang map theo
+  `participant.identity = memberId`, và render grid cho gọi nhóm. 1-1 vẫn giữ layout cũ; group không tự
+  đóng màn chỉ vì một participant rời phòng, chỉ đóng khi phòng không còn remote participant/có `call:ended`.
+  Chưa có invite thêm người trong lúc gọi, chia sẻ màn hình, ghi hình hoặc chat trong cuộc gọi.
 - ✅ **[3d xong 12/08]** `CallProvider` đăng ký vào cây provider ở `main.dart`; `startRealtime()`/`stopRealtime()`
   nối `ChatSocketService` theo đúng khuôn `NotificationProvider`. `family_shell.dart` gọi `startRealtime()`
   lúc mở app (sống suốt phiên như `/notifications`), `call:incoming` → mở `IncomingCallScreen` — **tự lọc bỏ
@@ -257,6 +260,28 @@ Không có event client→server nào cho call; mọi hành động đi qua REST
   foreground service + `FOREGROUND_SERVICE_MICROPHONE`/`CAMERA` (Android 14+), gom vào cùng đợt foreground
   service của tính năng SOS (nhánh `sos-shake`) để không viết hai lần. **Đủ 4 giai đoạn (GĐ1–4) — còn lại
   chỉ là giới hạn nền này.**
+- **Giới hạn KHÁC, đo được 12/08 trên máy Oppo + emulator thật — cuộc gọi ĐẾN khi app đang nền —
+  ✅ BE ĐÃ GỠ CHỐT 12/08 (đợt 3):** `IncomingCallScreen` trước đó chỉ tự mở khi app đang **foreground**
+  với socket `/chat` đang sống (`family_shell.dart._onIncomingCall`, xem 3d); app backgrounded thì
+  `call:incoming` không tới được Flutter, chỉ có notification FCM thường, không tự mở màn nào. FE đã
+  nối tap `referenceType=CALL` → `/incoming-call/:token?callId=...` → `GET /calls/{callId}` → dựng
+  `IncomingCallScreen` nếu call còn live (12/08), nhưng phần tự bung full-screen khi app nền vẫn
+  chặn ở việc BE gửi FCM dạng `notification` message.
+  **BE xác nhận đã đổi (đợt 3, 12/08):** push "cuộc gọi đến" (`referenceType=CALL`, lúc `initiate()`)
+  nay là **data-only message** (không có khối `notification`, Android không tự vẽ) — thiết kế opt-in
+  qua field `dataOnly` trong `EphemeralNotificationInput`, chỉ `CallsService.initiate()` bật, không
+  ảnh hưởng `referenceType` khác. Cấu trúc `data` nhận được, xem mục "Push" bên dưới.
+  ⚠️ **Chỉ có hiệu lực trên Android** — iOS cần VoIP Push (PushKit), cơ chế khác hẳn, ngoài phạm vi.
+  ✅ **13/08 — Đã code + đã sửa lỗi + đã xác nhận hoạt động đúng bằng cuộc gọi thật lúc máy đang
+  KHOÁ MÀN HÌNH** (`local_notification_service.dart` + `push_service.dart`, dùng
+  `flutter_local_notifications` thay vì Kotlin/MethodChannel — lý do kỹ thuật + toàn bộ diễn biến
+  debug xem `KE_HOACH_VIDEO_CALL_NHOM_VA_CUOC_GOI_DEN_NEN_2026-08-12.md` mục 9–10). Lỗi ban đầu:
+  `LocalNotificationService.init()` gọi `requestNotificationsPermission()` cần Activity, nhưng
+  `firebaseBackgroundHandler` chạy trong isolate nền không có Activity → ném exception chặn
+  `_plugin.show()` không bao giờ chạy tới — đã sửa bằng try/catch. **Còn thiếu:** test ca app bị
+  kill hẳn (không chỉ backgrounded), test trên máy Oppo/ColorOS thật (mọi test 13/08 đều trên
+  emulator), nút Từ chối trên màn full-screen-intent bấm không phản ứng lúc test (chưa rõ bug thật
+  hay do thao tác emulator) — xem checklist đầy đủ ở mục 10.4 file kế hoạch.
 
 **LiveKit:** `participant.identity` = **`memberId`** (KHÔNG phải `userId`). Token **TTL 10 phút**, dùng lại được để reconnect
 trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố định toàn hệ thống (ENV `LIVEKIT_URL`).
@@ -264,14 +289,46 @@ trong 10 phút, không bắt buộc gọi `join` lần nữa. `livekitUrl` cố 
 
 **Push:** `referenceType = "CALL"` (Swagger đã bổ sung vào `NotificationResponseDto`, nay 12 giá trị), `referenceId = callId`.
 Gửi cho mọi participant trừ người gọi, đúng 1 lần lúc khởi tạo. Khi timeout `MISSED`, người **chưa từng bắt máy** nhận thêm
-1 push `body: "Cuộc gọi nhỡ"`. Các case kết thúc khác (`ENDED`/`CANCELED`/`DECLINED`) **không** có push riêng.
+1 push riêng. Các case kết thúc khác (`ENDED`/`CANCELED`/`DECLINED`) **không** có push riêng.
+
+**✅ Xác nhận BE 12/08 (đợt 3) — 2 loại push CALL khác nhau về cách gửi, phân biệt bằng `callEventType`:**
+
+- **`callEventType: "incoming"`** (lúc `initiate()`) — **data-only message** (không có khối `notification`,
+  Android không tự vẽ, FE toàn quyền dựng full-screen-intent qua `firebaseBackgroundHandler`). Khối `data`:
+  ```json
+  {
+    "referenceType": "CALL", "referenceId": "<callId>", "callId": "<callId>",
+    "conversationId": "<conversationId>", "callerName": "<tên người gọi>",
+    "conversationType": "PRIVATE hoặc GROUP", "conversationName": "<rỗng nếu PRIVATE>",
+    "callEventType": "incoming", "title": "<tên người gọi>", "body": "Cuộc gọi video đến",
+    "notificationId": "", "type": "CALL", "familyId": "<familyId>"
+  }
+  ```
+- **`callEventType: "missed"`** ("Cuộc gọi nhỡ", lúc timeout `MISSED`) — **vẫn là notification message
+  bình thường** (Android tự vẽ, không cần full-screen-intent) — cố ý giữ nguyên vì đây chỉ là thông báo
+  thông tin, không cần hành động ngay. Khối `data` tương tự nhưng không có `callerName`:
+  ```json
+  {
+    "referenceType": "CALL", "referenceId": "<callId>", "callId": "<callId>",
+    "conversationId": "<conversationId>", "conversationType": "PRIVATE hoặc GROUP",
+    "conversationName": "<tên hội thoại>", "callEventType": "missed",
+    "title": "<tên người gọi>", "body": "Cuộc gọi nhỡ"
+  }
+  ```
+- Nguồn: `CAU_HOI_BE_VIDEO_CALL_NHOM_VA_PUSH_2026-08-12.md` (đã có trả lời đầy đủ) + `CALLS_GUIDE.md` mục 6 của BE.
+  **FE chưa code phần dựng full-screen-intent từ payload này** — xem giới hạn "cuộc gọi ĐẾN khi app đang nền" ở trên.
 
 **Message log:** `messageType: CALL`, `relatedCallId` là field **top-level** trên Message (schema chat chưa khai nên chưa thấy
 trong Swagger). Chuỗi tóm tắt ("Cuộc gọi video · 5:32") **do BE sinh sẵn** trong `content` — FE hiển thị thẳng, không tự tính.
 Loại tin này **không cho** sửa/thả cảm xúc/ghim (BE trả 400) → UI phải ẩn các nút đó.
 
-**Gọi nhóm:** BE **không chặn** hội thoại `GROUP`; timeout 30 giây áp dụng như nhau cho cả 1-1 lẫn nhóm. Có hiện nút gọi cho
-nhóm hay không là **lựa chọn UI của FE**. Phần còn thiếu cho gọi nhóm chỉ là UX (`NO_ANSWER` riêng từng người), không phải bug chặn.
+**Gọi nhóm:** BE **không chặn** hội thoại `GROUP`; timeout 30 giây áp dụng như nhau cho cả 1-1 lẫn nhóm. FE đã mở
+nút gọi nhóm và render grid nhiều participant. Phần còn thiếu là UX nâng cao (`NO_ANSWER` riêng từng người,
+invite thêm người trong lúc gọi), không phải bug chặn.
+**✅ Xác nhận BE 12/08:** `initiate()` chỉ check `>= 2` người hoạt động, **không có giới hạn cứng** số người tối
+đa trong code BE — giới hạn thực tế (nếu có) tới từ gói LiveKit Cloud đang dùng, không phải BE tự đặt.
+`GET /calls/{callId}` dùng chung `callInclude` với `POST /calls` nên `participants[]` **đầy đủ y hệt**, không
+rút gọn theo số người — FE dùng đúng giả định này ở `IncomingCallEntryScreen`.
 
 ### Notifications — **[CHỐT BE 2026-08-09: đủ contract, hết đoán]**
 - `GET /api/v1/families/{familyId}/notifications` — Danh sách thông báo của thành viên hiện tại. Query `unreadOnly` (bool).

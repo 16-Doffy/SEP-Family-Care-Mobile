@@ -29,24 +29,33 @@ void main() {
     }
   });
 
-  test('mỗi role về đúng shell của mình', () {
-    expect(routeFor(UserRole.manager), '/manager/chat');
-    expect(routeFor(UserRole.deputy), '/deputy/chat');
-    expect(routeFor(UserRole.member), '/member/chat');
+  test('có callId thì mở entry route cuộc gọi đến', () {
+    for (final role in UserRole.values) {
+      final path = routeFor(role)!;
+      expect(path, startsWith('/incoming-call/'));
+      expect(path, contains('callId=call-1'));
+    }
   });
 
   test('thiếu referenceId vẫn mở được khung chat', () {
-    // Màn đích hiện chưa dùng tới callId, nên push thiếu field cũng không
-    // được dẫn tới ngõ cụt.
+    // Không có callId thì không fetch được `GET /calls/{callId}`; fallback về
+    // chat theo role để người dùng vẫn thấy dòng log CALL nếu BE đã tạo.
     for (final id in [null, '']) {
       expect(routeFor(UserRole.member, referenceId: id), '/member/chat');
     }
   });
 
-  test('đích là nhánh của shell → nơi gọi phải dùng context.go', () {
-    // Dùng context.push cho path thuộc StatefulShellRoute sẽ dựng shell thứ
-    // hai trùng GlobalKey và crash Navigator (xem ghi chú trong CLAUDE.md).
-    expect(NotificationRouter.isShellBranch(routeFor(UserRole.manager)!), isTrue);
+  test('CALL có callId là overlay route → nơi gọi dùng context.push', () {
+    expect(
+      NotificationRouter.isShellBranch(routeFor(UserRole.manager)!),
+      isFalse,
+    );
+    expect(
+      NotificationRouter.isShellBranch(
+        routeFor(UserRole.manager, referenceId: null)!,
+      ),
+      isTrue,
+    );
   });
 
   test('giá trị lạ vẫn fail-open, không crash', () {

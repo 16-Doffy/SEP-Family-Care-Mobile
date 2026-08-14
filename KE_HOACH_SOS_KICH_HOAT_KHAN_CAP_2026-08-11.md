@@ -8,9 +8,22 @@ xem `API_DOCS.md` mục Calls. **Giới hạn còn lại của Call chính là t
 gọi rớt khi khoá màn hình/xuống nền giữa chừng.
 
 > ### ⚠️ ĐỌC MỤC 1 TRƯỚC — hướng làm đã ĐỔI so với ý tưởng ban đầu
-> Yêu cầu gốc là "bấm nút nguồn 5 lần". **Đã thử nghiệm thực tế và phải loại bỏ** — xem mục 1.
-> Cơ chế chính nay là **lắc mạnh điện thoại**. Phần hạ tầng (foreground service, mở màn đè lên màn
-> khóa) giữ nguyên vì dùng chung cho mọi cơ chế kích hoạt.
+> Yêu cầu gốc là "bấm nút nguồn 5 lần chặn phím cứng". **Đã thử nghiệm thực tế và phải loại bỏ** —
+> xem mục 1. Cơ chế chính là **lắc mạnh điện thoại**. Phần hạ tầng (foreground service, mở màn đè
+> lên màn khóa) giữ nguyên vì dùng chung cho mọi cơ chế kích hoạt.
+>
+> **Cập nhật 12/08 — có Cơ chế B riêng, KHÔNG mâu thuẫn với mục 1.** Người dùng vẫn muốn giữ thao
+> tác "bấm nguồn 5 lần", nhưng bằng một kỹ thuật khác hẳn cái đã bị loại: thay vì chặn phím nguồn
+> (bị hệ thống lọc trước, xem 1.2), app **theo dõi sự kiện đổi màn hình đang hiển thị**
+> (`AccessibilityService` + `TYPE_WINDOW_STATE_CHANGED`) để phát hiện lúc **màn Emergency SOS của
+> ColorOS đã hiện lên**, rồi tự gửi SOS của app ngay lập tức. Xem mục 13.
+>
+> ### 🛑 CẬP NHẬT 12/08 (lần 2) — TEST TRÊN MÁY OPPO THẬT: KHÔNG BẬT ĐƯỢC TÍNH NĂNG
+> Đã test trên Oppo CPH2159 thật. Android 13's "Restricted settings" chặn việc bật
+> `EmergencySosWatcherService` cho mọi app cài qua APK trực tiếp — đã thử hết các cách mở khoá
+> (App info, ADB `settings put`, ADB `appops set`, đổi installer giả Play Store) đều thất bại.
+> **Cơ chế B hiện KHÔNG demo được trên máy đang có**, dù code không lỗi — đây là chính sách hệ điều
+> hành, không phải bug. Chi tiết đầy đủ + hướng ra còn lại: xem mục **13.7**.
 
 > ### 📎 GỘP THÊM 12/08 — Video Call cũng cần foreground service
 > Đây là **lý do gộp hai việc vào một kế hoạch**: cả SOS (mục 1–11) và Call (mục 12, thêm mới) đều cần
@@ -482,7 +495,9 @@ không có cách rút ngắn — và ca 6, 7 (đi bộ, đi xe máy) cần ra ng
 
 ## 11. Những gì kế hoạch này KHÔNG giải quyết — nói thẳng
 
-- **Bấm nút nguồn 5 lần** → **không làm được**, hệ thống đã chiếm. Xem mục 1.
+- **Bấm nút nguồn 5 lần theo kiểu chặn phím cứng** → **không làm được**, hệ thống lọc phím trước
+  khi tới app. Xem mục 1. **Có cách khác** (theo dõi màn hình Emergency SOS xuất hiện thay vì chặn
+  phím) — xem mục 13, nhưng giới hạn theo máy (chỉ ColorOS) và chưa kiểm thử máy thật.
 - **Máy đã tắt nguồn hẳn** → không có cách nào. Không phần mềm nào làm được.
 - **OEM giết service** → giảm thiểu bằng hướng dẫn bỏ tối ưu pin, **không loại bỏ được**.
 - **Không có mạng** → SOS không gửi đi được. `SOSScreen` đã có dialog báo lỗi kèm tọa độ GPS để
@@ -665,3 +680,197 @@ mạng), cuộc gọi video ưu tiên **đơn giản, ít rủi ro** hơn — vu
 - **OEM diệt service mạnh tay** (Xiaomi/Oppo tối ưu pin) — giống mục 11 của SOS, giảm thiểu bằng hướng
   dẫn bỏ tối ưu pin, không loại bỏ được hoàn toàn.
 - **Cuộc gọi khi máy đang trong cuộc gọi thoại GSM khác** — ngoài phạm vi, chưa có yêu cầu xử lý.
+
+---
+
+## 13. MỞ RỘNG 12/08 — Cơ chế B: bám theo Emergency SOS hệ thống (ColorOS)
+
+### 13.1 Bối cảnh — vì sao thêm cái này dù mục 1 đã loại "bấm nguồn 5 lần"
+
+Test thực tế 12/08 trên Oppo: bấm nguồn 5 lần, hệ thống hiện màn Emergency SOS riêng (đúng như mục
+1 mô tả), nhưng **app không phát được cảnh báo của mình** — vì trước đó app không có cơ chế nào để
+biết chuyện này vừa xảy ra. Người dùng yêu cầu rõ: **giữ thao tác "bấm nguồn 5 lần", nhưng app phải
+tự phát hiện được lúc màn Emergency SOS xuất hiện rồi bắn SOS luôn**.
+
+Đây **không phải quay lại cách đã bị loại ở 1.2**. Cách cũ (`AccessibilityService.onKeyEvent()`)
+chặn *sự kiện phím nguồn* — bị hệ thống lọc trước khi tới bất kỳ app nào, không có cách nào lách.
+Cách mới **không đụng tới phím nguồn**: nó theo dõi *sự kiện đổi cửa sổ đang hiển thị*
+(`TYPE_WINDOW_STATE_CHANGED`) trên toàn hệ thống — một luồng dữ liệu khác, không bị chặn — để nhận
+ra lúc Activity của `com.oplus.sos` (Emergency SOS của ColorOS) vừa lên màn hình, bất kể nó xuất
+hiện do bấm nguồn 5 lần hay do người dùng tự mở tay. Từ đó app không cần biết *cách* màn đó được mở,
+chỉ cần biết *nó đang mở*.
+
+### 13.2 Giới hạn — đã trình bày với người dùng trước khi code (Rule 3)
+
+1. **Chỉ chạy trên ColorOS** (Oppo/Realme/OnePlus) — package `com.oplus.sos` là của riêng ColorOS.
+   Samsung/Xiaomi/Pixel có màn khẩn cấp khác tên gói hoặc không có — trên các máy đó tính năng này
+   **im lặng không làm gì**, không lỗi, không crash.
+2. **Cần quyền `AccessibilityService`** — quyền nặng, người dùng phải tự bật tay trong Cài đặt hệ
+   thống > Trợ năng, app không có cách nào tự bật hộ.
+3. **Xung đột màn hình tại thời điểm phát hiện**: lúc app nhận ra Emergency SOS đang hiện, chính
+   màn đó đang chiếm toàn màn hình — app không thể vẽ đè lên để hỏi "Hủy hay Gửi". Người dùng đã
+   chọn: **gửi ngay, không đếm ngược** (khác hẳn `/sos-quick` vốn có đếm 3 giây + nút Hủy).
+
+### 13.3 Kiến trúc
+
+```
+[Bấm nguồn 5 lần HOẶC tự mở tay]
+              │
+              ▼
+   Android hiện màn Emergency SOS (com.oplus.sos) — của HỆ THỐNG, app không đụng vào
+              │
+              ▼
+   EmergencySosWatcherService (AccessibilityService, canRetrieveWindowContent = false)
+   nhận TYPE_WINDOW_STATE_CHANGED toàn hệ thống
+              │
+              ▼
+   EmergencySosMatcher (class thuần, JVM test được) — khớp package + tên lớp chứa
+   "Emergency" + qua khỏi cooldown 30s
+              │
+              ▼
+   SosAlertLauncher.launch(context, "sos-immediate")
+   (dùng CHUNG hạ tầng full-screen-intent với SosGuardService ở mục 4.3 — đã tách ra
+   object riêng để không lặp code)
+              │
+              ▼
+   MainActivity mở với familycare://app/sos-immediate/<token>
+              │
+              ▼
+   SOSScreen(immediate: true) — GỬI NGAY khi vào màn, không đếm ngược, không nút Hủy
+   (khác /sos-quick — lý do ở 13.2 điểm 3)
+```
+
+### 13.4 File đã thêm/sửa (native Kotlin)
+
+- **Mới** `EmergencySosMatcher.kt` — class thuần không phụ thuộc Android, cùng khuôn với
+  `ShakeDetector`/`FallDetector` ở mục 4.2: nhận `packageName`/`className`/`nowMs` qua tham số, so
+  khớp package `com.oplus.sos` + tên lớp chứa `"Emergency"` (so khớp lỏng bằng substring, không
+  khớp cứng tên lớp đầy đủ, để hedge rủi ro nhớ sai tên lớp chính xác — xem 13.6), cooldown 30 giây
+  giống các detector khác trong repo.
+- **Mới** `EmergencySosWatcherService.kt` — `AccessibilityService`, đăng ký
+  `eventTypes = TYPE_WINDOW_STATE_CHANGED`, `canRetrieveWindowContent = false` (không đọc nội dung
+  màn hình, chỉ biết app/Activity nào đang hiện — tối thiểu hoá quyền xin). Không phải foreground
+  service — vòng đời do hệ thống Trợ năng tự quản.
+- **Mới** `SosAlertLauncher.kt` — tách phần dựng notification `setFullScreenIntent()` (trước đây
+  nằm trong `SosGuardService`, xem 4.3) thành object dùng chung, tham số hoá theo `deepLinkPath`.
+  `SosGuardService` (lắc/té ngã → `sos-quick`) và `EmergencySosWatcherService` (→ `sos-immediate`)
+  giờ gọi cùng một hàm — giữ nguyên cảnh báo quan trọng đã ghi trong code: **không được gọi
+  `pendingIntent.send()` tay**, chỉ để hệ thống tự bắn từ notification (gọi tay bị chặn bởi giới
+  hạn khởi chạy Activity nền của Android, đã từng vấp lỗi này trước đó trong dự án).
+- **Sửa** `SosGuardService.kt` — refactor gọi qua `SosAlertLauncher.launch(this, "sos-quick")`,
+  không đổi hành vi.
+- **Mới** `res/xml/emergency_sos_watcher_config.xml` + string mô tả trong `strings.xml` (hiện trong
+  danh sách Trợ năng của hệ thống — ghi rõ **không đọc nội dung màn hình, không đọc app khác**, chỉ
+  theo dõi app nào đang hiện).
+- **Sửa** `AndroidManifest.xml` — khai `<service>` cho `EmergencySosWatcherService` với
+  `BIND_ACCESSIBILITY_SERVICE`.
+- **Sửa** `MainActivity.kt` — thêm 2 action MethodChannel: `openAccessibilitySettings` (mở
+  `Settings.ACTION_ACCESSIBILITY_SETTINGS`, chỉ mở danh sách chung, không deep-link được thẳng vào
+  service cụ thể vì không có API chuẩn xuyên OEM) và `isEmergencyWatcherEnabled` (đọc
+  `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`, so khớp `ComponentName` — chỉ đọc, không tự bật
+  được).
+
+### 13.5 File đã thêm/sửa (Dart)
+
+- **Sửa** `lib/services/sos_guard_service.dart` — thêm `emergencyWatcherEnabled` vào
+  `SosGuardStatus`, thêm `openAccessibilitySettings()` + `isEmergencyWatcherEnabled()`.
+- **Sửa** `lib/screens/shared/sos_screen.dart` — thêm tham số `immediate` cho `SOSScreen`; khi
+  `true` thì gửi SOS ngay trong `initState` (không đếm ngược), dùng lại nguyên UI loading/đã gửi có
+  sẵn; message phân biệt rõ nguồn gốc ("phát hiện qua màn hình Cấp cứu khẩn cấp của máy").
+- **Sửa** `lib/navigation/app_router.dart` — thêm route `/sos-immediate/:token` + hàm
+  `sosImmediateFreshPath()` (bộ đếm **riêng**, không dùng chung với `_sosQuickSeq`, để hai nguồn bắn
+  gần nhau không bao giờ trùng token — token trùng làm go_router không dựng lại màn, xem lỗi đã ghi
+  ở mục 7 test file `sos_quick_shortcut_test.dart`).
+- **Sửa** `lib/screens/shared/sos_settings_screen.dart` — thêm thẻ riêng "Bám theo Emergency SOS của
+  máy" (không gộp vào thẻ "Bảo vệ SOS" của lắc/té ngã ở mục 4.4 vì đây là cơ chế độc lập, quyền
+  khác nhau): badge trạng thái Đã bật/Chưa bật, giải thích giới hạn ColorOS + gửi ngay không đếm
+  ngược, nút mở Cài đặt Trợ năng. Dùng `WidgetsBindingObserver` để tự refetch trạng thái khi quay
+  lại app sau khi người dùng bật tay trong Cài đặt hệ thống.
+- **Mới** test group trong `test/sos_quick_shortcut_test.dart` — mirror các test của
+  `sosQuickFreshPath` cho `sosImmediateFreshPath`, cộng thêm 1 test khoá riêng: hai bộ đếm không bao
+  giờ sinh ra giá trị trùng nhau.
+
+### 13.6 Đã kiểm chứng — và CHƯA kiểm chứng được trong môi trường này
+
+**Đã chạy sạch (12/08):**
+- `./gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest` — `BUILD SUCCESSFUL`, gồm 5 test
+  JVM mới của `EmergencySosMatcher` (đúng package+lớp → bắn 1 lần rồi bị cooldown chặn; sai package
+  → không bao giờ bắn; đúng package sai tên lớp → không bắn; package/lớp null → không bắn; qua khỏi
+  cooldown → bắn lại được).
+- `flutter analyze --no-fatal-infos` — 0 lỗi trên toàn bộ file Dart đã sửa.
+- `flutter test` — 478/478 pass (tăng từ baseline 464 do thêm test mới, không có test nào đỏ).
+
+**Đã test trên 2 máy ảo (12/08, HOH + MEM):** cài APK, khởi động sạch không crash;
+`EmergencySosWatcherService` được `PackageManager` nhận diện đúng và **chạy thật** khi bật qua
+`settings put secure enabled_accessibility_services` (chỉ làm được trên emulator — xem 13.7); deep
+link `/sos-immediate/:token` vào thẳng `SOSScreen(immediate: true)` **không đếm ngược**, và vô tình
+xác nhận được cả luồng thật tới BE (2 máy ảo có sẵn phiên đăng nhập cũ + GPS mặc định của Google
+Play Services nên SOS gửi thành công, hiện trên bản đồ gia đình, tự đóng khi đóng màn "SOS đã gửi").
+Đây là xác nhận **UI/route/gửi SOS đúng thiết kế**, không phải xác nhận phần phát hiện Emergency SOS
+(emulator không có `com.oplus.sos`).
+
+### 13.7 ⚠️ CHẶN THẬT tìm thấy trên máy Oppo CPH2159 (12/08) — đọc trước khi làm tiếp
+
+Test trên máy Oppo CPH2159 thật (Android 13, ColorOS, bản build `CPH2159_11_F.43`): cài APK debug
+thành công, `EmergencySosWatcherService` được `PackageManager` nhận diện đúng (`dumpsys package`
+thấy `intent-filter` + quyền `BIND_ACCESSIBILITY_SERVICE`, giống hệt trên emulator).
+
+Nhưng khi vào **Cài đặt > Trợ năng > Family Care** để bật, hệ thống chặn ngay bằng hộp thoại:
+
+> **Chế độ cài đặt bị hạn chế** — Để đảm bảo an toàn cho bạn, chế độ cài đặt này hiện bị vô hiệu hoá.
+
+Đây là cơ chế **"Restricted settings" của Android 13+** (chống malware lạm dụng Accessibility Service
+qua app cài ngoài Play Store) — áp dụng cho **mọi** app cài qua APK trực tiếp/ADB, không phải lỗi
+riêng của app này.
+
+**Đã thử mọi cách mở khoá, đều thất bại trên máy này:**
+1. Đường chính thức của AOSP (App info → menu 3 chấm → "Cho phép cài đặt bị hạn chế") — **menu 3
+   chấm trên bản ColorOS này chỉ có "Gỡ cài đặt đối với tất cả người dùng", không có mục đó.**
+2. Cài lại APK với installer giả làm Play Store (`adb install -i com.android.vending`) — không đổi
+   gì, hộp thoại chặn vẫn hiện y hệt.
+3. `adb shell settings put secure enabled_accessibility_services ...` — bị từ chối:
+   `SecurityException: ... requires android.permission.WRITE_SECURE_SETTINGS` (khác hẳn emulator,
+   nơi lệnh này chạy được bình thường vì shell trên emulator có quyền rộng hơn).
+4. `adb shell appops set ... ACCESS_RESTRICTED_SETTINGS allow` (cách lách thường dùng cho case này)
+   — cũng bị từ chối: `SecurityException: uid 2000 does not have MANAGE_APP_OPS_MODES`.
+5. Tìm trong Cài đặt > Mật khẩu & bảo mật, Cài đặt > Ứng dụng, `com.oplus.safecenter` (Trung tâm bảo
+   mật OPPO) — không tìm thấy màn quản lý "ứng dụng bị hạn chế" nào khác để mở khoá từ đó.
+
+**Kết luận thật, không tô hồng:** trên máy demo hiện có, **không có cách nào bật được
+`EmergencySosWatcherService` qua APK cài trực tiếp** — kể cả bằng tay thật (không chỉ do giới hạn
+của việc điều khiển qua ADB, vì các đường ADB-only cũng bị chặn quyền y hệt UI). Nghĩa là **toàn bộ
+Cơ chế B hiện KHÔNG demo được trên máy Oppo CPH2159 này ở dạng APK debug/trực tiếp**, dù code không
+có lỗi — đây là chính sách hệ điều hành, không phải bug.
+
+**Xác nhận bằng tay thật (12/08, không qua ADB):** người dùng tự chạm màn hình máy Oppo thật vào
+Cài đặt > Trợ năng > Family Care rồi bấm nút gạt để bật — hiện **đúng y hệt hộp thoại "Chế độ cài
+đặt bị hạn chế"** như khi test qua ADB, chỉ có nút OK, không có đường nào khác trên hộp thoại đó.
+**Kết luận chốt: đây là chặn thật ở cấp hệ điều hành, không phải do cách ADB giả lập chạm màn hình
+— thao tác tay thật cho kết quả giống hệt.**
+
+**Hướng ra còn lại (ngoài phạm vi phiên này):**
+- Ký + phát hành qua kênh được hệ thống tin cậy (vd Play Store nội bộ/closed testing) thường không bị
+  áp Restricted settings — nhưng khác hẳn cách phát hành APK trực tiếp đang dùng cho đồ án.
+- Máy Android khác/bản ColorOS khác có thể có menu "Cho phép cài đặt bị hạn chế" đầy đủ — **chưa có
+  máy thứ 2 để đối chiếu.**
+
+**Khuyến nghị cho phần bảo vệ:** nói rõ đây là **giới hạn nền tảng đã biết của Android 13+ đối với
+app cài ngoài Play Store**, không phải thiếu sót thiết kế — và nêu nó như một hạn chế thẳng thắn của
+Cơ chế B, tương tự cách mục 1 đã trình bày lý do loại bỏ "chặn phím nguồn". Nếu hội đồng hỏi tại sao
+không demo trực tiếp bấm nguồn 5 lần → trả lời bằng đúng phát hiện này.
+
+**Kịch bản kiểm thử máy thật cần bổ sung vào bảng 7.2:**
+
+| # | Kịch bản | Kỳ vọng | Kết quả 12/08 |
+|---|---|---|---|
+| 13 | Bật Trợ năng cho `EmergencySosWatcherService`, bấm nguồn 5 lần | Màn Emergency SOS của máy hiện, **sau đó** `SOSScreen(immediate)` mở đè lên, SOS gửi tới BE không cần chạm tay | **Không làm được** — bị "Chế độ cài đặt bị hạn chế" chặn từ bước bật Trợ năng, xem 13.7 |
+| 14 | Chưa bật Trợ năng, bấm nguồn 5 lần | Chỉ có màn Emergency SOS của máy, app không phản ứng gì (đúng thiết kế, không phải lỗi) | **Đã test thật (12/08)** — bấm nguồn 5 lần, Trợ năng chưa bật (`enabled_accessibility_services` rỗng, xác nhận qua `adb shell settings get`), app không phản ứng gì, đúng thiết kế |
+| 15 | Bấm nguồn 5 lần 2 lần liên tiếp trong 30 giây | Lần 2 bị cooldown chặn, không gửi 2 SOS trùng | Chưa test được (phụ thuộc ca 13) |
+| 16 | Test trên máy KHÔNG phải ColorOS (nếu có) | Tính năng im lặng không hoạt động, không crash | Chưa có máy khác để test |
+
+**Xác nhận thật ca 14 (12/08):** lúc màn Emergency SOS đang hiện, `adb shell dumpsys activity
+activities` bắt được `topResumedActivity=ActivityRecord{... com.oplus.sos/.ui.EmergencyCallDetailActivity ...}`
+— **lần đầu tiên tên lớp đầy đủ được xác nhận bằng log thật** (`com.oplus.sos.ui.EmergencyCallDetailActivity`),
+không còn chỉ dựa vào trí nhớ như ghi ở 13.6. Lớp này chứa chuỗi `"Emergency"` nên khớp đúng với cách
+so khớp lỏng (substring) mà `EmergencySosMatcher` đang dùng — **giả định thiết kế ban đầu đúng**.
+Màn hình hiện đúng như mô tả ở mục 1.1: tiêu đề "SOS khẩn cấp", 3 số 113/115/114.

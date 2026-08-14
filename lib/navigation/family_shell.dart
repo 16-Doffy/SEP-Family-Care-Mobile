@@ -8,6 +8,7 @@ import '../models/tab_option.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/call_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/tab_config_provider.dart';
@@ -140,6 +141,21 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     // sót cuộc gọi thật; chỉ chặn khi CHẮC CHẮN đó là cuộc gọi của chính mình.
     if (initiatorUserId != null && initiatorUserId == myUserId) return;
 
+    final chat = context.read<ChatProvider>();
+    ChatConversation? conversation;
+    for (final c in chat.conversations) {
+      if (c.id == event.conversationId) {
+        conversation = c;
+        break;
+      }
+    }
+    final participantNames = {
+      for (final p in event.participants)
+        if (p.member?.userId != myUserId) p.memberId: p.displayName,
+    };
+    final isGroup =
+        conversation?.type == 'GROUP' || event.participants.length > 2;
+
     _incomingCallScreenOpen = true;
     Navigator.of(context)
         .push(
@@ -148,6 +164,9 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
               callId: event.callId,
               conversationId: event.conversationId,
               callerName: event.callerName,
+              conversationName: conversation?.displayName(myUserId ?? ''),
+              conversationType: isGroup ? 'GROUP' : 'PRIVATE',
+              participantNames: participantNames,
             ),
           ),
         )
