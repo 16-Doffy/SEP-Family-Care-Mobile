@@ -172,6 +172,7 @@ class AlbumMedia {
   final DateTime? deletedAt;
   final double? latestRiskScore;
   final String? latestModerationSummary;
+  final String? collectionId;
   final List<AlbumTag> tags;
   final Map<String, dynamic> raw;
 
@@ -190,6 +191,7 @@ class AlbumMedia {
     this.deletedAt,
     this.latestRiskScore,
     this.latestModerationSummary,
+    this.collectionId,
     this.tags = const [],
     this.raw = const {},
   });
@@ -259,6 +261,7 @@ class AlbumMedia {
       latestModerationSummary:
           latestModeration?['summary']?.toString() ??
           json['moderationSummary']?.toString(),
+      collectionId: json['collectionId']?.toString(),
       tags: tags,
       raw: json,
     );
@@ -285,6 +288,7 @@ class AlbumMedia {
       latestRiskScore: detail.latestRiskScore ?? latestRiskScore,
       latestModerationSummary:
           detail.latestModerationSummary ?? latestModerationSummary,
+      collectionId: detail.collectionId ?? collectionId,
       tags: replaceTags
           ? detail.tags
           : (detail.tags.isNotEmpty ? detail.tags : tags),
@@ -307,7 +311,40 @@ class AlbumMedia {
     deletedAt: deletedAt,
     latestRiskScore: latestRiskScore,
     latestModerationSummary: latestModerationSummary,
+    collectionId: collectionId,
     tags: nextTags,
     raw: raw,
   );
+}
+
+/// Album/collection ảnh gia đình — gom media theo chủ đề (vd "Đi biển").
+/// Response chưa có schema trong Swagger (chỉ request DTO được document), nên
+/// `mediaCount` được coi là [VERIFY]: có thì hiển thị, không có thì ẩn số đếm.
+class AlbumCollection {
+  final String id;
+  final String name;
+  final String? description;
+  final String? coverMediaId;
+  final DateTime? createdAt;
+  final int? mediaCount;
+
+  const AlbumCollection({
+    required this.id,
+    required this.name,
+    this.description,
+    this.coverMediaId,
+    this.createdAt,
+    this.mediaCount,
+  });
+
+  factory AlbumCollection.fromJson(Map<String, dynamic> json) {
+    return AlbumCollection(
+      id: _str(json['id'] ?? json['collectionId']),
+      name: _str(json['name']),
+      description: json['description']?.toString(),
+      coverMediaId: json['coverMediaId']?.toString(),
+      createdAt: DateTime.tryParse(_str(json['createdAt']))?.toLocal(),
+      mediaCount: (json['mediaCount'] as num?)?.toInt(),
+    );
+  }
 }

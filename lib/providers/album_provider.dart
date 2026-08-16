@@ -17,40 +17,49 @@ class AlbumProvider extends ChangeNotifier {
   /// [ApiClient.addSessionResetListener].
   void resetForNewSession() {
     _items.clear();
+    _collections.clear();
     _loading = false;
     _loadingMore = false;
     _uploading = false;
+    _loadingCollections = false;
     _error = null;
     _page = 1;
     _totalPages = null;
     _mediaType = null;
     _moderationStatus = null;
+    _collectionId = null;
     // Quyền gói về "chưa biết" để fail-open, không áp quyền gia đình cũ.
     _featureAccess = null;
     notifyListeners();
   }
 
   final List<AlbumMedia> _items = [];
+  final List<AlbumCollection> _collections = [];
   bool _loading = false;
   bool _loadingMore = false;
   bool _uploading = false;
+  bool _loadingCollections = false;
   String? _error;
   int _page = 1;
   int _limit = 20;
   int? _totalPages;
   AlbumMediaType? _mediaType;
   AlbumModerationStatus? _moderationStatus;
+  String? _collectionId;
   FeatureAccess? _featureAccess;
 
   List<AlbumMedia> get items => List.unmodifiable(_items);
+  List<AlbumCollection> get collections => List.unmodifiable(_collections);
   bool get loading => _loading;
   bool get loadingMore => _loadingMore;
   bool get uploading => _uploading;
+  bool get loadingCollections => _loadingCollections;
   String? get error => _error;
   int get page => _page;
   int get limit => _limit;
   AlbumMediaType? get mediaType => _mediaType;
   AlbumModerationStatus? get moderationStatus => _moderationStatus;
+  String? get collectionId => _collectionId;
   bool get hasMore =>
       _totalPages == null ? _items.length >= _limit : _page < _totalPages!;
   bool get hasPendingItems => _items.any((m) => m.isPending);
@@ -85,6 +94,7 @@ class AlbumProvider extends ChangeNotifier {
     bool refresh = true,
     AlbumMediaType? mediaType,
     AlbumModerationStatus? moderationStatus,
+    String? collectionId,
     int? limit,
   }) async {
     if (refresh) {
@@ -93,6 +103,7 @@ class AlbumProvider extends ChangeNotifier {
       _totalPages = null;
       _mediaType = mediaType;
       _moderationStatus = moderationStatus;
+      _collectionId = collectionId;
       if (limit != null) _limit = limit;
     } else {
       if (_loadingMore || !hasMore) return;
@@ -104,7 +115,7 @@ class AlbumProvider extends ChangeNotifier {
     try {
       final nextPage = refresh ? 1 : _page + 1;
       final data = await ApiClient.instance.get(
-        '/families/$_fid/albums/media${_qs({'page': nextPage, 'limit': _limit, 'mediaType': _mediaType == null ? null : albumMediaTypeToApi(_mediaType!), 'moderationStatus': _moderationStatus == null ? null : albumModerationToApi(_moderationStatus!)})}',
+        '/families/$_fid/albums/media${_qs({'page': nextPage, 'limit': _limit, 'mediaType': _mediaType == null ? null : albumMediaTypeToApi(_mediaType!), 'moderationStatus': _moderationStatus == null ? null : albumModerationToApi(_moderationStatus!), 'collectionId': _collectionId})}',
       );
       final parsed = _list(
         data,
@@ -199,6 +210,7 @@ class AlbumProvider extends ChangeNotifier {
     required String filePath,
     String? caption,
     AlbumVisibilityScope visibilityScope = AlbumVisibilityScope.family,
+    String? collectionId,
   }) async {
     _uploading = true;
     _error = null;
@@ -211,6 +223,8 @@ class AlbumProvider extends ChangeNotifier {
           if (caption != null && caption.trim().isNotEmpty)
             'caption': caption.trim(),
           'visibilityScope': albumVisibilityToApi(visibilityScope),
+          if (collectionId != null && collectionId.isNotEmpty)
+            'collectionId': collectionId,
         },
       );
       await fetchMedia(refresh: true);
@@ -218,6 +232,85 @@ class AlbumProvider extends ChangeNotifier {
       _uploading = false;
       notifyListeners();
     }
+  }
+
+  /// Phân tích nháp media trước khi upload thật — BE không lưu DB/R2, không
+  /// chạy face-scan. Trả nguyên response (`recommendation`, `analysisStatus`,
+  /// `warnings`...) cho màn hình tự quyết định hiển thị gì, vì schema response
+  /// chưa được document trong Swagger.
+  Future<Map<String, dynamic>> analyzeDraft({
+    required String filePath,
+    String? collectionId,
+    String? topic,
+    String? declaredContentIntent,
+  }) {
+    return ApiClient.instance.uploadFile(
+      path: '/families/$_fid/albums/media/analyze-draft',
+      filePath: filePath,
+      fields: {
+        if (collectionId != null && collectionId.isNotEmpty)
+          'collectionId': collectionId,
+        if (topic != null && topic.trim().isNotEmpty) 'topic': topic.trim(),
+        if (declaredContentIntent != null && declaredContentIntent.isNotEmpty)
+          'declaredContentIntent': declaredContentIntent,
+      },
+    );
+  }
+
+  Future<void> fetchCollections() async {
+    _loadingCollections = true;
+    notifyListeners();
+    try {
+      final data = await ApiClient.instance.get(
+        '/families/$_fid/albums/collections${_qs({'limit': 100})}',
+      );
+      final parsed = _list(
+        data,
+      ).map(AlbumCollection.fromJson).where((c) => c.id.isNotEmpty).toList();
+      _collections
+        ..clear()
+        ..addAll(parsed);
+    } catch (_) {
+      // Giữ danh sách cũ nếu tải lại thất bại — không xóa collection đang có.
+    } finally {
+      _loadingCollections = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> createCollection({
+    required String name,
+    String? description,
+  }) async {
+    await ApiClient.instance.post('/families/$_fid/albums/collections', {
+      'name': name.trim(),
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+    });
+    await fetchCollections();
+  }
+
+  Future<void> updateCollection(
+    String collectionId, {
+    String? name,
+    String? description,
+  }) async {
+    await ApiClient.instance
+        .patch('/families/$_fid/albums/collections/$collectionId', {
+          if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+          if (description != null) 'description': description.trim(),
+        });
+    await fetchCollections();
+  }
+
+  /// Chỉ xóa mềm collection — media đã upload vẫn còn, giữ nguyên
+  /// `collectionId` để audit (đúng theo mô tả BE), nên không cần dọn `_items`.
+  Future<void> deleteCollection(String collectionId) async {
+    await ApiClient.instance.delete(
+      '/families/$_fid/albums/collections/$collectionId',
+    );
+    _collections.removeWhere((c) => c.id == collectionId);
+    notifyListeners();
   }
 
   Future<void> updateMedia(

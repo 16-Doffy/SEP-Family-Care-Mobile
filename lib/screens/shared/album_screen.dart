@@ -27,6 +27,10 @@ typedef _AlbumActionListBuilder =
 
 enum _PhotoHomeTab { library, collections }
 
+/// Hành động người dùng chọn ở dialog cảnh báo analyze-draft khi
+/// `recommendation = WARN`.
+enum _AnalyzeWarnAction { confirmUpload, chooseAnotherCollection, cancel }
+
 class AlbumScreen extends StatefulWidget {
   const AlbumScreen({super.key});
 
@@ -57,6 +61,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AlbumProvider>().fetchMedia();
       context.read<AlbumProvider>().fetchFeatureAccess();
+      context.read<AlbumProvider>().fetchCollections();
       context.read<FamilyProvider>().fetchMembers();
       _startPolling();
     });
@@ -93,16 +98,32 @@ class _AlbumScreenState extends State<AlbumScreen> {
       return;
     }
     final picker = ImagePicker();
-    final file = video
-        ? await picker.pickVideo(source: source)
-        : await picker.pickImage(source: source, imageQuality: 85);
-    if (file == null || !mounted) return;
-    _showUploadSheet(file);
+    List<XFile> files;
+    if (video) {
+      final file = await picker.pickVideo(source: source);
+      files = file == null ? [] : [file];
+    } else if (source == ImageSource.gallery) {
+      // Chọn nhiều ảnh cùng lúc — chỉ áp dụng cho thư viện ảnh (camera luôn
+      // chụp từng tấm, video giữ chọn đơn vì BE nhận đúng 1 file/request).
+      files = await picker.pickMultiImage(imageQuality: 85);
+    } else {
+      final file = await picker.pickImage(source: source, imageQuality: 85);
+      files = file == null ? [] : [file];
+    }
+    if (files.isEmpty || !mounted) return;
+    _showUploadSheet(files);
   }
 
-  void _showUploadSheet(XFile file) {
-    final captionCtrl = TextEditingController();
-    var scope = AlbumVisibilityScope.family;
+  void _showUploadSheet(
+    List<XFile> files, {
+    String? initialCaption,
+    AlbumVisibilityScope? initialScope,
+    String? initialCollectionId,
+  }) {
+    final captionCtrl = TextEditingController(text: initialCaption ?? '');
+    var scope = initialScope ?? AlbumVisibilityScope.family;
+    var collectionId = initialCollectionId;
+    final collections = context.read<AlbumProvider>().collections;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -123,7 +144,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Tải ảnh/video lên',
+                files.length > 1
+                    ? 'Tải ${files.length} ảnh lên'
+                    : 'Tải ảnh/video lên',
                 style: GoogleFonts.inter(
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
@@ -161,6 +184,31 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 onChanged: (v) =>
                     setS(() => scope = v ?? AlbumVisibilityScope.family),
               ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String?>(
+                initialValue: collectionId,
+                decoration: InputDecoration(
+                  labelText: 'Album',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Không thuộc album nào'),
+                  ),
+                  ...collections.map(
+                    (c) => DropdownMenuItem<String?>(
+                      value: c.id,
+                      child: Text(
+                        c.name.isEmpty ? '(Album không tên)' : c.name,
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: (v) => setS(() => collectionId = v),
+              ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -171,18 +219,307 @@ class _AlbumScreenState extends State<AlbumScreen> {
                     color: Colors.white,
                   ),
                   label: const Text('Tải lên'),
-                  onPressed: () async {
+                  onPressed: () {
                     Navigator.pop(ctx);
-                    try {
-                      await context.read<AlbumProvider>().uploadMedia(
-                        filePath: file.path,
-                        caption: captionCtrl.text,
-                        visibilityScope: scope,
-                      );
-                    } catch (e) {
-                      _snack(e);
-                    }
+                    _analyzeAndUploadAll(
+                      files,
+                      caption: captionCtrl.text,
+                      scope: scope,
+                      collectionId: collectionId,
+                    );
                   },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Tải nhiều file đã chọn — xử lý tuần tự từng file (không song song) để
+  /// mỗi sheet cảnh báo WARN chỉ hiện một lúc, không chồng nhau.
+  Future<void> _analyzeAndUploadAll(
+    List<XFile> files, {
+    required String caption,
+    required AlbumVisibilityScope scope,
+    required String? collectionId,
+  }) async {
+    for (final file in files) {
+      if (!mounted) return;
+      await _analyzeAndUpload(
+        file,
+        caption: caption,
+        scope: scope,
+        collectionId: collectionId,
+      );
+    }
+  }
+
+  /// Dialog chờ ngắn khi gọi `analyze-draft` — bước này có thể mất vài giây
+  /// (BE gọi AI phân tích), không hiện gì thì màn hình trông như bị đứng.
+  /// Không cho bấm ra ngoài để đóng, tự đóng ngay khi có kết quả.
+  void _showAnalyzingDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Dialog(
+          backgroundColor: AppColors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(
+                  'Đang phân tích ảnh...',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Gọi `analyze-draft` trước khi tải lên thật. `ALLOW` (hoặc BE không phân
+  /// tích được) thì tải lên luôn; `WARN` thì hỏi lại người dùng qua sheet cảnh
+  /// báo. Face recognition không liên quan tới bước này — không đụng tới.
+  Future<void> _analyzeAndUpload(
+    XFile file, {
+    required String caption,
+    required AlbumVisibilityScope scope,
+    required String? collectionId,
+  }) async {
+    final album = context.read<AlbumProvider>();
+    _showAnalyzingDialog();
+    Map<String, dynamic>? draft;
+    try {
+      draft = await album.analyzeDraft(
+        filePath: file.path,
+        collectionId: collectionId,
+      );
+    } catch (_) {
+      draft = null; // Lỗi phân tích không chặn upload — coi như UNAVAILABLE.
+    }
+    if (!mounted) return;
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).pop(); // đóng dialog "Đang phân tích"
+
+    final analysisStatus = draft?['analysisStatus']?.toString();
+    final recommendation = draft?['recommendation']?.toString();
+
+    if (draft == null ||
+        analysisStatus == 'UNAVAILABLE' ||
+        analysisStatus == 'SKIPPED') {
+      final proceed = await _confirmSheet(
+        title: 'Chưa phân tích được ảnh',
+        message: 'Bạn có thể vẫn tải ảnh/video này lên bình thường.',
+        confirmLabel: 'Vẫn tải lên',
+      );
+      if (proceed != true) return;
+    } else if (recommendation == 'WARN') {
+      final action = await _showAnalyzeWarnSheet(draft);
+      if (action == null || action == _AnalyzeWarnAction.cancel) return;
+      if (action == _AnalyzeWarnAction.chooseAnotherCollection) {
+        if (!mounted) return;
+        _showUploadSheet(
+          [file],
+          initialCaption: caption,
+          initialScope: scope,
+          initialCollectionId: collectionId,
+        );
+        return;
+      }
+      // confirmUpload -> tiếp tục tải lên với collection hiện tại.
+    }
+
+    try {
+      await album.uploadMedia(
+        filePath: file.path,
+        caption: caption,
+        visibilityScope: scope,
+        collectionId: collectionId,
+      );
+    } catch (e) {
+      _snack(e);
+    }
+  }
+
+  /// Sheet cảnh báo khi `analyze-draft` trả `recommendation = WARN`. Hiện
+  /// summary/warnings/detectedLabels nếu có, 3 nút theo đúng yêu cầu.
+  Future<_AnalyzeWarnAction?> _showAnalyzeWarnSheet(
+    Map<String, dynamic> draft,
+  ) {
+    final summary = draft['summary']?.toString();
+    final warnings = (draft['warnings'] as List? ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    final labels = (draft['detectedLabels'] as List? ?? [])
+        .map((e) => e.toString())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    return showModalBottomSheet<_AnalyzeWarnAction>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          18,
+          20,
+          MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Ảnh này có thể chưa phù hợp',
+                    style: GoogleFonts.inter(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (summary != null && summary.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(summary, style: GoogleFonts.inter(fontSize: 13)),
+            ],
+            if (warnings.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ...warnings.map(
+                (w) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '• $w',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            if (labels.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: labels
+                    .map(
+                      (l) => Chip(
+                        label: Text(l, style: GoogleFonts.inter(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton(
+                onPressed: () =>
+                    Navigator.pop(ctx, _AnalyzeWarnAction.confirmUpload),
+                child: const Text('Vẫn tải lên'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(
+                  ctx,
+                  _AnalyzeWarnAction.chooseAnotherCollection,
+                ),
+                child: const Text('Chọn album khác'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx, _AnalyzeWarnAction.cancel),
+                child: const Text('Hủy'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Sheet xác nhận đơn giản dùng chung (vd khi analyze-draft UNAVAILABLE).
+  Future<bool?> _confirmSheet({
+    required String title,
+    required String message,
+    required String confirmLabel,
+  }) {
+    return showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(message, style: GoogleFonts.inter(fontSize: 13)),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(confirmLabel),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Hủy'),
                 ),
               ),
             ],
@@ -827,18 +1164,17 @@ class _AlbumScreenState extends State<AlbumScreen> {
         ),
         SliverToBoxAdapter(
           child: _collectionSection(
-            // Nút "Tạo album" tạm ẩn: album con cần BE collection endpoint mới
-            // lưu/gán ảnh thật được. Chỉ giữ 2 card hệ thống Tất cả ảnh / Video.
             title: 'Album',
             children: [
+              _collectionCreateCard(),
               _collectionMediaCard(
                 media: album.items.isEmpty ? null : album.items.first,
                 title: 'Tất cả ảnh',
                 subtitle: '${album.items.length} mục',
                 icon: Icons.photo_library_outlined,
                 onTap: () {
-                  // Reset filter về tất cả — nếu trước đó bấm "Video" thì
-                  // _mediaType đang là VIDEO, không reset sẽ chỉ hiện video.
+                  // Reset filter về tất cả (kể cả collectionId) — media cũ
+                  // collectionId null vẫn hiện bình thường ở đây.
                   album.fetchMedia(refresh: true);
                   setState(() => _tab = _PhotoHomeTab.library);
                 },
@@ -856,6 +1192,25 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   setState(() => _tab = _PhotoHomeTab.library);
                 },
               ),
+              for (final collection in album.collections)
+                _collectionPlaceholderCard(
+                  title: collection.name.isEmpty
+                      ? '(Album không tên)'
+                      : collection.name,
+                  // Không hiển thị `mediaCount` — verify live 2026-08-16: BE
+                  // trả 0 dù album đã có ảnh (lọc thật vào trong thì đúng số
+                  // thật), field không cập nhật theo thời gian thực. Hiện
+                  // nhãn chung để tránh báo sai số cho người dùng.
+                  subtitle: 'Album',
+                  icon: Icons.collections_bookmark_outlined,
+                  onTap: () {
+                    album.fetchMedia(
+                      refresh: true,
+                      collectionId: collection.id,
+                    );
+                    setState(() => _tab = _PhotoHomeTab.library);
+                  },
+                ),
             ],
           ),
         ),
@@ -1012,15 +1367,109 @@ class _AlbumScreenState extends State<AlbumScreen> {
     required String title,
     required String subtitle,
     required IconData icon,
+    VoidCallback? onTap,
   }) {
     return _collectionCardFrame(
-      onTap: () {},
+      onTap: onTap,
       child: Stack(
         fit: StackFit.expand,
         children: [
           _collectionCardFallback(icon),
           _collectionCardText(title: title, subtitle: subtitle),
         ],
+      ),
+    );
+  }
+
+  /// Card "+ Tạo album" — mở sheet tạo collection mới (name bắt buộc, mô tả
+  /// optional). Đặt đầu hàng "Album" cho dễ thấy.
+  Widget _collectionCreateCard() {
+    return _collectionCardFrame(
+      onTap: _showCreateCollectionSheet,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _collectionCardFallback(Icons.add_circle_outline),
+          _collectionCardText(title: 'Tạo album', subtitle: 'Album mới'),
+        ],
+      ),
+    );
+  }
+
+  void _showCreateCollectionSheet() {
+    final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          18,
+          20,
+          MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tạo album mới',
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: nameCtrl,
+              maxLength: 120,
+              decoration: InputDecoration(
+                labelText: 'Tên album',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: descCtrl,
+              maxLines: 2,
+              maxLength: 500,
+              decoration: InputDecoration(
+                labelText: 'Mô tả (không bắt buộc)',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  Navigator.pop(ctx);
+                  try {
+                    await context.read<AlbumProvider>().createCollection(
+                      name: name,
+                      description: descCtrl.text,
+                    );
+                  } catch (e) {
+                    _snack(e);
+                  }
+                },
+                child: const Text('Tạo'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1052,10 +1501,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  Widget _collectionCardFrame({
-    required Widget child,
-    required VoidCallback onTap,
-  }) {
+  Widget _collectionCardFrame({required Widget child, VoidCallback? onTap}) {
     return SizedBox(
       width: 144,
       child: InkWell(

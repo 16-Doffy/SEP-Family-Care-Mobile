@@ -95,7 +95,50 @@
 - Đọc `git status --short` trước khi commit để loại trừ file report, ảnh tạm,
   file trích xuất sơ đồ và shortcut.
 
-Last updated: **2026-08-14**
+Last updated: **2026-08-16**
+
+## Cập nhật 2026-08-16 — Album Collection + analyze-draft (Phase 1+2 FE), gap featureAccess
+
+**1. Album Collection + analyze-draft đã wire FE (chưa test runtime).** BE xác
+nhận đã ship 3 endpoint mới (`GET/POST/PATCH/DELETE /albums/collections`,
+`POST/GET /albums/media` nhận thêm `collectionId`, `POST
+/albums/media/analyze-draft`) — verify trực tiếp qua `/api/docs-json` server
+live trước khi code (file dump `family-care-api.json` ở root là bản cũ, không
+có 3 path này). Đã cập nhật `API_DOCS.md` mục Album cùng lúc. Code:
+`AlbumProvider.fetchCollections/createCollection/updateCollection/
+deleteCollection/analyzeDraft`, tab "Bộ sưu tập" (`album_screen.dart`) có card
+"+ Tạo album" + card collection thật, sheet upload có dropdown chọn album, flow
+`_analyzeAndUpload` xử lý `ALLOW/WARN/SKIPPED/UNAVAILABLE`. Không đụng
+`AlbumFaceProvider`/`AlbumFaceSection`. `flutter analyze` 0 issue, `flutter
+test` 481/481 pass. **Chưa test qua emulator** — script test ở
+`docs/ALBUM_COLLECTION_TEST_SCRIPT.md`. UI chỉ có nút Tạo album, **chưa có nút
+Sửa/Xóa album** dù provider đã có `updateCollection`/`deleteCollection` (không
+nằm trong yêu cầu Phase 1, để dành nếu cần sau).
+
+**1b. [Runtime PASS + fix nhỏ] User đã tự test qua emulator ngay sau khi code
+xong:** tạo album, upload ảnh gán đúng album qua dropdown, lọc theo album ra
+đúng ảnh — flow chính chạy đúng. Multi-select ảnh khi upload từ thư viện thiếu
+→ đã bổ sung `pickMultiImage()` (chỉ áp dụng nhánh "Chọn ảnh từ thư viện", camera/
+video vẫn chọn đơn), `_analyzeAndUploadAll` xử lý tuần tự từng file để sheet WARN
+không chồng nhau. **[VERIFY LIVE — mediaCount không đáng tin]** card album ngoài
+danh sách báo "0 mục" dù bên trong đã có ảnh thật (verify: bấm vào lọc đúng ra
+1 ảnh) — field `mediaCount` của `GET /albums/collections` không cập nhật theo
+thời gian thực. Đã bỏ hiển thị số này ở card (chỉ còn nhãn "Album" chung), xem
+chi tiết `API_DOCS.md` mục Album. Cần hỏi BE trước khi hiển thị lại.
+
+**2. [GHI NHẬN — không phải bug, chỉ để biết phạm vi thật] `featureAccess`
+(gating theo gói subscription) chỉ áp dụng cho 6/26 key BE khai trong
+`officialKeys` (`feature_access.dart`):** `calendar.enabled`,
+`calendar.reminders`, `calendar.recurringEvents`, `album.videoUpload`,
+`album.faceSuggestions`, `ai.assistant`. Ba key `ai.financeSummary` /
+`ai.taskSummary` / `ai.savingSuggestions` có getter trong model nhưng
+**không có màn nào gọi tới** (dead code, không gate gì cả). Toàn bộ
+`finance.*` (6 key), `tasks.*` (4 key), `sos.*` (4 key), `chat.*` (3 key) —
+**17 key hoàn toàn chưa có dòng code nào check** ở FE. Nghĩa là nếu gói Free bị
+giới hạn các tính năng này, FE hiện không tự chặn/ẩn ở giao diện, chỉ dựa vào
+BE trả 403 (nếu BE có enforce). Không tự ý thêm gate cho các key này — cần hỏi
+BE trước xem có thật sự cần giới hạn theo gói không, đúng theo cách đã làm với
+Album Collection (hỏi trước, không đoán).
 
 ## Cập nhật 2026-08-14 (tối) — đồng bộ NDuy, verify jar-target-actual, khởi động test toàn diện flow
 
