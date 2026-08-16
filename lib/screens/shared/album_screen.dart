@@ -900,7 +900,18 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 icon: Icons.collections_bookmark_rounded,
                 label: 'Bộ sưu tập',
                 selected: _tab == _PhotoHomeTab.collections,
-                onTap: () => setState(() => _tab = _PhotoHomeTab.collections),
+                onTap: () {
+                  // Card "Tất cả ảnh"/"Video" dùng album.items để đếm số mục
+                  // — nếu lần fetch gần nhất đang bị lọc theo 1 album/loại cụ
+                  // thể (vd vừa xem xong album "anh LMH"), số hiển thị sẽ sai
+                  // (chỉ còn vài mục thay vì tổng thật). Về lại tab này thì
+                  // luôn nạp lại không lọc để số đếm đúng.
+                  final album = context.read<AlbumProvider>();
+                  if (album.collectionId != null || album.mediaType != null) {
+                    album.fetchMedia(refresh: true);
+                  }
+                  setState(() => _tab = _PhotoHomeTab.collections);
+                },
               ),
             ],
           ),
@@ -1145,6 +1156,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                       title: 'Chưa có ảnh ghim',
                       subtitle: 'Ghim ảnh yêu thích từ màn xem ảnh',
                       icon: Icons.push_pin_outlined,
+                      fallbackGradient: _pinnedGradient,
                     ),
                   ]
                 : pinned
@@ -1172,6 +1184,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 title: 'Tất cả ảnh',
                 subtitle: '${album.items.length} mục',
                 icon: Icons.photo_library_outlined,
+                fallbackGradient: _libraryGradient,
                 onTap: () {
                   // Reset filter về tất cả (kể cả collectionId) — media cũ
                   // collectionId null vẫn hiện bình thường ở đây.
@@ -1184,6 +1197,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 title: 'Video',
                 subtitle: '${videos.length} mục',
                 icon: Icons.video_library_outlined,
+                fallbackGradient: _videoGradient,
                 onTap: () {
                   album.fetchMedia(
                     refresh: true,
@@ -1193,16 +1207,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 },
               ),
               for (final collection in album.collections)
-                _collectionPlaceholderCard(
-                  title: collection.name.isEmpty
-                      ? '(Album không tên)'
-                      : collection.name,
-                  // Không hiển thị `mediaCount` — verify live 2026-08-16: BE
-                  // trả 0 dù album đã có ảnh (lọc thật vào trong thì đúng số
-                  // thật), field không cập nhật theo thời gian thực. Hiện
-                  // nhãn chung để tránh báo sai số cho người dùng.
-                  subtitle: 'Album',
-                  icon: Icons.collections_bookmark_outlined,
+                _collectionCustomCard(
+                  collection: collection,
+                  cover: _coverFor(album.items, collection.id),
                   onTap: () {
                     album.fetchMedia(
                       refresh: true,
@@ -1346,6 +1353,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
     required String subtitle,
     required VoidCallback onTap,
     IconData icon = Icons.image_outlined,
+    Gradient? fallbackGradient,
   }) {
     return _collectionCardFrame(
       onTap: onTap,
@@ -1353,7 +1361,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
         fit: StackFit.expand,
         children: [
           if (media == null)
-            _collectionCardFallback(icon)
+            _collectionCardFallback(icon, gradient: fallbackGradient)
           else
             AlbumMediaThumb(media: media),
           _collectionCardScrim(),
@@ -1363,18 +1371,221 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
+  /// Tìm 1 ảnh/video thuộc collection trong danh sách đang tải để làm ảnh
+  /// nền card — best-effort, chỉ tìm trong `items` đã tải (trang hiện tại),
+  /// không gọi thêm request riêng.
+  AlbumMedia? _coverFor(List<AlbumMedia> items, String collectionId) {
+    for (final m in items) {
+      if (m.collectionId == collectionId) return m;
+    }
+    return null;
+  }
+
+  /// Card cho 1 album do người dùng tạo — có ảnh nền thật nếu tìm được
+  /// (đồng bộ style với "Tất cả ảnh"/"Video"), gradient màu thương hiệu khi
+  /// album còn trống thay vì icon xám phẳng. Có nút "⋮" mở sửa/xóa.
+  Widget _collectionCustomCard({
+    required AlbumCollection collection,
+    required AlbumMedia? cover,
+    required VoidCallback onTap,
+  }) {
+    final title = collection.name.isEmpty
+        ? '(Album không tên)'
+        : collection.name;
+    return _collectionCardFrame(
+      onTap: onTap,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (cover != null)
+            AlbumMediaThumb(media: cover)
+          else
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.primary500,
+                    AppColors.link.withValues(alpha: 0.85),
+                  ],
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  Icons.collections_bookmark_outlined,
+                  color: Colors.white.withValues(alpha: 0.85),
+                  size: 38,
+                ),
+              ),
+            ),
+          _collectionCardScrim(),
+          _collectionCardText(title: title, subtitle: 'Album'),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Material(
+              color: Colors.black.withValues(alpha: 0.32),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => _showCollectionOptionsSheet(collection),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.more_vert, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCollectionOptionsSheet(AlbumCollection collection) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(
+                Icons.edit_outlined,
+                color: AppColors.primary500,
+              ),
+              title: const Text('Sửa tên / mô tả'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showEditCollectionSheet(collection);
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.delete_outline,
+                color: AppColors.danger,
+              ),
+              title: const Text('Xóa album'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final confirm = await _confirmSheet(
+                  title: 'Xóa album "${collection.name}"?',
+                  message:
+                      'Ảnh/video đã tải lên vẫn được giữ nguyên, chỉ album bị xóa.',
+                  confirmLabel: 'Xóa album',
+                );
+                if (confirm != true || !mounted) return;
+                try {
+                  await context.read<AlbumProvider>().deleteCollection(
+                    collection.id,
+                  );
+                } catch (e) {
+                  _snack(e);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditCollectionSheet(AlbumCollection collection) {
+    final nameCtrl = TextEditingController(text: collection.name);
+    final descCtrl = TextEditingController(text: collection.description ?? '');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          18,
+          20,
+          MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sửa album',
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: nameCtrl,
+              maxLength: 120,
+              decoration: InputDecoration(
+                labelText: 'Tên album',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: descCtrl,
+              maxLines: 2,
+              maxLength: 500,
+              decoration: InputDecoration(
+                labelText: 'Mô tả (không bắt buộc)',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  Navigator.pop(ctx);
+                  try {
+                    await context.read<AlbumProvider>().updateCollection(
+                      collection.id,
+                      name: name,
+                      description: descCtrl.text,
+                    );
+                  } catch (e) {
+                    _snack(e);
+                  }
+                },
+                child: const Text('Lưu'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _collectionPlaceholderCard({
     required String title,
     required String subtitle,
     required IconData icon,
     VoidCallback? onTap,
+    Gradient? fallbackGradient,
   }) {
     return _collectionCardFrame(
       onTap: onTap,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _collectionCardFallback(icon),
+          _collectionCardFallback(icon, gradient: fallbackGradient),
           _collectionCardText(title: title, subtitle: subtitle),
         ],
       ),
@@ -1382,16 +1593,41 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   /// Card "+ Tạo album" — mở sheet tạo collection mới (name bắt buộc, mô tả
-  /// optional). Đặt đầu hàng "Album" cho dễ thấy.
+  /// optional). Đặt đầu hàng "Album" cho dễ thấy. Style riêng (nền nhạt,
+  /// viền, icon+chữ giữa) để đọc rõ là 1 nút hành động, không phải nội dung
+  /// như các card ảnh khác.
   Widget _collectionCreateCard() {
     return _collectionCardFrame(
       onTap: _showCreateCollectionSheet,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          _collectionCardFallback(Icons.add_circle_outline),
-          _collectionCardText(title: 'Tạo album', subtitle: 'Album mới'),
-        ],
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.primary500.withValues(alpha: 0.08),
+          border: Border.all(
+            color: AppColors.primary500.withValues(alpha: 0.45),
+            width: 1.4,
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.add_circle_outline,
+                color: AppColors.primary500,
+                size: 32,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Tạo album',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary500,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1512,13 +1748,44 @@ class _AlbumScreenState extends State<AlbumScreen> {
     );
   }
 
-  Widget _collectionCardFallback(IconData icon) {
+  Widget _collectionCardFallback(IconData icon, {Gradient? gradient}) {
+    if (gradient != null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(gradient: gradient),
+        child: Center(
+          child: Icon(
+            icon,
+            color: Colors.white.withValues(alpha: 0.9),
+            size: 38,
+          ),
+        ),
+      );
+    }
     return Container(
       color: _dark ? const Color(0xFF3F3F46) : AppColors.progressTrack,
       alignment: Alignment.center,
       child: Icon(icon, color: _photoMuted, size: 38),
     );
   }
+
+  // 3 gradient cố định cho từng loại card rỗng — chỉ để phân biệt trực quan
+  // "Đã ghim" (ấm/hổ phách) / "Tất cả ảnh" (xanh dương) / "Video" (tím), dùng
+  // lại đúng 2 màu theme sẵn có (AppColors.primary500/link) pha thêm sắc.
+  static const _pinnedGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFF6A93B), Color(0xFFEF7B45)],
+  );
+  static const _libraryGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF4FA3E3), AppColors.link],
+  );
+  static const _videoGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF8B6BE8), Color(0xFF5B3FC9)],
+  );
 
   Widget _collectionCardScrim() {
     return DecoratedBox(
@@ -1656,7 +1923,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
     final items = context.read<AlbumProvider>().items;
     final initialIndex = items.indexWhere((m) => m.id == initial.id);
     if (!mounted) return;
-    await Navigator.of(context).push(
+    // Chip album trong viewer pop kèm collectionId khi người dùng bấm vào
+    // để nhảy ra đúng album đó — không kèm gì thì đây là pop thường (back).
+    final jumpToCollectionId = await Navigator.of(context).push<String?>(
       MaterialPageRoute(
         builder: (_) => _AlbumDetailViewer(
           initialItems: items.isEmpty ? [initial] : items,
@@ -1674,6 +1943,12 @@ class _AlbumScreenState extends State<AlbumScreen> {
         ),
       ),
     );
+    if (jumpToCollectionId == null || !mounted) return;
+    context.read<AlbumProvider>().fetchMedia(
+      refresh: true,
+      collectionId: jumpToCollectionId,
+    );
+    setState(() => _tab = _PhotoHomeTab.library);
   }
 
   Widget _actionList(
@@ -1820,6 +2095,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }) {
     final captionCtrl = TextEditingController(text: media.caption ?? '');
     var scope = media.visibilityScope;
+    var collectionId = media.collectionId;
+    final collections = context.read<AlbumProvider>().collections;
     showModalBottomSheet(
       context: hostContext ?? context,
       isScrollControlled: true,
@@ -1867,6 +2144,31 @@ class _AlbumScreenState extends State<AlbumScreen> {
                     .toList(),
                 onChanged: (v) => setS(() => scope = v ?? scope),
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                initialValue: collectionId,
+                decoration: InputDecoration(
+                  labelText: 'Album',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('Không thuộc album nào'),
+                  ),
+                  ...collections.map(
+                    (c) => DropdownMenuItem<String?>(
+                      value: c.id,
+                      child: Text(
+                        c.name.isEmpty ? '(Album không tên)' : c.name,
+                      ),
+                    ),
+                  ),
+                ],
+                onChanged: (v) => setS(() => collectionId = v),
+              ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -1880,6 +2182,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                         media.id,
                         caption: captionCtrl.text,
                         visibilityScope: scope,
+                        collectionId: collectionId,
                       );
                       onSaved?.call();
                     } catch (e) {
@@ -2308,6 +2611,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                   runSpacing: 8,
                   children: [
                     widget.statusBadgeBuilder(media.moderationStatus),
+                    _albumChip(media),
                     ...media.tags.map((t) => _tagChip(media, t)),
                   ],
                 ),
@@ -2332,6 +2636,95 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
           ),
         );
       },
+    );
+  }
+
+  /// Hiển thị album ảnh đang thuộc về — chữ mờ, không phải cảnh báo, khi
+  /// ảnh chưa gán album nào (đa số ảnh cũ trước khi có tính năng này). Đã
+  /// gán album thì bấm vào để nhảy thẳng ra danh sách ảnh của album đó
+  /// (đóng viewer, `_openDetail` đọc kết quả pop để chuyển tab + lọc).
+  Widget _albumChip(AlbumMedia media) {
+    final collectionId = media.collectionId;
+    if (collectionId == null || collectionId.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: context.colors.inputFill,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.collections_bookmark_outlined,
+              size: 15,
+              color: context.colors.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Không thuộc album',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: context.colors.textMuted,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final collections = context.watch<AlbumProvider>().collections;
+    AlbumCollection? match;
+    for (final c in collections) {
+      if (c.id == collectionId) {
+        match = c;
+        break;
+      }
+    }
+    final label = match == null
+        ? 'Album'
+        : (match.name.isEmpty ? '(Album không tên)' : match.name);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () => Navigator.of(context).pop(collectionId),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: AppColors.primary500.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: AppColors.primary500.withValues(alpha: 0.28),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.collections_bookmark_rounded,
+                size: 15,
+                color: AppColors.primary500,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary500,
+                ),
+              ),
+              const SizedBox(width: 1),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 15,
+                color: AppColors.primary500.withValues(alpha: 0.7),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

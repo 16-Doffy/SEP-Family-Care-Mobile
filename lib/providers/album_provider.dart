@@ -4,6 +4,11 @@ import '../models/album_media.dart';
 import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
+/// Đánh dấu "không truyền tham số này" cho [AlbumProvider.updateMedia], phân
+/// biệt với truyền `null` (BE hiểu `collectionId: null` là "gỡ khỏi album" —
+/// khác hẳn với không gửi field đó, tức "giữ nguyên").
+const _unsetCollectionId = Object();
+
 class AlbumProvider extends ChangeNotifier {
   AlbumProvider() {
     ApiClient.addSessionResetListener(resetForNewSession);
@@ -313,16 +318,23 @@ class AlbumProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// [collectionId]: không truyền → giữ nguyên album hiện tại; truyền `null`
+  /// tường minh → gỡ media khỏi album (đúng field `UpdateAlbumMediaDto` BE
+  /// document: "Gửi null để bỏ media khỏi album/collection"); truyền 1 id →
+  /// gán/đổi sang album đó.
   Future<void> updateMedia(
     String mediaId, {
     String? caption,
     AlbumVisibilityScope? visibilityScope,
+    Object? collectionId = _unsetCollectionId,
   }) async {
     await ApiClient.instance.patch('/families/$_fid/albums/media/$mediaId', {
       'caption': ?caption,
       'visibilityScope': ?(visibilityScope == null
           ? null
           : albumVisibilityToApi(visibilityScope)),
+      if (!identical(collectionId, _unsetCollectionId))
+        'collectionId': collectionId as String?,
     });
     await fetchDetail(mediaId);
   }

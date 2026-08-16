@@ -1,33 +1,30 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-> **Snapshot hiện hành — 14/08/2026 (cập nhật sau khi đồng bộ `origin/main`).**
-> Phần này thay thế mọi thông tin nhánh, commit, trạng thái kiểm thử và kết
-> luận đã lỗi thời ở các mục lịch sử phía dưới. Lịch sử vẫn được giữ nguyên để
-> truy vết.
+> **Snapshot hiện hành — 16/08/2026 (đêm, sau đợt test Album Collection thật
+> qua emulator + đối chiếu nhiều vòng với BE).** Phần này thay thế mọi thông
+> tin nhánh, commit, trạng thái kiểm thử và kết luận đã lỗi thời ở các mục
+> lịch sử phía dưới. Lịch sử vẫn được giữ nguyên để truy vết.
 
 ## Snapshot hiện hành — Git, phạm vi và quy tắc commit
 
-- Nhánh đang checkout: `NDuy`, đã **fast-forward khớp `origin/main`** tại
-  `a9f76ef` — `Merge branch 'giap'` (kéo về 11 commit mới: SOS bám Emergency SOS
-  hệ thống ColorOS + sửa race condition lắc, gọi video nhóm + entry route mở
-  cuộc gọi đến từ thông báo, full-screen-intent cho cuộc gọi đến khi khoá máy).
-  `NDuy` hiện **ahead 11 commit so với `origin/NDuy`** — chưa push.
-- Sau khi fast-forward + merge lại các file đang sửa dở (stash/pop sạch, không
-  còn dấu conflict `<<<<<<<`): `flutter analyze --no-fatal-infos` → **0 error**
-  (chỉ 1 warning `_fetchFirstFamilyContextLegacy` unused trong phần dở dang +
-  vài info cũ không liên quan); `flutter test` → **481/481 pass**.
-- Worktree có thay đổi FE tracked **chưa commit** tại router, providers
-  (`auth_provider`, `invitation_provider`), các màn auth/profile/album/map và
-  `api_client`. Các thay đổi này phải được review, test và chia commit theo
-  chức năng; không được gộp mặc định vào commit tài liệu.
-- `lib/screens/auth/select_family_screen.dart` đang untracked nhưng là mã nguồn
-  tiềm năng của flow chọn family. Cần review và stage có chủ đích nếu giữ lại.
-- Không stage/commit các artefact tạm: `.tmp_report_audit/`, `tmp_*.png`,
+- Nhánh `NDuy` đã push khớp `origin/NDuy` tại 3 commit
+  (`61a188e` family workspace, `50e2ef5` fix map, `c43ce5d` feat album Phase
+  1+2 — xem chi tiết ở các mục "Cập nhật" phía dưới).
+- **Chưa commit** (phát sinh từ đợt test runtime sau khi push, sửa trực tiếp
+  theo bug/thiếu sót phát hiện lúc test thật): `lib/providers/album_provider.dart`,
+  `lib/screens/shared/album_screen.dart`. Danh sách đầy đủ ở mục "Cập nhật
+  2026-08-16 (đêm)" ngay dưới. **Còn 1 dòng debug tạm cần dọn trước khi
+  commit:** `debugPrint('[analyze-draft DEBUG] ...')` trong
+  `_analyzeAndUpload()` (`album_screen.dart`) — thêm để soi log lúc test,
+  không phải code chủ đích, xoá trước khi commit đợt này.
+- `flutter analyze --no-fatal-infos` → 0 error (1 warning đã biết, giữ tạm có
+  chủ đích: `_fetchFirstFamilyContextLegacy` unused); `flutter test` →
+  481/481 pass — verify lại sau **mỗi** lần sửa ở trên, không chỉ 1 lần cuối.
+- Không stage/commit artefact tạm: `.tmp_report_audit/`, `tmp_*.png`,
   `tmp_*.xml`, `tmp_report6_mobile_images/`, `BuildDocx.cs`,
-  `build_report6.ps1`, các file `diagram*_labels*`, `diagram*_relations*`,
-  `docs/usecase-diagram-rebuild/`, `tools/`, shortcut và các file sinh bởi công
-  cụ report. Không đưa tài khoản, mật khẩu, token hoặc secret vào handoff hay
-  commit.
+  `build_report6.ps1`, `diagram*_labels*`, `diagram*_relations*`,
+  `docs/usecase-diagram-rebuild/`, `tools/`, shortcut. Không đưa tài khoản,
+  mật khẩu, token, secret vào handoff hay commit.
 
 ## Trạng thái chức năng cần tiếp tục kiểm thử
 
@@ -95,7 +92,117 @@
 - Đọc `git status --short` trước khi commit để loại trừ file report, ảnh tạm,
   file trích xuất sơ đồ và shortcut.
 
-Last updated: **2026-08-16**
+Last updated: **2026-08-16 (đêm)**
+
+## Cập nhật 2026-08-16 (đêm) — test runtime thật Album Collection, nhiều vòng đối chiếu BE
+
+Tiếp nối commit `c43ce5d`. Sau khi push, test thật qua emulator (build APK
+debug `android-x64` + `adb install`, không dùng `flutter run`) và log
+`debugPrint` tạm trong `_analyzeAndUpload` để đối chiếu response thật của
+`analyze-draft` — không đoán qua UI, luôn xác nhận bằng log trước khi kết
+luận đúng/sai.
+
+**1. [BE FIX VERIFIED — 1 phần] `AI_INVALID_RESPONSE` đã hết, nhưng còn lỗi
+mới nghiêm trọng hơn.** BE báo lỗi cũ do adapter gọi Cloudflare Workers AI
+sai format — đã vá 2 lần (lần 1 không hết, lần 2 verify log thật mới hết).
+Từ đó về sau `analysisStatus` ra đúng `COMPLETED` thay vì kẹt
+`UNAVAILABLE`. **Nhưng phát hiện bug mới:** khi Cloudflare trả plain text
+thay vì JSON (fallback path BE tự mô tả), model AI **suy luận đúng** ngay
+trong text (`summary` có dòng `**Has Person:** False` / `**Topic Match:**
+MISMATCH` kèm lý do rõ ràng), nhưng **field cấu trúc BE trích ra sai** —
+`hasPerson` trả `true` dù text nói `False`, `topicMatch` trả `UNKNOWN` dù
+text nói `MISMATCH`. Hệ quả: `recommendation` không bao giờ ra `WARN`, luôn
+`ALLOW` bất kể ảnh có người hay không, khớp chủ đề hay không. **Đã báo BE**
+kèm 2 ví dụ log cụ thể (ảnh trái cây gán album "sea"/"ANH LMH") — lỗi nằm ở
+bước parse text→field phía BE, không phải AI trả sai, không phải FE.
+**Practical impact:** nhánh `WARN` của `_analyzeAndUpload` vẫn **chưa từng
+được verify runtime thật** — code đã viết đúng theo spec nhưng chưa có dữ
+liệu thật để xác nhận UI hoạt động đúng khi gặp WARN.
+
+**2. Loạt fix FE phát hiện lúc test thật (đã sửa, chưa commit — xem mục
+Snapshot):**
+- **"Tất cả ảnh" hiện sai số mục** — card dùng `album.items.length`, tức số
+  của lần fetch gần nhất trong bộ nhớ, không phải tổng thật. Nếu trước đó
+  vừa xem 1 album cụ thể (list đã bị lọc) rồi quay lại tab Bộ sưu tập, số
+  hiển thị vẫn là số đã lọc. **Đã sửa:** chuyển sang tab Bộ sưu tập thì tự
+  fetch lại không lọc nếu đang có `collectionId`/`mediaType` filter còn sót.
+- **Multi-select upload thiếu** — nhánh "Chọn ảnh từ thư viện" chỉ pick được
+  1 ảnh. Đã đổi sang `picker.pickMultiImage()`, xử lý tuần tự từng file qua
+  `_analyzeAndUploadAll` (không song song, tránh nhiều sheet WARN chồng
+  nhau). Camera/video vẫn chọn đơn (BE nhận đúng 1 file/request).
+  Ảnh mới upload báo timeout do BE xử lý AI vượt quá timeout mặc định 15s
+  của `ApiClient` (`Exception: Kết nối đến server quá lâu`) — không phải
+  bug, rơi đúng vào nhánh UNAVAILABLE hiện có, nhưng **UI hiện chung 1 sheet
+  cho cả 2 trường hợp** (BE trả UNAVAILABLE thật / FE tự timeout) — không
+  phân biệt được nguyên nhân qua UI, chỉ phân biệt được qua log. Đã báo BE
+  về độ trễ AI call không ổn định (có lúc 5-8s, có lúc >15s).
+- **Không có UI sửa/xóa album** — provider đã có `updateCollection`/
+  `deleteCollection` từ Phase 1 nhưng chưa nối nút nào. Đã thêm: nút **⋮**
+  trên mỗi card album → sheet Sửa (đổi tên/mô tả) hoặc Xóa (có xác nhận,
+  nói rõ media không bị xóa theo).
+- **Không gán được album cho ảnh đã upload trước đó** — đối chiếu Swagger
+  xác nhận `PATCH .../albums/media/{mediaId}` (`UpdateAlbumMediaDto`) đã có
+  sẵn field `collectionId` (`null` = gỡ khỏi album), chỉ là FE chưa dùng.
+  Đã thêm dropdown Album vào sheet "Sửa mô tả/quyền xem" +
+  `AlbumProvider.updateMedia()` param `collectionId` (dùng sentinel
+  `Object? = _unsetCollectionId` để phân biệt "không đổi" vs "gửi null tường
+  minh để gỡ" — 3 trạng thái, không nhầm lẫn).
+- **Card album trong "Bộ sưu tập" xấu, không rõ ràng** — `mediaCount` không
+  đáng tin (xem điểm cũ) nên trước đó chỉ còn nhãn xám phẳng. Đã thêm ảnh
+  nền thật (`_coverFor` tìm 1 media khớp collectionId trong list đang tải)
+  khi có, gradient màu thương hiệu khi album còn trống (thay xám chết). Card
+  "Tạo album" đổi hẳn sang style nút hành động (nền nhạt + viền, icon/chữ
+  giữa) để không lẫn với card nội dung. 3 card rỗng còn lại ("Đã ghim" /
+  "Tất cả ảnh" khi trống / "Video") mỗi loại 1 gradient riêng (cam / xanh
+  dương / tím) thay vì cùng 1 màu xám.
+- **Chi tiết ảnh không hiện thuộc album nào** — đã thêm chip trong
+  `_infoPanel`, mờ nhạt "Không thuộc album" nếu chưa gán (trạng thái bình
+  thường, đa số ảnh cũ), chip màu thương hiệu + tên album thật nếu đã gán.
+  **Bấm vào chip đã gán → nhảy thẳng ra danh sách ảnh của album đó** (pop
+  viewer trả về `collectionId`, `_openDetail` đọc kết quả để chuyển tab +
+  lọc).
+- **Loading khi chờ `analyze-draft`** — trước đó bấm "Tải lên" xong màn hình
+  đứng im vài giây không phản hồi gì (BE có lúc mất 5-10s). Đã thêm dialog
+  "Đang phân tích ảnh..." không cho bấm ra ngoài, tự đóng khi có kết quả.
+
+**3. Không phải bug, chỉ ghi nhận lại (đã hỏi rõ, không tự sửa):**
+- **Ghim ảnh ("Đã ghim") không lưu qua lần mở app** — pre-existing, không
+  thuộc phạm vi Album Collection. `_pinnedIds` chỉ là `Set<String>` sống
+  trong session, code đã tự gắn nhãn "bản xem trước" từ trước. Muốn lưu
+  thật cần bàn riêng (lưu local hay cần BE thêm field) — chưa làm.
+- **Face suggestion "Quét lại" không ra gợi ý** — đúng thiết kế, không phải
+  bug. Cần ít nhất 1 thành viên đã đăng ký Face Profile để so khớp; ảnh test
+  toàn người ngoài gia đình (celeb, ảnh stock) nên không bao giờ khớp được.
+  Không đụng `AlbumFaceProvider`/`AlbumFaceSection` trong suốt đợt test này,
+  đúng yêu cầu ban đầu.
+- **502 Bad Gateway thoáng qua** (`ApiClient: invalid JSON response (502)`
+  từ `.../albums/media`, đồng thời SOS `fetchAlerts` cũng 502 cùng lúc) —
+  verify log xác nhận đây là BE thật sự down/restart tạm thời (khả năng lúc
+  BE đang deploy bản vá analyze-draft), không phải bug FE. `_items` bị xóa
+  khi fetch lỗi (đúng hành vi hiện có), tự về lại bình thường sau khi BE
+  online lại + bấm refresh.
+
+**4. Ghi chú môi trường test (để phiên sau đỡ mất thời gian lặp lại):**
+- Build `flutter build apk --debug --target-platform android-x64` (không
+  build full-arch ~228MB, quá nặng so với dung lượng emulator hay gần đầy) +
+  `adb install -r` — không cần `flutter run`, app chạy độc lập sau khi cài,
+  đóng terminal không ảnh hưởng gì.
+- Emulator `Medium_Phone` hay báo `INSTALL_FAILED_INSUFFICIENT_STORAGE`
+  (đĩa ảo mặc định 6GB, nhiều app Google preload chiếm gần hết) — cách xử
+  lý nhanh: `adb shell pm clear com.company.familycare` (dọn cache app
+  mình) hoặc nặng hơn thì **Wipe Data** cả máy ảo qua Device Manager (mất
+  hết session, phải đăng nhập lại). Nên tăng Internal Storage AVD lên
+  8-10GB để đỡ lặp lại.
+- Kéo-thả ảnh từ máy thật vào cửa sổ emulator **không tự động vào
+  MediaStore** — picker hệ thống (Photo Picker) không thấy ảnh mới. Cách
+  quét lại:
+  `adb shell content call --uri content://media/external/file --method scan_volume --arg external`.
+  Nếu vẫn không thấy (Photo Picker có cache riêng), thêm
+  `adb shell am force-stop com.google.android.providers.media.module`. Ảnh
+  nên đặt ở `/sdcard/DCIM/Camera` (ổn định hơn `/sdcard/Download`).
+- `adb shell` với path Unix (`/sdcard/...`, `/data/...`) chạy qua Git
+  Bash/MSYS bị tự động dịch path sai (vd `/data` → `D:/Git/data`) — dùng
+  **PowerShell** cho mọi lệnh `adb shell` có path tuyệt đối kiểu Unix.
 
 ## Cập nhật 2026-08-16 — Album Collection + analyze-draft (Phase 1+2 FE), gap featureAccess
 
