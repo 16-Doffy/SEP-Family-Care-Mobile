@@ -1281,11 +1281,17 @@ class _MemberLegend extends StatelessWidget {
                   child: Text(
                     sharing
                         ? 'Đang chia sẻ vị trí của bạn'
+                        : sharingUnavailable
+                        ? 'Chia sẻ vị trí đang được phát triển'
                         : 'Chia sẻ vị trí của bạn',
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: sharing ? AppColors.safe : AppColors.textSecondary,
+                      color: sharing
+                          ? AppColors.safe
+                          : sharingUnavailable
+                          ? AppColors.textMuted
+                          : AppColors.textSecondary,
                     ),
                   ),
                 ),
@@ -1388,11 +1394,17 @@ class _MemberLegend extends StatelessWidget {
                   child: Text(
                     sharing
                         ? 'Đang chia sẻ vị trí của bạn'
+                        : sharingUnavailable
+                        ? 'Chia sẻ vị trí đang được phát triển'
                         : 'Chia sẻ vị trí của bạn',
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: sharing ? AppColors.safe : AppColors.textSecondary,
+                      color: sharing
+                          ? AppColors.safe
+                          : sharingUnavailable
+                          ? AppColors.textMuted
+                          : AppColors.textSecondary,
                     ),
                   ),
                 ),
