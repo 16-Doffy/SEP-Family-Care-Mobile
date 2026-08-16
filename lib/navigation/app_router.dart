@@ -42,6 +42,7 @@ import '../screens/parent/finance_model_screen.dart';
 import '../screens/auth/join_family_screen.dart';
 import '../screens/auth/family_setup_screen.dart';
 import '../screens/auth/verify_email_screen.dart';
+import '../screens/auth/select_family_screen.dart';
 import '../screens/shared/edit_profile_screen.dart';
 import '../screens/auth/forgot_password_screen.dart';
 import '../screens/shared/payment_result_screen.dart';
@@ -205,6 +206,7 @@ String? computeRedirect({
   // /join không yêu cầu verify; create family, regenerate code and approve
   // join request are the actions guarded by BE verification.
   bool pendingEmailVerification = false,
+  bool needsFamilySelection = false,
 }) {
   // Đang khôi phục session đã lưu (đọc token + gọi /auth/me) — giữ ở
   // splash để tránh nháy về /login rồi lại vào home.
@@ -221,6 +223,7 @@ String? computeRedirect({
   final onVerify = loc == '/verify-email';
   // JoinFamilyScreen tự xử lý lookup public và gửi join request sau login.
   final onJoin = loc == '/join';
+  final onFamilyPicker = loc == '/select-family';
 
   // Chưa đăng nhập → login (trừ /join, màn hình mời tham gia là public)
   if (!loggedIn && !onAuth && !onJoin) return '/login';
@@ -238,6 +241,10 @@ String? computeRedirect({
     UserRole.deputy => '/deputy/home',
     _ => '/member/home',
   };
+
+  if (needsFamilySelection) {
+    return onFamilyPicker ? null : '/select-family';
+  }
 
   // Đã đăng nhập, đang ở auth/splash screen → home (dựa theo role + family)
   if (onAuth) {
@@ -325,6 +332,7 @@ GoRouter createRouter(AuthProvider auth) {
         loc: loc,
         pendingInviteToken: auth.pendingInviteToken,
         pendingEmailVerification: auth.pendingEmailVerification,
+        needsFamilySelection: auth.needsFamilySelection,
       );
       // Token đã được dùng để quay lại /join — xoá để không lặp lại lần sau.
       if (result != null &&
@@ -353,6 +361,10 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(
         path: '/family-setup',
         builder: (_, _) => const FamilySetupScreen(),
+      ),
+      GoRoute(
+        path: '/select-family',
+        builder: (_, _) => const SelectFamilyScreen(),
       ),
 
       // ── Shared overlays (full-screen) ──────────────────────

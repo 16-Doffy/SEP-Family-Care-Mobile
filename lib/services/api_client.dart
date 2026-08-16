@@ -90,6 +90,18 @@ class ApiClient {
     _sessionResetListeners.add(onReset);
   }
 
+  /// Clears cached provider data after switching family workspaces while
+  /// keeping the authenticated token intact.
+  void resetWorkspaceData() {
+    for (final onReset in _sessionResetListeners) {
+      try {
+        onReset();
+      } catch (e) {
+        debugPrint('ApiClient: workspace reset listener failed: $e');
+      }
+    }
+  }
+
   /// Xóa toàn bộ session data — gọi khi logout hoặc session expired
   void clearSession() {
     _token = null;

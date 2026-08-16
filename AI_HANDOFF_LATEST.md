@@ -1,6 +1,235 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-12**
+> **Snapshot hiện hành — 14/08/2026 (cập nhật sau khi đồng bộ `origin/main`).**
+> Phần này thay thế mọi thông tin nhánh, commit, trạng thái kiểm thử và kết
+> luận đã lỗi thời ở các mục lịch sử phía dưới. Lịch sử vẫn được giữ nguyên để
+> truy vết.
+
+## Snapshot hiện hành — Git, phạm vi và quy tắc commit
+
+- Nhánh đang checkout: `NDuy`, đã **fast-forward khớp `origin/main`** tại
+  `a9f76ef` — `Merge branch 'giap'` (kéo về 11 commit mới: SOS bám Emergency SOS
+  hệ thống ColorOS + sửa race condition lắc, gọi video nhóm + entry route mở
+  cuộc gọi đến từ thông báo, full-screen-intent cho cuộc gọi đến khi khoá máy).
+  `NDuy` hiện **ahead 11 commit so với `origin/NDuy`** — chưa push.
+- Sau khi fast-forward + merge lại các file đang sửa dở (stash/pop sạch, không
+  còn dấu conflict `<<<<<<<`): `flutter analyze --no-fatal-infos` → **0 error**
+  (chỉ 1 warning `_fetchFirstFamilyContextLegacy` unused trong phần dở dang +
+  vài info cũ không liên quan); `flutter test` → **481/481 pass**.
+- Worktree có thay đổi FE tracked **chưa commit** tại router, providers
+  (`auth_provider`, `invitation_provider`), các màn auth/profile/album/map và
+  `api_client`. Các thay đổi này phải được review, test và chia commit theo
+  chức năng; không được gộp mặc định vào commit tài liệu.
+- `lib/screens/auth/select_family_screen.dart` đang untracked nhưng là mã nguồn
+  tiềm năng của flow chọn family. Cần review và stage có chủ đích nếu giữ lại.
+- Không stage/commit các artefact tạm: `.tmp_report_audit/`, `tmp_*.png`,
+  `tmp_*.xml`, `tmp_report6_mobile_images/`, `BuildDocx.cs`,
+  `build_report6.ps1`, các file `diagram*_labels*`, `diagram*_relations*`,
+  `docs/usecase-diagram-rebuild/`, `tools/`, shortcut và các file sinh bởi công
+  cụ report. Không đưa tài khoản, mật khẩu, token hoặc secret vào handoff hay
+  commit.
+
+## Trạng thái chức năng cần tiếp tục kiểm thử
+
+### AI chatbox và lịch gia đình
+
+- BE đã chuẩn hóa nội dung khi có `pendingAction`/`pendingActions`: FE phải
+  render theo `actionType`, không tin fallback text do model sinh ra.
+- Calendar AI đã có rule BE cho participant: cụm “cả nhà/cả gia đình/mọi người”
+  chọn toàn bộ thành viên ACTIVE; không chỉ rõ người tham gia thì thêm người tạo;
+  participant id không hợp lệ không được tạo pending action lỗi.
+- Cần regression runtime trên APK mới: tạo/sửa/hủy/xác nhận lịch, kiểm tra card,
+  danh sách lịch, toast/notification và participant sau khi xác nhận.
+
+### Nhiệm vụ, deadline và UX
+
+- Commit `748e490` chứa cải tiến deadline và danh sách nhiệm vụ. Cần kiểm thử
+  Manager/Deputy/Member sau khi cài APK: task mới có vị trí dễ thấy, thứ tự theo
+  deadline/trạng thái hợp lý, task quá hạn hiển thị rõ, và quyền bắt đầu/nộp/duyệt
+  đúng người.
+- Phần thưởng hiện theo flow thủ công: tạo/cập nhật/xóa phần thưởng khi quản lý
+  nhiệm vụ. Không mô tả hoặc giả định tự động thanh toán sau duyệt nếu chưa có
+  cấu hình và xác nhận runtime tương ứng.
+
+### Multi-family context
+
+- Một tài khoản có thể thuộc nhiều family. FE phải lưu và dùng family hiện hành
+  thay vì chọn phần tử đầu của `/families/my`; flow chọn/chuyển family đang cần
+  regression với account thuộc cả `Gia Đình Của Duy` và `NDuy`.
+- Điểm cần kiểm tra: sau chọn `NDuy` với role Deputy, danh sách nhiệm vụ phải
+  dùng đúng workspace và hiển thị assignment của user. Nếu không, ghi request,
+  familyId và response API đã che dữ liệu nhạy cảm để đối chiếu BE.
+
+### Report 6 và Use-case diagram
+
+- Report 6 được làm ngoài repository, chủ yếu tại
+  `D:\Desktop\BÁO-CÁO-NEW\Report6_Software User Guides (1).docx` và file tổng
+  `D:\Desktop\file__lam_chung.docx`. User Manual/screenshot đã được bổ sung;
+  còn cần rà soát trực quan cuối cùng, vị trí ảnh, caption và placeholder.
+- Với Installation Guide do FE phụ trách, lệnh đúng là `pnpm dev:web` cho Web
+  Admin và `flutter run` cho Mobile. Cấu hình BE, database, secret và lệnh BE
+  vẫn do BE chịu trách nhiệm.
+- Use-case đang được chỉnh trong `D:\Downloads\usecase-diagram (6).drawio`.
+  Có bốn actor chính: Guest, Family Member, Family Manager và System Admin;
+  Family Manager kế thừa Family Member, Deputy không là actor riêng. Cần audit
+  lần cuối quan hệ `include`/`extend` và xuất SVG/PDF hoặc PNG 200–300%/300 DPI
+  để tránh sơ đồ tổng thể bị mờ hoặc không đọc được.
+
+## Điểm chờ BE xác nhận / regression liên đội
+
+- Multi-family: API và quyền task theo family đang chọn sau khi đổi workspace.
+- Finance: kiểm tra endpoint báo cáo jar target/actual sau expense đã map
+  category → jar; không được suy diễn số thực tế từ phần trăm phân bổ nếu API
+  chưa trả đúng dữ liệu kỳ.
+- Calendar AI: xác nhận regression payload participant và nội dung pending
+  action chuẩn sau deploy BE.
+- Các vấn đề SOS, notification, payment hoặc service bên thứ ba trong lịch sử
+  không được coi là đã pass nếu chưa có test runtime mới và bằng chứng tương ứng.
+
+## Checklist trước commit/merge kế tiếp
+
+- Chỉ stage các file của một thay đổi có chủ đích; tách code FE, tài liệu và
+  artefact phát sinh thành các commit riêng.
+- Chạy kiểm tra phù hợp sau khi hoàn tất code, tối thiểu `flutter analyze` và
+  test/build có liên quan; kiểm tra CI của commit trước khi phát hành APK.
+- Đọc `git status --short` trước khi commit để loại trừ file report, ảnh tạm,
+  file trích xuất sơ đồ và shortcut.
+
+Last updated: **2026-08-14**
+
+## Cập nhật 2026-08-14 (tối) — đồng bộ NDuy, verify jar-target-actual, khởi động test toàn diện flow
+
+**1. Đồng bộ Git (đã xong):** `NDuy` fast-forward lên `origin/main` (`a9f76ef`),
+9 file đang sửa dở được stash trước/pop lại sau, không mất gì và không còn
+conflict. `flutter analyze` 0 error, `flutter test` 481/481 pass — xem chi
+tiết ở khối Snapshot phía trên. Còn 11 commit local chưa push lên
+`origin/NDuy`.
+
+**2. [BE FIX VERIFIED] `jar-target-actual` không còn trả `actualAmount = 0`.**
+Test runtime qua Sổ thu chi → "Hạn mức theo tỷ lệ thu nhập — thực chi": sau
+khi tạo vài khoản chi map đúng category → jar (Ăn uống → Spending), field
+`actualAmount` hiện đúng số thật (`Spending: 635.122đ / 4.848.098đ`), không còn
+kẹt ở 0 như bug cũ (nguồn gọi: `WalletProvider.fetchJarTargetActualReport()`,
+[wallet_screen.dart:157](lib/screens/parent/wallet_screen.dart#L157)). Rút bug
+này khỏi danh sách cần theo dõi.
+
+**3. Đợt test toàn diện AI Chatbox (đã hoàn tất trước đó trong phiên, tách
+riêng khỏi các mục Git/jar ở trên):**
+- 2 bug FE đã sửa và **đã nằm trong `a9f76ef`** (verify lại bằng grep sau khi
+  pull, không phải sửa mới lần này): UUID thô ở 4 field Danh mục/Mục
+  tiêu/Mô hình/Người nhận → `resolveAiPreviewField()` +
+  4 resolver riêng, [ai_assistant_screen.dart:110-166](lib/screens/shared/ai_assistant_screen.dart#L110-L166);
+  tràn layout lưới Lịch khi ≥3 sự kiện/ngày → giới hạn `max = 2`,
+  [calendar_screen.dart:995](lib/screens/parent/calendar_screen.dart#L995).
+- **Cần báo BE** (bằng chứng ảnh chụp có, chưa gửi team): (a) AI suy luận sai
+  ngày cho cụm "cuối tuần này" ở luồng AI hỏi lại nhiều lượt (ra 13/08 thứ Năm
+  thay vì 15-16/08 thứ Bảy/CN); (b) giờ "ngay bây giờ" có lúc vẫn về `00:00`
+  thay vì giờ thực — chập chờn, lúc đúng lúc sai giữa các lần test; (c) lỗi 502
+  "Server trả dữ liệu không đúng định dạng JSON" khi xác nhận
+  `ALLOCATE_FUND_BY_MODEL`, tái hiện độc lập ở nhiều mức tiền khác nhau.
+- Đã xác nhận **không phải bug** (PASS): phân quyền Member bị chặn đúng khi
+  ghi khoản chi (banner tiếng Việt đầy đủ, không lọt `pendingAction`);
+  `ACTION_PLAN_CARD` nhiều bước hoạt động đúng contract.
+
+**4. Bắt đầu kế hoạch test toàn diện từng flow (theo thứ tự thanh nav) —
+CHƯA XONG, mới làm dở Home Dashboard:**
+- Đã lập kế hoạch chi tiết (13 flow, ưu tiên các domain có `[VERIFY]`/bug đã
+  biết trong `API_DOCS.md`: SOS, Chat, Subscription, Finance Goal Contribution
+  Plans, Tasks Reward) — quy trình: test qua máy ảo bằng adb (uiautomator dump
+  lấy toạ độ, screencap đọc kết quả, nhờ user gõ tay câu tiếng Việt vì
+  `adb shell input text` mất dấu và ADBKeyBoard không ổn định trên máy ảo này)
+  → đối chiếu API_DOCS → sửa FE ngay nếu là bug FE → ghi handoff → chuyển flow
+  tiếp theo.
+- **Đã test xong:** Home Dashboard (Manager) — số liệu đúng (Quỹ Gia Đình,
+  Nhiệm vụ, 3 thành viên), nút Thông báo hoạt động đúng (lần đầu tưởng lỗi do
+  chị tính sai toạ độ khi bấm, không phải bug thật), màn Thông báo hiển thị
+  nội dung hợp lý không có UUID/JSON thô.
+- **Đang dở, chưa kết luận:** lỡ tay lạc sang màn Bản đồ gia đình (Map) —
+  bản đồ tải đúng, marker "Tôi" hiện đúng vị trí emulator, toggle "Chia sẻ vị
+  trí của bạn" bấm thử chưa xác nhận được có đổi trạng thái thật không (chưa
+  kiểm tra kỹ, cần test lại).
+- **Chưa test:** Chat, Calendar (regression), Tasks (kèm Reward), Wallet/Tài
+  chính (Sổ thu chi, Mô hình, Ngân sách, Mục tiêu, Goal Contribution, Hỗ trợ
+  chi tiêu), Album, SOS (ưu tiên cao — 2 bug FE đã ghi nhận trong
+  `API_DOCS.md` cần verify: parse `sosAlertId`, sensor SOS thiếu vị trí),
+  Profile/Settings (kèm bug wearable disconnect báo thành công khống),
+  Members/Family, Subscription, Calls (video LiveKit), smoke Auth.
+- Tài khoản test đã có sẵn: Manager (`ngophamnhutduy050302@gmail.com`),
+  Deputy (`duynpnse161783@fpt.edu.vn`, đã là Phó nhóm trong gia đình NDuy),
+  Member (`nhatdeptrai281003@gmail.com`) — không cần tạo lại.
+- Kế hoạch chi tiết lưu ngoài repo tại
+  `C:\Users\N DUY\.claude\plans\gi-ch-gi-p-em-indexed-wren.md` (không phải file
+  của repo, chỉ tham chiếu nếu cần agent khác tiếp tục).
+
+**5. Việc ngoài phạm vi code repo (không ảnh hưởng trạng thái app):** đã rà
+soát và sửa use-case diagram (`D:\Downloads\usecase-diagram (8).drawio`, ngoài
+repo) theo đúng chức năng thật của app — thêm 5 use case còn thiếu (View
+Notifications, Make/Join Video Call, Enroll Face Profile, Review Spending
+Support Request, View/Resolve Budget Alert), sửa 1 quan hệ sai (Ledger Entry
+phải thuộc Family Manager, không phải Family Member), dọn 2 use case trùng
+lặp. Còn 3 đường nối "lửng" (chưa bind thật vào actor) cần user tự kéo lại
+trong draw.io — không phải việc của repo này nên không lặp chi tiết ở đây.
+
+## FE implementation 2026-08-14 — explicit multi-workspace selection
+
+- BE confirmed that an account can have multiple ACTIVE family memberships.
+  `GET /families/my` returns those memberships; the JWT does **not** contain a
+  current-family claim. Each protected family request is authorized using its
+  `:familyId` path parameter.
+- FE no longer treats the first item of `/families/my` as the current family.
+  The selected `familyId` is persisted locally as `current_family_id`; on app
+  restore, FE validates that it is still returned by `/families/my`. If it is
+  missing, FE clears it and presents an explicit workspace picker instead of
+  silently entering another family.
+- Added `/select-family` and a **Chuyển gia đình** entry in Hồ sơ for accounts
+  with multiple memberships. Selecting a workspace updates `ApiClient.familyId`
+  and resets app-scope provider caches before entering that workspace.
+- Creating a family now makes the newly returned family id current immediately;
+  it no longer depends on the old, incorrect token-claim refresh assumption.
+- Join-request polling remembers the request just submitted. Once that exact
+  request becomes APPROVED, it reads its `familyId` / `referenceId`, refreshes
+  memberships and selects that family instead of an unrelated historical one.
+- Runtime retest still needed after installing this FE build: sign in to an
+  account with both **Gia Đình Của Duy** and **NDuy**, select NDuy (Deputy),
+  then open Nhiệm vụ and verify the assignment appears in
+  `GET /families/{NDuy}/tasks/my-assignments`.
+
+## Runtime 2026-08-14 — task assignment / multi-workspace
+
+- Card task quản trị trước đây hiển thị `${active.length} người được giao`, trong
+  đó `active.length` là số assignment record, không phải số thành viên duy nhất.
+  FE đã deduplicate theo `assignedToMemberId`: một người sẽ hiển thị tên, nhiều
+  người hiển thị tối đa hai tên rồi `và N người khác`.
+- Task giao trong workspace `NDuy` không xuất hiện khi đăng nhập `lê anh sĩ` vì
+  session hiện tự chọn workspace `Gia Đình Của Duy` (role Manager). Đây là cùng
+  lỗi thiếu workspace picker/switch flow, không thể kết luận task assignment mất
+  cho tới khi chọn được `NDuy` và gọi `GET .../tasks/my-assignments` trong đúng
+  family context.
+- Nếu sau khi switch đúng `NDuy` vẫn có nhiều assignment record cho một task/
+  member không phải task định kỳ, BE cần kiểm tra tránh duplicate assignment.
+
+## Runtime 2026-08-13 — membership đa gia đình / chọn workspace (thiếu flow FE/BE)
+
+- Đối chiếu trực tiếp bằng `POST /auth/login`, `GET /auth/me` và `GET /families/my`
+  của tài khoản `duynpnse161783@fpt.edu.vn` cho thấy **hai membership ACTIVE**:
+  `Gia Đình Của Duy` với role `FAMILY_MANAGER` và `NDuy` với role
+  `DEPUTY_MEMBER`.
+- Vì `AuthProvider._fetchFamilyContext()` hiện lấy `GET /families/my` rồi chọn
+  `list.first`, app vào `Gia Đình Của Duy` (đứng đầu response), dù danh sách
+  member của `NDuy` vẫn hiển thị tài khoản này là Phó nhóm. Đây không phải cache
+  session và làm không thể test Deputy của `NDuy` theo đúng workspace.
+- BE đã xác nhận user **được** thuộc nhiều family. Tuy nhiên Swagger hiện chỉ có
+  `GET /families/my`, chưa có API chọn/chuyển workspace. Access token có family/member
+  claims, nên FE không thể chỉ đổi `familyId` cục bộ: UI có thể hiện family B nhưng
+  request vẫn mang claim family A. Cần BE bổ sung API switch workspace (cấp token mới
+  theo membership được chọn), hoặc một cơ chế chọn workspace tương đương được document.
+  Sau đó FE làm workspace picker và lưu workspace đã chọn; không suy luận theo thứ tự,
+  role hay ngày tạo.
+- **FE fix cùng phiên:** `ProfileScreen` tách đúng Manager và Deputy; trước đó
+  dùng `isAdministrative` như `isManager`, làm Deputy thấy menu Manager-only.
+  Deputy nay vẫn thấy nhóm quản trị chung, nhưng không thấy Mời thành viên, Duyệt
+  yêu cầu tham gia hoặc Gói đăng ký. Chưa thể verify runtime patch cho Deputy
+  NDuy vì BE workspace selection đang sai.
 
 ## Xác nhận runtime 2026-08-12 — Calendar AI participant payload (BE FIX VERIFIED)
 

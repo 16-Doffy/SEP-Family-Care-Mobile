@@ -13,13 +13,33 @@ class _FamilyContext {
   const _FamilyContext({this.id, this.name, this.role});
 }
 
+/// A workspace that the signed-in account currently belongs to.
+///
+/// The backend intentionally permits one account to belong to several family
+/// workspaces.  This is therefore a local selection, not an inference from
+/// response order or a claim embedded in the JWT.
+class FamilyWorkspace {
+  final String id;
+  final String name;
+  final String? role;
+
+  const FamilyWorkspace({
+    required this.id,
+    required this.name,
+    this.role,
+  });
+}
+
 class AuthProvider extends ChangeNotifier {
   static const _storage = FlutterSecureStorage();
   static const _kAccessTokenKey = 'access_token';
   static const _kRefreshTokenKey = 'refresh_token';
   static const _kPendingInviteTokenKey = 'pending_invite_token';
+  static const _kCurrentFamilyIdKey = 'current_family_id';
 
   AppUser? _user;
+  List<FamilyWorkspace> _workspaces = const [];
+  bool _needsFamilySelection = false;
 
   // true trong lúc đang khôi phục session đã lưu khi mở app — router dùng để
   // giữ màn splash, tránh nháy về /login rồi mới vào lại home.
@@ -43,6 +63,12 @@ class AuthProvider extends ChangeNotifier {
   bool get restoring => _restoring;
   String? get pendingInviteToken => _pendingInviteToken;
   bool get pendingEmailVerification => _pendingEmailVerification;
+  List<FamilyWorkspace> get workspaces => List.unmodifiable(_workspaces);
+
+  /// True when the account has memberships but there is no valid local choice.
+  /// The router sends the user to the picker instead of silently selecting the
+  /// first family returned by GET /families/my.
+  bool get needsFamilySelection => _needsFamilySelection;
 
   Future<void> savePendingInviteToken(String token) async {
     _pendingInviteToken = token;
@@ -173,10 +199,21 @@ class AuthProvider extends ChangeNotifier {
     }
     final fid = family['id']?.toString() ?? family['family']?['id']?.toString();
     if (fid == null) throw Exception('Không lấy được ID gia đình');
-    // The token issued before creating a family still has the old (or empty)
-    // family claims. Refresh it now so AI/calendar authorization uses the
-    // newly-created manager membership, not only the optimistic UI context.
-    final claimsRefreshed = await ApiClient.instance.refreshSessionClaims();
+    // Authorization is evaluated from :familyId on each request. Select the
+    // newly created workspace locally; do not rely on JWT family claims.
+    await _activateFamilyContext(
+      _FamilyContext(
+        id: fid,
+        name: name.trim(),
+        role: 'FAMILY_MANAGER',
+      ),
+      persist: true,
+    );
+    notifyListeners();
+    return;
+  }
+
+  /*
     ApiClient.instance.setFamilyId(fid);
     _user = AppUser.fromJson(
       {
@@ -203,6 +240,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // Đăng ký callbacks vào ApiClient: token rotation + force logout
+  */
   void _registerApiClientCallbacks() {
     ApiClient.instance.onTokenRotated = (newAccess, newRefresh) {
       _persistTokens(newAccess, newRefresh);
@@ -225,6 +263,8 @@ class AuthProvider extends ChangeNotifier {
     };
     ApiClient.instance.onSessionExpired = () {
       _user = null;
+      _workspaces = const [];
+      _needsFamilySelection = false;
       ApiClient.instance.clearSession();
       _clearStoredTokens();
       notifyListeners();
@@ -259,7 +299,10 @@ class AuthProvider extends ChangeNotifier {
       final myId = userJson['id']?.toString();
 
       final ctx = await _fetchFamilyContext(myId);
-      if (ctx.id != null) ApiClient.instance.setFamilyId(ctx.id);
+      if (ctx.id != null) {
+        ApiClient.instance.setFamilyId(ctx.id);
+        await _storage.write(key: _kCurrentFamilyIdKey, value: ctx.id);
+      }
 
       _user = AppUser.fromJson(
         userJson,
@@ -296,6 +339,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _storage.delete(key: _kAccessTokenKey);
       await _storage.delete(key: _kRefreshTokenKey);
+      await _storage.delete(key: _kCurrentFamilyIdKey);
     } catch (e) {
       debugPrint('AuthProvider: clear tokens failed: $e');
     }
@@ -303,7 +347,9 @@ class AuthProvider extends ChangeNotifier {
 
   // Lấy familyId/familyName/familyRole của user hiện tại — dùng chung cho
   // login, restore session và refreshFamilyContext.
-  Future<_FamilyContext> _fetchFamilyContext(String? myId) async {
+  /// Legacy implementation kept temporarily for reference. Do not call it:
+  /// it selected the first row returned by /families/my.
+  Future<_FamilyContext> _fetchFirstFamilyContextLegacy(String? myId) async {
     try {
       final families = await ApiClient.instance.get('/families/my');
       final list = families is List ? families : <dynamic>[];
@@ -377,6 +423,112 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<_FamilyContext> _fetchFamilyContext(
+    String? myId, {
+    String? preferredFamilyId,
+  }) async {
+    try {
+      final response = await ApiClient.instance.get('/families/my');
+      final families = response is List
+          ? response.whereType<Map>().map(Map<String, dynamic>.from).toList()
+          : <Map<String, dynamic>>[];
+      _workspaces = families
+          .map(_workspaceFromJson)
+          .whereType<FamilyWorkspace>()
+          .toList(growable: false);
+
+      if (_workspaces.isEmpty) {
+        _needsFamilySelection = false;
+        return const _FamilyContext();
+      }
+
+      final storedId = preferredFamilyId ??
+          await _storage.read(key: _kCurrentFamilyIdKey);
+      FamilyWorkspace? selected;
+      for (final workspace in _workspaces) {
+        if (workspace.id == storedId) {
+          selected = workspace;
+          break;
+        }
+      }
+
+      if (selected == null && storedId != null) {
+        await _storage.delete(key: _kCurrentFamilyIdKey);
+        _needsFamilySelection = true;
+        return const _FamilyContext();
+      }
+      if (selected == null && _workspaces.length > 1) {
+        _needsFamilySelection = true;
+        return const _FamilyContext();
+      }
+
+      final workspace = selected ?? _workspaces.single;
+      _needsFamilySelection = false;
+      return _resolveFamilyContext(workspace, myId);
+    } catch (e) {
+      debugPrint('AuthProvider: fetch family context failed: $e');
+      return const _FamilyContext();
+    }
+  }
+
+  FamilyWorkspace? _workspaceFromJson(Map<String, dynamic> family) {
+    final id = family['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    return FamilyWorkspace(
+      id: id,
+      name: family['name']?.toString() ?? 'Gia đình',
+      role: _roleFromFamily(family),
+    );
+  }
+
+  String? _roleFromFamily(Map<String, dynamic> family) {
+    final direct = family['currentMemberRole']?.toString() ??
+        family['myRole']?.toString() ??
+        family['userRole']?.toString() ??
+        family['role']?.toString();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final members = family['members'] as List? ?? const [];
+    Map? firstMember;
+    for (final member in members.whereType<Map>()) {
+      firstMember = member;
+      break;
+    }
+    return firstMember?['familyRole']?.toString() ??
+        firstMember?['role']?.toString();
+  }
+
+  Future<_FamilyContext> _resolveFamilyContext(
+    FamilyWorkspace workspace,
+    String? myId,
+  ) async {
+    String? role = workspace.role;
+    try {
+      final result = await ApiClient.instance.get('/families/${workspace.id}');
+      if (result is Map) {
+        final members = (result['members'] as List? ?? const []).whereType<Map>();
+        final me = members.firstWhere(
+          (member) =>
+              member['userId']?.toString() == myId ||
+              member['user']?['id']?.toString() == myId,
+          orElse: () => const <String, dynamic>{},
+        );
+        final status = me['status']?.toString().toUpperCase();
+        if (status != null && status.isNotEmpty && status != 'ACTIVE') {
+          return const _FamilyContext();
+        }
+        role = me['familyRole']?.toString() ?? me['role']?.toString() ?? role;
+      }
+    } on ApiException catch (e) {
+      if (e.statusCode == 403 || e.statusCode == 404) {
+        await _storage.delete(key: _kCurrentFamilyIdKey);
+        _needsFamilySelection = true;
+        return const _FamilyContext();
+      }
+      debugPrint('AuthProvider: family detail check failed: $e');
+    }
+    return _FamilyContext(id: workspace.id, name: workspace.name, role: role);
+  }
+
   // Sau login/register: set token → gọi /families/my để lấy familyId + role trong gia đình
   Future<void> _applySession(Map<String, dynamic> data) async {
     // ApiClient đã unwrap { success, data } → data trực tiếp
@@ -391,7 +543,10 @@ class AuthProvider extends ChangeNotifier {
     final myId = userJson['id']?.toString();
 
     final ctx = await _fetchFamilyContext(myId);
-    if (ctx.id != null) ApiClient.instance.setFamilyId(ctx.id);
+    if (ctx.id != null) {
+      ApiClient.instance.setFamilyId(ctx.id);
+      await _storage.write(key: _kCurrentFamilyIdKey, value: ctx.id);
+    }
 
     _user = AppUser.fromJson(
       userJson,
@@ -499,6 +654,8 @@ class AuthProvider extends ChangeNotifier {
     }
     // Xóa session ngay lập tức — không đợi server response
     _user = null;
+    _workspaces = const [];
+    _needsFamilySelection = false;
     _pendingEmailVerification = false;
     // Token mời đang treo là của phiên cũ — bỏ luôn, nếu giữ thì tài khoản
     // đăng nhập sau bị đẩy nhầm về màn Tham gia gia đình.
@@ -519,10 +676,88 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // Cập nhật familyId sau khi user tạo/join gia đình thành công
-  Future<void> refreshFamilyContext() async {
+  Future<void> _activateFamilyContext(
+    _FamilyContext context, {
+    required bool persist,
+  }) async {
+    final familyId = context.id;
+    if (familyId == null || _user == null) return;
+    if (persist) {
+      await _storage.write(key: _kCurrentFamilyIdKey, value: familyId);
+    }
+    if (!_workspaces.any((item) => item.id == familyId)) {
+      _workspaces = [
+        ..._workspaces,
+        FamilyWorkspace(
+          id: familyId,
+          name: context.name ?? 'Gia đình',
+          role: context.role,
+        ),
+      ];
+    }
+    _needsFamilySelection = false;
+    ApiClient.instance.setFamilyId(familyId);
+    _user = AppUser.fromJson(
+      {
+        'id': _user!.id,
+        'fullName': _user!.name,
+        'email': _user!.email,
+        'userType': _user!.userType,
+      },
+      accessToken: _user!.accessToken,
+      refreshToken: _user!.refreshToken,
+      familyId: familyId,
+      familyName: context.name ?? '',
+      familyRole: context.role,
+      phone: _user!.phone,
+    );
+  }
+
+  Future<void> selectFamily(String familyId) async {
     if (!isLoggedIn) return;
-    final ctx = await _fetchFamilyContext(_user!.id);
-    if (ctx.id == null) return;
+    FamilyWorkspace? workspace;
+    for (final item in _workspaces) {
+      if (item.id == familyId) {
+        workspace = item;
+        break;
+      }
+    }
+    if (workspace == null) {
+      throw Exception('Gia đình đã chọn không còn hoạt động.');
+    }
+    final context = await _resolveFamilyContext(workspace, _user!.id);
+    if (context.id == null) {
+      throw Exception('Bạn không còn là thành viên của gia đình này.');
+    }
+    await _activateFamilyContext(context, persist: true);
+    ApiClient.instance.resetWorkspaceData();
+    notifyListeners();
+  }
+
+  Future<void> refreshFamilyContext({String? preferredFamilyId}) async {
+    if (!isLoggedIn) return;
+    final ctx = await _fetchFamilyContext(
+      _user!.id,
+      preferredFamilyId: preferredFamilyId,
+    );
+    if (ctx.id == null) {
+      ApiClient.instance.setFamilyId(null);
+      _user = AppUser.fromJson(
+        {
+          'id': _user!.id,
+          'fullName': _user!.name,
+          'email': _user!.email,
+          'userType': _user!.userType,
+        },
+        accessToken: _user!.accessToken,
+        refreshToken: _user!.refreshToken,
+        familyRole: _user!.familyRoleString,
+        phone: _user!.phone,
+      );
+      notifyListeners();
+      return;
+    }
+    await _storage.write(key: _kCurrentFamilyIdKey, value: ctx.id);
     ApiClient.instance.setFamilyId(ctx.id);
     _user = AppUser.fromJson(
       {

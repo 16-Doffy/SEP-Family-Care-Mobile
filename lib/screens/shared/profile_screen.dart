@@ -30,8 +30,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
-    final isManager = user?.isAdministrative ?? false;
-    final isMember = !(user?.isAdministrative ?? true);
+    final isManager = user?.role == UserRole.manager;
+    final isDeputy = user?.role == UserRole.deputy;
+    final isAdministrative = isManager || isDeputy;
+    final isMember = !isAdministrative;
     final themeController = context.watch<ThemeModeController>();
     final colors = context.colors;
 
@@ -168,7 +170,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // ── Gia đình — theo role ──────────────────────────────────
             _section('Gia đình', [
-              if (isManager) ...[
+              if (auth.workspaces.length > 1)
+                _tile(
+                  Icons.switch_account_outlined,
+                  'Chuyển gia đình',
+                  subtitle: user?.familyName,
+                  onTap: () => context.push('/select-family'),
+                ),
+              if (isAdministrative) ...[
                 _tile(
                   Icons.groups_2_outlined,
                   'Thành viên gia đình',
@@ -271,8 +280,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 16),
 
             _section('Khác', [
-              _tile(Icons.help_outline_rounded, 'Trợ giúp & FAQ', onTap: () {}),
-              _tile(Icons.description_outlined, 'Điều khoản sử dụng', onTap: () {}),
+              _tile(
+                Icons.help_outline_rounded,
+                'Trợ giúp & FAQ',
+                onTap: () => _showUnavailableNotice('Trợ giúp & FAQ'),
+              ),
+              _tile(
+                Icons.description_outlined,
+                'Điều khoản sử dụng',
+                onTap: () => _showUnavailableNotice('Điều khoản sử dụng'),
+              ),
             ]),
             const SizedBox(height: 16),
 
@@ -311,6 +328,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     UserRole.member => 'THÀNH VIÊN',
     null => 'KHÁCH',
   };
+
+  void _showUnavailableNotice(String feature) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('$feature đang được cập nhật.')),
+      );
+  }
 
   Widget _infoRow(IconData icon, String label, String value) => Row(
     children: [
