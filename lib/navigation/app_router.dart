@@ -517,7 +517,15 @@ GoRouter createRouter(AuthProvider auth) {
           final lngStr = state.uri.queryParameters['lng'];
           final lat = latStr != null ? double.tryParse(latStr) : null;
           final lng = lngStr != null ? double.tryParse(lngStr) : null;
-          return FamilyMapScreen(initialLat: lat, initialLng: lng);
+          // `alertId` để màn bản đồ tra được vị trí MỚI NHẤT của cảnh báo qua
+          // realtime, thay vì chỉ dựa vào lat/lng tĩnh lúc tạo alert (người
+          // phát có thể đã di chuyển, và alert có thể không kèm toạ độ).
+          final alertId = state.uri.queryParameters['alertId'];
+          return FamilyMapScreen(
+            initialLat: lat,
+            initialLng: lng,
+            initialAlertId: alertId,
+          );
         },
       ),
       // Album dùng chung mọi role — BE cho mọi thành viên xem/upload (verify

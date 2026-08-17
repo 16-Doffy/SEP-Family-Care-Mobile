@@ -20,7 +20,19 @@ import '../../theme/app_surface_colors.dart';
 class FamilyMapScreen extends StatefulWidget {
   final double? initialLat;
   final double? initialLng;
-  const FamilyMapScreen({super.key, this.initialLat, this.initialLng});
+
+  /// Cảnh báo cần bám theo khi mở từ thông báo SOS hoặc từ nút "Tôi đang đến".
+  ///
+  /// Ưu tiên hơn [initialLat]/[initialLng]: có id thì tra được vị trí mới nhất
+  /// của người phát qua realtime, thay vì toạ độ tĩnh lúc tạo cảnh báo.
+  final String? initialAlertId;
+
+  const FamilyMapScreen({
+    super.key,
+    this.initialLat,
+    this.initialLng,
+    this.initialAlertId,
+  });
   @override
   State<FamilyMapScreen> createState() => _FamilyMapScreenState();
 }
@@ -75,6 +87,35 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     if (mins < 1) return 'dưới 1 phút';
     if (mins < 60) return '$mins phút';
     return '${mins ~/ 60} giờ ${mins % 60} phút';
+  }
+
+  /// Điểm SOS để mở bản đồ vào, theo thứ tự tin cậy giảm dần:
+  /// vị trí realtime mới nhất của cảnh báo → toạ độ truyền qua URL → toạ độ
+  /// lưu trong bản ghi cảnh báo.
+  ///
+  /// Chỉ dựa vào lat/lng trên URL là chưa đủ: cảnh báo có thể được tạo lúc
+  /// chưa lấy được GPS (khi đó `alert.latitude` null), và người phát có thể đã
+  /// di chuyển khỏi điểm ban đầu.
+  LatLng? _initialSosTarget() {
+    final alertId = widget.initialAlertId;
+    if (alertId != null && alertId.isNotEmpty) {
+      final sos = context.read<SosProvider>();
+      final live =
+          sos.realtimeLocationOf(alertId) ?? _latestSosLocations[alertId];
+      if (live != null) return LatLng(live.lat, live.lng);
+    }
+    if (widget.initialLat != null && widget.initialLng != null) {
+      return LatLng(widget.initialLat!, widget.initialLng!);
+    }
+    if (alertId != null && alertId.isNotEmpty) {
+      for (final alert in context.read<SosProvider>().activeAlerts) {
+        if (alert.id != alertId) continue;
+        final lat = alert.latitude;
+        final lng = alert.longitude;
+        if (lat != null && lng != null) return LatLng(lat, lng);
+      }
+    }
+    return null;
   }
 
   Future<void> _routeTo(
@@ -353,12 +394,23 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         _gpsProvider?.startRealtime(myUserId: _myUserId);
         if (mounted) _syncPushTimer();
       }
-      if (widget.initialLat != null && widget.initialLng != null) {
-        // Vào từ cảnh báo SOS → tự vẽ đường từ vị trí của tôi tới điểm SOS.
-        final target = LatLng(widget.initialLat!, widget.initialLng!);
+      final target = _initialSosTarget();
+      if (target != null) {
+        // Vào từ cảnh báo SOS (thông báo, hoặc vừa bấm "Tôi đang đến") → tự vẽ
+        // đường từ vị trí của tôi tới điểm SOS, không bắt bấm thêm gì.
         _mapCtrl.move(target, 16);
         _locateMe(center: false).then((_) {
-          if (mounted) _routeTo(target, label: 'Điểm SOS');
+          if (!mounted) return;
+          final alertId = widget.initialAlertId;
+          _routeTo(
+            target,
+            label: 'Điểm SOS',
+            // Có alertId thì gắn route vào đúng cảnh báo đó để
+            // _syncRouteWithMovingPin tự cập nhật khi người phát di chuyển.
+            followRef: alertId != null && alertId.isNotEmpty
+                ? _RouteTargetRef('sos', alertId)
+                : null,
+          );
         });
       } else {
         _locateMe(center: true);
@@ -990,6 +1042,10 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     // xanh dương) ở hai toạ độ hơi lệch nhau, vì hai nguồn dữ liệu khác nhau.
     // Gom sau vòng lặp alert bên dưới rồi mới dựng pin chia sẻ.
     final coveredBySos = <String>{};
+    // Người đang trên đường tới cứu đã có pin "ĐANG TỚI" riêng — không dựng
+    // thêm pin chia sẻ thường ngày cho họ, nếu không họ hiện 2 lần ở hai toạ
+    // độ lệch nhau trên máy của mọi người khác.
+    final coveredByResponderMemberIds = <String>{};
 
     final sos = context.read<SosProvider>();
     for (final alert in alerts) {
@@ -1039,6 +1095,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
             accuracy: responder.location.accuracy,
           ),
         );
+        coveredByResponderMemberIds.add(responder.responderMemberId);
       }
 
       // ── Pin điểm SOS ─────────────────────────────────────────────────────
@@ -1067,13 +1124,36 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       }
     }
 
+    // memberId của những người đang ứng cứu, đổi sang userId để đối chiếu với
+    // `share.userId` khi `share.memberId` rỗng. Chỉ là đường phòng thủ —
+    // `share.memberId` gần như luôn có.
+    final coveredByResponderUserIds = <String>{};
+    if (coveredByResponderMemberIds.isNotEmpty) {
+      for (final member in context.read<FamilyProvider>().members) {
+        if (coveredByResponderMemberIds.contains(member.id) &&
+            member.userId.isNotEmpty) {
+          coveredByResponderUserIds.add(member.userId);
+        }
+      }
+    }
+
     // Pin chia sẻ vị trí thường ngày — dựng SAU CÙNG để biết ai đã có pin SOS
-    // mà bỏ qua. Chỉ bỏ khi pin SOS thực sự đã được thêm ở trên (cảnh báo
-    // thiếu toạ độ thì không thêm được), nếu không sẽ mất hẳn người đó.
+    // hoặc pin "ĐANG TỚI" mà bỏ qua. Chỉ bỏ khi pin kia thực sự đã được thêm
+    // ở trên (cảnh báo thiếu toạ độ thì không thêm được), nếu không sẽ mất
+    // hẳn người đó khỏi bản đồ.
+    //
+    // Cảnh báo đóng lại → provider xoá `_responderLocationsByAlert` → hai set
+    // này rỗng → pin thường tự hiện lại, không cần dọn gì thêm.
     for (final share in shares) {
       if (share.latitude == null || share.longitude == null) continue;
       if (share.userId.isNotEmpty && share.userId == currentUserId) continue;
       if (coveredBySos.contains(share.userId)) continue;
+      final shareMemberId = share.memberId;
+      if (shareMemberId != null &&
+          coveredByResponderMemberIds.contains(shareMemberId)) {
+        continue;
+      }
+      if (coveredByResponderUserIds.contains(share.userId)) continue;
       pins.add(
         _MemberPin(
           latlng: LatLng(share.latitude!, share.longitude!),
@@ -1373,6 +1453,20 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         }
       } else {
         await sos.respond(alertId, 'ON_THE_WAY', message: 'Tôi đang đến');
+        // Đã đứng sẵn trên bản đồ rồi — vẽ đường tại chỗ, KHÔNG push thêm một
+        // màn bản đồ nữa chồng lên. Gắn followRef theo cảnh báo để tuyến tự
+        // cập nhật khi người phát di chuyển.
+        //
+        // Cũng không khởi động gửi vị trí ở đây: BE bắn
+        // `sos:responder:track:start` sau ON_THE_WAY, `family_shell` đã bắt
+        // sẵn và chạy suốt phiên.
+        if (mounted) {
+          _routeTo(
+            pin.latlng,
+            label: 'Điểm SOS',
+            followRef: _RouteTargetRef('sos', alertId),
+          );
+        }
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

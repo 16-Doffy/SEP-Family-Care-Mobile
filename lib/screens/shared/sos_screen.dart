@@ -1173,6 +1173,23 @@ class _SOSScreenState extends State<SOSScreen>
                               ),
                             );
                           }
+                          // Vừa nhận đi cứu thì thứ cần ngay là ĐƯỜNG ĐI, không
+                          // phải ở lại màn danh sách. Mở bản đồ luôn; màn bản đồ
+                          // tự vẽ đường tới điểm SOS.
+                          //
+                          // Không cần khởi động gửi vị trí ở đây: BE bắn
+                          // `sos:responder:track:start` ngay sau ON_THE_WAY và
+                          // `family_shell` đã bắt sẵn, chạy suốt phiên. Tự start
+                          // thêm ở màn bản đồ sẽ thành HAI luồng cùng đẩy.
+                          if (!mine && context.mounted) {
+                            final lat = alert.latitude;
+                            final lng = alert.longitude;
+                            context.push(
+                              '/map?alertId=${Uri.encodeQueryComponent(alert.id)}'
+                              '${lat != null ? '&lat=$lat' : ''}'
+                              '${lng != null ? '&lng=$lng' : ''}',
+                            );
+                          }
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
