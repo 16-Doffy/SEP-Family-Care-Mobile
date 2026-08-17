@@ -24,13 +24,16 @@ void main() {
       expect(alert.hasLocation, isTrue);
     });
 
-    test('isActive chỉ true khi status ACTIVE — không còn ACKNOWLEDGED giả', () {
-      expect(SosAlert.fromJson({'status': 'ACTIVE'}).isActive, isTrue);
-      expect(SosAlert.fromJson({'status': 'RESOLVED'}).isActive, isFalse);
-      expect(SosAlert.fromJson({'status': 'CANCELED'}).isActive, isFalse);
-      expect(SosAlert.fromJson({'status': 'FALSE_ALARM'}).isActive, isFalse);
-      expect(SosAlert.fromJson({'status': 'ACKNOWLEDGED'}).isActive, isFalse);
-    });
+    test(
+      'isActive chỉ true khi status ACTIVE — không còn ACKNOWLEDGED giả',
+      () {
+        expect(SosAlert.fromJson({'status': 'ACTIVE'}).isActive, isTrue);
+        expect(SosAlert.fromJson({'status': 'RESOLVED'}).isActive, isFalse);
+        expect(SosAlert.fromJson({'status': 'CANCELED'}).isActive, isFalse);
+        expect(SosAlert.fromJson({'status': 'FALSE_ALARM'}).isActive, isFalse);
+        expect(SosAlert.fromJson({'status': 'ACKNOWLEDGED'}).isActive, isFalse);
+      },
+    );
 
     test('thiếu field thì có giá trị mặc định an toàn, không throw', () {
       final alert = SosAlert.fromJson(<String, dynamic>{});
@@ -79,12 +82,62 @@ void main() {
       expect(() => sos.confirmSafety('a1'), throwsException);
     });
 
-    test('sending reset về false sau khi action throw (finally luôn chạy)', () async {
+    test(
+      'sending reset về false sau khi action throw (finally luôn chạy)',
+      () async {
+        final sos = SosProvider();
+        try {
+          await sos.resolveAlert('a1');
+        } catch (_) {}
+        expect(sos.sending, isFalse);
+      },
+    );
+  });
+
+  group('SosProvider — responder realtime locations', () {
+    test('lưu responder location theo alertId + responderMemberId', () {
       final sos = SosProvider();
-      try {
-        await sos.resolveAlert('a1');
-      } catch (_) {}
-      expect(sos.sending, isFalse);
+
+      sos.debugApplyResponderLocation({
+        'sosAlertId': 'a1',
+        'responderMemberId': 'm1',
+        'responderMember': {
+          'id': 'm1',
+          'displayName': 'Ngo Pham Nhut Duy',
+          'avatarUrl': 'https://example.test/duy.png',
+        },
+        'point': {
+          'latitude': '10.774998',
+          'longitude': '106.691014',
+          'accuracy': 17,
+          'recordedAt': '2026-08-17T08:00:00Z',
+        },
+      });
+
+      final responders = sos.responderLocationsFor('a1');
+      expect(responders, hasLength(1));
+      expect(responders.single.responderMemberId, 'm1');
+      expect(responders.single.displayName, 'Ngo Pham Nhut Duy');
+      expect(responders.single.avatarUrl, 'https://example.test/duy.png');
+      expect(responders.single.location.lat, 10.774998);
+      expect(responders.single.location.lng, 106.691014);
+      expect(responders.single.location.accuracy, 17);
+    });
+
+    test('clear responder locations khi alert resolved/canceled', () {
+      final sos = SosProvider();
+
+      sos.debugApplyResponderLocation({
+        'sosAlertId': 'a1',
+        'responderMemberId': 'm1',
+        'responderMember': {'displayName': 'Duy'},
+        'point': {'latitude': 10.77, 'longitude': 106.69},
+      });
+      expect(sos.responderLocationsFor('a1'), hasLength(1));
+
+      sos.debugApplyResolved('a1');
+
+      expect(sos.responderLocationsFor('a1'), isEmpty);
     });
   });
 }

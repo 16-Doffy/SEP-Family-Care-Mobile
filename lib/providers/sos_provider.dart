@@ -11,6 +11,22 @@ typedef SosRealtimeLocation = ({
   String? deviceId,
 });
 
+class SosResponderLocation {
+  final String alertId;
+  final String responderMemberId;
+  final String displayName;
+  final String? avatarUrl;
+  final SosRealtimeLocation location;
+
+  const SosResponderLocation({
+    required this.alertId,
+    required this.responderMemberId,
+    required this.displayName,
+    this.avatarUrl,
+    required this.location,
+  });
+}
+
 class SosAlert {
   final String id;
   final String status; // ACTIVE | RESOLVED | CANCELED
@@ -215,6 +231,7 @@ class SosProvider extends ChangeNotifier {
     _sending = false;
     _error = null;
     _latestRealtimeLocations.clear();
+    _responderLocationsByAlert.clear();
     notifyListeners();
   }
 
@@ -372,6 +389,8 @@ class SosProvider extends ChangeNotifier {
   String? _error;
   bool _realtimeOn = false;
   final Map<String, SosRealtimeLocation> _latestRealtimeLocations = {};
+  final Map<String, Map<String, SosResponderLocation>>
+  _responderLocationsByAlert = {};
 
   void Function(SosAlert alert)? onNewRealtimeAlert;
   void Function(String alertId, Map<String, dynamic> payload)?
@@ -387,6 +406,13 @@ class SosProvider extends ChangeNotifier {
   SosRealtimeLocation? realtimeLocationOf(String alertId) =>
       _latestRealtimeLocations[alertId];
 
+  List<SosResponderLocation> responderLocationsFor(String alertId) {
+    return List.unmodifiable(
+      _responderLocationsByAlert[alertId]?.values ??
+          const <SosResponderLocation>[],
+    );
+  }
+
   String? get _fid => ApiClient.instance.familyId;
 
   // ── Realtime (Socket.IO /sos) ────────────────────────────────────────────
@@ -397,6 +423,7 @@ class SosProvider extends ChangeNotifier {
     svc.onSnapshot = _applyRealtimeSnapshot;
     svc.onNewAlert = _applyRealtimeNewAlert;
     svc.onLocation = _applyRealtimeLocation;
+    svc.onResponderLocation = _applyRealtimeResponderLocation;
     svc.onResolved = _applyRealtimeResolved;
     svc.onResponse = (_) => fetchAlerts(silent: true);
     svc.onKicked = _handleRealtimeKicked;
@@ -410,11 +437,13 @@ class SosProvider extends ChangeNotifier {
     svc.onSnapshot = null;
     svc.onNewAlert = null;
     svc.onLocation = null;
+    svc.onResponderLocation = null;
     svc.onResponse = null;
     svc.onResolved = null;
     svc.onKicked = null;
     svc.disconnect();
     _latestRealtimeLocations.clear();
+    _responderLocationsByAlert.clear();
   }
 
   void _applyRealtimeSnapshot(
@@ -444,8 +473,34 @@ class SosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _applyRealtimeResponderLocation(SosResponderLocationEvent event) {
+    final loc = _parseRealtimeLocation(event.point);
+    if (loc == null) return;
+    final displayName =
+        SosAlert._memberName(event.responderMember) ??
+        event.responderMember['displayName']?.toString() ??
+        'Đang tới';
+    final user = event.responderMember['user'];
+    final avatarUrl =
+        event.responderMember['avatarUrl']?.toString() ??
+        (user is Map ? user['avatarUrl']?.toString() : null);
+    final perAlert = Map<String, SosResponderLocation>.from(
+      _responderLocationsByAlert[event.sosAlertId] ?? const {},
+    );
+    perAlert[event.responderMemberId] = SosResponderLocation(
+      alertId: event.sosAlertId,
+      responderMemberId: event.responderMemberId,
+      displayName: displayName,
+      avatarUrl: avatarUrl,
+      location: loc,
+    );
+    _responderLocationsByAlert[event.sosAlertId] = perAlert;
+    notifyListeners();
+  }
+
   void _applyRealtimeResolved(String alertId, Map<String, dynamic> payload) {
     _latestRealtimeLocations.remove(alertId);
+    _responderLocationsByAlert.remove(alertId);
     final status = payload['status']?.toString() ?? 'RESOLVED';
     _alerts = [
       for (final alert in _alerts)
@@ -476,7 +531,20 @@ class SosProvider extends ChangeNotifier {
     if (_fid != null && workspaceId != _fid) return;
     _realtimeOn = false;
     _latestRealtimeLocations.clear();
+    _responderLocationsByAlert.clear();
     notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugApplyResponderLocation(Map<String, dynamic> payload) {
+    _applyRealtimeResponderLocation(
+      SosResponderLocationEvent.fromJson(payload),
+    );
+  }
+
+  @visibleForTesting
+  void debugApplyResolved(String alertId) {
+    _applyRealtimeResolved(alertId, {'status': 'RESOLVED'});
   }
 
   void _upsertAlert(SosAlert alert) {
@@ -535,6 +603,13 @@ class SosProvider extends ChangeNotifier {
           .whereType<Map>()
           .map((e) => SosAlert.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+      final activeIds = _alerts
+          .where((a) => a.isActive)
+          .map((a) => a.id)
+          .toSet();
+      _responderLocationsByAlert.removeWhere(
+        (alertId, _) => !activeIds.contains(alertId),
+      );
     } catch (e) {
       _error = e.toString();
       debugPrint('SosProvider: fetchAlerts failed: $e');
@@ -619,6 +694,7 @@ class SosProvider extends ChangeNotifier {
               'resolutionNote': resolutionNote,
             if (action == 'resolve' && isFalseAlarm) 'isFalseAlarm': true,
           });
+      _responderLocationsByAlert.remove(alertId);
       await fetchAlerts();
     } finally {
       _sending = false;
@@ -726,6 +802,27 @@ class SosProvider extends ChangeNotifier {
       sourceType: sourceType,
       recordedAt: recordedAt,
       deviceId: deviceId,
+    );
+  }
+
+  bool pushResponderLocationRealtime(
+    String alertId,
+    double latitude,
+    double longitude, {
+    double? accuracy,
+    String sourceType = 'MOBILE_GPS',
+    DateTime? recordedAt,
+  }) {
+    final fid = _fid;
+    if (fid == null || fid.isEmpty) return false;
+    return SosRealtimeService.instance.pushResponderLocation(
+      workspaceId: fid,
+      alertId: alertId,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      sourceType: sourceType,
+      recordedAt: recordedAt,
     );
   }
 
