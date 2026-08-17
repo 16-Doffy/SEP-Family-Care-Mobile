@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/sos_realtime_service.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
@@ -963,6 +964,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     List<SosAlert> alerts,
   ) {
     final pins = <_MemberPin>[];
+    final myMemberId = _resolveMyMemberId(currentUserId, shares);
     SosAlert? myActiveSos;
     for (final alert in alerts) {
       if (alert.isActive && alert.isMine(currentUserId)) {
@@ -983,21 +985,11 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       );
     }
 
-    for (final share in shares) {
-      if (share.latitude == null || share.longitude == null) continue;
-      if (share.userId.isNotEmpty && share.userId == currentUserId) continue;
-      pins.add(
-        _MemberPin(
-          latlng: LatLng(share.latitude!, share.longitude!),
-          name: share.displayName,
-          isMe: false,
-          isSos: false,
-          memberId: share.memberId,
-          userId: share.userId,
-          updatedAt: share.updatedAt,
-        ),
-      );
-    }
+    // Người đã có pin SOS thì KHÔNG dựng thêm pin chia sẻ thường ngày cho họ
+    // nữa — nếu không, người đang kêu cứu hiện 2 lần (1 chấm đỏ SOS + 1 chấm
+    // xanh dương) ở hai toạ độ hơi lệch nhau, vì hai nguồn dữ liệu khác nhau.
+    // Gom sau vòng lặp alert bên dưới rồi mới dựng pin chia sẻ.
+    final coveredBySos = <String>{};
 
     final sos = context.read<SosProvider>();
     for (final alert in alerts) {
@@ -1026,6 +1018,14 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         );
       }
       for (final responder in responders) {
+        // BE broadcast vị trí người ứng cứu cho CẢ PHÒNG, nên chính người bấm
+        // "Tôi đang tới" cũng nhận lại vị trí của mình. Dựng luôn thì họ thấy
+        // mình hai lần: pin "Tôi" (GPS máy, chính xác hơn) và pin "Đang tới"
+        // (đi vòng qua server nên trễ, lệch vài mét) — đúng triệu chứng
+        // "icon di chuyển một nơi, Tôi một nơi". Bỏ pin đi vòng, giữ pin "Tôi".
+        if (myMemberId != null && responder.responderMemberId == myMemberId) {
+          continue;
+        }
         pins.add(
           _MemberPin(
             latlng: LatLng(responder.location.lat, responder.location.lng),
@@ -1062,9 +1062,60 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
             alertId: alert.id,
           ),
         );
+        final senderId = alert.triggeredByUserId;
+        if (senderId != null && senderId.isNotEmpty) coveredBySos.add(senderId);
       }
     }
+
+    // Pin chia sẻ vị trí thường ngày — dựng SAU CÙNG để biết ai đã có pin SOS
+    // mà bỏ qua. Chỉ bỏ khi pin SOS thực sự đã được thêm ở trên (cảnh báo
+    // thiếu toạ độ thì không thêm được), nếu không sẽ mất hẳn người đó.
+    for (final share in shares) {
+      if (share.latitude == null || share.longitude == null) continue;
+      if (share.userId.isNotEmpty && share.userId == currentUserId) continue;
+      if (coveredBySos.contains(share.userId)) continue;
+      pins.add(
+        _MemberPin(
+          latlng: LatLng(share.latitude!, share.longitude!),
+          name: share.displayName,
+          isMe: false,
+          isSos: false,
+          memberId: share.memberId,
+          userId: share.userId,
+          updatedAt: share.updatedAt,
+        ),
+      );
+    }
     return pins;
+  }
+
+  /// `familyMember.id` của chính mình — cần để nhận ra pin người ứng cứu do
+  /// server dội ngược về chính là mình.
+  ///
+  /// `SosResponderLocation` chỉ mang `responderMemberId` (id bản ghi thành
+  /// viên), trong khi phiên đăng nhập chỉ biết `userId` — phải tra bảng thành
+  /// viên để nối hai thứ. Rơi về `gps.shares` nếu danh sách thành viên chưa
+  /// tải xong; cả hai đều không có thì trả null và chấp nhận hiện trùng, chứ
+  /// không đoán bằng tên hiển thị (trùng tên là ẩn nhầm người khác).
+  String? _resolveMyMemberId(
+    String? currentUserId,
+    List<LocationShare> shares,
+  ) {
+    if (currentUserId == null || currentUserId.isEmpty) return null;
+    for (final member in context.read<FamilyProvider>().members) {
+      if (member.userId == currentUserId && member.id.isNotEmpty) {
+        return member.id;
+      }
+    }
+    for (final share in shares) {
+      final memberId = share.memberId;
+      if (share.userId == currentUserId &&
+          memberId != null &&
+          memberId.isNotEmpty) {
+        return memberId;
+      }
+    }
+    return null;
   }
 
   Marker _buildMarker(_MemberPin pin) {
