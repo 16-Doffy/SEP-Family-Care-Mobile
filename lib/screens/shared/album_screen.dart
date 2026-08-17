@@ -3030,12 +3030,21 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
     _maybeResolve();
   }
 
+  /// URL bản gốc đã hiện được, giữ lại để `fetchMedia(refresh: true)` thay
+  /// `_items` bằng object không kèm URL cũng không làm trắng màn — cùng lý do
+  /// với `_shownUrl` của [AlbumMediaThumbState].
+  String? _shownUrl;
+
   @override
   void didUpdateWidget(_AlbumDetailMediaPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.media.id != widget.media.id ||
-        oldWidget.media.displayUrl != widget.media.displayUrl ||
-        oldWidget.media.fileUrl != widget.media.fileUrl) {
+    if (oldWidget.media.id != widget.media.id) {
+      _shownUrl = null;
+      _future = null;
+      _maybeResolve();
+    } else if ((widget.media.fileUrl ?? '').isEmpty &&
+        _shownUrl == null &&
+        _future == null) {
       _maybeResolve();
     }
   }
@@ -3045,15 +3054,22 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
   /// đây thì ảnh hiện ra là bản thu nhỏ, trông mờ hơn ảnh thật.
   void _maybeResolve() {
     final full = widget.media.fileUrl ?? '';
-    _future = full.isNotEmpty
-        ? null
-        : context.read<AlbumProvider>().resolveFullUrl(widget.media);
+    if (full.isNotEmpty) {
+      _shownUrl = full;
+      _future = null;
+      return;
+    }
+    _future = context.read<AlbumProvider>().resolveFullUrl(widget.media);
   }
 
   @override
   Widget build(BuildContext context) {
     final full = widget.media.fileUrl ?? '';
-    if (full.isNotEmpty) return _media(full);
+    final best = full.isNotEmpty ? full : _shownUrl;
+    if (best != null && best.isNotEmpty) {
+      _shownUrl = best;
+      return _media(best);
+    }
     // Chưa có bản gốc: dùng thumbnail đang có làm ảnh tạm trong lúc chờ, không
     // để màn trống. Không có gì để hiện thì mới quay bánh xe.
     final thumb = widget.media.displayUrl;
@@ -3070,6 +3086,7 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
         }
         final url = snap.data ?? (thumb.isNotEmpty ? thumb : null);
         if (url == null || url.isEmpty) return _empty();
+        _shownUrl = url;
         return _media(url);
       },
     );
@@ -3139,6 +3156,21 @@ Widget _thumbBox(IconData icon) => Container(
 Widget _thumbPlaceholder({required bool isVideo}) =>
     _thumbBox(isVideo ? Icons.movie_outlined : Icons.image_outlined);
 
+/// Ô đang chờ lấy URL. Phải khác hẳn [_thumbPlaceholder] — trước đây cả hai
+/// đều là ô xám kèm icon ảnh nên người dùng không phân biệt được "đang tải"
+/// với "ảnh hỏng/không có", tưởng là mất ảnh.
+Widget _thumbLoading() => Container(
+  color: AppColors.progressTrack,
+  alignment: Alignment.center,
+  child: const SizedBox.square(
+    dimension: 18,
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      color: AppColors.textMuted,
+    ),
+  ),
+);
+
 Widget _thumbImage(String url) => Image.network(
   url,
   fit: BoxFit.cover,
@@ -3159,6 +3191,15 @@ class AlbumMediaThumb extends StatefulWidget {
 class AlbumMediaThumbState extends State<AlbumMediaThumb> {
   Future<String?>? _future;
 
+  /// URL đã hiện được cho **đúng media này**, giữ lại trong State.
+  ///
+  /// Bắt buộc phải có: `fetchMedia(refresh: true)` (poll 8s, kéo làm mới, đổi
+  /// bộ lọc) thay sạch `_items` bằng object mới **không kèm URL**, mà
+  /// `didUpdateWidget` lại chỉ resolve lại khi đổi `media.id`. Không nhớ URL
+  /// thì ô đã hiện ảnh bị rơi về ô xám và kẹt ở đó tới khi widget được dựng
+  /// lại — đúng triệu chứng "vào tab Ảnh thì mất ảnh, lúc sau mới hiện lại".
+  String? _shownUrl;
+
   @override
   void initState() {
     super.initState();
@@ -3169,33 +3210,55 @@ class AlbumMediaThumbState extends State<AlbumMediaThumb> {
   void didUpdateWidget(AlbumMediaThumb oldWidget) {
     super.didUpdateWidget(oldWidget);
     // GridView tái sử dụng widget khi cuộn → media có thể đổi sang item khác.
-    if (oldWidget.media.id != widget.media.id) _maybeResolve();
+    // Đổi media thì phải quên URL cũ, nếu không ô sẽ hiện nhầm ảnh trước đó.
+    if (oldWidget.media.id != widget.media.id) {
+      _shownUrl = null;
+      _future = null;
+      _maybeResolve();
+    } else if (widget.media.displayUrl.isEmpty &&
+        _shownUrl == null &&
+        _future == null) {
+      // Cùng media nhưng URL vừa bị mất do refresh, mà chưa từng hiện được ảnh
+      // nào → phải gọi lại, không để ô đứng im mãi.
+      _maybeResolve();
+    }
   }
 
   void _maybeResolve() {
-    _future = widget.media.displayUrl.isNotEmpty
-        ? null
-        : context.read<AlbumProvider>().resolveDisplayUrl(widget.media);
+    final direct = widget.media.displayUrl;
+    if (direct.isNotEmpty) {
+      _shownUrl = direct;
+      _future = null;
+      return;
+    }
+    _future = context.read<AlbumProvider>().resolveDisplayUrl(widget.media);
   }
 
   @override
   Widget build(BuildContext context) {
+    // Ưu tiên URL mới nhất từ provider, rơi về URL đã hiện được trước đó.
     final direct = widget.media.displayUrl;
-    if (direct.isNotEmpty) return _thumbImage(direct);
+    final url = direct.isNotEmpty ? direct : _shownUrl;
+    if (url != null && url.isNotEmpty) {
+      _shownUrl = url;
+      return _thumbImage(url);
+    }
     if (_future == null) {
       return _thumbPlaceholder(isVideo: widget.media.isVideo);
     }
     return FutureBuilder<String?>(
       future: _future,
       builder: (_, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return _thumbBox(Icons.image_outlined);
-        }
-        final url = snap.data;
-        if (url == null || url.isEmpty) {
+        if (snap.connectionState != ConnectionState.done)
+          return _thumbLoading();
+        final resolved = snap.data;
+        if (resolved == null || resolved.isEmpty) {
           return _thumbPlaceholder(isVideo: widget.media.isVideo);
         }
-        return _thumbImage(url);
+        // Ghi thẳng, không setState: khung hình này đã vẽ ảnh rồi, đây chỉ là
+        // ghi nhớ để lần refresh sau không làm trắng ô.
+        _shownUrl = resolved;
+        return _thumbImage(resolved);
       },
     );
   }
