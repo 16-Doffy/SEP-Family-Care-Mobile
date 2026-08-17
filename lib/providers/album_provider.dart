@@ -23,6 +23,9 @@ class AlbumProvider extends ChangeNotifier {
   void resetForNewSession() {
     _items.clear();
     _collections.clear();
+    // URL đã ký của tài khoản cũ không được dùng lại cho tài khoản mới.
+    _resolvedUrls.clear();
+    _resolvedFullUrls.clear();
     _loading = false;
     _loadingMore = false;
     _uploading = false;
@@ -178,6 +181,11 @@ class AlbumProvider extends ChangeNotifier {
   // không gọi lại API. Tách khỏi _items vì nhiều ô có thể đang chờ cùng lúc.
   final Map<String, String> _resolvedUrls = {};
   final Map<String, Future<String?>> _resolving = {};
+  // Cache riêng cho bản gốc (fileUrl). Không dùng chung _resolvedUrls vì hai
+  // cache trả về hai URL khác nhau cho cùng một media: lưới cần thumbnail cho
+  // nhẹ, màn chi tiết cần bản gốc cho nét.
+  final Map<String, String> _resolvedFullUrls = {};
+  final Map<String, Future<String?>> _resolvingFull = {};
 
   /// Lấy URL hiển thị cho một ô lưới. API list KHÔNG trả signed URL (chỉ detail
   /// mới có — xác minh 2026-07-21), nên ô thiếu URL phải gọi detail để lấy.
@@ -207,6 +215,44 @@ class AlbumProvider extends ChangeNotifier {
         return null; // ô sẽ hiện icon lỗi, không làm sập lưới
       } finally {
         _resolving.remove(media.id);
+      }
+    });
+  }
+
+  /// Lấy URL **bản gốc** (`fileUrl`) cho màn xem chi tiết.
+  ///
+  /// Khác [resolveDisplayUrl]: hàm kia trả `displayUrl` = `thumbnailUrl ??
+  /// fileUrl`, tức ưu tiên bản thu nhỏ — đúng cho ô lưới nhưng sai cho màn chi
+  /// tiết (ảnh hiện ra bị mờ hơn bản thật). Ở đây luôn lấy `fileUrl` trước,
+  /// chỉ rơi về `displayUrl` khi BE không trả `fileUrl`.
+  ///
+  /// [VERIFY] Chưa xác nhận runtime BE có thực sự sinh `thumbnailUrl` riêng hay
+  /// không. Nếu BE không trả thumbnail thì hàm này cho kết quả y hệt
+  /// [resolveDisplayUrl] — vô hại; nếu có trả thì đây là chỗ sửa đúng.
+  Future<String?> resolveFullUrl(AlbumMedia media) {
+    final direct = media.fileUrl;
+    if (direct != null && direct.isNotEmpty) return Future.value(direct);
+    final cached = _resolvedFullUrls[media.id];
+    if (cached != null) return Future.value(cached);
+
+    return _resolvingFull.putIfAbsent(media.id, () async {
+      try {
+        final data = await ApiClient.instance.get(
+          '/families/$_fid/albums/media/${media.id}',
+        );
+        if (data is! Map) return null;
+        final detail = AlbumMedia.fromJson(Map<String, dynamic>.from(data));
+        final url = detail.fileUrl ?? detail.displayUrl;
+        if (url.isEmpty) return null;
+        _resolvedFullUrls[media.id] = url;
+        final idx = _items.indexWhere((m) => m.id == media.id);
+        if (idx >= 0) _items[idx] = _items[idx].merge(detail);
+        return url;
+      } catch (_) {
+        // Trả null để viewer tự rơi về thumbnail đang có, không để màn trống.
+        return null;
+      } finally {
+        _resolvingFull.remove(media.id);
       }
     });
   }

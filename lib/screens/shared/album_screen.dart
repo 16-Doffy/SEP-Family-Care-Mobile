@@ -2798,28 +2798,35 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
     }
   }
 
+  /// Màn chi tiết luôn phải hiện **bản gốc** `fileUrl`, không phải
+  /// `displayUrl` (= `thumbnailUrl ?? fileUrl`) như ô lưới — dùng displayUrl ở
+  /// đây thì ảnh hiện ra là bản thu nhỏ, trông mờ hơn ảnh thật.
   void _maybeResolve() {
-    final direct = widget.media.fileUrl ?? widget.media.displayUrl;
-    _future = direct.isNotEmpty
+    final full = widget.media.fileUrl ?? '';
+    _future = full.isNotEmpty
         ? null
-        : context.read<AlbumProvider>().resolveDisplayUrl(widget.media);
+        : context.read<AlbumProvider>().resolveFullUrl(widget.media);
   }
 
   @override
   Widget build(BuildContext context) {
-    final direct = widget.media.fileUrl ?? widget.media.displayUrl;
-    if (direct.isNotEmpty) return _media(direct);
+    final full = widget.media.fileUrl ?? '';
+    if (full.isNotEmpty) return _media(full);
+    // Chưa có bản gốc: dùng thumbnail đang có làm ảnh tạm trong lúc chờ, không
+    // để màn trống. Không có gì để hiện thì mới quay bánh xe.
+    final thumb = widget.media.displayUrl;
     final future = _future;
-    if (future == null) return _empty();
+    if (future == null) return thumb.isNotEmpty ? _media(thumb) : _empty();
     return FutureBuilder<String?>(
       future: future,
       builder: (_, snap) {
         if (snap.connectionState != ConnectionState.done) {
+          if (thumb.isNotEmpty) return _media(thumb);
           return Center(
             child: CircularProgressIndicator(color: context.colors.textPrimary),
           );
         }
-        final url = snap.data;
+        final url = snap.data ?? (thumb.isNotEmpty ? thumb : null);
         if (url == null || url.isEmpty) return _empty();
         return _media(url);
       },
@@ -2836,10 +2843,17 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
           InteractiveViewer(
             minScale: 1,
             maxScale: 4,
-            child: Center(
+            // KHÔNG bọc bằng Center: Center cho con ràng buộc lỏng nên Image tự
+            // lấy kích thước gốc và BoxFit.contain mất tác dụng phóng to — ảnh
+            // gốc nhỏ (screenshot ~150x110px) chỉ hiện bằng con tem giữa màn
+            // hình. SizedBox.expand ép khung bằng cả trang để contain phóng
+            // đúng nghĩa. filterQuality medium để ảnh nhỏ phóng lên đỡ rỗ
+            // (ảnh gốc quá nhỏ thì vẫn mờ — giới hạn của dữ liệu, không phải UI).
+            child: SizedBox.expand(
               child: Image.network(
                 url,
                 fit: BoxFit.contain,
+                filterQuality: FilterQuality.medium,
                 errorBuilder: (_, _, _) => _empty(),
               ),
             ),
