@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../services/location_realtime_service.dart';
 
 // Shape response đã được BE document (Swagger 19/07):
 // { userId, memberId, displayName, avatarUrl, latitude, longitude, accuracy,
@@ -70,6 +71,7 @@ class GpsProvider extends ChangeNotifier {
   /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
   /// [ApiClient.addSessionResetListener].
   void resetForNewSession() {
+    stopRealtime();
     _shares = [];
     _loading = false;
     _busy = false;
@@ -84,6 +86,8 @@ class GpsProvider extends ChangeNotifier {
   bool _busy = false;
   String? _error;
   bool _sharingUnavailable = false;
+  bool _realtimeOn = false;
+  String? _realtimeMyUserId;
 
   // Trạng thái chia sẻ vị trí của CHÍNH MÌNH. BE không có endpoint đọc riêng →
   // suy từ việc mình có mặt trong members/locations (endpoint chỉ trả người
@@ -95,6 +99,7 @@ class GpsProvider extends ChangeNotifier {
   bool get busy => _busy;
   String? get error => _error;
   bool get mySharing => _mySharing;
+  bool get realtimeConnected => LocationRealtimeService.instance.connected;
   // Giữ làm lưới an toàn: nếu endpoint location 404 (BE rollback/đổi path),
   // UI hiện "đang phát triển" thay vì phơi raw "Cannot GET ...".
   bool get sharingUnavailable => _sharingUnavailable;
@@ -102,6 +107,113 @@ class GpsProvider extends ChangeNotifier {
   // BE ship 3 EP location 19/07 (đúng contract BAO_CAO_BE_SOS_2026-07-16 §7
   // phương án B — family-scoped). Path cũ `/location/*` đã chết, không dùng.
   String? get _fid => ApiClient.instance.familyId;
+
+  void startRealtime({String? myUserId}) {
+    if (_realtimeOn) return;
+    _realtimeOn = true;
+    _realtimeMyUserId = myUserId;
+    final svc = LocationRealtimeService.instance;
+    svc.onLocationUpdated = _applyRealtimeLocationUpdated;
+    svc.onSharingChanged = _applyRealtimeSharingChanged;
+    svc.connect();
+  }
+
+  void stopRealtime() {
+    if (!_realtimeOn) return;
+    _realtimeOn = false;
+    _realtimeMyUserId = null;
+    final svc = LocationRealtimeService.instance;
+    svc.onLocationUpdated = null;
+    svc.onSharingChanged = null;
+    svc.disconnect();
+  }
+
+  void _applyRealtimeLocationUpdated(Map<String, dynamic> payload) {
+    final workspaceId = payload['workspaceId']?.toString();
+    final fid = _fid;
+    if (fid != null &&
+        workspaceId != null &&
+        workspaceId.isNotEmpty &&
+        workspaceId != fid) {
+      return;
+    }
+
+    final share = LocationShare.fromJson(payload);
+    if (share.userId.isEmpty &&
+        (share.memberId == null || share.memberId!.isEmpty)) {
+      return;
+    }
+    if (!share.isSharing || share.latitude == null || share.longitude == null) {
+      _removeShare(memberId: share.memberId, userId: share.userId);
+      notifyListeners();
+      return;
+    }
+
+    _upsertShare(share);
+    if (_realtimeMyUserId != null && share.userId == _realtimeMyUserId) {
+      _mySharing = share.isSharing;
+    }
+    notifyListeners();
+  }
+
+  void _applyRealtimeSharingChanged(Map<String, dynamic> payload) {
+    final workspaceId = payload['workspaceId']?.toString();
+    final fid = _fid;
+    if (fid != null &&
+        workspaceId != null &&
+        workspaceId.isNotEmpty &&
+        workspaceId != fid) {
+      return;
+    }
+
+    final memberId = payload['memberId']?.toString();
+    final isSharing = payload['isSharing'] as bool? ?? false;
+    if (memberId == null || memberId.isEmpty) return;
+
+    final existing = _shareByMemberId(memberId);
+    if (_realtimeMyUserId != null && existing?.userId == _realtimeMyUserId) {
+      _mySharing = isSharing;
+    }
+    if (!isSharing) {
+      _removeShare(memberId: memberId);
+    }
+    notifyListeners();
+  }
+
+  void _upsertShare(LocationShare share) {
+    final index = _shares.indexWhere(
+      (s) =>
+          (share.memberId != null &&
+              share.memberId!.isNotEmpty &&
+              s.memberId == share.memberId) ||
+          (share.userId.isNotEmpty && s.userId == share.userId),
+    );
+    if (index == -1) {
+      _shares = [share, ..._shares];
+      return;
+    }
+    _shares = [
+      for (var i = 0; i < _shares.length; i++) i == index ? share : _shares[i],
+    ];
+  }
+
+  LocationShare? _shareByMemberId(String memberId) {
+    for (final share in _shares) {
+      if (share.memberId == memberId) return share;
+    }
+    return null;
+  }
+
+  void _removeShare({String? memberId, String? userId}) {
+    _shares = [
+      for (final share in _shares)
+        if (!((memberId != null &&
+                memberId.isNotEmpty &&
+                share.memberId == memberId) ||
+            (userId != null && userId.isNotEmpty && share.userId == userId)))
+          share,
+    ];
+  }
 
   Future<void> fetchFamilyLocations({
     String? myUserId,

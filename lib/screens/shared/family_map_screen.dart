@@ -27,18 +27,16 @@ class FamilyMapScreen extends StatefulWidget {
 class _FamilyMapScreenState extends State<FamilyMapScreen> {
   final _mapCtrl = MapController();
 
+  GpsProvider? _gpsProvider;
   LatLng? _myPos;
   double? _myAccuracy;
   bool _locating = false;
   String? _locError;
 
-  // RTR foreground: khi màn bản đồ đang mở, máy chia sẻ đẩy GPS mới và máy xem
-  // poll pin gia đình/SOS theo nhịp ngắn. Không chạy nền để tránh hao pin.
+  // RTR foreground: khi màn bản đồ đang mở, máy chia sẻ đẩy GPS mới lên REST;
+  // BE lưu xong sẽ broadcast marker realtime qua namespace `/locations`.
   static const _kPushInterval = Duration(seconds: 5);
-  static const _kLiveRefreshInterval = Duration(seconds: 5);
   Timer? _pushTimer;
-  Timer? _liveRefreshTimer;
-  bool _liveRefreshInFlight = false;
   bool _pushInFlight = false;
   final Map<String, SosRealtimeLocation> _latestSosLocations = {};
 
@@ -198,11 +196,13 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _refreshFamilyLocations().then((_) {
+    _gpsProvider = context.read<GpsProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _refreshFamilyLocations();
+      if (mounted) {
+        _gpsProvider?.startRealtime(myUserId: _myUserId);
         if (mounted) _syncPushTimer();
-      });
-      _startLiveRefresh();
+      }
       if (widget.initialLat != null && widget.initialLng != null) {
         // Vào từ cảnh báo SOS → tự vẽ đường từ vị trí của tôi tới điểm SOS.
         final target = LatLng(widget.initialLat!, widget.initialLng!);
@@ -219,26 +219,8 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   @override
   void dispose() {
     _pushTimer?.cancel();
-    _liveRefreshTimer?.cancel();
+    _gpsProvider?.stopRealtime();
     super.dispose();
-  }
-
-  void _startLiveRefresh() {
-    _liveRefreshTimer?.cancel();
-    _liveRefreshTimer = Timer.periodic(
-      _kLiveRefreshInterval,
-      (_) => _refreshLiveData(),
-    );
-  }
-
-  Future<void> _refreshLiveData() async {
-    if (!mounted || _liveRefreshInFlight) return;
-    _liveRefreshInFlight = true;
-    try {
-      await _refreshFamilyLocations(silent: true);
-    } finally {
-      _liveRefreshInFlight = false;
-    }
   }
 
   // Bật timer khi đang chia sẻ, tắt khi không.

@@ -41,7 +41,7 @@ class FamilyShell extends StatefulWidget {
 
 class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   // Poll nhẹ ở tầng shell vẫn giữ làm fallback cho SOS/notification nếu socket
-  // rớt. Realtime chính: /notifications, /chat và /sos.
+  // rớt. Realtime chính: /notifications, /chat, /sos và /locations.
   static const _kPollInterval = Duration(seconds: 15);
   // Ở nền vẫn poll (để SOS nổ được khi user đang ở app khác), chỉ giãn chu kỳ.
   static const _kPollIntervalBackground = Duration(seconds: 30);
