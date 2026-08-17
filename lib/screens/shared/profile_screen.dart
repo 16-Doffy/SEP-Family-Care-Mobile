@@ -332,36 +332,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showUnavailableNotice(String feature) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text('$feature đang được cập nhật.')),
-      );
+      ..showSnackBar(SnackBar(content: Text('$feature đang được cập nhật.')));
   }
 
   Widget _infoRow(IconData icon, String label, String value) => Row(
     children: [
       Icon(icon, size: 18, color: context.colors.textMuted),
       const SizedBox(width: 10),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: context.colors.textMuted,
+      // Expanded là bắt buộc: thiếu nó thì Column nhận ràng buộc rộng vô hạn,
+      // email dài không cắt được và tràn ra ngoài (lỗi "RIGHT OVERFLOWED").
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: context.colors.textMuted,
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: context.colors.textPrimary,
+            const SizedBox(height: 2),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: context.colors.textPrimary,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ],
   );
@@ -402,56 +406,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String label, {
     String? subtitle,
     required VoidCallback onTap,
-  }) =>
-      InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              AppFeatureIcon(
-                icon: icon,
-                color: AppColors.link,
-                backgroundColor: AppColors.link.withValues(alpha: 0.08),
-                size: 38,
-                iconSize: 20,
-                radius: 12,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        color: context.colors.textPrimary,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: context.colors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: context.colors.textMuted,
-                size: 20,
-              ),
-            ],
+  }) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(20),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          AppFeatureIcon(
+            icon: icon,
+            color: AppColors.link,
+            backgroundColor: AppColors.link.withValues(alpha: 0.08),
+            size: 38,
+            iconSize: 20,
+            radius: 12,
           ),
-        ),
-      );
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    color: context.colors.textPrimary,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: context.colors.textMuted,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: context.colors.textMuted,
+            size: 20,
+          ),
+        ],
+      ),
+    ),
+  );
 
   void _showThemeModeSheet(BuildContext context) {
     showModalBottomSheet<void>(
@@ -490,13 +493,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: switch (mode) {
                           AppThemePreference.system =>
                             Icons.brightness_auto_outlined,
-                          AppThemePreference.light =>
-                            Icons.light_mode_outlined,
+                          AppThemePreference.light => Icons.light_mode_outlined,
                           AppThemePreference.dark => Icons.dark_mode_outlined,
                         },
                         color: AppColors.link,
-                        backgroundColor:
-                            AppColors.link.withValues(alpha: 0.08),
+                        backgroundColor: AppColors.link.withValues(alpha: 0.08),
                         size: 38,
                         iconSize: 20,
                         radius: 12,
