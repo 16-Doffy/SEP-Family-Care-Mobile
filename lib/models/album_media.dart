@@ -234,7 +234,7 @@ class AlbumMedia {
         uploader?['displayName'] ??
             user?['fullName'] ??
             json['uploaderName'] ??
-            'Thanh vien',
+            'Thành viên',
       ),
       fileUrl: urlFrom(
         fileAccess?['url'] ??

@@ -94,7 +94,7 @@ class AlbumProvider extends ChangeNotifier {
 
   String get _fid {
     final fid = ApiClient.instance.familyId;
-    if (fid == null) throw Exception('Chua co gia dinh');
+    if (fid == null) throw Exception('Chưa có gia đình');
     return fid;
   }
 

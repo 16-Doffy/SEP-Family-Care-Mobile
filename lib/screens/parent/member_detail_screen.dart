@@ -394,7 +394,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     };
 
     return _sectionCard(
-      title: 'Face Profile',
+      title: 'Hồ sơ khuôn mặt',
       icon: Icons.face_retouching_natural_rounded,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1163,7 +1163,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
   Widget _relationshipCard(FamilyMember member) {
     final current = member.relation.toUpperCase();
-    final isLegacy = current.isNotEmpty && !kRelationshipOptions.containsKey(current);
+    final isLegacy =
+        current.isNotEmpty && !kRelationshipOptions.containsKey(current);
     return _sectionCard(
       title: 'Quan hệ gia đình',
       icon: Icons.family_restroom_rounded,
