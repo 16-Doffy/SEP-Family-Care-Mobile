@@ -1,8 +1,23 @@
 package com.familycare.family_care
 
+/**
+ * Phát hiện té ngã theo mẫu hai pha: rơi tự do rồi va đập.
+ *
+ * Ngưỡng rơi tự do nới từ 3.0 lên 6.0 m/s² (2026-08-17) sau khi test thật:
+ * người ngã mà điện thoại nằm trong TÚI QUẦN gần như không bao giờ tạo ra pha
+ * rơi tự do "sạch" — túi giữ máy áp vào người nên máy đi theo cơ thể, biên độ
+ * chỉ tụt xuống khoảng 4–7 m/s² chứ không về gần 0 như khi thả rơi máy.
+ * Ngưỡng 3.0 (≈0.3g) chỉ bắt được cú THẢ RƠI MÁY, không bắt được NGƯỜI NGÃ.
+ *
+ * 6.0 m/s² ≈ 0.61g, nằm trong khoảng 0.5–0.7g mà các nghiên cứu phát hiện té
+ * ngã bằng điện thoại thường dùng.
+ *
+ * Ngưỡng va đập giữ nguyên 25.0 m/s² (≈2.5g) — đây mới là chốt chặn báo động
+ * giả chính, và vẫn phải có ĐỦ CẢ HAI pha trong 900ms mới tính.
+ */
 class FallDetector(
-    private val freeFallThreshold: Float = 3.0f,
-    private val minFreeFallMs: Long = 100,
+    private val freeFallThreshold: Float = 6.0f,
+    private val minFreeFallMs: Long = 80,
     private val impactThreshold: Float = 25.0f,
     private val impactWindowMs: Long = 900,
     private val cooldownMs: Long = 30_000,

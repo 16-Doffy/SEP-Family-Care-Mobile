@@ -21,6 +21,16 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    // Unit test Kotlin nằm ở src/test/kotlin. Không khai dòng này thì AGP chỉ
+    // nhìn src/test/java, và toàn bộ test trong repo bị BỎ QUA IM LẶNG:
+    // `./gradlew :app:testDebugUnitTest` vẫn BUILD SUCCESSFUL nhưng báo cáo
+    // ghi "0 tests, 0 failures" (phát hiện 2026-08-17 — cả 3 file test
+    // FallDetectorTest / ShakeDetectorTest / EmergencySosMatcherTest chưa từng
+    // chạy lần nào kể từ khi được viết).
+    sourceSets.getByName("test") {
+        java.srcDir("src/test/kotlin")
+    }
+
     compileOptions {
         // flutter_local_notifications yêu cầu core library desugaring
         // (dùng java.time trên minSdk < 26). Thiếu dòng này build sẽ fail ở

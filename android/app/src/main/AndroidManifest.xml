@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- Foreground service cho SOS nền và giữ cuộc gọi video khi khoá màn hình/xuống nền -->
+    <!-- Giữ CPU thức trong lúc SosGuardService canh cảm biến. Thiếu quyền này
+         thì màn hình tắt là SoC ngủ, gia tốc kế ngừng gửi dữ liệu và cú té ngã
+         đi qua mà không phát hiện được. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
