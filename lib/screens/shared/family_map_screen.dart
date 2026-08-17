@@ -60,6 +60,10 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   /// (xem [sosResponderLog]). Xóa cùng lúc với đám log kia.
   final Map<String, int> _loggedResponderCount = {};
 
+  /// Cảnh báo đã tự thu camera bao trọn người ứng cứu — mỗi cảnh báo chỉ thu
+  /// một lần, xem [_maybeFitToResponders].
+  final Set<String> _fittedResponderAlerts = {};
+
   String? get _myUserId => context.read<AuthProvider>().user?.id;
 
   static String _fmtDistance(double m) =>
@@ -170,6 +174,43 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       debugPrint('Route: OSRM thất bại, dùng đường thẳng: $e');
     } finally {
       if (mounted && seq == _routeSeq) setState(() => _routing = false);
+    }
+  }
+
+  /// Khi cảnh báo của CHÍNH MÌNH có người ứng cứu đầu tiên, thu bản đồ lại cho
+  /// thấy cả mình lẫn người đang tới.
+  ///
+  /// Không có bước này thì camera vẫn khoá ở vị trí người phát (zoom 15, thấy
+  /// chưa tới 2km) — người ứng cứu cách vài km là nằm ngoài khung, người phát
+  /// tưởng "chỉ có mỗi mình trên bản đồ" dù pin đã được vẽ đúng.
+  ///
+  /// Chỉ tự thu **một lần cho mỗi cảnh báo**: sau đó người dùng tự do kéo/zoom,
+  /// không giật camera về mỗi lần vị trí người ứng cứu cập nhật (mỗi ~5 giây).
+  void _maybeFitToResponders(
+    String? currentUserId,
+    List<SosAlert> alerts,
+    List<_MemberPin> pins,
+  ) {
+    for (final alert in alerts) {
+      if (!alert.isMine(currentUserId)) continue;
+      if (_fittedResponderAlerts.contains(alert.id)) continue;
+      final targets = [
+        for (final pin in pins)
+          if (pin.isResponder && pin.alertId == alert.id) pin.latlng,
+        if (_myPos != null) _myPos!,
+      ];
+      if (targets.length < 2) continue;
+      _fittedResponderAlerts.add(alert.id);
+      // fitCamera không gọi được giữa lúc build — hoãn sang frame kế tiếp.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _mapCtrl.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(targets),
+            padding: const EdgeInsets.fromLTRB(60, 120, 60, 260),
+          ),
+        );
+      });
     }
   }
 
@@ -533,6 +574,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     final alerts = context.watch<SosProvider>().activeAlerts;
     final pins = _buildPins(auth.user?.id, gps.shares, alerts);
     _syncRouteWithMovingPin(pins);
+    _maybeFitToResponders(auth.user?.id, alerts, pins);
     final sosPins = pins.where((p) => p.isSos).toList();
 
     final defaultCenter = _myPos ?? const LatLng(10.7769, 106.7009); // HCM
@@ -924,25 +966,20 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
 
     final sos = context.read<SosProvider>();
     for (final alert in alerts) {
-      final realtime = sos.realtimeLocationOf(alert.id);
-      final current = realtime ?? _latestSosLocations[alert.id];
-      final lat = current?.lat ?? alert.latitude;
-      final lng = current?.lng ?? alert.longitude;
-      if (lat == null || lng == null) continue;
-      // Cảnh báo do CHÍNH MÌNH phát: pin "Tôi" (GPS trực tiếp, chính xác hơn)
-      // đã đại diện vị trí này rồi → không thêm pin SOS nữa, tránh cùng một
-      // người hiện 2 lần trong danh sách.
-      if (!alert.isMine(currentUserId)) {
-        pins.add(
-          _MemberPin(
-            latlng: LatLng(lat, lng),
-            name: alert.senderName,
-            isMe: false,
-            isSos: true,
-            alertId: alert.id,
-          ),
-        );
-      }
+      // ── Pin người ứng cứu ────────────────────────────────────────────────
+      // PHẢI dựng TRƯỚC đoạn kiểm tra toạ độ cảnh báo bên dưới.
+      //
+      // Bug đã sửa (verify bằng log runtime 17/08): khối này vốn nằm SAU
+      // `if (lat == null || lng == null) continue;`. Cảnh báo không có toạ độ
+      // — rất hay gặp với chính người phát, vì `sos:location` không được BE
+      // dội ngược về máy họ và bản ghi alert cũng có thể không kèm lat/lng —
+      // thì `continue` nhảy qua alert, và pin người ứng cứu KHÔNG BAO GIỜ
+      // được thêm. Log thật cho thấy máy người phát nhận đủ
+      // `sos:responder:location` và lưu state đúng (`length=1`), nhưng
+      // `DỰNG MARKER` không chạy lần nào.
+      //
+      // Vị trí người ứng cứu độc lập hoàn toàn với việc cảnh báo có toạ độ
+      // hay không — không được buộc hai thứ vào nhau.
       final responders = sos.responderLocationsFor(alert.id);
       // Chỉ log khi SỐ LƯỢNG đổi — _buildPins chạy lại mỗi lần rebuild nên log
       // vô điều kiện sẽ ngập logcat và che mất event thật.
@@ -965,6 +1002,29 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
             memberId: responder.responderMemberId,
             avatarUrl: responder.avatarUrl,
             accuracy: responder.location.accuracy,
+          ),
+        );
+      }
+
+      // ── Pin điểm SOS ─────────────────────────────────────────────────────
+      // Phần này mới cần toạ độ của cảnh báo; thiếu thì bỏ qua ĐÚNG pin này,
+      // không ảnh hưởng pin người ứng cứu ở trên.
+      final realtime = sos.realtimeLocationOf(alert.id);
+      final current = realtime ?? _latestSosLocations[alert.id];
+      final lat = current?.lat ?? alert.latitude;
+      final lng = current?.lng ?? alert.longitude;
+      if (lat == null || lng == null) continue;
+      // Cảnh báo do CHÍNH MÌNH phát: pin "Tôi" (GPS trực tiếp, chính xác hơn)
+      // đã đại diện vị trí này rồi → không thêm pin SOS nữa, tránh cùng một
+      // người hiện 2 lần trong danh sách.
+      if (!alert.isMine(currentUserId)) {
+        pins.add(
+          _MemberPin(
+            latlng: LatLng(lat, lng),
+            name: alert.senderName,
+            isMe: false,
+            isSos: true,
+            alertId: alert.id,
           ),
         );
       }
