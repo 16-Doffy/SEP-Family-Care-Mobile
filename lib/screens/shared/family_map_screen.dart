@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
@@ -46,11 +45,15 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   // key). OSRM lỗi/không mạng → giữ nguyên đường thẳng, không vỡ tính năng.
   List<LatLng> _routePoints = const [];
   LatLng? _routeTarget;
+  LatLng? _routeOrigin;
   String? _routeLabel;
+  _RouteTargetRef? _routeTargetRef;
   double? _routeDistanceM;
   double? _routeDurationS;
   bool _routing = false;
   bool _routeIsRoad = false;
+  int _routeSeq = 0;
+  Timer? _routeRefreshDebounce;
 
   String? get _myUserId => context.read<AuthProvider>().user?.id;
 
@@ -64,7 +67,12 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     return '${mins ~/ 60} giờ ${mins % 60} phút';
   }
 
-  Future<void> _routeTo(LatLng target, {String? label}) async {
+  Future<void> _routeTo(
+    LatLng target, {
+    String? label,
+    _RouteTargetRef? followRef,
+    bool fitCamera = true,
+  }) async {
     if (_myPos == null) await _locateMe(center: false);
     final from = _myPos;
     if (from == null) {
@@ -96,9 +104,12 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       return;
     }
     if (!mounted) return;
+    final seq = ++_routeSeq;
     setState(() {
       _routing = true;
+      _routeOrigin = from;
       _routeTarget = target;
+      _routeTargetRef = followRef;
       _routeLabel = label;
       // Đường thẳng hiển thị tức thì (không chờ mạng).
       _routePoints = [from, target];
@@ -108,7 +119,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           .toDouble();
       _routeDurationS = null;
     });
-    _fitRoute();
+    if (fitCamera) _fitRoute();
 
     // Nâng cấp lên tuyến đường bộ thật. Gọi trực tiếp bằng http (KHÔNG dùng
     // ApiClient) để không gửi Bearer token của mình sang dịch vụ bên thứ ba.
@@ -136,7 +147,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                   ),
                 )
                 .toList();
-            if (pts.length >= 2 && mounted) {
+            if (pts.length >= 2 && mounted && seq == _routeSeq) {
               setState(() {
                 _routePoints = pts;
                 _routeIsRoad = true;
@@ -144,7 +155,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                     (r['distance'] as num?)?.toDouble() ?? _routeDistanceM;
                 _routeDurationS = (r['duration'] as num?)?.toDouble();
               });
-              _fitRoute();
+              if (fitCamera) _fitRoute();
             }
           }
         }
@@ -153,7 +164,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       // Giữ đường thẳng — vẫn dùng được để định hướng.
       debugPrint('Route: OSRM thất bại, dùng đường thẳng: $e');
     } finally {
-      if (mounted) setState(() => _routing = false);
+      if (mounted && seq == _routeSeq) setState(() => _routing = false);
     }
   }
 
@@ -168,13 +179,70 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   }
 
   void _clearRoute() {
+    _routeRefreshDebounce?.cancel();
+    _routeSeq++;
     setState(() {
       _routePoints = const [];
       _routeTarget = null;
+      _routeOrigin = null;
+      _routeTargetRef = null;
       _routeLabel = null;
       _routeDistanceM = null;
       _routeDurationS = null;
       _routeIsRoad = false;
+    });
+  }
+
+  void _syncRouteWithMovingPin(List<_MemberPin> pins) {
+    if (_routePoints.length < 2) return;
+    var ref = _routeTargetRef;
+
+    // Route mở từ /map?lat=...&lng=... của cảnh báo SOS cũ chưa có alertId.
+    // Khi snapshot realtime về và chỉ có 1 pin SOS, tự gắn route theo pin đó.
+    if (ref == null && _routeLabel == 'Điểm SOS') {
+      final sosPins = pins.where((p) => p.isSos && p.routeRef != null).toList();
+      if (sosPins.length == 1) ref = sosPins.first.routeRef;
+    }
+    if (ref == null) return;
+
+    _MemberPin? tracked;
+    for (final pin in pins) {
+      if (pin.routeRef == ref) {
+        tracked = pin;
+        break;
+      }
+    }
+    if (tracked == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _routeTargetRef == ref) _clearRoute();
+      });
+      return;
+    }
+
+    final previousTarget = _routeTarget;
+    final previousOrigin = _routeOrigin;
+    final currentOrigin = _myPos;
+    final targetMoved =
+        previousTarget == null ||
+        const Distance().as(LengthUnit.Meter, previousTarget, tracked.latlng) >
+            10;
+    final originMoved =
+        previousOrigin != null &&
+        currentOrigin != null &&
+        const Distance().as(LengthUnit.Meter, previousOrigin, currentOrigin) >
+            20;
+    if (!targetMoved && !originMoved) return;
+
+    final nextTarget = tracked;
+    _routeRefreshDebounce?.cancel();
+    _routeRefreshDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted || nextTarget.routeRef != ref) return;
+      _routeTo(
+        nextTarget.latlng,
+        label: nextTarget.name,
+        followRef: ref,
+        fitCamera: false,
+      );
     });
   }
 
@@ -219,6 +287,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   @override
   void dispose() {
     _pushTimer?.cancel();
+    _routeRefreshDebounce?.cancel();
     _gpsProvider?.stopRealtime();
     super.dispose();
   }
@@ -436,6 +505,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     final gps = context.watch<GpsProvider>();
     final alerts = context.watch<SosProvider>().activeAlerts;
     final pins = _buildPins(auth.user?.id, gps.shares, alerts);
+    _syncRouteWithMovingPin(pins);
     final sosPins = pins.where((p) => p.isSos).toList();
 
     final defaultCenter = _myPos ?? const LatLng(10.7769, 106.7009); // HCM
@@ -818,6 +888,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           name: share.displayName,
           isMe: false,
           isSos: false,
+          memberId: share.memberId,
           userId: share.userId,
           updatedAt: share.updatedAt,
         ),
@@ -850,8 +921,8 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   Marker _buildMarker(_MemberPin pin) {
     return Marker(
       point: pin.latlng,
-      width: pin.isSos ? 70 : 60,
-      height: pin.isSos ? 80 : 70,
+      width: pin.isSos ? 96 : 88,
+      height: pin.isSos ? 98 : 90,
       child: GestureDetector(
         onTap: () => _showPinDetail(pin),
         child: _PinWidget(pin: pin),
@@ -984,7 +1055,11 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                   ),
                   onPressed: () {
                     Navigator.of(context).pop();
-                    _routeTo(pin.latlng, label: pin.name);
+                    _routeTo(
+                      pin.latlng,
+                      label: pin.name,
+                      followRef: pin.routeRef,
+                    );
                   },
                   icon: const Icon(
                     Icons.directions_rounded,
@@ -1239,21 +1314,26 @@ class _PinWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color bg = pin.color;
+    final icon = pin.isSos
+        ? Icons.location_on_rounded
+        : pin.isMe
+        ? Icons.my_location_rounded
+        : Icons.person_pin_circle_rounded;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Bubble
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          constraints: const BoxConstraints(maxWidth: 84),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             boxShadow: [
               BoxShadow(
-                color: bg.withValues(alpha: 0.4),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+                color: bg.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -1268,29 +1348,43 @@ class _PinWidget extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        // Pointer
-        CustomPaint(size: const Size(10, 6), painter: _TrianglePainter(bg)),
+        const SizedBox(height: 2),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: pin.isSos ? 48 : 42,
+              height: pin.isSos ? 48 : 42,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: bg.withValues(alpha: pin.isSos ? 0.18 : 0.14),
+                border: Border.all(
+                  color: bg.withValues(alpha: pin.isSos ? 0.34 : 0.24),
+                  width: pin.isSos ? 2 : 1.5,
+                ),
+              ),
+            ),
+            Container(
+              width: pin.isSos ? 36 : 32,
+              height: pin.isSos ? 36 : 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.22),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+            ),
+            Icon(icon, color: bg, size: pin.isSos ? 34 : 29),
+          ],
+        ),
       ],
     );
   }
-}
-
-class _TrianglePainter extends CustomPainter {
-  final Color color;
-  const _TrianglePainter(this.color);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final path = ui.Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
 }
 
 // ── Member legend (bottom card) ──────────────────────────────────────────────
@@ -1655,6 +1749,7 @@ class _MemberPin {
   final bool isSos;
   final double? accuracy;
   final String? alertId;
+  final String? memberId;
   final String? userId;
   final String? updatedAt;
 
@@ -1665,9 +1760,24 @@ class _MemberPin {
     required this.isSos,
     this.accuracy,
     this.alertId,
+    this.memberId,
     this.userId,
     this.updatedAt,
   });
+
+  _RouteTargetRef? get routeRef {
+    if (isMe) return null;
+    if (isSos && alertId != null && alertId!.isNotEmpty) {
+      return _RouteTargetRef('sos', alertId!);
+    }
+    if (memberId != null && memberId!.isNotEmpty) {
+      return _RouteTargetRef('member', memberId!);
+    }
+    if (userId != null && userId!.isNotEmpty) {
+      return _RouteTargetRef('user', userId!);
+    }
+    return null;
+  }
 
   Color get color => isSos
       ? AppColors.sos
@@ -1686,4 +1796,18 @@ class _MemberPin {
       : isMe
       ? 'Thiết bị hiện tại'
       : 'Thành viên gia đình';
+}
+
+class _RouteTargetRef {
+  final String type;
+  final String id;
+
+  const _RouteTargetRef(this.type, this.id);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _RouteTargetRef && other.type == type && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(type, id);
 }
