@@ -10,6 +10,8 @@ import '../../models/user.dart';
 import '../../providers/album_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../services/album_pin_store.dart';
+import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
@@ -41,7 +43,16 @@ class AlbumScreen extends StatefulWidget {
 class _AlbumScreenState extends State<AlbumScreen> {
   Timer? _pollTimer;
   _PhotoHomeTab _tab = _PhotoHomeTab.library;
+
+  // Ghim ảnh: trạng thái cục bộ theo máy, lưu qua AlbumPinStore để không mất
+  // khi tắt app. BE chưa có field/endpoint ghim — xem DE_XUAT_BE_ALBUM_PIN.md.
   final Set<String> _pinnedIds = {};
+  static const _pinStore = AlbumPinStore();
+
+  // Chế độ chọn nhiều ảnh để xóa một lượt. Chỉ dùng ở tab Thư viện; chạm ô lúc
+  // này là tick/bỏ tick chứ không mở màn chi tiết.
+  bool _selecting = false;
+  final Set<String> _selectedIds = {};
 
   bool get _dark => Theme.of(context).brightness == Brightness.dark;
   Color get _photoBackground =>
@@ -63,8 +74,35 @@ class _AlbumScreenState extends State<AlbumScreen> {
       context.read<AlbumProvider>().fetchFeatureAccess();
       context.read<AlbumProvider>().fetchCollections();
       context.read<FamilyProvider>().fetchMembers();
+      _loadPinned();
       _startPolling();
     });
+  }
+
+  /// Nạp lại danh sách ghim đã lưu trên máy. Lỗi storage thì bỏ qua — mất ghim
+  /// khó chịu nhưng không đáng chặn cả màn ảnh.
+  Future<void> _loadPinned() async {
+    final userId = context.read<AuthProvider>().user?.id;
+    final familyId = ApiClient.instance.familyId;
+    if (userId == null || familyId == null) return;
+    try {
+      final saved = await _pinStore.read(userId, familyId);
+      if (!mounted || saved.isEmpty) return;
+      setState(() => _pinnedIds.addAll(saved));
+    } catch (e) {
+      debugPrint('AlbumScreen: đọc danh sách ghim thất bại: $e');
+    }
+  }
+
+  Future<void> _savePinned() async {
+    final userId = context.read<AuthProvider>().user?.id;
+    final familyId = ApiClient.instance.familyId;
+    if (userId == null || familyId == null) return;
+    try {
+      await _pinStore.write(userId, familyId, _pinnedIds);
+    } catch (e) {
+      debugPrint('AlbumScreen: lưu danh sách ghim thất bại: $e');
+    }
   }
 
   @override
@@ -593,27 +631,36 @@ class _AlbumScreenState extends State<AlbumScreen> {
 
     return Scaffold(
       backgroundColor: _photoBackground,
-      appBar: AppBar(
-        backgroundColor: _photoBackground,
-        foregroundColor: _photoText,
-        elevation: 0,
-        title: const SizedBox.shrink(),
-        actions: [
-          // Hàng đợi kiểm duyệt thủ công của Manager/Deputy.
-          if (isAdmin)
-            IconButton(
-              tooltip: 'Hàng đợi kiểm duyệt',
-              icon: const Icon(Icons.shield_outlined),
-              onPressed: _showModerationQueueSheet,
+      appBar: _selecting
+          ? _selectionAppBar(album)
+          : AppBar(
+              backgroundColor: _photoBackground,
+              foregroundColor: _photoText,
+              elevation: 0,
+              title: const SizedBox.shrink(),
+              actions: [
+                // Hàng đợi kiểm duyệt thủ công của Manager/Deputy.
+                if (isAdmin)
+                  IconButton(
+                    tooltip: 'Hàng đợi kiểm duyệt',
+                    icon: const Icon(Icons.shield_outlined),
+                    onPressed: _showModerationQueueSheet,
+                  ),
+                // Chỉ có nghĩa ở lưới ảnh; tab Bộ sưu tập không chọn ảnh được.
+                if (_tab == _PhotoHomeTab.library && album.items.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Chọn nhiều ảnh',
+                    icon: const Icon(Icons.check_circle_outline_rounded),
+                    onPressed: () => setState(() => _selecting = true),
+                  ),
+                _filterMenu(album),
+                IconButton(
+                  tooltip: 'Làm mới',
+                  icon: const Icon(Icons.refresh_rounded),
+                  onPressed: () => album.fetchMedia(refresh: true),
+                ),
+              ],
             ),
-          _filterMenu(album),
-          IconButton(
-            tooltip: 'Làm mới',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => album.fetchMedia(refresh: true),
-          ),
-        ],
-      ),
       body: Stack(
         children: [
           Positioned.fill(
@@ -624,24 +671,184 @@ class _AlbumScreenState extends State<AlbumScreen> {
                   : _collectionsBody(album, members, isAdmin),
             ),
           ),
-          Positioned(left: 0, right: 0, bottom: 18, child: _photoTabs()),
+          // Đang chọn ảnh thì ẩn thanh chuyển tab: đổi tab giữa chừng làm mất
+          // lựa chọn, dễ gây hiểu nhầm.
+          if (!_selecting)
+            Positioned(left: 0, right: 0, bottom: 18, child: _photoTabs()),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'album_fab',
-        onPressed: album.uploading ? null : _showCreateMenu,
-        backgroundColor: AppColors.link,
-        child: album.uploading
-            ? const SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
+      // Ẩn nút thêm ảnh khi đang chọn — thao tác lúc này là xóa, không phải tải lên.
+      floatingActionButton: _selecting
+          ? null
+          : FloatingActionButton(
+              heroTag: 'album_fab',
+              onPressed: album.uploading ? null : _showCreateMenu,
+              backgroundColor: AppColors.link,
+              child: album.uploading
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.add_a_photo_outlined, color: Colors.white),
+            ),
+    );
+  }
+
+  /// AppBar thay thế khi đang chọn nhiều ảnh: thoát · số đã chọn · chọn tất cả ·
+  /// xóa. Nút xóa tắt khi chưa chọn gì để không mở dialog rỗng.
+  PreferredSizeWidget _selectionAppBar(AlbumProvider album) {
+    final all = album.items.map((m) => m.id).toSet();
+    final allSelected = all.isNotEmpty && _selectedIds.containsAll(all);
+    return AppBar(
+      backgroundColor: _photoBackground,
+      foregroundColor: _photoText,
+      elevation: 0,
+      leading: IconButton(
+        tooltip: 'Thoát chọn',
+        icon: const Icon(Icons.close_rounded),
+        onPressed: _exitSelection,
+      ),
+      title: Text(
+        _selectedIds.isEmpty ? 'Chọn ảnh' : 'Đã chọn ${_selectedIds.length}',
+        style: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: _photoText,
+        ),
+      ),
+      actions: [
+        IconButton(
+          tooltip: allSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả',
+          icon: Icon(
+            allSelected ? Icons.deselect_rounded : Icons.select_all_rounded,
+          ),
+          onPressed: () => setState(() {
+            if (allSelected) {
+              _selectedIds.clear();
+            } else {
+              _selectedIds
+                ..clear()
+                ..addAll(all);
+            }
+          }),
+        ),
+        IconButton(
+          tooltip: 'Xóa ảnh đã chọn',
+          icon: Icon(
+            Icons.delete_outline_rounded,
+            color: _selectedIds.isEmpty ? _photoMuted : AppColors.danger,
+          ),
+          onPressed: _selectedIds.isEmpty ? null : _deleteSelected,
+        ),
+      ],
+    );
+  }
+
+  void _exitSelection() {
+    setState(() {
+      _selecting = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelected(String mediaId) {
+    setState(() {
+      if (!_selectedIds.remove(mediaId)) _selectedIds.add(mediaId);
+    });
+  }
+
+  /// Xóa mềm toàn bộ ảnh đang chọn.
+  ///
+  /// BE chưa có endpoint xóa hàng loạt nên đây là N lần gọi
+  /// `DELETE .../albums/media/{mediaId}` tuần tự — chạy lâu nên phải có tiến
+  /// độ, và phải báo đúng số xóa được / số lỗi thay vì chỉ hiện "đã xóa".
+  Future<void> _deleteSelected() async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+    final confirm = await _confirmSheet(
+      title: 'Xóa ${ids.length} ảnh?',
+      message:
+          'Ảnh sẽ được xóa mềm, quản trị viên vẫn khôi phục lại được. '
+          'Xóa nhiều ảnh có thể mất một lúc.',
+      confirmLabel: 'Xóa ${ids.length} ảnh',
+    );
+    if (confirm != true || !mounted) return;
+
+    final progress = ValueNotifier<int>(0);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Dialog(
+          backgroundColor: AppColors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                ValueListenableBuilder<int>(
+                  valueListenable: progress,
+                  builder: (_, done, _) => Text(
+                    'Đang xóa $done/${ids.length}...',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              )
-            : const Icon(Icons.add_a_photo_outlined, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
       ),
     );
+
+    final album = context.read<AlbumProvider>();
+    Map<String, String> failures = {};
+    try {
+      failures = await album.softDeleteMany(
+        ids,
+        onProgress: (done, _) => progress.value = done,
+      );
+    } finally {
+      progress.dispose();
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
+    if (!mounted) return;
+
+    // Ảnh đã xóa thì gỡ khỏi danh sách ghim, không để ghim trỏ vào id không
+    // còn tồn tại. Ảnh xóa lỗi thì giữ nguyên ghim.
+    final removed = ids.where((id) => !failures.containsKey(id)).toSet();
+    if (_pinnedIds.any(removed.contains)) {
+      _pinnedIds.removeAll(removed);
+      await _savePinned();
+    }
+
+    _exitSelection();
+    final ok = ids.length - failures.length;
+    if (failures.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã xóa $ok ảnh'),
+          backgroundColor: AppColors.safe,
+        ),
+      );
+    } else {
+      // Nói rõ lỗi đầu tiên của BE thay vì chỉ báo "thất bại" chung chung.
+      _snack(
+        'Đã xóa $ok/${ids.length} ảnh. ${failures.length} ảnh lỗi: '
+        '${failures.values.first.replaceFirst('Exception: ', '')}',
+      );
+    }
   }
 
   // Sheet hàng đợi kiểm duyệt thủ công. Face AI không được gọi/hiển thị.
@@ -1149,7 +1356,9 @@ class _AlbumScreenState extends State<AlbumScreen> {
         SliverToBoxAdapter(
           child: _collectionSection(
             title: 'Đã ghim',
-            note: 'bản xem trước',
+            // Ghim đã sống qua lần mở app, nhưng vẫn là cục bộ theo máy vì BE
+            // chưa có endpoint ghim — nói rõ để không hiểu nhầm là đồng bộ.
+            note: 'chỉ trên máy này',
             children: pinned.isEmpty
                 ? [
                     _collectionPlaceholderCard(
@@ -1302,8 +1511,8 @@ class _AlbumScreenState extends State<AlbumScreen> {
                     ),
                   ),
                 ),
-                // Nhãn cho mục chưa persist qua BE (vd Đã ghim chỉ sống trong
-                // phiên app) — nói rõ đây là bản xem trước, tránh hiểu nhầm.
+                // Nhãn cho mục chưa đồng bộ qua BE (vd Đã ghim chỉ lưu cục bộ
+                // trên máy) — nói rõ phạm vi, tránh hiểu nhầm là dữ liệu chung.
                 if (note != null) ...[
                   const SizedBox(width: 8),
                   Container(
@@ -1877,14 +2086,26 @@ class _AlbumScreenState extends State<AlbumScreen> {
   String _fmtDate(DateTime? date) => _dateLabel(date);
 
   Widget _tile(AlbumMedia media, bool isAdmin) {
+    final selected = _selectedIds.contains(media.id);
     return GestureDetector(
-      onTap: () => _openDetail(media, isAdmin),
+      // Đang chọn: chạm = tick/bỏ tick. Bình thường: chạm = mở chi tiết, nhấn
+      // giữ = vào chế độ chọn kèm tick luôn ô vừa giữ (kiểu Google Photos).
+      onTap: () =>
+          _selecting ? _toggleSelected(media.id) : _openDetail(media, isAdmin),
+      onLongPress: _selecting
+          ? null
+          : () {
+              setState(() => _selecting = true);
+              _toggleSelected(media.id);
+            },
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Stack(
           fit: StackFit.expand,
           children: [
             AlbumMediaThumb(media: media),
+            if (selected)
+              Container(color: AppColors.link.withValues(alpha: 0.35)),
             if (media.isVideo)
               const Align(
                 alignment: Alignment.center,
@@ -1910,6 +2131,26 @@ class _AlbumScreenState extends State<AlbumScreen> {
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
+                  ),
+                ),
+              ),
+            // Dấu tick góc phải: hiện khi đang chọn để thấy rõ ô nào đã tick,
+            // ô nào chưa (viền trắng mờ), không chỉ dựa vào lớp phủ màu.
+            if (_selecting)
+              Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? AppColors.link : Colors.black26,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  padding: const EdgeInsets.all(1),
+                  child: Icon(
+                    selected ? Icons.check_rounded : Icons.circle_outlined,
+                    size: 14,
+                    color: selected ? Colors.white : Colors.white70,
                   ),
                 ),
               ),
@@ -1977,6 +2218,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
                 _pinnedIds.add(media.id);
               }
             });
+            _savePinned();
             onChanged?.call();
           },
         ),

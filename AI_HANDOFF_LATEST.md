@@ -1,54 +1,62 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🔴 ĐANG DỞ — ĐỌC MỤC NÀY TRƯỚC, TIẾP TỤC NGAY (17/08/2026 sáng)
+## 🔴 ĐANG DỞ — ĐỌC MỤC NÀY TRƯỚC, TIẾP TỤC NGAY (17/08/2026 trưa)
 
-**Đã test xong `analyze-draft` sau bản fix parser của BE — đã soạn xong báo
-cáo gửi BE. Còn 1 việc kỹ thuật cần làm: dọn code debug + commit.**
+**Không còn việc dở nào. Đã test runtime + commit + push xong toàn bộ.**
 
-**Đã test 7 lượt qua log thật (`grep "analyze-draft DEBUG"`), kết quả 6/7
-đúng — cải thiện rõ rệt so với hôm qua (16/08, khi đó gần như lần nào cũng
-dính `AI_INVALID_RESPONSE`):**
-- `AI_INVALID_RESPONSE`/`UNAVAILABLE` **không còn xuất hiện lần nào** trong
-  7 lượt — coi như BE đã fix dứt điểm phần này.
-- `summary` sạch, không còn đẩy reasoning/markdown thô.
-- `hasPerson`/`WARN` đúng ở 6/7 lượt. Còn đúng 1 lượt sai (`hasPerson: true`
-  cho ảnh dâu tây không người, gọi lại cùng ảnh 2 lần ra 2 kết quả khác nhau
-  — nghi do bản chất AI bên thứ 3 không đảm bảo nhất quán 100%).
-- 2 lỗi phụ phát hiện thêm: `detectedLabels` đôi lúc có nhãn ảo (vd "mountain"
-  cho ảnh dứa/đào — không ảnh hưởng logic ALLOW/WARN, chỉ hiển thị sai);
-  `warnings` từng chứa text placeholder rác `"short reason or empty string"`
-  lộ thẳng ra UI.
-- Đã soạn tin nhắn báo lại BE đầy đủ (đã gửi trong hội thoại cho user copy đi
-  gửi BE) — không chặn gì, chỉ báo để BE biết, không cần dừng dùng.
+**Đã làm xong trong phiên này (không lặp lại):**
+1. Merge `NDuy` → `main` fast-forward sạch, verify `flutter analyze` trên
+   `main` rồi push cả 2 nhánh.
+2. Đẩy 25 ảnh còn thiếu từ `D:\Desktop\IMGAPP` vào `/sdcard/DCIM/Camera` của
+   emulator (12 ảnh screenshot 16/08 đã có sẵn). MediaStore index đủ 37 ảnh.
+3. **Fix ảnh màn chi tiết bị nhỏ/mờ** — `Center` bọc `Image` làm
+   `BoxFit.contain` mất tác dụng; đổi sang `SizedBox.expand`. Kèm
+   `resolveFullUrl()` ưu tiên `fileUrl` thay vì thumbnail.
+4. **Thêm chọn nhiều ảnh để xóa một lượt** (nhấn giữ hoặc nút ☑ trên AppBar).
+   BE không có endpoint bulk → gọi tuần tự N lần, có tiến độ + báo số lỗi.
+5. **Ghim ảnh giờ lưu được qua lần mở app** — `AlbumPinStore` +
+   `flutter_secure_storage`, khóa theo `userId + familyId`. Vẫn là cục bộ
+   theo máy, UI gắn nhãn "chỉ trên máy này".
+6. Sửa lại message commit `a877f8a` (nay là `65d30fe`) theo yêu cầu user: bỏ
+   phần nhắc quy ước nội bộ, chỉ mô tả thay đổi kỹ thuật. Nội dung file
+   không đổi (`git diff a877f8a HEAD` trống trước khi thêm commit mới).
+   **Đã force-push-with-lease** cả `NDuy` và `main` — user xác nhận trước.
+7. Gỡ mục "Quy tắc commit + push nhánh NDuy" khỏi `CLAUDE.md` theo yêu cầu
+   user, rút gọn còn vài dòng quy ước kỹ thuật.
 
-**Việc còn lại — CHƯA LÀM, làm tiếp ngay khi user quay lại:**
-1. **Xóa 2 dòng `debugPrint('[analyze-draft DEBUG] ...')`** trong
-   `_analyzeAndUpload()` (`album_screen.dart`, khoảng dòng 308-315) — thêm
-   tạm để soi log, phải xóa trước khi commit.
-2. `dart format` + `flutter analyze --no-fatal-infos` (kỳ vọng 0 error) +
-   `flutter test` (kỳ vọng 481/481).
-3. Commit theo đúng quy tắc mới trong `CLAUDE.md` mục "Git" — message ghi rõ
-   đã verify bằng log thật, tóm tắt 6/7 đúng + 3 vấn đề phụ đã báo BE. Push
-   `NDuy`. Hỏi user có muốn merge `main` không trước khi làm (theo quy trình
-   đã lập: check `origin/giap` trước, fast-forward, verify lại trên `main`).
-4. **Không cần test lại `analyze-draft` nữa** trừ khi BE báo đã sửa tiếp —
-   dữ liệu hiện tại đã đủ để coi là "đạt yêu cầu, còn vài điểm nhỏ chưa hoàn
-   hảo", không phải blocker.
+**Việc cần báo BE (user tự gửi):**
+`DE_XUAT_BE_ALBUM_PIN_BULK_DELETE_2026-08-17.md` — 2 đề xuất mức **Nên có**,
+không chặn: (1) endpoint ghim ảnh + field `isPinned` để ghim đồng bộ thay vì
+cục bộ; (2) `POST .../albums/media/bulk-delete` để xóa nhiều ảnh nguyên tử
+thay vì FE gọi N request. Kèm 1 câu hỏi cần BE chốt: ghim là **cá nhân** hay
+**chung cả gia đình**.
+
+**Điểm chưa verify được, đừng báo là xong:**
+- `resolveFullUrl` `[VERIFY]`: chưa xác nhận runtime BE có sinh
+  `thumbnailUrl` riêng hay không. Nếu không thì thay đổi này vô hại (kết quả
+  y hệt cũ); nếu có thì đây mới là chỗ sửa đúng. Cần soi log response
+  `GET .../albums/media/{mediaId}` để chốt.
+- Nhánh `WARN` của `_analyzeAndUpload` vẫn **chưa từng chạy runtime thật**.
+- Ảnh gốc độ phân giải thấp (145×106px) sau fix vẫn mờ khi phóng full màn —
+  đúng bản chất dữ liệu, không phải bug, đừng "sửa" tiếp.
 
 **Ghi chú môi trường (nếu cần test tiếp lần sau):**
 - Máy ảo hiện tại: **`Small_Phone`** (API 34, Google APIs, RAM đã tăng lên
   3072MB + heap 256MB + GPU mode `host` để đỡ lag — sửa trực tiếp
   `D:\AndroidHome\.android\avd\Small_Phone.avd\config.ini`, không qua UI).
-  Storage đã set 10G trong config nhưng ổ đĩa cũ (6G) chưa chắc tự giãn —
-  nếu hết dung lượng lại thì cần Wipe Data mới áp dụng đúng, sẽ mất ảnh test
-  đã đẩy vào `/sdcard/DCIM/Camera` (12 ảnh gốc + ảnh test buổi sáng).
+  `/sdcard` còn trống 4.3G, không còn nguy cơ đầy như trước.
   `Wear_OS_Large_Round` vẫn còn, chưa dùng tới trong đợt test này.
-- Log lần này nằm ở
-  `D:/Temp/claude/d--Desktop-mobile-sep/7716f23a-a040-4195-939d-a6bded355bf2/scratchpad/logcat_be_fix2.txt`
-  — **file tạm theo session, sẽ mất khi qua phiên/máy khác.** Cần soi log
-  mới thì tự bật lại: `adb logcat -c && adb logcat -v raw > <file> &`.
-- Ảnh test hiện có trong máy ảo: 12 ảnh gốc từ `D:\Desktop\IMGAPP` + nhiều
-  ảnh trái cây/biển đã upload qua app vào 2 album "anh LMH" và "sea".
+- **Package name là `com.company.familycare`**, không phải
+  `com.example.family_care_mobile` — launch bằng
+  `adb shell monkey -p com.company.familycare -c android.intent.category.LAUNCHER 1`.
+- **Tên package Dart trong `pubspec.yaml` là `family_care`** (không phải
+  `family_care_mobile`) — import trong test phải là
+  `package:family_care/...`.
+- Log soi bằng `adb logcat -c && adb logcat -v raw > <file> &`; file log để
+  trong scratchpad của session, mất khi qua phiên khác.
+- Ảnh test trong máy ảo: 37 ảnh (12 screenshot 16/08 + 25 ảnh đẩy thêm 17/08
+  từ `D:\Desktop\IMGAPP`, gồm cả ảnh gốc lớn 500–1280px lẫn screenshot nhỏ
+  145–700px — dùng đúng bộ này để test lại vụ fit ảnh).
 
 **Bối cảnh khác không khẩn, chỉ để biết:**
 - Máy ảo hiện tại: **`Small_Phone`** (API 34, Google APIs, không Play Store —

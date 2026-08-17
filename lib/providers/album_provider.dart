@@ -397,6 +397,38 @@ class AlbumProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Xóa mềm nhiều media một lượt.
+  ///
+  /// BE **chưa có endpoint bulk** (đã đối chiếu Swagger 2026-08-17: chỉ có
+  /// `DELETE .../albums/media/{mediaId}`), nên phải gọi tuần tự từng cái. Gọi
+  /// tuần tự chứ không song song để không bắn N request cùng lúc lên BE.
+  ///
+  /// Không dừng ở lỗi đầu tiên: ảnh nào xóa được thì xóa, trả về danh sách id
+  /// **thất bại** kèm lý do để UI báo đúng "đã xóa X/N", không nuốt lỗi.
+  /// Chỉ `notifyListeners()` một lần ở cuối thay vì mỗi lần xóa.
+  Future<Map<String, String>> softDeleteMany(
+    List<String> mediaIds, {
+    String reason = 'Deleted from mobile app',
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final failures = <String, String>{};
+    var done = 0;
+    for (final id in mediaIds) {
+      try {
+        await ApiClient.instance.delete(
+          '/families/$_fid/albums/media/$id',
+          body: {'reason': reason},
+        );
+        _items.removeWhere((m) => m.id == id);
+      } catch (e) {
+        failures[id] = e.toString();
+      }
+      onProgress?.call(++done, mediaIds.length);
+    }
+    notifyListeners();
+    return failures;
+  }
+
   Future<void> restore(String mediaId) async {
     await ApiClient.instance.post(
       '/families/$_fid/albums/media/$mediaId/restore',
