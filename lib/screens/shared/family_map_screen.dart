@@ -77,6 +77,10 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   /// một lần, xem [_maybeFitToResponders].
   final Set<String> _fittedResponderAlerts = {};
 
+  /// Đã log cảnh báo "không tra được memberId của mình" chưa — chống spam,
+  /// xoá cùng lúc với đám log tạm [sosResponderLog].
+  bool _loggedMissingMyMemberId = false;
+
   String? get _myUserId => context.read<AuthProvider>().user?.id;
 
   static String _fmtDistance(double m) =>
@@ -389,6 +393,17 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     super.initState();
     _gpsProvider = context.read<GpsProvider>();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Danh sách thành viên là thứ DUY NHẤT nối được `responderMemberId` (id
+      // bản ghi thành viên, do BE gửi kèm vị trí người ứng cứu) với `userId`
+      // của phiên đăng nhập. Thiếu nó thì không nhận ra "người đang tới chính
+      // là mình" và bản đồ hiện mình hai lần.
+      //
+      // Màn này trước đây CHỈ ĐỌC `FamilyProvider.members` mà không hề nạp —
+      // là màn duy nhất trong repo quên bước này. Vào thẳng bản đồ (từ thông
+      // báo SOS, hoặc từ tab Bản đồ) mà chưa ghé màn nào khác thì danh sách
+      // rỗng và mọi so khớp theo memberId đều trượt.
+      final family = context.read<FamilyProvider>();
+      if (family.members.isEmpty) unawaited(family.fetchMembers());
       await _refreshFamilyLocations();
       if (mounted) {
         _gpsProvider?.startRealtime(myUserId: _myUserId);
@@ -659,6 +674,9 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final gps = context.watch<GpsProvider>();
+    // watch chứ không read: danh sách thành viên nạp bất đồng bộ, phải dựng
+    // lại pin khi nó về thì mới bỏ được pin trùng của người đang ứng cứu.
+    context.watch<FamilyProvider>();
     final alerts = context.watch<SosProvider>().activeAlerts;
     final pins = _buildPins(auth.user?.id, gps.shares, alerts);
     _syncRouteWithMovingPin(pins);
@@ -1194,6 +1212,17 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           memberId.isNotEmpty) {
         return memberId;
       }
+    }
+    // Không tra được thì mọi so khớp theo memberId đều trượt và bản đồ sẽ hiện
+    // trùng. Log một lần cho mỗi lần đổi trạng thái để còn biết đường mà lần.
+    if (!_loggedMissingMyMemberId) {
+      _loggedMissingMyMemberId = true;
+      sosResponderLog(
+        'KHÔNG tra được memberId của mình — sẽ hiện TRÙNG pin. '
+        'userId=$currentUserId '
+        'số thành viên đã nạp=${context.read<FamilyProvider>().members.length} '
+        'số share=${shares.length}',
+      );
     }
     return null;
   }
