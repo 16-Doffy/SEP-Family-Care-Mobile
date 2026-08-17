@@ -18,6 +18,7 @@ import '../services/fall_detector_service.dart';
 import '../services/local_notification_service.dart';
 import '../services/push_service.dart';
 import '../services/sos_location.dart';
+import '../services/sos_realtime_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_surface_colors.dart';
 import '../theme/app_ui_tokens.dart';
@@ -59,6 +60,8 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   bool _appInForeground = true;
   CallProvider? _call; // giữ ref để dùng trong dispose
   bool _incomingCallScreenOpen = false;
+  final Map<String, Timer> _responderTrackTimers = {};
+  final Set<String> _responderPushInFlight = {};
 
   @override
   void initState() {
@@ -87,8 +90,12 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       _call = context.read<CallProvider>()..onIncomingCall = _onIncomingCall;
       _call!.startRealtime();
       _sos = context.read<SosProvider>()
-        ..onNewRealtimeAlert = _onRealtimeSosNew;
+        ..onNewRealtimeAlert = _onRealtimeSosNew
+        ..onRealtimeResolved = _onRealtimeSosResolved;
       _sos!.startRealtime();
+      final sosRealtime = SosRealtimeService.instance;
+      sosRealtime.onResponderTrackStart = _onResponderTrackStart;
+      sosRealtime.onResponderTrackStop = _onResponderTrackStop;
       // Cấu hình thanh nav nằm trong secure storage → đọc bất đồng bộ. Chưa
       // đọc xong thì tabsFor() trả mặc định của role, nên thanh nav vẫn dựng
       // được ngay, không chờ.
@@ -126,6 +133,17 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     if (_sos?.onNewRealtimeAlert == _onRealtimeSosNew) {
       _sos!.onNewRealtimeAlert = null;
     }
+    if (_sos?.onRealtimeResolved == _onRealtimeSosResolved) {
+      _sos!.onRealtimeResolved = null;
+    }
+    final sosRealtime = SosRealtimeService.instance;
+    if (sosRealtime.onResponderTrackStart == _onResponderTrackStart) {
+      sosRealtime.onResponderTrackStart = null;
+    }
+    if (sosRealtime.onResponderTrackStop == _onResponderTrackStop) {
+      sosRealtime.onResponderTrackStop = null;
+    }
+    _stopAllResponderTracking();
     _sos?.stopRealtime();
     super.dispose();
   }
@@ -314,6 +332,58 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       isSos: true,
       payload: 'SOS_ALERT|${alert.id}',
     );
+  }
+
+  void _onRealtimeSosResolved(String alertId, Map<String, dynamic> _) {
+    _stopResponderTracking(alertId);
+  }
+
+  void _onResponderTrackStart(SosTrackStartEvent event) {
+    if (!mounted || event.alertId.isEmpty) return;
+    _stopResponderTracking(event.alertId);
+    final interval = Duration(seconds: event.intervalSec.clamp(3, 60).toInt());
+
+    Future<void> pushOnce() async {
+      if (!mounted || _responderPushInFlight.contains(event.alertId)) return;
+      _responderPushInFlight.add(event.alertId);
+      try {
+        final pos = await resolveSosPosition();
+        if (pos == null || !mounted) return;
+        context.read<SosProvider>().pushResponderLocationRealtime(
+          event.alertId,
+          pos.latitude,
+          pos.longitude,
+          accuracy: pos.accuracy,
+          sourceType: 'MOBILE_GPS',
+          recordedAt: DateTime.now(),
+        );
+      } finally {
+        _responderPushInFlight.remove(event.alertId);
+      }
+    }
+
+    pushOnce();
+    _responderTrackTimers[event.alertId] = Timer.periodic(
+      interval,
+      (_) => pushOnce(),
+    );
+  }
+
+  void _onResponderTrackStop(String alertId) {
+    _stopResponderTracking(alertId);
+  }
+
+  void _stopResponderTracking(String alertId) {
+    _responderTrackTimers.remove(alertId)?.cancel();
+    _responderPushInFlight.remove(alertId);
+  }
+
+  void _stopAllResponderTracking() {
+    for (final timer in _responderTrackTimers.values) {
+      timer.cancel();
+    }
+    _responderTrackTimers.clear();
+    _responderPushInFlight.clear();
   }
 
   // ── Phát hiện té ngã ──────────────────────────────────────────────────────

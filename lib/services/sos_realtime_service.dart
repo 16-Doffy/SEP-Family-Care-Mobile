@@ -33,6 +33,37 @@ class SosTrackStartEvent {
   }
 }
 
+class SosResponderLocationEvent {
+  const SosResponderLocationEvent({
+    required this.sosAlertId,
+    required this.responderMemberId,
+    required this.responderMember,
+    required this.point,
+  });
+
+  final String sosAlertId;
+  final String responderMemberId;
+  final Map<String, dynamic> responderMember;
+  final Map<String, dynamic> point;
+
+  factory SosResponderLocationEvent.fromJson(Map<String, dynamic> json) {
+    final member = SosRealtimeService.asMap(json['responderMember']);
+    return SosResponderLocationEvent(
+      sosAlertId:
+          json['sosAlertId']?.toString() ??
+          json['alertId']?.toString() ??
+          json['id']?.toString() ??
+          '',
+      responderMemberId:
+          json['responderMemberId']?.toString() ??
+          member?['id']?.toString() ??
+          '',
+      responderMember: member ?? const <String, dynamic>{},
+      point: SosRealtimeService.asMap(json['point']) ?? json,
+    );
+  }
+}
+
 /// Transport Socket.IO cho namespace `/sos`.
 ///
 /// Chỉ lo kết nối/auth/join/emit/nhận event thô. State nghiệp vụ nằm trong
@@ -56,8 +87,23 @@ class SosRealtimeService {
   void Function(String alertId, Map<String, dynamic> payload)? onResolved;
   void Function(SosTrackStartEvent event)? onTrackStart;
   void Function(String alertId)? onTrackStop;
+  void Function(SosTrackStartEvent event)? onResponderTrackStart;
+  void Function(String alertId)? onResponderTrackStop;
+  void Function(SosResponderLocationEvent event)? onResponderLocation;
   void Function(String workspaceId)? onKicked;
   void Function(String message)? onError;
+
+  @visibleForTesting
+  static const responderTrackStartEventName = 'sos:responder:track:start';
+
+  @visibleForTesting
+  static const responderTrackStopEventName = 'sos:responder:track:stop';
+
+  @visibleForTesting
+  static const responderLocationEventName = 'sos:responder:location';
+
+  @visibleForTesting
+  static const responderLocationPushEventName = 'sos:responder:location:push';
 
   void connect() {
     _wantConnected = true;
@@ -137,6 +183,29 @@ class SosRealtimeService {
           '';
       if (alertId.isNotEmpty) onTrackStop?.call(alertId);
     });
+    s.on(responderTrackStartEventName, (data) {
+      final m = _asMap(data);
+      if (m != null) {
+        onResponderTrackStart?.call(SosTrackStartEvent.fromJson(m));
+      }
+    });
+    s.on(responderTrackStopEventName, (data) {
+      final m = _asMap(data);
+      final alertId =
+          m?['alertId']?.toString() ??
+          m?['sosAlertId']?.toString() ??
+          m?['id']?.toString() ??
+          '';
+      if (alertId.isNotEmpty) onResponderTrackStop?.call(alertId);
+    });
+    s.on(responderLocationEventName, (data) {
+      final m = _asMap(data);
+      if (m == null) return;
+      final event = SosResponderLocationEvent.fromJson(m);
+      if (event.sosAlertId.isNotEmpty && event.responderMemberId.isNotEmpty) {
+        onResponderLocation?.call(event);
+      }
+    });
     s.on('sos:kicked', (data) {
       final workspaceId =
           _asMap(data)?['workspaceId']?.toString() ??
@@ -185,14 +254,68 @@ class SosRealtimeService {
     String? deviceId,
   }) {
     if (!connected) return false;
-    if (!latitude.isFinite ||
-        !longitude.isFinite ||
-        latitude < -90 ||
-        latitude > 90 ||
-        longitude < -180 ||
-        longitude > 180) {
+    if (!isValidCoordinate(latitude, longitude)) {
       return false;
     }
+    final payload = buildLocationPayload(
+      workspaceId: workspaceId,
+      alertId: alertId,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      sourceType: sourceType,
+      recordedAt: recordedAt,
+      deviceId: deviceId,
+    );
+    _socket?.emit('sos:location:push', payload);
+    return true;
+  }
+
+  bool pushResponderLocation({
+    required String workspaceId,
+    required String alertId,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+    String sourceType = 'MOBILE_GPS',
+    DateTime? recordedAt,
+  }) {
+    if (!connected) return false;
+    if (!isValidCoordinate(latitude, longitude)) return false;
+    final payload = buildLocationPayload(
+      workspaceId: workspaceId,
+      alertId: alertId,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      sourceType: sourceType,
+      recordedAt: recordedAt,
+    );
+    _socket?.emit(responderLocationPushEventName, payload);
+    return true;
+  }
+
+  @visibleForTesting
+  static bool isValidCoordinate(double latitude, double longitude) {
+    return latitude.isFinite &&
+        longitude.isFinite &&
+        latitude >= -90 &&
+        latitude <= 90 &&
+        longitude >= -180 &&
+        longitude <= 180;
+  }
+
+  @visibleForTesting
+  static Map<String, dynamic> buildLocationPayload({
+    required String workspaceId,
+    required String alertId,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+    String? sourceType,
+    DateTime? recordedAt,
+    String? deviceId,
+  }) {
     final payload = <String, dynamic>{
       'workspaceId': workspaceId,
       'alertId': alertId,
@@ -209,14 +332,17 @@ class SosRealtimeService {
     if (deviceId != null && deviceId.isNotEmpty) {
       payload['deviceId'] = deviceId;
     }
+    return payload;
+  }
 
-    _socket?.emit('sos:location:push', payload);
-    return true;
+  @visibleForTesting
+  static Map<String, dynamic>? asMap(dynamic data) {
+    if (data is! Map) return null;
+    return Map<String, dynamic>.from(data);
   }
 
   Map<String, dynamic>? _asMap(dynamic data) {
-    if (data is! Map) return null;
-    return Map<String, dynamic>.from(data);
+    return asMap(data);
   }
 
   void _scheduleRetry() {

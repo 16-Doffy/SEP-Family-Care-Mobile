@@ -475,25 +475,47 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           timeLimit: Duration(seconds: 12),
         ),
       );
-      if (!mounted) return null;
-      final latlng = LatLng(pos.latitude, pos.longitude);
-      setState(() {
-        _myPos = latlng;
-        _myAccuracy = pos.accuracy;
-        // _buildPins() tự tạo lại pin "Tôi" từ _myPos/_myAccuracy mỗi lần
-        // rebuild — không còn giữ danh sách pin trong state (kiến trúc cũ _pins).
-      });
-      if (center) {
-        _mapCtrl.move(latlng, 15);
-      }
+      _applyMyPosition(pos, center: center);
       return pos;
+    } on TimeoutException {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        _applyMyPosition(last, center: center);
+        if (mounted && !silent) {
+          setState(() {
+            _locError =
+                'GPS phản hồi chậm, đang dùng vị trí gần nhất của thiết bị';
+          });
+        }
+        return last;
+      }
+      if (mounted && !silent) {
+        setState(() {
+          _locError = 'GPS phản hồi chậm. Vui lòng thử lại ở nơi thoáng hơn';
+        });
+      }
+      return null;
     } catch (e) {
       if (mounted && !silent) {
-        setState(() => _locError = 'Không lấy được GPS: $e');
+        setState(() => _locError = 'Không lấy được GPS. Vui lòng thử lại');
       }
       return null;
     } finally {
       if (mounted && !silent) setState(() => _locating = false);
+    }
+  }
+
+  void _applyMyPosition(Position pos, {required bool center}) {
+    if (!mounted) return;
+    final latlng = LatLng(pos.latitude, pos.longitude);
+    setState(() {
+      _myPos = latlng;
+      _myAccuracy = pos.accuracy;
+      // _buildPins() tự tạo lại pin "Tôi" từ _myPos/_myAccuracy mỗi lần
+      // rebuild — không còn giữ danh sách pin trong state (kiến trúc cũ _pins).
+    });
+    if (center) {
+      _mapCtrl.move(latlng, 15);
     }
   }
 
@@ -895,8 +917,9 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       );
     }
 
+    final sos = context.read<SosProvider>();
     for (final alert in alerts) {
-      final realtime = context.read<SosProvider>().realtimeLocationOf(alert.id);
+      final realtime = sos.realtimeLocationOf(alert.id);
       final current = realtime ?? _latestSosLocations[alert.id];
       final lat = current?.lat ?? alert.latitude;
       final lng = current?.lng ?? alert.longitude;
@@ -904,16 +927,32 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       // Cảnh báo do CHÍNH MÌNH phát: pin "Tôi" (GPS trực tiếp, chính xác hơn)
       // đã đại diện vị trí này rồi → không thêm pin SOS nữa, tránh cùng một
       // người hiện 2 lần trong danh sách.
-      if (alert.isMine(currentUserId)) continue;
-      pins.add(
-        _MemberPin(
-          latlng: LatLng(lat, lng),
-          name: alert.senderName,
-          isMe: false,
-          isSos: true,
-          alertId: alert.id,
-        ),
-      );
+      if (!alert.isMine(currentUserId)) {
+        pins.add(
+          _MemberPin(
+            latlng: LatLng(lat, lng),
+            name: alert.senderName,
+            isMe: false,
+            isSos: true,
+            alertId: alert.id,
+          ),
+        );
+      }
+      for (final responder in sos.responderLocationsFor(alert.id)) {
+        pins.add(
+          _MemberPin(
+            latlng: LatLng(responder.location.lat, responder.location.lng),
+            name: responder.displayName,
+            isMe: false,
+            isSos: false,
+            isResponder: true,
+            alertId: alert.id,
+            memberId: responder.responderMemberId,
+            avatarUrl: responder.avatarUrl,
+            accuracy: responder.location.accuracy,
+          ),
+        );
+      }
     }
     return pins;
   }
@@ -921,8 +960,8 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   Marker _buildMarker(_MemberPin pin) {
     return Marker(
       point: pin.latlng,
-      width: pin.isSos ? 96 : 88,
-      height: pin.isSos ? 98 : 90,
+      width: pin.isSos || pin.isResponder ? 96 : 88,
+      height: pin.isSos || pin.isResponder ? 98 : 90,
       child: GestureDetector(
         onTap: () => _showPinDetail(pin),
         child: _PinWidget(pin: pin),
@@ -1316,9 +1355,12 @@ class _PinWidget extends StatelessWidget {
     final Color bg = pin.color;
     final icon = pin.isSos
         ? Icons.location_on_rounded
+        : pin.isResponder
+        ? Icons.directions_run_rounded
         : pin.isMe
         ? Icons.my_location_rounded
         : Icons.person_pin_circle_rounded;
+    final avatarUrl = pin.avatarUrl;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1378,8 +1420,32 @@ class _PinWidget extends StatelessWidget {
                   ),
                 ],
               ),
+              clipBehavior: Clip.antiAlias,
+              child: avatarUrl != null && avatarUrl.isNotEmpty
+                  ? Image.network(avatarUrl, fit: BoxFit.cover)
+                  : null,
             ),
-            Icon(icon, color: bg, size: pin.isSos ? 34 : 29),
+            if (avatarUrl == null || avatarUrl.isEmpty)
+              Icon(icon, color: bg, size: pin.isSos ? 34 : 29)
+            else if (pin.isResponder)
+              Positioned(
+                right: 2,
+                bottom: 2,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: bg,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: const Icon(
+                    Icons.directions_run_rounded,
+                    color: Colors.white,
+                    size: 10,
+                  ),
+                ),
+              ),
           ],
         ),
       ],
@@ -1556,10 +1622,12 @@ class _MemberLegend extends StatelessWidget {
               _LegendDot(color: AppColors.avatarBlue, label: 'Gia đình'),
               SizedBox(width: 12),
               _LegendDot(color: AppColors.sos, label: 'SOS'),
+              SizedBox(width: 12),
+              _LegendDot(color: AppColors.success, label: 'Đang tới'),
             ],
           ),
           // Bật/tắt chia sẻ vị trí của mình — khi bật, màn này đẩy vị trí
-          // định kỳ 30s để các thành viên khác thấy mình trên bản đồ.
+          // định kỳ để các thành viên khác thấy mình trên bản đồ.
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Row(
@@ -1617,11 +1685,7 @@ class _MemberLegend extends StatelessWidget {
                       height: 10,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: pin.isSos
-                            ? AppColors.sos
-                            : pin.isMe
-                            ? AppColors.primary500
-                            : AppColors.avatarBlue,
+                        color: pin.color,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1664,6 +1728,27 @@ class _MemberLegend extends StatelessWidget {
                         ),
                         child: Text(
                           'SOS',
+                          style: GoogleFonts.inter(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (pin.isResponder) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.success,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'ĐANG TỚI',
                           style: GoogleFonts.inter(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -1747,10 +1832,12 @@ class _MemberPin {
   final String name;
   final bool isMe;
   final bool isSos;
+  final bool isResponder;
   final double? accuracy;
   final String? alertId;
   final String? memberId;
   final String? userId;
+  final String? avatarUrl;
   final String? updatedAt;
 
   const _MemberPin({
@@ -1758,10 +1845,12 @@ class _MemberPin {
     required this.name,
     required this.isMe,
     required this.isSos,
+    this.isResponder = false,
     this.accuracy,
     this.alertId,
     this.memberId,
     this.userId,
+    this.avatarUrl,
     this.updatedAt,
   });
 
@@ -1769,6 +1858,13 @@ class _MemberPin {
     if (isMe) return null;
     if (isSos && alertId != null && alertId!.isNotEmpty) {
       return _RouteTargetRef('sos', alertId!);
+    }
+    if (isResponder &&
+        alertId != null &&
+        alertId!.isNotEmpty &&
+        memberId != null &&
+        memberId!.isNotEmpty) {
+      return _RouteTargetRef('sos-responder', '$alertId:$memberId');
     }
     if (memberId != null && memberId!.isNotEmpty) {
       return _RouteTargetRef('member', memberId!);
@@ -1781,6 +1877,8 @@ class _MemberPin {
 
   Color get color => isSos
       ? AppColors.sos
+      : isResponder
+      ? AppColors.success
       : isMe
       ? AppColors.primary500
       : AppColors.avatarBlue;
@@ -1789,10 +1887,14 @@ class _MemberPin {
       ? 'Vị trí của tôi'
       : isSos
       ? 'SOS: $name'
+      : isResponder
+      ? '$name đang tới'
       : name;
 
   String get subtitle => isSos
       ? 'Cảnh báo khẩn cấp'
+      : isResponder
+      ? 'Đang tới điểm SOS'
       : isMe
       ? 'Thiết bị hiện tại'
       : 'Thành viên gia đình';
