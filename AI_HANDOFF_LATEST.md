@@ -1,30 +1,98 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-> **Snapshot hiện hành — 16/08/2026 (đêm, sau đợt test Album Collection thật
-> qua emulator + đối chiếu nhiều vòng với BE).** Phần này thay thế mọi thông
-> tin nhánh, commit, trạng thái kiểm thử và kết luận đã lỗi thời ở các mục
-> lịch sử phía dưới. Lịch sử vẫn được giữ nguyên để truy vết.
+## 🔴 ĐANG DỞ — ĐỌC MỤC NÀY TRƯỚC, TIẾP TỤC NGAY (17/08/2026 sáng)
+
+**Đã test xong `analyze-draft` sau bản fix parser của BE — đã soạn xong báo
+cáo gửi BE. Còn 1 việc kỹ thuật cần làm: dọn code debug + commit.**
+
+**Đã test 7 lượt qua log thật (`grep "analyze-draft DEBUG"`), kết quả 6/7
+đúng — cải thiện rõ rệt so với hôm qua (16/08, khi đó gần như lần nào cũng
+dính `AI_INVALID_RESPONSE`):**
+- `AI_INVALID_RESPONSE`/`UNAVAILABLE` **không còn xuất hiện lần nào** trong
+  7 lượt — coi như BE đã fix dứt điểm phần này.
+- `summary` sạch, không còn đẩy reasoning/markdown thô.
+- `hasPerson`/`WARN` đúng ở 6/7 lượt. Còn đúng 1 lượt sai (`hasPerson: true`
+  cho ảnh dâu tây không người, gọi lại cùng ảnh 2 lần ra 2 kết quả khác nhau
+  — nghi do bản chất AI bên thứ 3 không đảm bảo nhất quán 100%).
+- 2 lỗi phụ phát hiện thêm: `detectedLabels` đôi lúc có nhãn ảo (vd "mountain"
+  cho ảnh dứa/đào — không ảnh hưởng logic ALLOW/WARN, chỉ hiển thị sai);
+  `warnings` từng chứa text placeholder rác `"short reason or empty string"`
+  lộ thẳng ra UI.
+- Đã soạn tin nhắn báo lại BE đầy đủ (đã gửi trong hội thoại cho user copy đi
+  gửi BE) — không chặn gì, chỉ báo để BE biết, không cần dừng dùng.
+
+**Việc còn lại — CHƯA LÀM, làm tiếp ngay khi user quay lại:**
+1. **Xóa 2 dòng `debugPrint('[analyze-draft DEBUG] ...')`** trong
+   `_analyzeAndUpload()` (`album_screen.dart`, khoảng dòng 308-315) — thêm
+   tạm để soi log, phải xóa trước khi commit.
+2. `dart format` + `flutter analyze --no-fatal-infos` (kỳ vọng 0 error) +
+   `flutter test` (kỳ vọng 481/481).
+3. Commit theo đúng quy tắc mới trong `CLAUDE.md` mục "Git" — message ghi rõ
+   đã verify bằng log thật, tóm tắt 6/7 đúng + 3 vấn đề phụ đã báo BE. Push
+   `NDuy`. Hỏi user có muốn merge `main` không trước khi làm (theo quy trình
+   đã lập: check `origin/giap` trước, fast-forward, verify lại trên `main`).
+4. **Không cần test lại `analyze-draft` nữa** trừ khi BE báo đã sửa tiếp —
+   dữ liệu hiện tại đã đủ để coi là "đạt yêu cầu, còn vài điểm nhỏ chưa hoàn
+   hảo", không phải blocker.
+
+**Ghi chú môi trường (nếu cần test tiếp lần sau):**
+- Máy ảo hiện tại: **`Small_Phone`** (API 34, Google APIs, RAM đã tăng lên
+  3072MB + heap 256MB + GPU mode `host` để đỡ lag — sửa trực tiếp
+  `D:\AndroidHome\.android\avd\Small_Phone.avd\config.ini`, không qua UI).
+  Storage đã set 10G trong config nhưng ổ đĩa cũ (6G) chưa chắc tự giãn —
+  nếu hết dung lượng lại thì cần Wipe Data mới áp dụng đúng, sẽ mất ảnh test
+  đã đẩy vào `/sdcard/DCIM/Camera` (12 ảnh gốc + ảnh test buổi sáng).
+  `Wear_OS_Large_Round` vẫn còn, chưa dùng tới trong đợt test này.
+- Log lần này nằm ở
+  `D:/Temp/claude/d--Desktop-mobile-sep/7716f23a-a040-4195-939d-a6bded355bf2/scratchpad/logcat_be_fix2.txt`
+  — **file tạm theo session, sẽ mất khi qua phiên/máy khác.** Cần soi log
+  mới thì tự bật lại: `adb logcat -c && adb logcat -v raw > <file> &`.
+- Ảnh test hiện có trong máy ảo: 12 ảnh gốc từ `D:\Desktop\IMGAPP` + nhiều
+  ảnh trái cây/biển đã upload qua app vào 2 album "anh LMH" và "sea".
+
+**Bối cảnh khác không khẩn, chỉ để biết:**
+- Máy ảo hiện tại: **`Small_Phone`** (API 34, Google APIs, không Play Store —
+  đổi từ `Medium_Phone`/`Pixel_6` cũ vì hết dung lượng nhiều lần) +
+  `Wear_OS_Large_Round` cho test đồng hồ. `ANDROID_AVD_HOME` thật nằm ở
+  `D:\AndroidHome\.android\avd`, SDK ở `D:\MMA\Android\Sdk` — không phải
+  đường dẫn mặc định `%USERPROFILE%\.android`.
+- User có kỳ **Review Defense 1.1** thứ Năm 20/08/2026. Đã soạn tài liệu ôn
+  riêng tại `D:\Desktop\ON_TAP_REVIEW_FE_MOBILE.md` (ngoài repo, không phải
+  việc code) — không cần đụng tới trừ khi user hỏi lại.
+- `adb shell` với path Unix qua Git Bash bị dịch sai path — dùng PowerShell
+  cho lệnh `adb shell` có path tuyệt đối.
+
+---
+
+> **Snapshot hiện hành — 16/08/2026 (đêm muộn, sau khi merge `NDuy` → `main`).**
+> Phần này thay thế mọi thông tin nhánh, commit, trạng thái kiểm thử và kết
+> luận đã lỗi thời ở các mục lịch sử phía dưới. Lịch sử vẫn được giữ nguyên để
+> truy vết.
 
 ## Snapshot hiện hành — Git, phạm vi và quy tắc commit
 
-- Nhánh `NDuy` đã push khớp `origin/NDuy` tại 3 commit
-  (`61a188e` family workspace, `50e2ef5` fix map, `c43ce5d` feat album Phase
-  1+2 — xem chi tiết ở các mục "Cập nhật" phía dưới).
-- **Chưa commit** (phát sinh từ đợt test runtime sau khi push, sửa trực tiếp
-  theo bug/thiếu sót phát hiện lúc test thật): `lib/providers/album_provider.dart`,
-  `lib/screens/shared/album_screen.dart`. Danh sách đầy đủ ở mục "Cập nhật
-  2026-08-16 (đêm)" ngay dưới. **Còn 1 dòng debug tạm cần dọn trước khi
-  commit:** `debugPrint('[analyze-draft DEBUG] ...')` trong
-  `_analyzeAndUpload()` (`album_screen.dart`) — thêm để soi log lúc test,
-  không phải code chủ đích, xoá trước khi commit đợt này.
-- `flutter analyze --no-fatal-infos` → 0 error (1 warning đã biết, giữ tạm có
-  chủ đích: `_fetchFirstFamilyContextLegacy` unused); `flutter test` →
-  481/481 pass — verify lại sau **mỗi** lần sửa ở trên, không chỉ 1 lần cuối.
-- Không stage/commit artefact tạm: `.tmp_report_audit/`, `tmp_*.png`,
+- **`main` và `NDuy` đang khớp nhau hoàn toàn**, cả 2 đã push lên remote, tại
+  commit `826e46a`. Đã merge fast-forward sạch (không conflict, đã kiểm
+  `origin/giap` không có gì mới trước khi merge). 4 commit gần nhất:
+  `61a188e` family workspace, `50e2ef5` fix map, `c43ce5d` feat album Phase
+  1+2, `826e46a` fix + polish Album Collection sau test runtime (chi tiết ở
+  mục "Cập nhật 2026-08-16 (đêm)" phía dưới).
+- Worktree **sạch**, không còn file FE tracked nào chưa commit. Chỉ còn
+  artefact tạm không nên stage: `.tmp_report_audit/`, `tmp_*.png`,
   `tmp_*.xml`, `tmp_report6_mobile_images/`, `BuildDocx.cs`,
   `build_report6.ps1`, `diagram*_labels*`, `diagram*_relations*`,
   `docs/usecase-diagram-rebuild/`, `tools/`, shortcut. Không đưa tài khoản,
   mật khẩu, token, secret vào handoff hay commit.
+- `flutter analyze --no-fatal-infos` → 0 error (1 warning đã biết, giữ tạm có
+  chủ đích: `_fetchFirstFamilyContextLegacy` unused, `auth_provider.dart:352`);
+  `flutter test` → 481/481 pass — verify lại trên cả `NDuy` lẫn `main` sau
+  merge, không chỉ 1 nhánh.
+- **Quy tắc commit/push mới đã thêm vào `CLAUDE.md` mục "Git"** (rút kinh
+  nghiệm từ đợt này gộp quá nhiều fix vào 1 commit) — đọc lại đó trước khi
+  code tiếp, không lặp lại ở đây.
+- Đang **chờ BE trả lời tiếp** vấn đề `analyze-draft` (parse `hasPerson`/
+  `topicMatch` từ response dạng plain-text đôi lúc vẫn sai, đôi lúc vẫn dính
+  lại `AI_INVALID_RESPONSE`) — xem chi tiết mục "Cập nhật 2026-08-16 (đêm)".
 
 ## Trạng thái chức năng cần tiếp tục kiểm thử
 

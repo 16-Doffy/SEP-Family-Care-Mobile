@@ -149,3 +149,25 @@ test mapping tương ứng — đây là chỗ bắt các bug enum/DTO sai đã 
 - Commit convention: `feat:` / `fix:` / `refactor:` / `chore:`, mô tả tiếng Việt.
 - `.gitattributes` ép LF trong repo (trừ `.bat`/`.ps1`) — nếu thấy cả file "modified" mà không sửa gì
   thì là nhiễu CRLF, không phải thay đổi thật.
+
+### Quy tắc commit + push nhánh `NDuy`
+
+- **Commit ngay sau mỗi fix/feature riêng lẻ đã verify xong**, không gộp nhiều việc không liên quan
+  vào 1 commit cuối phiên. Nhiều fix nhỏ trong cùng 1 file, đụng cùng đoạn code (khó tách bằng
+  `git add -p` mà không rủi ro tách sai) thì mới gộp — và phải chia rõ từng phần trong commit body,
+  không viết chung chung.
+- Message chi tiết đủ để đọc lại hiểu ngay: **làm gì, vì sao (nguyên nhân/bối cảnh), test/verify ra
+  sao**. Đây là đồ án — hội đồng đọc `git log`/`git show` để biết đã làm gì, không phải chỉ người
+  viết code hiểu.
+- Trước khi push: `git fetch origin` rồi kiểm `git log origin/giap ^HEAD` và `git log origin/main
+  ^HEAD` — có commit mới mà nhánh hiện tại chưa có thì dừng lại báo user, không push đè/bỏ qua.
+- `flutter analyze --no-fatal-infos` (0 error) + `flutter test` (toàn bộ pass) **sau mỗi lần sửa**
+  trước khi commit, không chỉ chạy 1 lần cuối phiên.
+- Merge `NDuy` → `main`: chỉ làm khi fast-forward sạch (không có gì trên `main` mà `NDuy` chưa có,
+  không conflict). Sau merge chạy lại `flutter analyze` trên `main` trước khi push, xong quay lại
+  `git checkout NDuy` để tiếp tục làm việc.
+- **Không bao giờ `git push --force`** vào nhánh đã push lên remote (kể cả để "tách lại commit cho
+  gọn") trừ khi user xác nhận rõ ràng và hiểu rủi ro — rủi ro cao hơn lợi ích nếu chỉ để commit đẹp
+  hơn.
+- Dọn `git status --short` trước khi `git add`: loại bỏ file tạm sinh ra lúc test (`tmp_*.png`,
+  `tmp_*.xml`, `.tmp_report_audit/`, ảnh chụp/log debug) — không stage nhầm vào commit code.
