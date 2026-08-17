@@ -177,38 +177,73 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     }
   }
 
-  /// Khi cảnh báo của CHÍNH MÌNH có người ứng cứu đầu tiên, thu bản đồ lại cho
-  /// thấy cả mình lẫn người đang tới.
+  /// Cảnh báo của CHÍNH MÌNH vừa có người ứng cứu đầu tiên → **tự vẽ đường**
+  /// giữa mình và người đang tới, không bắt người phát phải bấm vào pin rồi
+  /// chọn "Chỉ đường tới đây".
   ///
-  /// Không có bước này thì camera vẫn khoá ở vị trí người phát (zoom 15, thấy
-  /// chưa tới 2km) — người ứng cứu cách vài km là nằm ngoài khung, người phát
-  /// tưởng "chỉ có mỗi mình trên bản đồ" dù pin đã được vẽ đúng.
+  /// Người đang kêu cứu là người ít có điều kiện thao tác nhất, nên đường đi
+  /// phải hiện sẵn. Vẽ xong `_routeTo` tự thu camera ôm trọn tuyến, giải quyết
+  /// luôn chuyện camera khoá ở vị trí người phát (zoom 15, thấy chưa tới 2km)
+  /// khiến người ứng cứu cách vài km nằm ngoài khung.
   ///
-  /// Chỉ tự thu **một lần cho mỗi cảnh báo**: sau đó người dùng tự do kéo/zoom,
-  /// không giật camera về mỗi lần vị trí người ứng cứu cập nhật (mỗi ~5 giây).
+  /// Đường tự vẽ này **tự bám theo** người ứng cứu khi họ di chuyển, nhờ
+  /// `followRef` + [_syncRouteWithMovingPin] có sẵn.
+  ///
+  /// Chỉ tự làm **một lần cho mỗi cảnh báo**, và chỉ khi đang không có tuyến
+  /// nào: người dùng xoá đường đi hoặc tự chọn điểm khác thì tôn trọng, không
+  /// vẽ đè lại mỗi 5 giây khi vị trí cập nhật.
   void _maybeFitToResponders(
     String? currentUserId,
     List<SosAlert> alerts,
     List<_MemberPin> pins,
   ) {
+    if (_routePoints.length >= 2) return; // đang có tuyến — không đè
     for (final alert in alerts) {
       if (!alert.isMine(currentUserId)) continue;
       if (_fittedResponderAlerts.contains(alert.id)) continue;
-      final targets = [
+
+      final responders = [
         for (final pin in pins)
-          if (pin.isResponder && pin.alertId == alert.id) pin.latlng,
-        if (_myPos != null) _myPos!,
+          if (pin.isResponder && pin.alertId == alert.id) pin,
       ];
-      if (targets.length < 2) continue;
+      if (responders.isEmpty) continue;
+      final me = _myPos;
+      if (me == null) continue;
+
+      // Nhiều người cùng tới thì vẽ đường tới người GẦN NHẤT — đó là người sắp
+      // đến nơi, cũng là thông tin người đang kêu cứu cần nhất.
+      _MemberPin nearest = responders.first;
+      var nearestM = const Distance().as(LengthUnit.Meter, me, nearest.latlng);
+      for (final pin in responders.skip(1)) {
+        final d = const Distance().as(LengthUnit.Meter, me, pin.latlng);
+        if (d < nearestM) {
+          nearest = pin;
+          nearestM = d;
+        }
+      }
+
       _fittedResponderAlerts.add(alert.id);
-      // fitCamera không gọi được giữa lúc build — hoãn sang frame kế tiếp.
+
+      // Dưới 50m thì _routeTo từ chối vẽ và bắn snackbar "Bạn đang ở ngay tại
+      // điểm này" — với đường tự vẽ thì đó là tiếng ồn vô nghĩa. Người ứng cứu
+      // đã tới sát nơi rồi, chỉ cần thu camera cho thấy cả hai.
+      final targets = [me, for (final pin in responders) pin.latlng];
+      // Không gọi được giữa lúc build — hoãn sang frame kế tiếp.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _mapCtrl.fitCamera(
-          CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints(targets),
-            padding: const EdgeInsets.fromLTRB(60, 120, 60, 260),
-          ),
+        if (nearestM < 50) {
+          _mapCtrl.fitCamera(
+            CameraFit.bounds(
+              bounds: LatLngBounds.fromPoints(targets),
+              padding: const EdgeInsets.fromLTRB(60, 120, 60, 260),
+            ),
+          );
+          return;
+        }
+        _routeTo(
+          nearest.latlng,
+          label: nearest.name,
+          followRef: nearest.routeRef,
         );
       });
     }
