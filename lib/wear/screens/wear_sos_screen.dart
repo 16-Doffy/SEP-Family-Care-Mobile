@@ -47,6 +47,9 @@ class _WearSosScreenState extends State<WearSosScreen>
       begin: 1,
       end: 1.08,
     ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SosProvider>().startRealtime();
+    });
   }
 
   @override
@@ -141,7 +144,8 @@ class _WearSosScreenState extends State<WearSosScreen>
       setState(() => _locationNotice = 'Không lấy được GPS đồng hồ');
       return false;
     }
-    final pushed = await context.read<SosProvider>().pushLocation(
+    final sos = context.read<SosProvider>();
+    final realtimePushed = sos.pushLocationRealtime(
       alertId,
       pos.lat,
       pos.lng,
@@ -149,6 +153,16 @@ class _WearSosScreenState extends State<WearSosScreen>
       sourceType: 'WEARABLE_GPS',
       deviceId: deviceId,
     );
+    final pushed =
+        realtimePushed ||
+        await sos.pushLocation(
+          alertId,
+          pos.lat,
+          pos.lng,
+          accuracy: pos.accuracy,
+          sourceType: 'WEARABLE_GPS',
+          deviceId: deviceId,
+        );
     if (!mounted) return false;
     setState(
       () => _locationNotice = pushed

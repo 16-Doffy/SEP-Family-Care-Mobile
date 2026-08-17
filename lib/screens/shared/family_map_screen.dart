@@ -40,8 +40,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   Timer? _liveRefreshTimer;
   bool _liveRefreshInFlight = false;
   bool _pushInFlight = false;
-  final Map<String, ({double lat, double lng, String? sourceType})>
-  _latestSosLocations = {};
+  final Map<String, SosRealtimeLocation> _latestSosLocations = {};
 
   // ── Chỉ đường A→B (A = vị trí của tôi, B = thành viên/điểm SOS) ──────────
   // Thuần FE, KHÔNG cần BE: vẽ ngay đường thẳng (tính offline bằng latlong2)
@@ -319,7 +318,10 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     }
   }
 
-  Future<void> _refreshFamilyLocations({bool silent = false}) async {
+  Future<void> _refreshFamilyLocations({
+    bool silent = false,
+    bool includeSosLocationFallback = false,
+  }) async {
     await Future.wait([
       context.read<GpsProvider>().fetchFamilyLocations(
         myUserId: _myUserId,
@@ -327,7 +329,9 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       ),
       context.read<SosProvider>().fetchAlerts(silent: silent),
     ]);
-    await _refreshCurrentSosLocations();
+    if (includeSosLocationFallback) {
+      await _refreshCurrentSosLocations();
+    }
   }
 
   Future<void> _refreshCurrentSosLocations() async {
@@ -335,7 +339,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     final sos = context.read<SosProvider>();
     final activeAlerts = sos.activeAlerts.where((a) => a.id.isNotEmpty);
     final activeIds = activeAlerts.map((a) => a.id).toSet();
-    final next = <String, ({double lat, double lng, String? sourceType})>{};
+    final next = <String, SosRealtimeLocation>{};
 
     for (final entry in _latestSosLocations.entries) {
       if (activeIds.contains(entry.key)) next[entry.key] = entry.value;
@@ -351,7 +355,16 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
 
     for (final result in results) {
       final loc = result.loc;
-      if (loc != null) next[result.id] = loc;
+      if (loc != null) {
+        next[result.id] = (
+          lat: loc.lat,
+          lng: loc.lng,
+          accuracy: null,
+          sourceType: loc.sourceType,
+          recordedAt: null,
+          deviceId: null,
+        );
+      }
     }
 
     var changed = next.length != _latestSosLocations.length;
@@ -377,7 +390,10 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
 
   Future<void> _refreshMap() async {
     setState(() => _locError = null);
-    await Future.wait([_refreshFamilyLocations(), _locateMe(center: false)]);
+    await Future.wait([
+      _refreshFamilyLocations(includeSosLocationFallback: true),
+      _locateMe(center: false),
+    ]);
   }
 
   // ── Lấy GPS thiết bị ────────────────────────────────────────────────────
@@ -827,7 +843,8 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     }
 
     for (final alert in alerts) {
-      final current = _latestSosLocations[alert.id];
+      final realtime = context.read<SosProvider>().realtimeLocationOf(alert.id);
+      final current = realtime ?? _latestSosLocations[alert.id];
       final lat = current?.lat ?? alert.latitude;
       final lng = current?.lng ?? alert.longitude;
       if (lat == null || lng == null) continue;

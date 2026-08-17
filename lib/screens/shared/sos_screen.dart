@@ -11,6 +11,7 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../services/sos_location.dart';
+import '../../services/sos_realtime_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../utils/sos_alert_location.dart';
@@ -106,6 +107,7 @@ class _SOSScreenState extends State<SOSScreen>
   double? _localLat, _localLng; // GPS lưu local khi API chưa có
   String? _sentAlertId; // id alert vừa tạo, để Đóng/confirm-safety đúng alert
   Timer? _locationStreamTimer; // gửi vị trí định kỳ trong lúc alert đang active
+  bool _waitingTrackStart = false;
   // Điểm gửi lỗi (mất mạng tạm thời) được giữ lại để flush bằng
   // pushLocationBatch ở lần gửi thành công kế tiếp — tránh mất hẳn vị trí SOS
   // chỉ vì rớt mạng vài chục giây. Cap để không phình vô hạn nếu mất mạng dài.
@@ -154,6 +156,7 @@ class _SOSScreenState extends State<SOSScreen>
       context.read<SosProvider>().fetchAlerts();
       // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
       context.read<SosProvider>().fetchEmergencyContacts();
+      _attachSosRealtimeTrackingCallbacks();
       // Hệ thống phát hiện Emergency SOS đang chiếm màn hình → gửi thẳng,
       // không đếm ngược (không có UI nào hiện được lúc đó để người dùng hủy).
       if (widget.immediate && mounted) {
@@ -169,6 +172,9 @@ class _SOSScreenState extends State<SOSScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    final realtime = SosRealtimeService.instance;
+    realtime.onTrackStart = null;
+    realtime.onTrackStop = null;
     _pulseCtrl.dispose();
     _countTimer?.cancel();
     _locationStreamTimer?.cancel();
@@ -191,8 +197,9 @@ class _SOSScreenState extends State<SOSScreen>
     _triggerSOS(locationTimeout: const Duration(seconds: 3));
   }
 
-  // Gửi vị trí mỗi 20s cho tới khi alert được đóng (confirm-safety) hoặc màn
-  // hình bị huỷ — POST .../sos/alerts/{alertId}/locations (xem SosProvider).
+  // BE realtime /sos sẽ bắn sos:track:start sau khi tạo alert. Khi đó FE gửi
+  // vị trí qua sos:location:push theo intervalSec của server. REST 20s bên dưới
+  // chỉ còn là fallback nếu socket không trả track:start hoặc socket rớt.
   // "2026-07-10T15:18:52.190Z" → "10/07 22:18" (giờ máy) cho dễ đọc
   static String _fmtAlertTime(String iso) {
     final d = DateTime.tryParse(iso)?.toLocal();
@@ -201,21 +208,61 @@ class _SOSScreenState extends State<SOSScreen>
     return '${two(d.day)}/${two(d.month)} ${two(d.hour)}:${two(d.minute)}';
   }
 
-  void _startLocationStreaming(String alertId) {
+  void _attachSosRealtimeTrackingCallbacks() {
+    final realtime = SosRealtimeService.instance;
+    realtime.onTrackStart = _onSosTrackStart;
+    realtime.onTrackStop = _onSosTrackStop;
+    realtime.connect();
+  }
+
+  void _onSosTrackStart(SosTrackStartEvent event) {
+    if (!mounted || event.alertId.isEmpty) return;
+    final currentAlertId = _sentAlertId;
+    if (currentAlertId != null && currentAlertId != event.alertId) return;
+    _waitingTrackStart = false;
+    _startLocationStreaming(
+      event.alertId,
+      interval: Duration(seconds: event.intervalSec.clamp(3, 60).toInt()),
+      preferSocket: true,
+    );
+  }
+
+  void _onSosTrackStop(String alertId) {
+    if (_sentAlertId == null || _sentAlertId == alertId) {
+      _stopLocationStreaming();
+    }
+  }
+
+  void _startLocationStreaming(
+    String alertId, {
+    Duration interval = const Duration(seconds: 20),
+    bool preferSocket = false,
+  }) {
     _locationStreamTimer?.cancel();
     _pendingLocationPoints.clear();
-    _locationStreamTimer = Timer.periodic(const Duration(seconds: 20), (
-      _,
-    ) async {
+    Future<void> pushOnce() async {
       final pos = await _getLocation();
       if (pos == null || !mounted) return;
       final sosProvider = context.read<SosProvider>();
-      final ok = await sosProvider.pushLocation(
-        alertId,
-        pos.latitude,
-        pos.longitude,
-        accuracy: pos.accuracy,
-      );
+      var ok = false;
+      if (preferSocket) {
+        ok = sosProvider.pushLocationRealtime(
+          alertId,
+          pos.latitude,
+          pos.longitude,
+          accuracy: pos.accuracy,
+          sourceType: 'MOBILE_GPS',
+          recordedAt: DateTime.now(),
+        );
+      }
+      ok =
+          ok ||
+          await sosProvider.pushLocation(
+            alertId,
+            pos.latitude,
+            pos.longitude,
+            accuracy: pos.accuracy,
+          );
       if (!mounted) return;
       if (!ok) {
         _pendingLocationPoints.add((
@@ -238,12 +285,16 @@ class _SOSScreenState extends State<SOSScreen>
         );
         if (mounted && flushed) _pendingLocationPoints.clear();
       }
-    });
+    }
+
+    pushOnce();
+    _locationStreamTimer = Timer.periodic(interval, (_) => pushOnce());
   }
 
   void _stopLocationStreaming() {
     _locationStreamTimer?.cancel();
     _locationStreamTimer = null;
+    _waitingTrackStart = false;
     _pendingLocationPoints.clear();
   }
 
@@ -328,7 +379,9 @@ class _SOSScreenState extends State<SOSScreen>
       final alertId = await sosProvider.sendSos(
         message: widget.immediate
             ? 'SOS khẩn cấp — phát hiện qua màn hình Cấp cứu khẩn cấp của máy'
-            : 'SOS khẩn cấp từ ứng dụng Family Care',
+            : (widget.autoTrigger
+                  ? 'Phát hiện té ngã/lắc mạnh từ điện thoại'
+                  : 'SOS khẩn cấp từ ứng dụng Family Care'),
         address: sosAddressOf(pos),
         latitude: pos?.latitude,
         longitude: pos?.longitude,
@@ -341,7 +394,16 @@ class _SOSScreenState extends State<SOSScreen>
           _apiOk = true;
           _sentAlertId = alertId;
         });
-        _startLocationStreaming(alertId);
+        _waitingTrackStart = true;
+        Future.delayed(const Duration(seconds: 6), () {
+          if (!mounted ||
+              !_waitingTrackStart ||
+              _sentAlertId != alertId ||
+              _locationStreamTimer != null) {
+            return;
+          }
+          _startLocationStreaming(alertId);
+        });
       }
     } catch (e) {
       // API thất bại → KHÔNG báo thành công, show lỗi để user biết

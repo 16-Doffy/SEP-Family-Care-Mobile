@@ -40,16 +40,15 @@ class FamilyShell extends StatefulWidget {
 }
 
 class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
-  // BE chưa có push/websocket — poll nhẹ ở tầng shell (sống suốt phiên đăng
-  // nhập, mọi tab) để banner SOS + chuông thông báo cập nhật trên các thiết bị
-  // khác khi app đang mở. Dừng khi app xuống nền cho đỡ pin/băng thông, và
-  // fetch lại NGAY khi quay lại foreground để không phải chờ hết 1 chu kỳ.
+  // Poll nhẹ ở tầng shell vẫn giữ làm fallback cho SOS/notification nếu socket
+  // rớt. Realtime chính: /notifications, /chat và /sos.
   static const _kPollInterval = Duration(seconds: 15);
   // Ở nền vẫn poll (để SOS nổ được khi user đang ở app khác), chỉ giãn chu kỳ.
   static const _kPollIntervalBackground = Duration(seconds: 30);
   Timer? _pollTimer;
   bool _verificationDialogOpen = false;
   NotificationProvider? _notif; // giữ ref để dùng trong dispose
+  SosProvider? _sos; // giữ ref để dùng trong dispose
   // id các cảnh báo SOS đã bắn notification hệ thống — tránh poll 15s bắn lại
   // cùng một cảnh báo mỗi chu kỳ.
   final Set<String> _notifiedSosIds = {};
@@ -87,6 +86,9 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       // ở trên, để nhận được cuộc gọi đến bất kể đang ở tab nào.
       _call = context.read<CallProvider>()..onIncomingCall = _onIncomingCall;
       _call!.startRealtime();
+      _sos = context.read<SosProvider>()
+        ..onNewRealtimeAlert = _onRealtimeSosNew;
+      _sos!.startRealtime();
       // Cấu hình thanh nav nằm trong secure storage → đọc bất đồng bộ. Chưa
       // đọc xong thì tabsFor() trả mặc định của role, nên thanh nav vẫn dựng
       // được ngay, không chờ.
@@ -121,6 +123,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       _call!.onIncomingCall = null;
     }
     _call?.stopRealtime();
+    if (_sos?.onNewRealtimeAlert == _onRealtimeSosNew) {
+      _sos!.onNewRealtimeAlert = null;
+    }
+    _sos?.stopRealtime();
     super.dispose();
   }
 
@@ -291,6 +297,23 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         payload: 'SOS_ALERT|${a.id}',
       );
     }
+  }
+
+  void _onRealtimeSosNew(SosAlert alert) {
+    if (!mounted || alert.id.isEmpty || _notifiedSosIds.contains(alert.id)) {
+      return;
+    }
+    _notifiedSosIds.add(alert.id);
+    final myId = context.read<AuthProvider>().user?.id;
+    if (alert.isMine(myId)) return;
+    LocalNotificationService.instance.show(
+      title: '${alert.senderName} cần trợ giúp khẩn cấp!',
+      body: alert.message.isNotEmpty
+          ? alert.message
+          : 'Cảnh báo SOS từ gia đình',
+      isSos: true,
+      payload: 'SOS_ALERT|${alert.id}',
+    );
   }
 
   // ── Phát hiện té ngã ──────────────────────────────────────────────────────
