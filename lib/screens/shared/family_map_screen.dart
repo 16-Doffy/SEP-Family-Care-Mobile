@@ -475,25 +475,47 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           timeLimit: Duration(seconds: 12),
         ),
       );
-      if (!mounted) return null;
-      final latlng = LatLng(pos.latitude, pos.longitude);
-      setState(() {
-        _myPos = latlng;
-        _myAccuracy = pos.accuracy;
-        // _buildPins() tự tạo lại pin "Tôi" từ _myPos/_myAccuracy mỗi lần
-        // rebuild — không còn giữ danh sách pin trong state (kiến trúc cũ _pins).
-      });
-      if (center) {
-        _mapCtrl.move(latlng, 15);
-      }
+      _applyMyPosition(pos, center: center);
       return pos;
+    } on TimeoutException {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        _applyMyPosition(last, center: center);
+        if (mounted && !silent) {
+          setState(() {
+            _locError =
+                'GPS phản hồi chậm, đang dùng vị trí gần nhất của thiết bị';
+          });
+        }
+        return last;
+      }
+      if (mounted && !silent) {
+        setState(() {
+          _locError = 'GPS phản hồi chậm. Vui lòng thử lại ở nơi thoáng hơn';
+        });
+      }
+      return null;
     } catch (e) {
       if (mounted && !silent) {
-        setState(() => _locError = 'Không lấy được GPS: $e');
+        setState(() => _locError = 'Không lấy được GPS. Vui lòng thử lại');
       }
       return null;
     } finally {
       if (mounted && !silent) setState(() => _locating = false);
+    }
+  }
+
+  void _applyMyPosition(Position pos, {required bool center}) {
+    if (!mounted) return;
+    final latlng = LatLng(pos.latitude, pos.longitude);
+    setState(() {
+      _myPos = latlng;
+      _myAccuracy = pos.accuracy;
+      // _buildPins() tự tạo lại pin "Tôi" từ _myPos/_myAccuracy mỗi lần
+      // rebuild — không còn giữ danh sách pin trong state (kiến trúc cũ _pins).
+    });
+    if (center) {
+      _mapCtrl.move(latlng, 15);
     }
   }
 
