@@ -1,8 +1,57 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🔴 ĐANG DỞ — ĐỌC MỤC NÀY TRƯỚC, TIẾP TỤC NGAY (17/08/2026 trưa)
+## 🔴 ĐANG DỞ — ĐỌC MỤC NÀY TRƯỚC, TIẾP TỤC NGAY (17/08/2026 chiều)
 
-**Không còn việc dở nào. Đã test runtime + commit + push xong toàn bộ.**
+### Quy tắc mới user vừa đặt (áp dụng từ đây trở đi)
+
+**KHÔNG tự chạy test runtime trên máy ảo nữa.** Chỉ sửa code + chạy
+`flutter analyze` và `flutter test`. Phần bấm thử trên app **user tự làm**.
+Lý do: tốn thời gian, và đã có sự cố bấm nhầm (xem ngay dưới).
+
+### ⚠️ Sự cố phải kiểm tra
+
+Phiên này **bấm nhầm nút SOS** trên `emulator-5554` (bấm theo tọa độ cũ trong
+khi tài khoản đang đăng nhập là **MInh nhut** — thanh nav của tài khoản này
+khác nên tọa độ lệch). Màn hiện "Đang gửi SOS… Đang lấy vị trí GPS…" rồi
+**kẹt** vì máy ảo không có định vị; thoát ra, app về launcher.
+**Chưa xác minh được cảnh báo SOS có thật sự được tạo hay không.** Nếu thấy
+cảnh báo SOS rác trong dữ liệu thì là do việc này, không phải bug app.
+
+### Trạng thái code: xong trọn vẹn, CHƯA COMMIT
+
+Không có file nào đang sửa dở. `flutter analyze` 0 error (1 warning cũ đã
+biết), `flutter test` **498/498 pass**. Sáu nhóm thay đổi đang nằm trong
+worktree:
+
+1. **Fix mất ảnh khi vào tab Ảnh** — `AlbumMediaThumb` và
+   `_AlbumDetailMediaPageState` nhớ URL đã hiện được (`_shownUrl`).
+   Nguyên nhân: `fetchMedia(refresh: true)` thay `_items` bằng object không
+   kèm URL, mà `didUpdateWidget` chỉ resolve lại khi đổi `media.id` → ô đã
+   hiện ảnh rơi về ô xám và kẹt. Thêm `_thumbLoading()` để phân biệt "đang
+   tải" với "ảnh hỏng". **Đã verify runtime trước khi có quy tắc mới.**
+2. **Fix tràn layout màn Tôi** — `_infoRow` trong `profile_screen.dart` thiếu
+   `Expanded` nên email dài tràn ("RIGHT OVERFLOWED BY 6.1 PIXELS").
+   **Đã verify runtime.**
+3. **4 chỗ tiếng Việt** — `'Thanh vien'` → `'Thành viên'`
+   (`album_media.dart`), `Exception('Chua co gia dinh')`, 3 nhãn ở
+   `wearables_screen.dart` (+ nới `width` nhãn từ 86 lên 108), `'Face
+   Profile'` → `'Hồ sơ khuôn mặt'`.
+4. **`JsonReportView` áp nhãn tiếng Việt ở MỌI nơi** — trước đây bảng nhãn
+   chỉ tra khi `financeReportMode == true`, nên Trợ lý AI / Phần thưởng / Hỗ
+   trợ / SOS hiện nhãn tiếng Anh sinh tự động ("Total Expense", "Active
+   Budget Plan"). Thêm ~50 nhãn mới. Có test
+   `test/json_report_view_label_test.dart`.
+5. **Markdown trong câu trả lời AI** — thêm `parseAiMarkdownLines()` +
+   `AiTextLine`/`AiLineKind` trong `ai_assistant_screen.dart`: `###` thành
+   tiêu đề in đậm, `- ` thành `•`, giữ nguyên `**đậm**`. Sửa `_AiRichText`
+   (dùng ở 5 chỗ nên sạch cả 5). Có test `test/ai_markdown_line_test.dart`
+   (9 case). **CHƯA verify runtime** — đây là thứ duy nhất cần bấm thử.
+6. **Tài liệu** — `API_DOCS.md` ghi phản hồi BE về tool
+   `list_member_monthly_finances`; `AI_HANDOFF_LATEST.md` mục này.
+
+**Việc kế tiếp:** user đã duyệt **commit + push `NDuy`** cho nhóm 1–4 (duyệt
+trước khi làm nhóm 5). Chưa thực hiện. Nhớ `git fetch` kiểm `origin/giap`
+trước khi push, và loại `Safe Exam Browser.lnk` + `tmp_*` khỏi `git add`.
 
 **Đã làm xong trong phiên này (không lặp lại):**
 1. Merge `NDuy` → `main` fast-forward sạch, verify `flutter analyze` trên
@@ -23,6 +72,39 @@
    **Đã force-push-with-lease** cả `NDuy` và `main` — user xác nhận trước.
 7. Gỡ mục "Quy tắc commit + push nhánh NDuy" khỏi `CLAUDE.md` theo yêu cầu
    user, rút gọn còn vài dòng quy ước kỹ thuật.
+
+**BE đã phản hồi vụ AI không đọc được thu chi từng thành viên (17/08 chiều):**
+Xác nhận **không phải lỗi FE** — FE mở đúng `canManageFinance` cho Manager/
+Deputy và chỉ gửi `{ content }`. Nguyên nhân: AI thiếu tool đọc dữ liệu tháng
+theo member. BE đã thêm tool `list_member_monthly_finances` (mở cho
+`FAMILY_MANAGER` + `DEPUTY_MEMBER`), sửa luôn cách tính số góp mục tiêu tài
+chính theo `actualIncome - actualPersonalExpense - actualSharedContribution`.
+Chi tiết đầy đủ đã ghi trong `API_DOCS.md` mục ai-chatbot. **FE không phải
+đổi code.** `[VERIFY]` — **chưa test lại runtime sau bản vá**, phải hỏi lại
+đúng câu đó bằng cả Trưởng nhóm lẫn Phó nhóm rồi mới coi là xong.
+
+BE trả 2 điểm phụ về cho FE: (1) markdown `###` — **đã fix xong**, xem nhóm 5
+bên dưới; (2) tên hũ `Savings`/`Spending` là **dữ liệu** BE tạo, không phải
+chuỗi FE — FE không sửa được, đổi tên hũ trong màn Mô hình tài chính là xong.
+
+**BE cũng đã vá đợt 3 cho parser `analyze-draft` (17/08 chiều):** giảm false
+positive `hasPerson`, bỏ suy nhãn ảo từ raw reasoning, lọc placeholder trong
+`warnings`. **FE không phải đổi code.** Chi tiết ở `API_DOCS.md`.
+
+### ⏳ Việc user cần tự chạy thử (assistant không tự test nữa)
+
+1. **Retest `analyze-draft`** sau bản vá đợt 3: dùng lại đúng bộ ảnh cũ (trái
+   cây tổng hợp, dâu tây, dứa) gán vào album **lệch chủ đề** (`sea` /
+   `anh LMH`). Kỳ vọng: `hasPerson` không còn bịa `true`, `detectedLabels`
+   hết nhãn ảo, `warnings` sạch placeholder.
+   → **Đây là cơ hội đầu tiên verify nhánh `WARN`** của `_analyzeAndUpload`,
+   nhánh này chưa từng chạy thật lần nào.
+2. **Retest AI tài chính** sau khi BE thêm `list_member_monthly_finances`:
+   hỏi *"list danh sách thu chi thực tế của từng thành viên"* bằng **cả
+   Trưởng nhóm lẫn Phó nhóm**. Kỳ vọng: ra dữ liệu, hoặc nói rõ "bị ẩn/chưa
+   khai báo" — **không** còn câu "tôi không có quyền truy cập".
+3. **Kiểm markdown** (nhóm 5): hỏi *"Tháng này nhà mình tiêu hết bao nhiêu?"*
+   — không được còn dấu `###` nào, gạch đầu dòng phải thành `•`.
 
 **Việc cần báo BE (user tự gửi):**
 `DE_XUAT_BE_ALBUM_PIN_BULK_DELETE_2026-08-17.md` — 2 đề xuất mức **Nên có**,

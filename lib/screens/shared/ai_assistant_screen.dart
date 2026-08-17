@@ -1182,6 +1182,60 @@ class _MessageBubble extends StatelessWidget {
 /// dùng thấy cả cặp dấu `**` xấu xí thay vì chữ đậm. Không kéo cả thư viện
 /// markdown chỉ để bôi đậm — parse tối thiểu bằng regex, phần nằm giữa
 /// `**...**` in đậm + tô màu nổi bật, phần còn lại giữ nguyên.
+/// Kiểu của một dòng trong câu trả lời AI sau khi bóc ký hiệu markdown.
+enum AiLineKind { heading, bullet, normal }
+
+/// Một dòng đã bóc ký hiệu markdown: [text] là phần chữ sạch, không còn `#`
+/// hay `-` đứng đầu.
+class AiTextLine {
+  const AiTextLine(this.kind, this.text, {this.headingLevel = 0});
+
+  final AiLineKind kind;
+  final String text;
+
+  /// 1..6 với [AiLineKind.heading], 0 với các kiểu còn lại.
+  final int headingLevel;
+
+  @override
+  String toString() => '$kind($headingLevel): $text';
+}
+
+/// Tách câu trả lời AI thành từng dòng đã bóc ký hiệu markdown.
+///
+/// BE trả nội dung dạng markdown nhưng FE chỉ từng xử lý `**đậm**`, nên các ký
+/// hiệu còn lại lọt thẳng ra màn hình (quan sát runtime 2026-08-17: câu trả lời
+/// hiện nguyên `### Tháng 8/2026, gia đình bạn đã tiêu hết:`). BE xác nhận đây
+/// là phần FE tự xử lý, không đổi output phía họ.
+///
+/// Cố ý **không** thêm package markdown: chỉ cần đúng 2 ký hiệu, mà
+/// `flutter_markdown` kéo theo cả bộ style riêng khó khớp design system.
+///
+/// Quy tắc bám chuẩn markdown để không nhận nhầm:
+/// - Tiêu đề phải là `#` đầu dòng **và có khoảng trắng ngay sau** → hashtag
+///   kiểu `#giadinh` không bị hiểu thành tiêu đề.
+/// - Gạch đầu dòng cũng phải có khoảng trắng sau `-`/`*` → dấu trừ trong
+///   `-500.000đ` không bị đổi thành bullet.
+List<AiTextLine> parseAiMarkdownLines(String raw) {
+  final headingPattern = RegExp(r'^ {0,3}(#{1,6})[ \t]+(.*)$');
+  final bulletPattern = RegExp(r'^ {0,3}[-*][ \t]+(.*)$');
+
+  return raw.split('\n').map((line) {
+    final heading = headingPattern.firstMatch(line);
+    if (heading != null) {
+      return AiTextLine(
+        AiLineKind.heading,
+        heading.group(2)!.trim(),
+        headingLevel: heading.group(1)!.length,
+      );
+    }
+    final bullet = bulletPattern.firstMatch(line);
+    if (bullet != null) {
+      return AiTextLine(AiLineKind.bullet, bullet.group(1)!.trim());
+    }
+    return AiTextLine(AiLineKind.normal, line);
+  }).toList();
+}
+
 class _AiRichText extends StatelessWidget {
   final String text;
   final TextStyle style;
@@ -1195,25 +1249,68 @@ class _AiRichText extends StatelessWidget {
 
   static final _boldPattern = RegExp(r'\*\*(.+?)\*\*');
 
-  @override
-  Widget build(BuildContext context) {
-    if (!text.contains('**')) return Text(text, style: style);
+  /// Bóc `**đậm**` trong MỘT dòng thành các span.
+  List<InlineSpan> _inlineSpans(String line, TextStyle lineStyle) {
+    if (!line.contains('**')) return [TextSpan(text: line)];
     final spans = <InlineSpan>[];
     var cursor = 0;
-    for (final match in _boldPattern.allMatches(text)) {
+    for (final match in _boldPattern.allMatches(line)) {
       if (match.start > cursor) {
-        spans.add(TextSpan(text: text.substring(cursor, match.start)));
+        spans.add(TextSpan(text: line.substring(cursor, match.start)));
       }
       spans.add(
         TextSpan(
           text: match.group(1),
-          style: style.copyWith(fontWeight: FontWeight.w800, color: boldColor),
+          style: lineStyle.copyWith(
+            fontWeight: FontWeight.w800,
+            color: boldColor,
+          ),
         ),
       );
       cursor = match.end;
     }
-    if (cursor < text.length) {
-      spans.add(TextSpan(text: text.substring(cursor)));
+    if (cursor < line.length) {
+      spans.add(TextSpan(text: line.substring(cursor)));
+    }
+    return spans;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = parseAiMarkdownLines(text);
+    // Không có ký hiệu nào cần xử lý thì giữ nguyên đường cũ cho nhẹ.
+    final plain =
+        !text.contains('**') && lines.every((l) => l.kind == AiLineKind.normal);
+    if (plain) return Text(text, style: style);
+
+    final spans = <InlineSpan>[];
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (i > 0) spans.add(const TextSpan(text: '\n'));
+      switch (line.kind) {
+        case AiLineKind.heading:
+          // Tiêu đề đậm và to hơn một nấc; cấp càng sâu thì càng nhỏ lại,
+          // nhưng không bao giờ nhỏ hơn chữ thường.
+          final bump = line.headingLevel <= 2 ? 2.0 : 1.0;
+          final headingStyle = style.copyWith(
+            fontSize: (style.fontSize ?? 15) + bump,
+            fontWeight: FontWeight.w800,
+            color: boldColor,
+          );
+          spans.add(
+            TextSpan(
+              style: headingStyle,
+              children: _inlineSpans(line.text, headingStyle),
+            ),
+          );
+        case AiLineKind.bullet:
+          spans.add(const TextSpan(text: '  •  '));
+          spans.add(
+            TextSpan(style: style, children: _inlineSpans(line.text, style)),
+          );
+        case AiLineKind.normal:
+          spans.addAll(_inlineSpans(line.text, style));
+      }
     }
     return Text.rich(TextSpan(style: style, children: spans));
   }
@@ -1450,7 +1547,8 @@ class _ResultCard extends StatelessWidget {
           ),
           if (fields.isNotEmpty) ...[
             const SizedBox(height: 8),
-            for (final f in fields) _detailRow(context, f.label, f.key, f.value),
+            for (final f in fields)
+              _detailRow(context, f.label, f.key, f.value),
           ],
         ],
       ),
@@ -1582,10 +1680,9 @@ class _PendingActionCard extends StatelessWidget {
     // đúng model đang áp dụng.
     final requiresActiveFinanceModel =
         action.actionType.toUpperCase() == 'ALLOCATE_FUND_BY_MODEL';
-    final hasActiveFinanceModel = context
-        .watch<FinanceProvider>()
-        .models
-        .any((model) => model.isActive);
+    final hasActiveFinanceModel = context.watch<FinanceProvider>().models.any(
+      (model) => model.isActive,
+    );
     final blockedByMissingFinanceModel =
         requiresActiveFinanceModel && !hasActiveFinanceModel;
     final busy = stepIndex != null

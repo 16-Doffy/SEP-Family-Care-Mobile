@@ -407,6 +407,7 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
   - `POST /albums/media` và `GET /albums/media` nhận thêm `collectionId` (optional, uuid) — POST gắn media vào album khi upload, GET lọc theo album. Không truyền `collectionId` ở GET thì trả tất cả (kể cả media cũ `collectionId = null`) — đúng hành vi "Tất cả ảnh".
   - `POST /albums/media/analyze-draft` — multipart `{file (bắt buộc), collectionId?, topic? (max 120), declaredContentIntent? (PEOPLE | SCENE_OR_OBJECT)}`. Theo mô tả BE: **không lưu DB, không upload R2, không gọi face-scan** — chỉ cảnh báo mềm. Response chưa có DTO trong Swagger; field xác nhận qua BE (không phải suy đoán): `recommendation` (`ALLOW | WARN`), `analysisStatus` (`COMPLETED | SKIPPED | UNAVAILABLE`), `warnings[]`, `detectedLabels[]`, `summary`. `SKIPPED`/`UNAVAILABLE` **không chặn** upload — FE hỏi xác nhận rồi vẫn cho tải lên bình thường. Wire: `AlbumProvider.analyzeDraft`, gọi trước `uploadMedia` trong `_analyzeAndUpload` (`album_screen.dart`).
   - Không đụng face recognition (`AlbumFaceProvider`/`AlbumFaceSection`/face-scan/face-suggestions) — 2 flow độc lập hoàn toàn, giữ nguyên như trước.
+  - **[BE FIX 2026-08-17 (đợt 3) — parser fallback plain-text của `analyze-draft`, FE KHÔNG phải đổi code]** BE vá nốt 3 điểm FE báo sau đợt test 7 lượt hôm 16-17/08: (1) **giảm false positive `hasPerson = true`** với ảnh vật thể/trái cây; (2) **không suy ra `detectedLabels` từ raw reasoning nữa** nên hết nhãn ảo kiểu `mountain` cho ảnh dứa/đào; (3) **lọc bỏ text placeholder** `"short reason or empty string"` khỏi `warnings` (trước đây lộ thẳng ra UI). **[VERIFY]** FE chưa retest sau khi BE deploy — phải chạy lại đúng bộ ảnh cũ (trái cây tổng hợp, dâu tây, dứa) gán vào album lệch chủ đề (`sea` / `anh LMH`) rồi mới gỡ nhãn. Đây cũng là **cơ hội đầu tiên verify được nhánh `WARN`** của `_analyzeAndUpload` (`album_screen.dart`) — nhánh này viết đúng spec nhưng **chưa từng chạy thật lần nào** vì trước bản vá `recommendation` luôn ra `ALLOW`.
   - **[XÁC MINH 2026-08-17 — BE KHÔNG có 2 thứ sau]** grep toàn bộ `family-care-api.json`: (1) **không có endpoint xóa hàng loạt** nào cho album (chỉ `bulk`/`batch` duy nhất trong repo là `sos/alerts/{alertId}/locations/batch`); (2) **không có field `isPinned`/`favorite`/`starred`** trên media, cũng không có endpoint ghim. Hệ quả FE: xóa nhiều ảnh = gọi `DELETE /albums/media/{mediaId}` **tuần tự N lần** (`AlbumProvider.softDeleteMany`, có tiến độ + báo số lỗi, không nguyên tử); ghim ảnh lưu **cục bộ theo máy** (`AlbumPinStore`, `flutter_secure_storage`, khóa `album_pinned_{userId}_{familyId}`), UI gắn nhãn "chỉ trên máy này". Đề xuất BE bổ sung: `DE_XUAT_BE_ALBUM_PIN_BULK_DELETE_2026-08-17.md` (mức Nên có, không chặn).
 
 ### Finance — Model & Jars
@@ -650,6 +651,33 @@ AI nào ngoài Swagger.
 - `POST .../messages/{messageId}/reject-action` — từ chối đề xuất.
 - `DELETE /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}` — xóa hội thoại kèm toàn bộ tin nhắn.
 - `GET /api/v1/families/{familyId}/ai-chatbot/daily-brief` — tổng quan hôm nay, kèm quick actions theo `uiHints`.
+
+**[BE FIX 2026-08-17 — phạm vi tài chính của AI, FE KHÔNG phải đổi code]**
+Trước bản vá, hỏi "list danh sách thu chi thực tế của từng thành viên" bị AI
+trả lời "tôi không có quyền truy cập" — **kể cả tài khoản Trưởng nhóm** (đã
+tự test runtime để loại trừ FE). Nguyên nhân BE xác nhận: AI **chưa có tool**
+để đọc dữ liệu tháng theo từng thành viên, không phải lỗi phân quyền.
+
+- BE thêm AI tool **`list_member_monthly_finances`**, mở cho
+  `FAMILY_MANAGER` **và `DEPUTY_MEMBER`** — khớp với `canManageFinance` của
+  REST, tức Deputy dùng được.
+- Quyền do BE đọc từ JWT/context; **FE vẫn chỉ gửi `{ content }`**, không gửi
+  role, không phải sửa gì.
+- Field bị ẩn hoặc member chưa khai báo → AI nói rõ "dữ liệu bị ẩn/chưa có",
+  không trả về câu từ chối chung chung nữa.
+- BE cũng sửa phần đề xuất đóng góp mục tiêu tài chính: số góp mỗi thành viên
+  tính theo `actualIncome - actualPersonalExpense - actualSharedContribution`,
+  thiếu số thực tế thì fallback sang số dự kiến; preview xác nhận mục tiêu
+  hiển thị căn cứ tính theo từng người. BE báo 5 test suite / 76 test pass.
+- **[VERIFY]** FE chưa chạy lại runtime sau bản vá này — cần test lại đúng câu
+  trên bằng **cả Trưởng nhóm lẫn Phó nhóm** rồi mới gỡ nhãn.
+
+**Hai điểm BE trả về cho FE tự xử (BE xác nhận không nằm trong scope của họ):**
+- **Markdown `###` lộ ra UI:** BE trả markdown, FE chưa render/lược. Logic BE
+  không sai — FE tự render hoặc lược ký hiệu.
+- **Tên hũ `Savings`/`Spending`:** là **dữ liệu** (tên hũ mặc định BE tạo),
+  không phải chuỗi trong FE. Muốn tiếng Việt phải đổi tên hũ trong dữ liệu,
+  hoặc BE map display name trước khi đưa vào response AI.
 
 **Sprint 3 (2026-08-09, backward-compatible — BE xác nhận endpoint cũ ở trên
 giữ nguyên, FE không bắt buộc đổi flow ngay):** một `aiMessage` giờ có thể có
