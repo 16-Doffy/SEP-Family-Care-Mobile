@@ -475,7 +475,15 @@ class SosProvider extends ChangeNotifier {
 
   void _applyRealtimeResponderLocation(SosResponderLocationEvent event) {
     final loc = _parseRealtimeLocation(event.point);
-    if (loc == null) return;
+    if (loc == null) {
+      // Chỗ nuốt event nguy hiểm nhất: BE bắn đúng nhưng tên field toạ độ lệch
+      // thì marker không bao giờ hiện mà không có lỗi nào.
+      sosResponderLog(
+        'PARSE THẤT BẠI point=${event.point} — không đọc được latitude/lat '
+        'hoặc longitude/lng, bỏ qua event',
+      );
+      return;
+    }
     final displayName =
         SosAlert._memberName(event.responderMember) ??
         event.responderMember['displayName']?.toString() ??
@@ -495,6 +503,11 @@ class SosProvider extends ChangeNotifier {
       location: loc,
     );
     _responderLocationsByAlert[event.sosAlertId] = perAlert;
+    sosResponderLog(
+      'LƯU STATE alertId=${event.sosAlertId} responder="$displayName" '
+      'lat=${loc.lat} lng=${loc.lng} → responderLocationsFor().length='
+      '${perAlert.length}',
+    );
     notifyListeners();
   }
 

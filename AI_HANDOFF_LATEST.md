@@ -91,6 +91,40 @@ chuỗi FE — FE không sửa được, đổi tên hũ trong màn Mô hình t�
 positive `hasPerson`, bỏ suy nhãn ảo từ raw reasoning, lọc placeholder trong
 `warnings`. **FE không phải đổi code.** Chi tiết ở `API_DOCS.md`.
 
+### 🧪 Log TẠM đang bật cho luồng SOS responder — NHỚ XÓA
+
+Đã chèn `sosResponderLog()` (định nghĩa ở `lib/services/sos_realtime_service.dart`)
+vào 5 mốc để dò luồng "người bấm Tôi đang tới" đầu-cuối. Chỉ chạy ở
+`kDebugMode`. Lọc bằng `adb logcat | grep SOS-RESPONDER`.
+
+**Xóa sau khi chốt nguyên nhân:** `grep -rn "sosResponderLog" lib/` ra hết,
+kèm field `_loggedResponderCount` trong `family_map_screen.dart`.
+
+Kết quả đọc code trước khi thêm log — **chuỗi FE đã đủ cả 8 mắt xích**:
+attach callback (`family_shell.dart:97-98`), `startRealtime()` + `connect()`
+(`family_shell.dart:95`), join room `sos:join`, timer đẩy GPS
+(`family_shell.dart:341+`), payload đúng contract, parse phòng thủ (nhận cả
+`sosAlertId|alertId|id`, `latitude|lat`, `longitude|lng`), lưu state theo
+`alertId + responderMemberId`, render marker `isResponder`.
+
+**Đề xuất của BE đọc nhầm file:** BE bảo thiếu attach
+`onResponderTrackStart/Stop` trong `sos_screen.dart` — thực tế đã attach ở
+`family_shell.dart`, và **phải để ở shell** vì `sos_screen.dispose()` gỡ
+callback; đặt trong màn SOS thì người đi cứu rời màn là đứt tracking.
+
+**Nghi vấn chính:** toàn bộ phần responder chỉ vào repo ở commit `7c9a6f3`
+lúc **17/08 16:29**; ảnh user báo lỗi chụp lúc **13:43 và 14:57** — test trên
+bản chưa có tính năng. Cần test lại bản mới trước khi sửa gì thêm.
+
+**3 thiếu sót THẬT đã tìm ra, chưa sửa (user chọn làm log trước):**
+1. Người phát không được tự fit camera bao trọn responder → phải tự zoom out
+   mới thấy ai đang tới (đúng triệu chứng "chỉ thấy một mình mình").
+2. Chưa có polyline responder → điểm SOS.
+3. 🔴 `sos_screen.dart` dispose gỡ `onTrackStart/onTrackStop` và huỷ
+   `_locationStreamTimer` → **người phát SOS rời màn SOS thì vị trí của chính
+   họ ngừng cập nhật**, người đi cứu đuổi theo điểm đứng yên. Bug độc lập,
+   nên sửa bất kể kết quả test responder.
+
 ### ⏳ Việc user cần tự chạy thử (assistant không tự test nữa)
 
 1. **Retest `analyze-draft`** sau bản vá đợt 3: dùng lại đúng bộ ảnh cũ (trái

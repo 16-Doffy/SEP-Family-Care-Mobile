@@ -10,6 +10,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/sos_realtime_service.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
@@ -54,6 +55,10 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   bool _routeIsRoad = false;
   int _routeSeq = 0;
   Timer? _routeRefreshDebounce;
+
+  /// Số responder đã log gần nhất theo alertId — chỉ để chống spam log tạm
+  /// (xem [sosResponderLog]). Xóa cùng lúc với đám log kia.
+  final Map<String, int> _loggedResponderCount = {};
 
   String? get _myUserId => context.read<AuthProvider>().user?.id;
 
@@ -938,7 +943,17 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           ),
         );
       }
-      for (final responder in sos.responderLocationsFor(alert.id)) {
+      final responders = sos.responderLocationsFor(alert.id);
+      // Chỉ log khi SỐ LƯỢNG đổi — _buildPins chạy lại mỗi lần rebuild nên log
+      // vô điều kiện sẽ ngập logcat và che mất event thật.
+      if (_loggedResponderCount[alert.id] != responders.length) {
+        _loggedResponderCount[alert.id] = responders.length;
+        sosResponderLog(
+          'DỰNG MARKER alertId=${alert.id} số responder=${responders.length} '
+          '${responders.map((r) => r.displayName).toList()}',
+        );
+      }
+      for (final responder in responders) {
         pins.add(
           _MemberPin(
             latlng: LatLng(responder.location.lat, responder.location.lng),

@@ -339,23 +339,48 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   }
 
   void _onResponderTrackStart(SosTrackStartEvent event) {
-    if (!mounted || event.alertId.isEmpty) return;
+    if (!mounted || event.alertId.isEmpty) {
+      sosResponderLog(
+        'BỎ QUA track:start mounted=$mounted alertId="${event.alertId}"',
+      );
+      return;
+    }
     _stopResponderTracking(event.alertId);
     final interval = Duration(seconds: event.intervalSec.clamp(3, 60).toInt());
+    sosResponderLog(
+      'BẮT ĐẦU timer đẩy GPS alertId=${event.alertId} '
+      'intervalSec gốc=${event.intervalSec} → dùng=${interval.inSeconds}s',
+    );
 
     Future<void> pushOnce() async {
-      if (!mounted || _responderPushInFlight.contains(event.alertId)) return;
+      if (!mounted || _responderPushInFlight.contains(event.alertId)) {
+        sosResponderLog(
+          'BỎ LƯỢT đẩy mounted=$mounted đang-gửi='
+          '${_responderPushInFlight.contains(event.alertId)}',
+        );
+        return;
+      }
       _responderPushInFlight.add(event.alertId);
       try {
         final pos = await resolveSosPosition();
-        if (pos == null || !mounted) return;
-        context.read<SosProvider>().pushResponderLocationRealtime(
+        if (pos == null || !mounted) {
+          sosResponderLog(
+            'KHÔNG đẩy được: lấy GPS thất bại (pos=null) hoặc màn đã huỷ '
+            '(mounted=$mounted)',
+          );
+          return;
+        }
+        final ok = context.read<SosProvider>().pushResponderLocationRealtime(
           event.alertId,
           pos.latitude,
           pos.longitude,
           accuracy: pos.accuracy,
           sourceType: 'MOBILE_GPS',
           recordedAt: DateTime.now(),
+        );
+        sosResponderLog(
+          'GỌI push alertId=${event.alertId} lat=${pos.latitude} '
+          'lng=${pos.longitude} → trả về $ok',
         );
       } finally {
         _responderPushInFlight.remove(event.alertId);

@@ -5,6 +5,20 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 
 import 'api_client.dart';
 
+/// Log TẠM để dò luồng "responder đang tới" đầu-cuối (thêm 2026-08-17).
+///
+/// Gắn một nhãn duy nhất để lọc log bằng đúng một lệnh:
+/// `adb logcat | grep SOS-RESPONDER`
+///
+/// Chỉ chạy ở debug — bản release không được đẩy toạ độ GPS vào logcat.
+///
+/// XÓA TOÀN BỘ sau khi chốt được nguyên nhân: xóa hàm này rồi xóa mọi nơi gọi
+/// (grep `sosResponderLog` là ra hết).
+void sosResponderLog(String message) {
+  if (!kDebugMode) return;
+  debugPrint('[SOS-RESPONDER] $message');
+}
+
 class SosTrackStartEvent {
   const SosTrackStartEvent({
     required this.alertId,
@@ -185,6 +199,11 @@ class SosRealtimeService {
     });
     s.on(responderTrackStartEventName, (data) {
       final m = _asMap(data);
+      sosResponderLog(
+        'NHẬN track:start '
+        '${m == null ? 'payload KHÔNG PHẢI Map: $data' : 'alertId=${m['alertId']} intervalSec=${m['intervalSec']}'}'
+        ' | listener gắn=${onResponderTrackStart != null}',
+      );
       if (m != null) {
         onResponderTrackStart?.call(SosTrackStartEvent.fromJson(m));
       }
@@ -196,15 +215,34 @@ class SosRealtimeService {
           m?['sosAlertId']?.toString() ??
           m?['id']?.toString() ??
           '';
+      sosResponderLog(
+        'NHẬN track:stop alertId=$alertId'
+        ' | listener gắn=${onResponderTrackStop != null}',
+      );
       if (alertId.isNotEmpty) onResponderTrackStop?.call(alertId);
     });
     s.on(responderLocationEventName, (data) {
       final m = _asMap(data);
-      if (m == null) return;
-      final event = SosResponderLocationEvent.fromJson(m);
-      if (event.sosAlertId.isNotEmpty && event.responderMemberId.isNotEmpty) {
-        onResponderLocation?.call(event);
+      if (m == null) {
+        sosResponderLog(
+          'NHẬN responder:location nhưng payload không phải Map: $data',
+        );
+        return;
       }
+      final event = SosResponderLocationEvent.fromJson(m);
+      sosResponderLog(
+        'NHẬN responder:location keys=${m.keys.toList()} '
+        'sosAlertId="${event.sosAlertId}" responderMemberId="${event.responderMemberId}" '
+        'point=${event.point} | listener gắn=${onResponderLocation != null}',
+      );
+      if (event.sosAlertId.isEmpty || event.responderMemberId.isEmpty) {
+        // Bỏ qua ở đây là một trong hai chỗ event "biến mất" không dấu vết.
+        sosResponderLog(
+          'BỎ QUA responder:location vì thiếu sosAlertId hoặc responderMemberId',
+        );
+        return;
+      }
+      onResponderLocation?.call(event);
     });
     s.on('sos:kicked', (data) {
       final workspaceId =
@@ -280,8 +318,21 @@ class SosRealtimeService {
     String sourceType = 'MOBILE_GPS',
     DateTime? recordedAt,
   }) {
-    if (!connected) return false;
-    if (!isValidCoordinate(latitude, longitude)) return false;
+    // Hai lệnh return dưới đây trước giờ thất bại HOÀN TOÀN IM LẶNG — nơi gọi
+    // chỉ nhận về false và không ai in ra. Phải log rõ lý do, vì "B không gửi
+    // được vị trí" và "BE không nhận được" nhìn từ ngoài giống hệt nhau.
+    if (!connected) {
+      sosResponderLog(
+        'KHÔNG emit push: socket /sos CHƯA KẾT NỐI (alertId=$alertId)',
+      );
+      return false;
+    }
+    if (!isValidCoordinate(latitude, longitude)) {
+      sosResponderLog(
+        'KHÔNG emit push: toạ độ không hợp lệ lat=$latitude lng=$longitude',
+      );
+      return false;
+    }
     final payload = buildLocationPayload(
       workspaceId: workspaceId,
       alertId: alertId,
@@ -291,6 +342,7 @@ class SosRealtimeService {
       sourceType: sourceType,
       recordedAt: recordedAt,
     );
+    sosResponderLog('EMIT push keys=${payload.keys.toList()} payload=$payload');
     _socket?.emit(responderLocationPushEventName, payload);
     return true;
   }
