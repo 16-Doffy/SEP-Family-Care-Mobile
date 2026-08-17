@@ -368,12 +368,12 @@ class SosProvider extends ChangeNotifier {
   String? get _fid => ApiClient.instance.familyId;
 
   // GET /families/{familyId}/sos/alerts
-  Future<void> fetchAlerts() async {
+  Future<void> fetchAlerts({bool silent = false}) async {
     final fid = _fid;
     if (fid == null) return;
-    _loading = true;
+    if (!silent) _loading = true;
     _error = null;
-    notifyListeners();
+    if (!silent) notifyListeners();
     try {
       final data = await ApiClient.instance.get('/families/$fid/sos/alerts');
       final raw = data is List
@@ -391,7 +391,7 @@ class SosProvider extends ChangeNotifier {
       _error = e.toString();
       debugPrint('SosProvider: fetchAlerts failed: $e');
     } finally {
-      _loading = false;
+      if (!silent) _loading = false;
       notifyListeners();
     }
   }

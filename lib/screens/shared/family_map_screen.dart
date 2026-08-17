@@ -32,11 +32,16 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   bool _locating = false;
   String? _locError;
 
-  // Đẩy vị trí định kỳ khi đang bật chia sẻ + màn bản đồ đang mở. Chỉ chạy
-  // trong lúc mở màn này (chưa có background service) — đủ cho luồng "cả nhà
-  // cùng mở bản đồ xem nhau".
-  static const _kPushInterval = Duration(seconds: 30);
+  // RTR foreground: khi màn bản đồ đang mở, máy chia sẻ đẩy GPS mới và máy xem
+  // poll pin gia đình/SOS theo nhịp ngắn. Không chạy nền để tránh hao pin.
+  static const _kPushInterval = Duration(seconds: 5);
+  static const _kLiveRefreshInterval = Duration(seconds: 5);
   Timer? _pushTimer;
+  Timer? _liveRefreshTimer;
+  bool _liveRefreshInFlight = false;
+  bool _pushInFlight = false;
+  final Map<String, ({double lat, double lng, String? sourceType})>
+  _latestSosLocations = {};
 
   // ── Chỉ đường A→B (A = vị trí của tôi, B = thành viên/điểm SOS) ──────────
   // Thuần FE, KHÔNG cần BE: vẽ ngay đường thẳng (tính offline bằng latlong2)
@@ -198,6 +203,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       _refreshFamilyLocations().then((_) {
         if (mounted) _syncPushTimer();
       });
+      _startLiveRefresh();
       if (widget.initialLat != null && widget.initialLng != null) {
         // Vào từ cảnh báo SOS → tự vẽ đường từ vị trí của tôi tới điểm SOS.
         final target = LatLng(widget.initialLat!, widget.initialLng!);
@@ -214,7 +220,26 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   @override
   void dispose() {
     _pushTimer?.cancel();
+    _liveRefreshTimer?.cancel();
     super.dispose();
+  }
+
+  void _startLiveRefresh() {
+    _liveRefreshTimer?.cancel();
+    _liveRefreshTimer = Timer.periodic(
+      _kLiveRefreshInterval,
+      (_) => _refreshLiveData(),
+    );
+  }
+
+  Future<void> _refreshLiveData() async {
+    if (!mounted || _liveRefreshInFlight) return;
+    _liveRefreshInFlight = true;
+    try {
+      await _refreshFamilyLocations(silent: true);
+    } finally {
+      _liveRefreshInFlight = false;
+    }
   }
 
   // Bật timer khi đang chia sẻ, tắt khi không.
@@ -234,33 +259,36 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   }
 
   Future<void> _pushMyLocationNow() async {
-    if (!mounted) return;
+    if (!mounted || _pushInFlight) return;
     final gps = context.read<GpsProvider>();
     if (!gps.mySharing) return;
-    final pos = _myPos;
-    if (pos == null) return;
-    await gps.updateLocation(
-      pos.latitude,
-      pos.longitude,
-      accuracy: _myAccuracy ?? 18,
-      silent: true, // timer nền — không nhấp nháy UI
-    );
+    _pushInFlight = true;
+    try {
+      final pos = await _locateMe(center: false, silent: true);
+      if (pos == null) return;
+      await gps.updateLocation(
+        pos.latitude,
+        pos.longitude,
+        accuracy: pos.accuracy,
+        silent: true, // timer nền — không nhấp nháy UI
+      );
+    } finally {
+      _pushInFlight = false;
+    }
   }
 
   Future<void> _toggleSharing(bool value) async {
     final gps = context.read<GpsProvider>();
     final messenger = ScaffoldMessenger.of(context);
     try {
-      if (value && _myPos == null) {
-        await _locateMe(center: false);
-      }
+      final freshPosition = value ? await _locateMe(center: false) : null;
       await gps.toggleSharing(value, myUserId: _myUserId);
       if (!mounted) return;
-      if (value && _myPos != null) {
+      if (value && freshPosition != null) {
         await gps.updateLocation(
-          _myPos!.latitude,
-          _myPos!.longitude,
-          accuracy: _myAccuracy ?? 18,
+          freshPosition.latitude,
+          freshPosition.longitude,
+          accuracy: freshPosition.accuracy,
           myUserId: _myUserId,
         );
         if (!mounted) return;
@@ -291,11 +319,60 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     }
   }
 
-  Future<void> _refreshFamilyLocations() async {
+  Future<void> _refreshFamilyLocations({bool silent = false}) async {
     await Future.wait([
-      context.read<GpsProvider>().fetchFamilyLocations(myUserId: _myUserId),
-      context.read<SosProvider>().fetchAlerts(),
+      context.read<GpsProvider>().fetchFamilyLocations(
+        myUserId: _myUserId,
+        silent: silent,
+      ),
+      context.read<SosProvider>().fetchAlerts(silent: silent),
     ]);
+    await _refreshCurrentSosLocations();
+  }
+
+  Future<void> _refreshCurrentSosLocations() async {
+    if (!mounted) return;
+    final sos = context.read<SosProvider>();
+    final activeAlerts = sos.activeAlerts.where((a) => a.id.isNotEmpty);
+    final activeIds = activeAlerts.map((a) => a.id).toSet();
+    final next = <String, ({double lat, double lng, String? sourceType})>{};
+
+    for (final entry in _latestSosLocations.entries) {
+      if (activeIds.contains(entry.key)) next[entry.key] = entry.value;
+    }
+
+    final results = await Future.wait([
+      for (final alert in activeAlerts)
+        sos
+            .fetchCurrentLocation(alert.id)
+            .then((loc) => (id: alert.id, loc: loc)),
+    ]);
+    if (!mounted) return;
+
+    for (final result in results) {
+      final loc = result.loc;
+      if (loc != null) next[result.id] = loc;
+    }
+
+    var changed = next.length != _latestSosLocations.length;
+    if (!changed) {
+      for (final entry in next.entries) {
+        final prev = _latestSosLocations[entry.key];
+        if (prev == null ||
+            prev.lat != entry.value.lat ||
+            prev.lng != entry.value.lng ||
+            prev.sourceType != entry.value.sourceType) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) return;
+    setState(() {
+      _latestSosLocations
+        ..clear()
+        ..addAll(next);
+    });
   }
 
   Future<void> _refreshMap() async {
@@ -305,11 +382,16 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
 
   // ── Lấy GPS thiết bị ────────────────────────────────────────────────────
 
-  Future<void> _locateMe({bool center = false}) async {
-    setState(() {
-      _locating = true;
-      _locError = null;
-    });
+  Future<Position?> _locateMe({
+    bool center = false,
+    bool silent = false,
+  }) async {
+    if (!silent) {
+      setState(() {
+        _locating = true;
+        _locError = null;
+      });
+    }
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -317,8 +399,8 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       }
       if (perm == LocationPermission.deniedForever ||
           perm == LocationPermission.denied) {
-        setState(() => _locError = 'Chưa cấp quyền GPS');
-        return;
+        if (!silent) setState(() => _locError = 'Chưa cấp quyền GPS');
+        return null;
       }
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -326,7 +408,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           timeLimit: Duration(seconds: 12),
         ),
       );
-      if (!mounted) return;
+      if (!mounted) return null;
       final latlng = LatLng(pos.latitude, pos.longitude);
       setState(() {
         _myPos = latlng;
@@ -337,10 +419,14 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       if (center) {
         _mapCtrl.move(latlng, 15);
       }
+      return pos;
     } catch (e) {
-      if (mounted) setState(() => _locError = 'Không lấy được GPS: $e');
+      if (mounted && !silent) {
+        setState(() => _locError = 'Không lấy được GPS: $e');
+      }
+      return null;
     } finally {
-      if (mounted) setState(() => _locating = false);
+      if (mounted && !silent) setState(() => _locating = false);
     }
   }
 
@@ -741,14 +827,17 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     }
 
     for (final alert in alerts) {
-      if (!alert.hasLocation) continue;
+      final current = _latestSosLocations[alert.id];
+      final lat = current?.lat ?? alert.latitude;
+      final lng = current?.lng ?? alert.longitude;
+      if (lat == null || lng == null) continue;
       // Cảnh báo do CHÍNH MÌNH phát: pin "Tôi" (GPS trực tiếp, chính xác hơn)
       // đã đại diện vị trí này rồi → không thêm pin SOS nữa, tránh cùng một
       // người hiện 2 lần trong danh sách.
       if (alert.isMine(currentUserId)) continue;
       pins.add(
         _MemberPin(
-          latlng: LatLng(alert.latitude!, alert.longitude!),
+          latlng: LatLng(lat, lng),
           name: alert.senderName,
           isMe: false,
           isSos: true,

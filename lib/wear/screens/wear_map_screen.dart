@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -16,15 +18,38 @@ class WearMapScreen extends StatefulWidget {
 
 class _WearMapScreenState extends State<WearMapScreen> {
   final _mapController = MapController();
+  static const _kLiveRefreshInterval = Duration(seconds: 5);
+  Timer? _refreshTimer;
   double _zoom = 15;
   int _selected = 0;
+  bool _refreshInFlight = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<GpsProvider>().fetchFamilyLocations(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshFamilyLocations();
+      _refreshTimer = Timer.periodic(
+        _kLiveRefreshInterval,
+        (_) => _refreshFamilyLocations(silent: true),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshFamilyLocations({bool silent = false}) async {
+    if (!mounted || _refreshInFlight) return;
+    _refreshInFlight = true;
+    try {
+      await context.read<GpsProvider>().fetchFamilyLocations(silent: silent);
+    } finally {
+      _refreshInFlight = false;
+    }
   }
 
   @override

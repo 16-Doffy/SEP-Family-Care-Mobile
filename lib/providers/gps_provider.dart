@@ -103,13 +103,16 @@ class GpsProvider extends ChangeNotifier {
   // phương án B — family-scoped). Path cũ `/location/*` đã chết, không dùng.
   String? get _fid => ApiClient.instance.familyId;
 
-  Future<void> fetchFamilyLocations({String? myUserId}) async {
+  Future<void> fetchFamilyLocations({
+    String? myUserId,
+    bool silent = false,
+  }) async {
     final fid = _fid;
     if (fid == null) return;
-    _loading = true;
+    if (!silent) _loading = true;
     _error = null;
     _sharingUnavailable = false;
-    notifyListeners();
+    if (!silent) notifyListeners();
     try {
       final data = await ApiClient.instance.get(
         '/families/$fid/members/locations',
@@ -145,7 +148,7 @@ class GpsProvider extends ChangeNotifier {
         _error = 'Không tải được vị trí gia đình';
       }
     } finally {
-      _loading = false;
+      if (!silent) _loading = false;
       notifyListeners();
     }
   }
