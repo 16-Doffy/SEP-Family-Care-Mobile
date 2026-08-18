@@ -1,190 +1,179 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🔴 ĐANG DỞ — ĐỌC MỤC NÀY TRƯỚC, TIẾP TỤC NGAY (17/08/2026 chiều)
+## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (18/08/2026 tối)
 
-### Quy tắc mới user vừa đặt (áp dụng từ đây trở đi)
+### Phiên này làm gì
 
-**KHÔNG tự chạy test runtime trên máy ảo nữa.** Chỉ sửa code + chạy
+Trọng tâm phiên này là **hệ thống `featureAccess` / phân tầng gói dịch vụ**,
+trải trên **cả 3 chỗ**: `d:\Desktop\sep` (Admin Web), `D:\Desktop\mobile-sep`
+(app này), và một văn bản đề xuất gửi Backend. Không đụng gì tới các luồng
+album/SOS/AI cũ — xem mục "Còn tồn đọng từ trước" bên dưới để biết những gì
+**chưa** được xử lý trong phiên này.
+
+**Vấn đề gốc phát hiện:** đối chiếu toàn bộ `apps/api/src/services/*.ts`
+(repo `d:\Desktop\sep`, **không phải backend đang chạy thật** — xem cảnh báo
+quan trọng bên dưới) thì chỉ có `calendar.service.ts` gọi
+`assertFeatureEnabled`. 23/26 quyền còn lại (tài chính, nhiệm vụ/thưởng,
+album, AI, SOS nâng cao, chat) **không bị chặn ở đâu cả** — gói Miễn phí gọi
+thẳng API vẫn dùng được đầy đủ tính năng trả phí.
+
+### ⚠️ Phát hiện quan trọng — backend thật KHÁC repo `apps/api` cục bộ
+
+Cả web lẫn mobile đều trỏ API tới **`https://api.familycare-digital.com`** —
+server triển khai riêng, **không phải** `apps/api` trong repo `d:\Desktop\sep`.
+Sửa `apps/api` cục bộ **không có tác dụng gì với app thật** — đã xác nhận với
+user, không có workflow/cấu hình nào deploy `apps/api` lên domain đó. Muốn
+sửa enforcement ở tầng server phải **báo Backend thật**, không tự sửa được.
+
+### Đã gửi đề xuất Backend — BE ĐÃ TRẢ LỜI, đã chốt thiết kế
+
+File: `D:\Desktop\mobile-sep\DE_XUAT_BE_FEATUREACCESS_ENFORCEMENT_2026-08-18.md`
+(có mục "Cập nhật 2026-08-18" cuối file ghi lại toàn bộ trao đổi này).
+
+**Vòng 1** — BE gửi bản thiết kế 3 gói FREE/MONTHLY/YEARLY kèm quota (15
+lịch, 20 công việc, 30 giao dịch/tháng, 5 lượt AI/tháng — **quota này CHƯA
+enforce được thật**, chỉ là con số mong muốn dài hạn, đừng ghi số cụ thể lên
+UI). Xác nhận quan trọng: Monthly/Yearly giống hệt nhau; AI mặc định
+**không mở** ở Free; **real-time tracking SOS là tính năng trả phí** (chỉ vị
+trí gửi 1 lần lúc tạo cảnh báo là miễn phí — khác với đề xuất ban đầu của AI,
+từng xếp `sos.liveLocation` vào Free vì lý do an toàn, đã sửa lại theo đúng
+quyết định của BE, xem mục dưới); thành viên gia đình không phải điểm bán
+chính, không cần khớp số chính xác với admin.
+
+**Vòng 2** — BE trả lời 2 câu hỏi còn lại, **cả hai đều CHỐT, không cần hỏi
+thêm**:
+1. **Format lỗi 403**: dùng `code: "FEATURE_LOCKED"` + `featureKey` cho
+   tính năng bị khoá theo gói; nếu sau này có quota thật thì dùng
+   `"QUOTA_EXCEEDED"` — **2 code riêng, không dùng chung**. Khớp *chính xác*
+   với những gì AI đã code sẵn (`ApiClient.onFeatureLocked` chỉ bắt đúng
+   `FEATURE_LOCKED`) — không cần sửa gì.
+2. **Fall Detection / Automatic SOS**: MVP coi là **1 cụm tính năng trả phí
+   duy nhất** (phát hiện té ngã → tự động tạo SOS), khoá chung. FE có thể
+   hiển thị 2 dòng ở trang bán hàng nhưng cùng 1 công tắc — hiện tại đã đúng
+   vậy (`sos.fallDetection`, chưa tách 2 dòng hiển thị, việc này là tuỳ chọn
+   marketing không bắt buộc).
+
+**Việc còn lại chỉ còn phụ thuộc BE lên code thật trên server**
+(`api.familycare-digital.com`), FE không còn gì phải hỏi hay chờ quyết định
+thiết kế nữa.
+
+### Đã xây xong, chạy được — CHƯA CÓ TÁC DỤNG cho tới khi BE thật sự deploy
+
+Thêm `ApiClient.onFeatureLocked` (cùng pattern `onSessionExpired`/
+`onVerificationRequired` có sẵn) — bắt 403 kèm `code: "FEATURE_LOCKED"`,
+`family_shell.dart` hiện dialog đè lên đúng màn đang đứng (không điều hướng
+đi đâu, đóng dialog là quay lại y nguyên chỗ cũ), nút "Xem các gói" dẫn tới
+`/manager/subscription`. Đây là **lưới đỡ chung** cho 19 tính năng chưa có
+khoá UI riêng — vô hại, không tự kích hoạt cho tới khi BE thật sự deploy
+code trả `code: "FEATURE_LOCKED"` trên server thật (hiện vẫn trả "Forbidden"
+trần, không có `code`) — **thiết kế đã chốt xong, chỉ còn chờ BE lên code**,
+không cần FE làm gì thêm khi việc đó xảy ra (tự chạy đúng ngay).
+
+Đã sửa thêm: `sos.liveLocation` (web, `apps/web/src/lib/feature-catalog.ts`)
+chuyển từ tầng `core` (Free) sang `advanced` (trả phí) theo đúng xác nhận
+của BE ở Vòng 1 — chỉ đổi phân loại trong code (ảnh hưởng nút chọn nhanh
+"Gói miễn phí", giờ tính 7 tính năng cơ bản thay vì 8), **không tự đổi dữ
+liệu gói Free đang lưu** — user cần tự vào Admin Web tắt "SOS vị trí trực
+tiếp" ở gói Free nếu muốn khớp. Đã merge thẳng vào `main` (web), production
+đã cập nhật.
+
+### Đã xây xong, ĐANG hoạt động thật ngay bây giờ
+
+- **`SubscriptionProvider`** (`lib/providers/subscription_provider.dart`,
+  app scope, nạp 1 lần ở `family_shell`) — gom 4 provider
+  (`AiChatbotProvider`/`AlbumProvider`/`AlbumFaceProvider`/`CalendarProvider`)
+  trước đây mỗi cái tự gọi `GET .../subscription` riêng thành 1 nguồn duy
+  nhất. `CalendarProvider` vẫn giữ logic `FeatureLockedException` nội bộ
+  nhưng đọc quyền qua `SubscriptionProvider` truyền vào `fetchBootstrap`.
+- **4 màn có khoá UI thật, hoạt động ngay** (không cần chờ BE, vì đọc
+  `featureAccess` trả cùng response `/subscription`, đã có sẵn từ trước):
+  Lịch (`calendar.enabled/reminders/recurringEvents` — **duy nhất được BE
+  chặn thật ở server**), Trợ lý AI (`ai.assistant`), Tải video Album
+  (`album.videoUpload`), Gợi ý khuôn mặt AI (`album.faceSuggestions`).
+- Đồng bộ 18/26 nhãn tiếng Việt trong `lib/models/feature_access.dart` khớp
+  đúng chữ bên Admin Web (vd "Sự kiện lặp lại" → "Lịch lặp lại"), thêm
+  `officialKeyGroups` khớp 7 nhóm bên `apps/web/src/lib/feature-catalog.ts`.
+- Sửa 2 bug thật ở `subscription_screen.dart` (màn Gói đăng ký), phát hiện từ
+  ảnh chụp live: Gói tháng hiện đúng số tiền nhưng gắn nhầm nhãn "/năm" (code
+  cũ chỉ đọc field `annualPrice`, không đọc `billingPeriod`/`monthlyPrice`/
+  `yearlyPrice` mà BE đã đổi từ lâu); Gói năm trùng màu xanh với Gói tháng
+  (nhánh màu cũ so `code == 'GOLD'/'PREMIUM'`, planCode thật là
+  FREE/MONTHLY/YEARLY nên không bao giờ khớp) — đổi Gói năm sang tím-hồng,
+  thêm ribbon "Tiết kiệm X%".
+- Thiết kế lại thẻ gói: chia tính năng theo 7 nhóm thay vì liệt kê phẳng
+  21-23 dòng.
+
+### Mobile đã merge `NDuy` → `main`
+
+User chọn đợi BE trả lời đủ 2 câu hỏi ở Vòng 2 rồi mới merge 1 lần, tránh
+chia nhỏ main thành nhiều lần merge cho cùng một tính năng — đã xảy ra ngay
+sau khi BE chốt xong (xem mục trên). Fast-forward sạch, không xung đột,
+`flutter analyze` sạch trước khi merge.
+
+Trạng thái nhánh lúc chốt phiên: mobile `main` và `NDuy` đã khớp nhau tại
+`055e502` (đã push — vài commit cuối cùng chỉ là dọn lại tên commit của
+chính file này theo yêu cầu user, không đổi code). Web `main` và `NDuy` đã
+khớp nhau tại `f2cb4ac`, đã deploy production.
+
+### Web (`d:\Desktop\sep`) — đã xong, đã deploy production
+
+Tách danh mục 26 key ra `apps/web/src/lib/feature-catalog.ts` dùng chung cho
+Admin, thẻ gói công khai, `UpgradePlanDialog`. Ẩn 5 quyền "chưa có tính năng
+thật" khỏi hộp Sửa của admin (2 loại lý do khác nhau, ghi rõ trong code:
+"chưa xây" như `finance.aiOcrSuggestion`/`chat.announcements` — có thể xây
+thật sau này; "không phải công tắc riêng" như 3 key con AI — do BE không
+guard riêng, mãi mãi không cần tách). Sửa bug khoá cả 2 chiều (quyền lỡ bật
+sai từ dữ liệu cũ không tắt được — giờ chỉ khoá chiều BẬT thêm). Thiết kế
+lại card admin + `FeatureLockedDialog` (cùng cơ chế `onFeatureLocked`, cũng
+chờ BE). Sửa bug biểu đồ "Doanh thu theo ngày" ở trang Dashboard admin (nhãn
+số tiền cố định tràn đè khi nhiều người mua cùng lúc — bỏ nhãn, dùng tooltip).
+
+Production đã build xong tại `family-care-admin.vercel.app`. Dọn Vercel: đổi
+tên Team sang `family-care-admin-web` (link cũ dạng
+`...-team3-museum-project.vercel.app` vẫn còn chạy song song, Vercel không
+tắt ngay). Còn 3 project rác trên Vercel (`sep-family-care-web-api`,
+`-swmz`, `-98hi`) — build nhầm `apps/api` (không phải backend thật) nên báo
+đỏ mỗi lần push, **vô hại, không ảnh hưởng project thật**
+(`sep-family-care-third-s-web`), user tự xoá khi rảnh, không phải việc code.
+
+### Quy tắc vẫn còn hiệu lực từ phiên trước — không đổi
+
+**KHÔNG tự chạy test runtime trên máy ảo.** Chỉ sửa code + chạy
 `flutter analyze` và `flutter test`. Phần bấm thử trên app **user tự làm**.
-Lý do: tốn thời gian, và đã có sự cố bấm nhầm (xem ngay dưới).
+Đã tuân thủ đúng trong toàn bộ phiên này — mọi thay đổi chỉ xác minh bằng
+`flutter analyze` (0 error, 0 warning, sạch trên toàn repo) và `tsc --noEmit`
+phía web, **chưa chạy `flutter test` đầy đủ lại sau các thay đổi cuối** —
+cần user tự chạy qua `scripts/self_test.ps1` trước khi coi các thay đổi
+subscription là đã xác minh xong (dù `flutter analyze` sạch, chưa chắc mọi
+test cũ vẫn pass — đặc biệt `test/calendar_member_widget_test.dart`,
+`test/ai_session_reset_test.dart` vừa sửa signature theo API mới).
 
-### ⚠️ Sự cố phải kiểm tra
+---
 
-Phiên này **bấm nhầm nút SOS** trên `emulator-5554` (bấm theo tọa độ cũ trong
-khi tài khoản đang đăng nhập là **MInh nhut** — thanh nav của tài khoản này
-khác nên tọa độ lệch). Màn hiện "Đang gửi SOS… Đang lấy vị trí GPS…" rồi
-**kẹt** vì máy ảo không có định vị; thoát ra, app về launcher.
-**Chưa xác minh được cảnh báo SOS có thật sự được tạo hay không.** Nếu thấy
-cảnh báo SOS rác trong dữ liệu thì là do việc này, không phải bug app.
+## 🟡 Còn tồn đọng từ phiên trước 18/08 — CHƯA đụng tới trong phiên này
 
-### Trạng thái code: xong trọn vẹn, CHƯA COMMIT
+Hai việc dưới đây có từ **trước** phiên hôm nay, không liên quan gì tới
+`featureAccess`, và **vẫn y nguyên chưa sửa** — verify lại bằng grep ngay
+trước khi viết mục này (`sosResponderLog` vẫn ra 21 kết quả,
+`sos_screen.dart` dispose vẫn huỷ `_locationStreamTimer` vô điều kiện).
 
-Không có file nào đang sửa dở. `flutter analyze` 0 error (1 warning cũ đã
-biết), `flutter test` **498/498 pass**. Sáu nhóm thay đổi đang nằm trong
-worktree:
+1. **🔴 Bug thật, độc lập, chưa sửa:** `sos_screen.dart` dispose gỡ
+   `onTrackStart/onTrackStop` và huỷ `_locationStreamTimer` vô điều kiện →
+   người phát SOS rời màn SOS thì vị trí của chính họ ngừng cập nhật, người
+   đi cứu đuổi theo điểm đứng yên. Nên sửa bất kể trạng thái các việc khác.
+2. **Log tạm `sosResponderLog()`** (định nghĩa `lib/services/sos_realtime_service.dart`,
+   21 chỗ gọi rải trong `family_shell.dart`, `sos_provider.dart`,
+   `family_map_screen.dart`) — vẫn đang bật, chưa xoá. Xoá bằng
+   `grep -rn "sosResponderLog" lib/` ra hết, kèm field
+   `_loggedResponderCount` trong `family_map_screen.dart`.
 
-1. **Fix mất ảnh khi vào tab Ảnh** — `AlbumMediaThumb` và
-   `_AlbumDetailMediaPageState` nhớ URL đã hiện được (`_shownUrl`).
-   Nguyên nhân: `fetchMedia(refresh: true)` thay `_items` bằng object không
-   kèm URL, mà `didUpdateWidget` chỉ resolve lại khi đổi `media.id` → ô đã
-   hiện ảnh rơi về ô xám và kẹt. Thêm `_thumbLoading()` để phân biệt "đang
-   tải" với "ảnh hỏng". **Đã verify runtime trước khi có quy tắc mới.**
-2. **Fix tràn layout màn Tôi** — `_infoRow` trong `profile_screen.dart` thiếu
-   `Expanded` nên email dài tràn ("RIGHT OVERFLOWED BY 6.1 PIXELS").
-   **Đã verify runtime.**
-3. **4 chỗ tiếng Việt** — `'Thanh vien'` → `'Thành viên'`
-   (`album_media.dart`), `Exception('Chua co gia dinh')`, 3 nhãn ở
-   `wearables_screen.dart` (+ nới `width` nhãn từ 86 lên 108), `'Face
-   Profile'` → `'Hồ sơ khuôn mặt'`.
-4. **`JsonReportView` áp nhãn tiếng Việt ở MỌI nơi** — trước đây bảng nhãn
-   chỉ tra khi `financeReportMode == true`, nên Trợ lý AI / Phần thưởng / Hỗ
-   trợ / SOS hiện nhãn tiếng Anh sinh tự động ("Total Expense", "Active
-   Budget Plan"). Thêm ~50 nhãn mới. Có test
-   `test/json_report_view_label_test.dart`.
-5. **Markdown trong câu trả lời AI** — thêm `parseAiMarkdownLines()` +
-   `AiTextLine`/`AiLineKind` trong `ai_assistant_screen.dart`: `###` thành
-   tiêu đề in đậm, `- ` thành `•`, giữ nguyên `**đậm**`. Sửa `_AiRichText`
-   (dùng ở 5 chỗ nên sạch cả 5). Có test `test/ai_markdown_line_test.dart`
-   (9 case). **CHƯA verify runtime** — đây là thứ duy nhất cần bấm thử.
-6. **Tài liệu** — `API_DOCS.md` ghi phản hồi BE về tool
-   `list_member_monthly_finances`; `AI_HANDOFF_LATEST.md` mục này.
-
-**Việc kế tiếp:** user đã duyệt **commit + push `NDuy`** cho nhóm 1–4 (duyệt
-trước khi làm nhóm 5). Chưa thực hiện. Nhớ `git fetch` kiểm `origin/giap`
-trước khi push, và loại `Safe Exam Browser.lnk` + `tmp_*` khỏi `git add`.
-
-**Đã làm xong trong phiên này (không lặp lại):**
-1. Merge `NDuy` → `main` fast-forward sạch, verify `flutter analyze` trên
-   `main` rồi push cả 2 nhánh.
-2. Đẩy 25 ảnh còn thiếu từ `D:\Desktop\IMGAPP` vào `/sdcard/DCIM/Camera` của
-   emulator (12 ảnh screenshot 16/08 đã có sẵn). MediaStore index đủ 37 ảnh.
-3. **Fix ảnh màn chi tiết bị nhỏ/mờ** — `Center` bọc `Image` làm
-   `BoxFit.contain` mất tác dụng; đổi sang `SizedBox.expand`. Kèm
-   `resolveFullUrl()` ưu tiên `fileUrl` thay vì thumbnail.
-4. **Thêm chọn nhiều ảnh để xóa một lượt** (nhấn giữ hoặc nút ☑ trên AppBar).
-   BE không có endpoint bulk → gọi tuần tự N lần, có tiến độ + báo số lỗi.
-5. **Ghim ảnh giờ lưu được qua lần mở app** — `AlbumPinStore` +
-   `flutter_secure_storage`, khóa theo `userId + familyId`. Vẫn là cục bộ
-   theo máy, UI gắn nhãn "chỉ trên máy này".
-6. Sửa lại message commit `a877f8a` (nay là `65d30fe`) theo yêu cầu user: bỏ
-   phần nhắc quy ước nội bộ, chỉ mô tả thay đổi kỹ thuật. Nội dung file
-   không đổi (`git diff a877f8a HEAD` trống trước khi thêm commit mới).
-   **Đã force-push-with-lease** cả `NDuy` và `main` — user xác nhận trước.
-7. Gỡ mục "Quy tắc commit + push nhánh NDuy" khỏi `CLAUDE.md` theo yêu cầu
-   user, rút gọn còn vài dòng quy ước kỹ thuật.
-
-**BE đã phản hồi vụ AI không đọc được thu chi từng thành viên (17/08 chiều):**
-Xác nhận **không phải lỗi FE** — FE mở đúng `canManageFinance` cho Manager/
-Deputy và chỉ gửi `{ content }`. Nguyên nhân: AI thiếu tool đọc dữ liệu tháng
-theo member. BE đã thêm tool `list_member_monthly_finances` (mở cho
-`FAMILY_MANAGER` + `DEPUTY_MEMBER`), sửa luôn cách tính số góp mục tiêu tài
-chính theo `actualIncome - actualPersonalExpense - actualSharedContribution`.
-Chi tiết đầy đủ đã ghi trong `API_DOCS.md` mục ai-chatbot. **FE không phải
-đổi code.** `[VERIFY]` — **chưa test lại runtime sau bản vá**, phải hỏi lại
-đúng câu đó bằng cả Trưởng nhóm lẫn Phó nhóm rồi mới coi là xong.
-
-BE trả 2 điểm phụ về cho FE: (1) markdown `###` — **đã fix xong**, xem nhóm 5
-bên dưới; (2) tên hũ `Savings`/`Spending` là **dữ liệu** BE tạo, không phải
-chuỗi FE — FE không sửa được, đổi tên hũ trong màn Mô hình tài chính là xong.
-
-**BE cũng đã vá đợt 3 cho parser `analyze-draft` (17/08 chiều):** giảm false
-positive `hasPerson`, bỏ suy nhãn ảo từ raw reasoning, lọc placeholder trong
-`warnings`. **FE không phải đổi code.** Chi tiết ở `API_DOCS.md`.
-
-### 🧪 Log TẠM đang bật cho luồng SOS responder — NHỚ XÓA
-
-Đã chèn `sosResponderLog()` (định nghĩa ở `lib/services/sos_realtime_service.dart`)
-vào 5 mốc để dò luồng "người bấm Tôi đang tới" đầu-cuối. Chỉ chạy ở
-`kDebugMode`. Lọc bằng `adb logcat | grep SOS-RESPONDER`.
-
-**Xóa sau khi chốt nguyên nhân:** `grep -rn "sosResponderLog" lib/` ra hết,
-kèm field `_loggedResponderCount` trong `family_map_screen.dart`.
-
-Kết quả đọc code trước khi thêm log — **chuỗi FE đã đủ cả 8 mắt xích**:
-attach callback (`family_shell.dart:97-98`), `startRealtime()` + `connect()`
-(`family_shell.dart:95`), join room `sos:join`, timer đẩy GPS
-(`family_shell.dart:341+`), payload đúng contract, parse phòng thủ (nhận cả
-`sosAlertId|alertId|id`, `latitude|lat`, `longitude|lng`), lưu state theo
-`alertId + responderMemberId`, render marker `isResponder`.
-
-**Đề xuất của BE đọc nhầm file:** BE bảo thiếu attach
-`onResponderTrackStart/Stop` trong `sos_screen.dart` — thực tế đã attach ở
-`family_shell.dart`, và **phải để ở shell** vì `sos_screen.dispose()` gỡ
-callback; đặt trong màn SOS thì người đi cứu rời màn là đứt tracking.
-
-**Nghi vấn chính:** toàn bộ phần responder chỉ vào repo ở commit `7c9a6f3`
-lúc **17/08 16:29**; ảnh user báo lỗi chụp lúc **13:43 và 14:57** — test trên
-bản chưa có tính năng. Cần test lại bản mới trước khi sửa gì thêm.
-
-**3 thiếu sót THẬT đã tìm ra, chưa sửa (user chọn làm log trước):**
-1. Người phát không được tự fit camera bao trọn responder → phải tự zoom out
-   mới thấy ai đang tới (đúng triệu chứng "chỉ thấy một mình mình").
-2. Chưa có polyline responder → điểm SOS.
-3. 🔴 `sos_screen.dart` dispose gỡ `onTrackStart/onTrackStop` và huỷ
-   `_locationStreamTimer` → **người phát SOS rời màn SOS thì vị trí của chính
-   họ ngừng cập nhật**, người đi cứu đuổi theo điểm đứng yên. Bug độc lập,
-   nên sửa bất kể kết quả test responder.
-
-### ⏳ Việc user cần tự chạy thử (assistant không tự test nữa)
-
-1. **Retest `analyze-draft`** sau bản vá đợt 3: dùng lại đúng bộ ảnh cũ (trái
-   cây tổng hợp, dâu tây, dứa) gán vào album **lệch chủ đề** (`sea` /
-   `anh LMH`). Kỳ vọng: `hasPerson` không còn bịa `true`, `detectedLabels`
-   hết nhãn ảo, `warnings` sạch placeholder.
-   → **Đây là cơ hội đầu tiên verify nhánh `WARN`** của `_analyzeAndUpload`,
-   nhánh này chưa từng chạy thật lần nào.
-2. **Retest AI tài chính** sau khi BE thêm `list_member_monthly_finances`:
-   hỏi *"list danh sách thu chi thực tế của từng thành viên"* bằng **cả
-   Trưởng nhóm lẫn Phó nhóm**. Kỳ vọng: ra dữ liệu, hoặc nói rõ "bị ẩn/chưa
-   khai báo" — **không** còn câu "tôi không có quyền truy cập".
-3. **Kiểm markdown** (nhóm 5): hỏi *"Tháng này nhà mình tiêu hết bao nhiêu?"*
-   — không được còn dấu `###` nào, gạch đầu dòng phải thành `•`.
-
-**Việc cần báo BE (user tự gửi):**
-`DE_XUAT_BE_ALBUM_PIN_BULK_DELETE_2026-08-17.md` — 2 đề xuất mức **Nên có**,
-không chặn: (1) endpoint ghim ảnh + field `isPinned` để ghim đồng bộ thay vì
-cục bộ; (2) `POST .../albums/media/bulk-delete` để xóa nhiều ảnh nguyên tử
-thay vì FE gọi N request. Kèm 1 câu hỏi cần BE chốt: ghim là **cá nhân** hay
-**chung cả gia đình**.
-
-**Điểm chưa verify được, đừng báo là xong:**
-- `resolveFullUrl` `[VERIFY]`: chưa xác nhận runtime BE có sinh
-  `thumbnailUrl` riêng hay không. Nếu không thì thay đổi này vô hại (kết quả
-  y hệt cũ); nếu có thì đây mới là chỗ sửa đúng. Cần soi log response
-  `GET .../albums/media/{mediaId}` để chốt.
-- Nhánh `WARN` của `_analyzeAndUpload` vẫn **chưa từng chạy runtime thật**.
-- Ảnh gốc độ phân giải thấp (145×106px) sau fix vẫn mờ khi phóng full màn —
-  đúng bản chất dữ liệu, không phải bug, đừng "sửa" tiếp.
-
-**Ghi chú môi trường (nếu cần test tiếp lần sau):**
-- Máy ảo hiện tại: **`Small_Phone`** (API 34, Google APIs, RAM đã tăng lên
-  3072MB + heap 256MB + GPU mode `host` để đỡ lag — sửa trực tiếp
-  `D:\AndroidHome\.android\avd\Small_Phone.avd\config.ini`, không qua UI).
-  `/sdcard` còn trống 4.3G, không còn nguy cơ đầy như trước.
-  `Wear_OS_Large_Round` vẫn còn, chưa dùng tới trong đợt test này.
-- **Package name là `com.company.familycare`**, không phải
-  `com.example.family_care_mobile` — launch bằng
-  `adb shell monkey -p com.company.familycare -c android.intent.category.LAUNCHER 1`.
-- **Tên package Dart trong `pubspec.yaml` là `family_care`** (không phải
-  `family_care_mobile`) — import trong test phải là
-  `package:family_care/...`.
-- Log soi bằng `adb logcat -c && adb logcat -v raw > <file> &`; file log để
-  trong scratchpad của session, mất khi qua phiên khác.
-- Ảnh test trong máy ảo: 37 ảnh (12 screenshot 16/08 + 25 ảnh đẩy thêm 17/08
-  từ `D:\Desktop\IMGAPP`, gồm cả ảnh gốc lớn 500–1280px lẫn screenshot nhỏ
-  145–700px — dùng đúng bộ này để test lại vụ fit ảnh).
-
-**Bối cảnh khác không khẩn, chỉ để biết:**
-- Máy ảo hiện tại: **`Small_Phone`** (API 34, Google APIs, không Play Store —
-  đổi từ `Medium_Phone`/`Pixel_6` cũ vì hết dung lượng nhiều lần) +
-  `Wear_OS_Large_Round` cho test đồng hồ. `ANDROID_AVD_HOME` thật nằm ở
-  `D:\AndroidHome\.android\avd`, SDK ở `D:\MMA\Android\Sdk` — không phải
-  đường dẫn mặc định `%USERPROFILE%\.android`.
-- User có kỳ **Review Defense 1.1** thứ Năm 20/08/2026. Đã soạn tài liệu ôn
-  riêng tại `D:\Desktop\ON_TAP_REVIEW_FE_MOBILE.md` (ngoài repo, không phải
-  việc code) — không cần đụng tới trừ khi user hỏi lại.
-- `adb shell` với path Unix qua Git Bash bị dịch sai path — dùng PowerShell
-  cho lệnh `adb shell` có path tuyệt đối.
+Các mục "cần user tự test lại" khác từ handoff cũ (retest `analyze-draft`,
+retest AI tài chính theo member, kiểm markdown) — **không có bằng chứng gì
+trong phiên này về việc đã làm hay chưa**. Nhiều commit không liên quan
+(`cf120d4`, `c8e325e` — AI gợi ý đóng góp mục tiêu, cảnh báo mức góp) nằm
+giữa handoff cũ và phiên này, cho thấy ít nhất một phiên khác đã chạy — khả
+năng cao các mục đó đã được xử lý ở phiên đó, nhưng **đừng coi là chắc chắn
+xong** nếu chưa thấy ghi nhận rõ ràng ở đâu khác.
 
 ---
 
