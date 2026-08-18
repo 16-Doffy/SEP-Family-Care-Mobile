@@ -1,10 +1,13 @@
 package com.familycare.family_care
 
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.provider.Settings
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -12,6 +15,18 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private var garminBridge: GarminBridgeService? = null
+    private var garminBound = false
+    private val garminConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            garminBridge = (service as? GarminBridgeService.LocalBinder)?.getService()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            garminBridge = null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -24,6 +39,25 @@ class MainActivity : FlutterActivity() {
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
             )
         }
+        // Đã pair Garmin từ trước (kể cả app bị kill/máy reboot rồi mở lại) —
+        // tự chạy bridge ngay, không đợi người dùng vào lại màn Wearables.
+        if (GarminDeviceCache.read(this) != null) {
+            GarminBridgeService.start(this)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val intent = Intent(this, GarminBridgeService::class.java)
+        garminBound = bindService(intent, garminConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    override fun onStop() {
+        if (garminBound) {
+            unbindService(garminConnection)
+            garminBound = false
+        }
+        super.onStop()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -110,6 +144,57 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            GARMIN_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getKnownDevices" -> {
+                    // Promote sang started service NGAY từ bước liệt kê thiết
+                    // bị — nếu chỉ promote lúc confirmPair thì bridge có thể
+                    // bị hệ thống dọn ngay khi người dùng thoát màn ghép nối
+                    // giữa chừng (unbind mà chưa từng được start).
+                    GarminBridgeService.start(this)
+                    val bridge = garminBridge
+                    if (bridge == null) {
+                        result.error("NOT_BOUND", "Chưa kết nối được GarminBridgeService", null)
+                    } else {
+                        bridge.getKnownDevices { devices, error ->
+                            if (error != null) {
+                                result.error("GARMIN_ERROR", error, null)
+                            } else {
+                                result.success(devices)
+                            }
+                        }
+                    }
+                }
+                "confirmPair" -> {
+                    GarminBridgeService.start(this)
+                    val bridge = garminBridge
+                    val iqDeviceId = (call.argument<Number>("iqDeviceId"))?.toLong()
+                    val iqFriendlyName = call.argument<String>("iqFriendlyName") ?: "Garmin watch"
+                    val backendDeviceId = call.argument<String>("backendDeviceId")
+                    val memberName = call.argument<String>("memberName") ?: ""
+                    if (bridge == null || iqDeviceId == null || backendDeviceId.isNullOrEmpty()) {
+                        result.error(
+                            "INVALID_ARGS",
+                            "Thiếu iqDeviceId/backendDeviceId hoặc chưa kết nối GarminBridgeService",
+                            null,
+                        )
+                    } else {
+                        bridge.confirmPair(iqDeviceId, iqFriendlyName, backendDeviceId, memberName) { ok, error ->
+                            if (ok) result.success(null) else result.error("GARMIN_ERROR", error, null)
+                        }
+                    }
+                }
+                "stopBridge" -> {
+                    garminBridge?.stopBridge()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun startSosGuard(shakeEnabled: Boolean, fallEnabled: Boolean) {
@@ -161,5 +246,6 @@ class MainActivity : FlutterActivity() {
         private const val SOS_GUARD_CHANNEL = "com.familycare.family_care/sos_guard"
         private const val CALL_GUARD_CHANNEL = "com.familycare.family_care/call_guard"
         private const val NATIVE_SESSION_CHANNEL = "com.familycare.family_care/native_session"
+        private const val GARMIN_CHANNEL = "com.familycare.family_care/garmin"
     }
 }

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../providers/auth_provider.dart';
 import '../../providers/wear_quick_message_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/api_client.dart';
+import '../../services/garmin_bridge.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
@@ -377,6 +379,19 @@ class _WearablesScreenState extends State<WearablesScreen> {
                 fontWeight: FontWeight.w800,
               ),
             ),
+          ),
+        ),
+        // Garmin dùng cầu nối riêng (Connect IQ SDK, xem GarminBridge) để
+        // gửi PAIR_CONFIRMED xuống watch sau khi ghép — khác luồng Wear OS ở
+        // trên nên tách nút riêng, không dùng chung `_connectWearable`.
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: _connectGarmin,
+            icon: const Icon(Icons.watch_rounded),
+            label: const Text('Ghép đồng hồ Garmin'),
           ),
         ),
       ],
@@ -834,6 +849,179 @@ class _WearablesScreenState extends State<WearablesScreen> {
     }
   }
 
+  /// Garmin watch KHÔNG gọi backend trực tiếp — nó chỉ là sensor source.
+  /// Family Care Android làm bridge qua Garmin Connect IQ SDK. Flow:
+  /// 1) liệt kê thiết bị Garmin đã pair với Garmin Connect Mobile trên máy;
+  /// 2) người dùng nhập mã hiện trên watch app (`FCG-735XT-XXXXXX`);
+  /// 3) ghép qua API backend hiện có (giống Wear OS, không có endpoint riêng
+  ///    cho Garmin);
+  /// 4) gửi `PAIR_CONFIRMED` xuống watch qua native — watch chỉ bắt đầu fall
+  ///    detection sau bước này.
+  ///
+  /// **[CHƯA VERIFY]** — xem `KE_HOACH_GARMIN_CONNECTIQ_INTEGRATION_2026-08-18.md`.
+  Future<void> _connectGarmin() async {
+    List<GarminIqDevice> devices;
+    try {
+      devices = await GarminBridge.getKnownDevices();
+    } catch (e) {
+      _snack(e);
+      return;
+    }
+    if (devices.isEmpty) {
+      if (!mounted) return;
+      _snack(
+        Exception(
+          'Chưa thấy đồng hồ Garmin nào trong Garmin Connect Mobile. '
+          'Kiểm tra đã pair Bluetooth với Garmin Connect Mobile chưa.',
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    final iqDevice = devices.length == 1
+        ? devices.first
+        : await _pickGarminDevice(devices);
+    if (iqDevice == null || !mounted) return;
+
+    final code = await _askGarminCode();
+    if (code == null || code.isEmpty || !mounted) return;
+
+    try {
+      await context.read<WearableProvider>().pairDevice(
+        deviceName: iqDevice.friendlyName,
+        deviceType: 'SMARTWATCH',
+        deviceIdentifier: code,
+        gpsEnabled: true,
+        sosEnabled: true,
+      );
+    } on ApiException catch (e) {
+      _snack(_wearablePairErrorMessage(e));
+      await _loadFamilyDevices();
+      return;
+    } catch (e) {
+      _snack(e);
+      await _loadFamilyDevices();
+      return;
+    }
+    if (!mounted) return;
+    final backendDeviceId = context.read<WearableProvider>().currentDevice?.id;
+    if (backendDeviceId == null) {
+      // Không nên xảy ra — pairDevice() vừa gán xong _currentDevice hoặc đã
+      // fetchCurrentDevice() lại. Báo rõ để không âm thầm bỏ qua bước gửi
+      // PAIR_CONFIRMED (watch sẽ không bao giờ bắt đầu fall detection).
+      _snack(
+        Exception(
+          'Đã ghép ở máy chủ nhưng không lấy được deviceId để xác nhận với '
+          'đồng hồ. Mở lại màn này để thử gửi xác nhận.',
+        ),
+      );
+      return;
+    }
+    final memberName = context.read<AuthProvider>().user?.name ?? '';
+    try {
+      await GarminBridge.confirmPair(
+        iqDeviceId: iqDevice.iqDeviceId,
+        iqFriendlyName: iqDevice.friendlyName,
+        backendDeviceId: backendDeviceId,
+        memberName: memberName,
+      );
+      if (!mounted) return;
+      _snack('Đã ghép Garmin và xác nhận với đồng hồ.', ok: true);
+    } catch (e) {
+      // Đã pair ở backend rồi — chỉ bước gửi PAIR_CONFIRMED xuống watch thất
+      // bại. KHÔNG rollback pairDevice() (đó là trạng thái thật ở server);
+      // báo rõ để người dùng biết watch chưa bắt đầu fall detection.
+      if (!mounted) return;
+      _snack(
+        Exception(
+          'Đã ghép ở máy chủ nhưng CHƯA xác nhận được với đồng hồ '
+          '(${e.toString().replaceFirst('Exception: ', '')}). Đồng hồ sẽ '
+          'chưa tự phát hiện té ngã cho tới khi thử lại.',
+        ),
+      );
+    }
+  }
+
+  Future<GarminIqDevice?> _pickGarminDevice(List<GarminIqDevice> devices) {
+    return showDialog<GarminIqDevice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Chọn đồng hồ Garmin'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final d in devices)
+                ListTile(
+                  leading: Icon(
+                    Icons.watch_rounded,
+                    color: d.isConnected
+                        ? AppColors.success
+                        : AppColors.textMuted,
+                  ),
+                  title: Text(d.friendlyName),
+                  subtitle: Text(d.status),
+                  onTap: () => Navigator.pop(ctx, d),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _askGarminCode() {
+    var code = '';
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        var canSave = false;
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('Nhập mã trên watch app Garmin'),
+            content: TextField(
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                hintText: 'Ví dụ: FCG-735XT-XXXXXX',
+                helperText: 'Mở "Family Care" trên đồng hồ Garmin để xem mã.',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) {
+                code = value.trim().toUpperCase();
+                setDialogState(() => canSave = _canSubmitWearCode(code));
+              },
+              onSubmitted: (value) {
+                final normalized = value.trim().toUpperCase();
+                if (_canSubmitWearCode(normalized)) {
+                  Navigator.pop(ctx, normalized);
+                }
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Hủy'),
+              ),
+              FilledButton(
+                onPressed: canSave ? () => Navigator.pop(ctx, code) : null,
+                child: const Text('Kết nối'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   bool _canSubmitWearCode(String value) =>
       value.trim().isNotEmpty && value.length <= 100;
 
@@ -1034,6 +1222,10 @@ class _WearablesScreenState extends State<WearablesScreen> {
               Navigator.pop(ctx);
               try {
                 await context.read<WearableProvider>().unpairDevice(device.id);
+                // No-op nếu thiết bị vừa ngắt không phải Garmin (GarminBridge
+                // chỉ có mapping khi đã confirmPair) — an toàn gọi luôn thay
+                // vì phải rẽ nhánh theo deviceType.
+                await GarminBridge.stopBridge();
                 if (!mounted) return;
                 _snack('Đã ngắt kết nối wearable.', ok: true);
                 await _loadFamilyDevices();

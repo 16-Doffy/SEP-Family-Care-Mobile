@@ -87,6 +87,11 @@ dependencies {
     // ngã, độc lập Flutter engine (xem android/.../SosEmergencyFlowService.kt).
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // Cầu nối với Garmin watch app (GarminBridgeService) — nhận message
+    // PAIR_CONFIRMED/FALL_DETECTED qua Garmin Connect Mobile. Phân phối trên
+    // Maven Central (không cần .aar thủ công), xem
+    // https://developer.garmin.com/connect-iq/core-topics/mobile-sdk-for-android/
+    implementation("com.garmin.connectiq:ciq-companion-app-sdk:2.4.0@aar")
 }
 
 flutter {
