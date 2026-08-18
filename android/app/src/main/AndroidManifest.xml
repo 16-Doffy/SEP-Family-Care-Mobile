@@ -27,10 +27,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <!-- GarminBridgeService giữ kết nối Connect IQ SDK với Garmin Connect
-         Mobile nền để nhận FALL_DETECTED — bắt buộc từ Android 14 (API 34)
-         cho foregroundServiceType="connectedDevice". -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Rung mạnh khi phát hiện lắc/té ngã — chống báo động giả (SosGuardService) -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -104,11 +100,19 @@
             android:exported="false" />
         <!-- Cầu nối Garmin Connect IQ SDK <-> backend — nhận FALL_DETECTED từ
              watch app độc lập Activity/Flutter engine. Xem
-             GarminBridgeService. -->
+             GarminBridgeService.
+             Dùng "specialUse" (không phải "connectedDevice"): loại đó đòi
+             thêm 1 quyền Bluetooth phải CẤP RUNTIME mới qua được
+             startForeground, gây crash app cho MỌI user chưa từng cấp
+             Bluetooth (phát hiện qua test thật 2026-08-18). -->
         <service
             android:name=".GarminBridgeService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Giữ kết nối với đồng hồ Garmin để nhận cảnh báo té ngã" />
+        </service>
         <!-- Bám theo màn Emergency SOS của hệ thống (chỉ ColorOS — xem
              EmergencySosMatcher). AccessibilityService, không phải foreground
              service — người dùng tự bật thủ công trong Cài đặt > Trợ năng,
