@@ -596,10 +596,40 @@ class GoalAllocation {
 // mức đóng góp/tháng theo từng thành viên. BE không document response schema
 // → parse phòng thủ nhiều tên field khả dĩ, giữ `raw` để debug/hiển thị
 // fallback nếu tên field đoán sai.
+/// Một dòng gợi ý đóng góp do AI tính, kèm căn cứ tính.
+///
+/// **Đây là ĐỀ XUẤT, không phải nghĩa vụ.** BE đổi cách tính 2026-08-18: khoản
+/// đã góp quỹ chung KHÔNG còn bị lấy làm "số phải góp tiếp cho mục tiêu", nó
+/// chỉ bị **trừ khỏi khả năng còn lại**:
+///
+/// ```
+/// availableAmount = incomeAmount - personalExpenseAmount - sharedContributionAmount
+/// suggestedContribution = contributionTargetAmount * availableAmount / totalAvailableAmount
+/// ```
+///
+/// Nhờ vậy người đã góp quỹ chung 10 triệu thấy khoản đó ở "Đã góp quỹ chung"
+/// và **khả dụng còn lại giảm đi**, chứ không bị hiểu thành phải góp thêm 10
+/// triệu nữa cho mục tiêu.
 class ContributionSuggestion {
   final String memberId;
   final String memberName;
+
+  /// Số tiền AI đề xuất. BE mới gửi `suggestedContribution`; các tên cũ
+  /// (`suggestedAmount`/`amount`/`plannedAmount`) vẫn nhận để không vỡ khi BE
+  /// chưa deploy.
   final double suggestedAmount;
+
+  final double? incomeAmount;
+  final double? personalExpenseAmount;
+  final double? sharedContributionAmount;
+  final double? availableAmount;
+
+  /// Nguồn số liệu BE dùng (vd khai báo tay vs tính từ sổ) — hiển thị nguyên
+  /// văn nếu có, không dịch vì chưa biết hết tập giá trị.
+  final String? incomeSource;
+  final String? expenseSource;
+  final String? sharedContributionSource;
+
   final Map<String, dynamic> raw;
 
   const ContributionSuggestion({
@@ -607,7 +637,22 @@ class ContributionSuggestion {
     required this.memberName,
     required this.suggestedAmount,
     required this.raw,
+    this.incomeAmount,
+    this.personalExpenseAmount,
+    this.sharedContributionAmount,
+    this.availableAmount,
+    this.incomeSource,
+    this.expenseSource,
+    this.sharedContributionSource,
   });
+
+  /// Có đủ số liệu để bày phần "căn cứ tính" hay không. Thiếu sạch thì chỉ
+  /// hiện mỗi số tiền, không dựng khung rỗng.
+  bool get hasBreakdown =>
+      incomeAmount != null ||
+      personalExpenseAmount != null ||
+      sharedContributionAmount != null ||
+      availableAmount != null;
 
   factory ContributionSuggestion.fromJson(Map<String, dynamic> j) {
     final memberMap = j['member'] is Map
@@ -615,6 +660,12 @@ class ContributionSuggestion {
         : j['user'] is Map
         ? Map<String, dynamic>.from(j['user'] as Map)
         : null;
+    double? moneyOrNull(dynamic v) => v == null ? null : _money(v);
+    String? strOrNull(dynamic v) {
+      final s = v?.toString();
+      return (s == null || s.isEmpty) ? null : s;
+    }
+
     return ContributionSuggestion(
       memberId:
           j['memberId']?.toString() ??
@@ -622,14 +673,166 @@ class ContributionSuggestion {
           memberMap?['userId']?.toString() ??
           '',
       memberName:
-          memberMap?['fullName']?.toString() ??
-          memberMap?['displayName']?.toString() ??
-          j['memberName']?.toString() ??
+          // `displayName` ở gốc dòng gợi ý là tên BE mới gửi kèm; ưu tiên nó
+          // trước khi phải lần vào object member/user lồng bên trong.
+          strOrNull(j['displayName']) ??
+          strOrNull(memberMap?['fullName']) ??
+          strOrNull(memberMap?['displayName']) ??
+          strOrNull(j['memberName']) ??
           'Thành viên',
       suggestedAmount: _money(
-        j['suggestedAmount'] ?? j['amount'] ?? j['plannedAmount'],
+        j['suggestedContribution'] ??
+            j['suggestedAmount'] ??
+            j['amount'] ??
+            j['plannedAmount'],
       ),
+      incomeAmount: moneyOrNull(j['incomeAmount']),
+      personalExpenseAmount: moneyOrNull(j['personalExpenseAmount']),
+      sharedContributionAmount: moneyOrNull(j['sharedContributionAmount']),
+      availableAmount: moneyOrNull(j['availableAmount']),
+      incomeSource: strOrNull(j['incomeSource']),
+      expenseSource: strOrNull(j['expenseSource']),
+      sharedContributionSource: strOrNull(j['sharedContributionSource']),
       raw: j,
+    );
+  }
+}
+
+/// Thành viên BE bỏ qua khi tính gợi ý, kèm lý do máy đọc được.
+class SkippedContributionMember {
+  final String memberId;
+  final String displayName;
+
+  /// Mã lý do của BE (`MISSING_MONTHLY_FINANCE`, `INCOME_NOT_VISIBLE`…).
+  final String reason;
+
+  const SkippedContributionMember({
+    required this.memberId,
+    required this.displayName,
+    required this.reason,
+  });
+
+  factory SkippedContributionMember.fromJson(Map<String, dynamic> j) {
+    return SkippedContributionMember(
+      memberId: j['memberId']?.toString() ?? '',
+      displayName: j['displayName']?.toString() ?? 'Thành viên',
+      reason: j['reason']?.toString() ?? '',
+    );
+  }
+
+  /// Câu tiếng Việt cho người dùng đọc. Mã lạ thì trả nguyên văn thay vì nuốt
+  /// mất — BE có thể thêm mã mới bất cứ lúc nào.
+  String get reasonLabel => switch (reason.toUpperCase()) {
+    'MISSING_MONTHLY_FINANCE' => 'Chưa có dữ liệu thu chi tháng này',
+    'INCOME_NOT_VISIBLE' => 'Thu nhập đang ẩn',
+    'EXPENSE_NOT_VISIBLE' => 'Chi tiêu đang ẩn',
+    'NO_AVAILABLE_AMOUNT' => 'Không còn khả dụng sau chi phí và quỹ chung',
+    _ => reason.isEmpty ? 'Chưa đủ dữ liệu để ước tính' : reason,
+  };
+}
+
+/// Toàn bộ response của `contribution-suggestions`, gồm cả phần metadata BE
+/// mới bổ sung.
+///
+/// BE có thể trả **mảng thuần** (bản cũ) hoặc **object** có `suggestions` +
+/// metadata (bản mới) — [fromJson] nhận cả hai để app không vỡ dù BE deploy
+/// trước hay sau.
+class ContributionSuggestionResult {
+  final List<ContributionSuggestion> suggestions;
+  final List<SkippedContributionMember> skippedMembers;
+  final List<String> warnings;
+
+  /// Căn cứ BE dùng để chia (vd theo khả dụng còn lại). Chuỗi tự do.
+  final String? basis;
+
+  final double? monthlyContributionTarget;
+  final double? explicitMonthlyContributionTarget;
+  final double? recommendedMonthlyContribution;
+  final double? remainingAmount;
+  final double? totalAvailableAmount;
+
+  const ContributionSuggestionResult({
+    this.suggestions = const [],
+    this.skippedMembers = const [],
+    this.warnings = const [],
+    this.basis,
+    this.monthlyContributionTarget,
+    this.explicitMonthlyContributionTarget,
+    this.recommendedMonthlyContribution,
+    this.remainingAmount,
+    this.totalAvailableAmount,
+  });
+
+  bool get hasMeta =>
+      warnings.isNotEmpty ||
+      skippedMembers.isNotEmpty ||
+      totalAvailableAmount != null ||
+      monthlyContributionTarget != null ||
+      recommendedMonthlyContribution != null;
+
+  factory ContributionSuggestionResult.fromJson(dynamic data) {
+    double? moneyOrNull(dynamic v) => v == null ? null : _money(v);
+
+    // Bản cũ: BE trả thẳng mảng, không có metadata nào.
+    if (data is List) {
+      return ContributionSuggestionResult(
+        suggestions: data
+            .whereType<Map>()
+            .map(
+              (e) =>
+                  ContributionSuggestion.fromJson(Map<String, dynamic>.from(e)),
+            )
+            .toList(),
+      );
+    }
+    if (data is! Map) return const ContributionSuggestionResult();
+    final map = Map<String, dynamic>.from(data);
+
+    // Envelope `{ data: {...} }` đã được ApiClient bóc, nhưng vẫn có thể gặp
+    // dạng lồng thêm một lớp — dò `suggestions` ở cả hai chỗ.
+    final rawList = map['suggestions'] ?? map['items'] ?? map['data'];
+    final suggestions = rawList is List
+        ? rawList
+              .whereType<Map>()
+              .map(
+                (e) => ContributionSuggestion.fromJson(
+                  Map<String, dynamic>.from(e),
+                ),
+              )
+              .toList()
+        : <ContributionSuggestion>[];
+
+    final rawSkipped = map['skippedMembers'];
+    final rawWarnings = map['warnings'];
+
+    return ContributionSuggestionResult(
+      suggestions: suggestions,
+      skippedMembers: rawSkipped is List
+          ? rawSkipped
+                .whereType<Map>()
+                .map(
+                  (e) => SkippedContributionMember.fromJson(
+                    Map<String, dynamic>.from(e),
+                  ),
+                )
+                .toList()
+          : const [],
+      warnings: rawWarnings is List
+          ? rawWarnings
+                .map((e) => e?.toString() ?? '')
+                .where((e) => e.isNotEmpty)
+                .toList()
+          : const [],
+      basis: map['basis']?.toString(),
+      monthlyContributionTarget: moneyOrNull(map['monthlyContributionTarget']),
+      explicitMonthlyContributionTarget: moneyOrNull(
+        map['explicitMonthlyContributionTarget'],
+      ),
+      recommendedMonthlyContribution: moneyOrNull(
+        map['recommendedMonthlyContribution'],
+      ),
+      remainingAmount: moneyOrNull(map['remainingAmount']),
+      totalAvailableAmount: moneyOrNull(map['totalAvailableAmount']),
     );
   }
 }
@@ -1619,7 +1822,11 @@ class FinanceProvider extends ChangeNotifier {
   // Manager approve/reject) ────────────────────────────────────────────────
 
   // GET .../financial-goals/{goalId}/contribution-suggestions?month&year
-  Future<List<ContributionSuggestion>> fetchContributionSuggestions(
+  /// Gợi ý đóng góp kèm **căn cứ tính** (bản BE 2026-08-18).
+  ///
+  /// Nhận được cả response mảng cũ lẫn object mới có metadata — xem
+  /// [ContributionSuggestionResult.fromJson].
+  Future<ContributionSuggestionResult> fetchContributionSuggestionResult(
     String goalId,
     int month,
     int year,
@@ -1627,7 +1834,18 @@ class FinanceProvider extends ChangeNotifier {
     final data = await ApiClient.instance.get(
       '/families/$_fid/finance/financial-goals/$goalId/contribution-suggestions${_qs({'month': month, 'year': year})}',
     );
-    return _list(data).map(ContributionSuggestion.fromJson).toList();
+    return ContributionSuggestionResult.fromJson(data);
+  }
+
+  /// Giữ lại cho nơi gọi cũ chỉ cần danh sách. Nơi nào cần cảnh báo hoặc danh
+  /// sách bị bỏ qua thì dùng [fetchContributionSuggestionResult].
+  Future<List<ContributionSuggestion>> fetchContributionSuggestions(
+    String goalId,
+    int month,
+    int year,
+  ) async {
+    final result = await fetchContributionSuggestionResult(goalId, month, year);
+    return result.suggestions;
   }
 
   // POST .../financial-goals/{goalId}/contribution-plans/confirm

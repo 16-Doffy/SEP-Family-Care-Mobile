@@ -480,6 +480,12 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 
 ### Finance — Goal Contribution Plans — **[wire FE 2026-07-07]**
 - `GET .../financial-goals/{goalId}/contribution-suggestions` — Gợi ý đóng góp/tháng theo từng thành viên. Query `month`, `year` (bắt buộc).
+  - **[BE ĐỔI LOGIC 2026-08-18 — đã wire FE]** Khoản **đã góp quỹ chung KHÔNG còn bị lấy làm "số phải góp tiếp cho mục tiêu"**, nó chỉ **trừ bớt khả năng còn lại**. Công thức BE: `availableAmount = incomeAmount - personalExpenseAmount - sharedContributionAmount`; `suggestedContribution = contributionTargetAmount * availableAmount / totalAvailableAmount`.
+  - Response có thể là **mảng cũ** hoặc **object mới** `{ suggestions[], skippedMembers[], warnings[], basis, monthlyContributionTarget, explicitMonthlyContributionTarget, recommendedMonthlyContribution, remainingAmount, totalAvailableAmount }`. FE parse được **cả hai** (`ContributionSuggestionResult.fromJson`) nên không vỡ dù BE deploy trước hay sau.
+  - Mỗi phần tử `suggestions[]` thêm: `suggestedContribution` (tên mới của `suggestedAmount`), `incomeAmount`, `personalExpenseAmount`, `sharedContributionAmount`, `availableAmount`, `incomeSource`, `expenseSource`, `sharedContributionSource`, `displayName` ở gốc.
+  - `skippedMembers[].reason` đã biết 4 mã: `MISSING_MONTHLY_FINANCE`, `INCOME_NOT_VISIBLE`, `EXPENSE_NOT_VISIBLE`, `NO_AVAILABLE_AMOUNT` — FE dịch sang tiếng Việt, mã lạ hiển thị nguyên văn thay vì nuốt.
+  - **POST `.../contribution-plans/confirm` GIỮ NGUYÊN body cũ** `{ periodMonth, periodYear, dueDate, members[{memberId, plannedAmount}] }` — REST **không** nhận `distributionMode`. Chỉ luồng AI mới có `distributionMode` trong `pendingAction`.
+  - Wire FE: `FinanceProvider.fetchContributionSuggestionResult` (bản cũ `fetchContributionSuggestions` giữ lại, trả `.suggestions`), màn `goal_contribution_screen.dart`. **[VERIFY]** chưa chạy runtime với BE thật sau khi BE deploy.
 - `POST .../financial-goals/{goalId}/contribution-plans/confirm` — Xác nhận/cập nhật kế hoạch đóng góp theo tháng. Body `ConfirmGoalContributionPlanDto { periodMonth, periodYear, dueDate, members[] }`.
 - `POST .../financial-goals/{goalId}/contribution-plans/{planId}/submit` — Thành viên xác nhận đã đóng góp. Body `SubmitGoalContributionPlanDto { amount, note? }`.
 - `POST .../financial-goals/{goalId}/contribution-plans/{planId}/approve` — Manager/deputy duyệt khoản đóng góp (ghi vào sổ sách). Body `ReviewGoalContributionPlanDto { note? }`.

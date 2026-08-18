@@ -28,7 +28,8 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
 
   bool _loading = true;
   String? _error;
-  List<ContributionSuggestion> _suggestions = [];
+  ContributionSuggestionResult _result = const ContributionSuggestionResult();
+  List<ContributionSuggestion> get _suggestions => _result.suggestions;
   List<GoalContributionPlan> _plans = [];
 
   @override
@@ -48,12 +49,16 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     final provider = context.read<FinanceProvider>();
     try {
       final results = await Future.wait([
-        provider.fetchContributionSuggestions(widget.goalId, _month, _year),
+        provider.fetchContributionSuggestionResult(
+          widget.goalId,
+          _month,
+          _year,
+        ),
         provider.fetchContributionPlans(widget.goalId, _month, _year),
       ]);
       if (mounted) {
         setState(() {
-          _suggestions = results[0] as List<ContributionSuggestion>;
+          _result = results[0] as ContributionSuggestionResult;
           _plans = results[1] as List<GoalContributionPlan>;
         });
       }
@@ -199,44 +204,58 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                           ),
                         ),
 
-                      // ── Gợi ý đóng góp ──
+                      // ── AI gợi ý đóng góp ──
+                      // Cố ý dùng chữ "AI gợi ý" chứ không phải "phải góp":
+                      // đây là đề xuất để tham khảo, người dùng vẫn chỉnh tay
+                      // được ở bước xác nhận.
                       if (_suggestions.isNotEmpty) ...[
-                        _sectionLabel('Gợi ý đóng góp / tháng'),
+                        _sectionLabel('AI gợi ý đóng góp / tháng'),
                         _card(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            children: _suggestions
-                                .map(
-                                  (s) => Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 4,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            s.memberName,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 13,
-                                              color: AppColors.textPrimary,
-                                            ),
-                                          ),
-                                        ),
-                                        Text(
-                                          _fmt(s.suggestedAmount),
-                                          style: GoogleFonts.inter(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.link,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                                .toList(),
+                            children: [
+                              Text(
+                                'Con số bên dưới do AI ước tính theo khả năng '
+                                'còn lại của từng người. Bạn vẫn chỉnh được '
+                                'trước khi xác nhận.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              for (final s in _suggestions) _suggestionTile(s),
+                              if (_result.totalAvailableAmount != null) ...[
+                                const Divider(height: 20),
+                                _metaRow(
+                                  'Tổng khả dụng cả nhà',
+                                  _fmt(_result.totalAvailableAmount!),
+                                ),
+                              ],
+                              if (_result.recommendedMonthlyContribution !=
+                                  null)
+                                _metaRow(
+                                  'Nên góp mỗi tháng',
+                                  _fmt(_result.recommendedMonthlyContribution!),
+                                ),
+                              if (_result.remainingAmount != null)
+                                _metaRow(
+                                  'Còn thiếu để đạt mục tiêu',
+                                  _fmt(_result.remainingAmount!),
+                                ),
+                            ],
                           ),
                         ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      if (_result.warnings.isNotEmpty) ...[
+                        _warningCard(_result.warnings),
+                        const SizedBox(height: 16),
+                      ],
+
+                      if (_result.skippedMembers.isNotEmpty) ...[
+                        _skippedCard(_result.skippedMembers),
                         const SizedBox(height: 16),
                       ],
 
@@ -327,6 +346,217 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Một dòng gợi ý: tên + số tiền, mở rộng ra xem căn cứ tính.
+  ///
+  /// Phần căn cứ để trong [ExpansionTile] chứ không bày sẵn: đa số lúc người
+  /// dùng chỉ cần con số, nhưng khi thắc mắc "sao tôi ít thế" thì phải tra
+  /// được ngay — nhất là để thấy khoản đã góp quỹ chung đang **trừ bớt** khả
+  /// năng còn lại, chứ không phải khoản phải góp thêm.
+  Widget _suggestionTile(ContributionSuggestion s) {
+    final amount = Text(
+      _fmt(s.suggestedAmount),
+      style: GoogleFonts.inter(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: AppColors.link,
+      ),
+    );
+    if (!s.hasBreakdown) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                s.memberName,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            amount,
+          ],
+        ),
+      );
+    }
+    return Theme(
+      // Bỏ vạch kẻ mặc định của ExpansionTile cho khớp thẻ xung quanh.
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(left: 8, bottom: 8),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        title: Text(
+          s.memberName,
+          style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [amount, const Icon(Icons.expand_more_rounded, size: 18)],
+        ),
+        children: [
+          if (s.incomeAmount != null)
+            _metaRow('Thu nhập', _fmt(s.incomeAmount!), source: s.incomeSource),
+          if (s.personalExpenseAmount != null)
+            _metaRow(
+              'Chi cá nhân',
+              _fmt(s.personalExpenseAmount!),
+              source: s.expenseSource,
+            ),
+          if (s.sharedContributionAmount != null)
+            _metaRow(
+              'Đã góp quỹ chung',
+              _fmt(s.sharedContributionAmount!),
+              source: s.sharedContributionSource,
+            ),
+          if (s.availableAmount != null)
+            _metaRow(
+              'Khả dụng còn lại',
+              _fmt(s.availableAmount!),
+              emphasize: true,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metaRow(
+    String label,
+    String value, {
+    String? source,
+    bool emphasize = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              source == null ? label : '$label ($source)',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: emphasize ? FontWeight.w700 : FontWeight.w600,
+              color: emphasize
+                  ? AppColors.textPrimary
+                  : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _warningCard(List<String> warnings) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.amberLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.accent500.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 16,
+                color: AppColors.amberDark,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Lưu ý về gợi ý này',
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.amberDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final w in warnings)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(
+                '• $w',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _skippedCard(List<SkippedContributionMember> skipped) {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Chưa ước tính được',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Những người này không có trong phần AI gợi ý. Bạn vẫn nhập tay '
+            'được ở bước xác nhận.',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 8),
+          for (final m in skipped)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      m.displayName,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      m.reasonLabel,
+                      textAlign: TextAlign.right,
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -790,17 +1020,26 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                 ),
         ),
     };
-    // Prefill từ gợi ý nếu có
+    // Gợi ý của AI, quy về khóa `FamilyMember.id` để tra nhanh khi vẽ và khi
+    // đổi qua lại giữa hai chế độ.
+    final suggestionByMember = <String, double>{};
     for (final s in _suggestions) {
       final member = members
           .where((m) => m.id == s.memberId || m.userId == s.memberId)
           .firstOrNull;
       if (member != null && s.suggestedAmount > 0) {
-        amountCtrls[member.id]!.text =
-            ThousandsSeparatorInputFormatter.formatThousands(
-              s.suggestedAmount.round().toString(),
-            );
+        suggestionByMember[member.id] = s.suggestedAmount;
       }
+    }
+    // Mặc định theo AI cho nhanh, nhưng người dùng đổi sang tự nhập được.
+    bool useAiSuggestion = suggestionByMember.isNotEmpty;
+    if (useAiSuggestion) {
+      suggestionByMember.forEach((memberId, amount) {
+        amountCtrls[memberId]!.text =
+            ThousandsSeparatorInputFormatter.formatThousands(
+              amount.round().toString(),
+            );
+      });
     }
     DateTime dueDate =
         DateTime.tryParse(_plans.firstOrNull?.dueDate ?? '') ??
@@ -836,7 +1075,55 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                // Chọn nguồn số tiền. "Tự nhập" KHÔNG ghi đè ô nhập bằng gợi ý
+                // của AI — người dùng gõ tay rồi bấm nhầm sang lại là mất hết
+                // công, nên chỉ chiều "Theo AI gợi ý" mới nạp lại số.
+                if (suggestionByMember.isNotEmpty) ...[
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: true,
+                        icon: Icon(Icons.auto_awesome_rounded, size: 16),
+                        label: Text('Theo AI gợi ý'),
+                      ),
+                      ButtonSegment(
+                        value: false,
+                        icon: Icon(Icons.edit_outlined, size: 16),
+                        label: Text('Tự nhập'),
+                      ),
+                    ],
+                    selected: {useAiSuggestion},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (sel) {
+                      final next = sel.first;
+                      setSheet(() {
+                        useAiSuggestion = next;
+                        if (!next) return;
+                        // Quay lại chế độ AI thì nạp lại số đề xuất.
+                        suggestionByMember.forEach((memberId, amount) {
+                          final ctrl = amountCtrls[memberId];
+                          if (ctrl == null || amount <= 0) return;
+                          ctrl.text =
+                              ThousandsSeparatorInputFormatter.formatThousands(
+                                amount.round().toString(),
+                              );
+                        });
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    useAiSuggestion
+                        ? 'Đang dùng số AI gợi ý. Bạn vẫn sửa được từng ô bên dưới.'
+                        : 'Bạn đang tự nhập. AI sẽ không ghi đè số bạn gõ.',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
                 if (members.isEmpty)
                   Text(
                     'Không có thành viên nào',
@@ -852,18 +1139,32 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            m.name,
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary,
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  m.name,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                              if ((suggestionByMember[m.id] ?? 0) > 0)
+                                Text(
+                                  'AI đề xuất ${_fmt(suggestionByMember[m.id]!)}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppColors.link,
+                                  ),
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 6),
                           _inputBox(
                             amountCtrls[m.id]!,
-                            'Số tiền kế hoạch (₫)',
+                            'Số tiền xác nhận (₫)',
                             keyboardType: TextInputType.number,
                           ),
                         ],
