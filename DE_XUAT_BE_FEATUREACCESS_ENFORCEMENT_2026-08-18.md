@@ -81,3 +81,38 @@ màn mời nâng cấp thay vì banner lỗi chung chung.
   đơn AI) thì báo lại, FE mở khoá tick ngay (đổi 1 dòng cấu hình).
 - FE (cả Admin Web và Mobile) đã đồng bộ tên hiển thị 26 key giống nhau giữa
   hai nền tảng — không phải việc của BE.
+
+---
+
+## Cập nhật 2026-08-18 (sau khi BE gửi bản thiết kế gói FREE/MONTHLY/YEARLY)
+
+Cảm ơn BE đã gửi bản thiết kế 3 gói kèm giả định rõ ràng — đã giải quyết phần
+lớn thắc mắc trước đó (Monthly/Yearly giống hệt nhau, AI mặc định không mở ở
+Free, không cần số quota chính xác lúc này, thành viên không phải điểm bán
+chính). FE đã cập nhật `sos.liveLocation` (theo dõi vị trí LIÊN TỤC trong lúc
+cảnh báo mở) sang nhóm tính năng trả phí theo đúng xác nhận của BE — vị trí
+gửi 1 lần lúc tạo cảnh báo vẫn miễn phí, không đổi.
+
+Còn đúng **2 câu hỏi** cần BE trả lời trước khi FE làm tiếp:
+
+### 1. Format lỗi 403 khi khoá tính năng / hết quota
+
+Đã hỏi ở bản đầu, nhắc lại vì giờ rõ cần hơn: FE đã xây sẵn cơ chế hiện dialog
+"cần nâng cấp gói" ở cả Admin Web và Mobile (`onFeatureLocked`), chỉ chờ BE
+trả 403 kèm:
+
+```json
+{ "message": "Câu tiếng Việt giải thích rõ lý do", "code": "FEATURE_LOCKED", "featureKey": "ai.assistant" }
+```
+
+Nếu sau này có enforcement quota thật (15 lịch, 30 giao dịch/tháng...), xin
+dùng `code` khác (vd `"QUOTA_EXCEEDED"`) — thông báo cho hai trường hợp phải
+khác câu chữ ("chưa có trong gói, mời nâng cấp" vs "hết lượt tháng này, chờ
+tháng sau hoặc nâng cấp"), FE cần phân biệt được qua `code`.
+
+### 2. "Fall Detection" và "Automatic SOS" — 1 tính năng hay 2?
+
+Bản thiết kế liệt kê 2 dòng riêng ở cả Free lẫn Paid. Hệ thống hiện chỉ có 1
+key `sos.fallDetection` (tự động tạo cảnh báo SOS khi phát hiện té ngã). Nếu
+BE coi đây là 2 khả năng khác nhau, xin mô tả rõ khác nhau ở đâu để FE biết
+có cần thêm key mới không.
