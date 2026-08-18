@@ -249,6 +249,14 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                         const SizedBox(height: 16),
                       ],
 
+                      // Cảnh báo "góp thế này không kịp hạn". Đặt NGAY DƯỚI
+                      // danh sách gợi ý để người dùng thấy trước khi bấm xác
+                      // nhận, không phải cuộn đi tìm.
+                      if (_shortfall != null) ...[
+                        _shortfallCard(_shortfall!, goal),
+                        const SizedBox(height: 16),
+                      ],
+
                       if (_result.warnings.isNotEmpty) ...[
                         _warningCard(_result.warnings),
                         const SizedBox(height: 16),
@@ -346,6 +354,81 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Tổng số tiền cả nhà dự định góp mỗi tháng theo gợi ý hiện tại.
+  double get _plannedMonthlyTotal =>
+      _suggestions.fold<double>(0, (sum, s) => sum + s.suggestedAmount);
+
+  /// Cảnh báo mức góp không đủ đạt mục tiêu đúng hạn, `null` nếu không cần.
+  ContributionShortfall? get _shortfall => evaluateContributionShortfall(
+    planned: _plannedMonthlyTotal,
+    recommended: _result.recommendedMonthlyContribution,
+    remaining: _result.remainingAmount,
+  );
+
+  /// Thẻ đỏ nói thẳng kế hoạch chưa đủ, kèm con số cần góp và lối thoát.
+  ///
+  /// AI chia đúng số tiền người dùng đưa nhưng không đối chiếu với mức cần
+  /// góp — chỗ này bù lại phần đó, hoàn toàn bằng dữ liệu BE đã trả về
+  /// (`recommendedMonthlyContribution`, `remainingAmount`), không tự suy diễn.
+  Widget _shortfallCard(ContributionShortfall s, FinancialGoal? goal) {
+    final months = s.monthsNeeded;
+    final deadline = goal?.deadline;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.dangerLight,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.danger.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                size: 18,
+                color: AppColors.danger,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Kế hoạch này chưa đủ đạt mục tiêu',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.danger,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _metaRow('Tổng đang định góp / tháng', _fmt(s.planned)),
+          _metaRow(
+            deadline == null
+                ? 'Cần góp / tháng để đạt mục tiêu'
+                : 'Cần góp / tháng để kịp $deadline',
+            _fmt(s.recommended),
+            emphasize: true,
+          ),
+          _metaRow('Tỷ lệ đạt được đúng hạn', '${s.coveragePercent}%'),
+          if (months != null) _metaRow('Giữ mức này thì cần', '$months tháng'),
+          const SizedBox(height: 8),
+          Text(
+            'Bạn vẫn xác nhận được mức hiện tại. Muốn kịp hạn thì cân nhắc '
+            'nâng mức góp, giãn hạn hoàn thành, hoặc hạ mục tiêu xuống.',
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1076,6 +1159,28 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                // Nhắc lại ngay trước nút lưu — người dùng có thể cuộn thẳng
+                // xuống bấm "Xác nhận" mà chưa đọc cảnh báo ở màn ngoài.
+                if (_shortfall != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.dangerLight,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      'Mức này chỉ đạt ${_shortfall!.coveragePercent}% mục tiêu '
+                      'đúng hạn. Cần ${_fmt(_shortfall!.recommended)}/tháng mới kịp.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 // Chọn nguồn số tiền. "Tự nhập" KHÔNG ghi đè ô nhập bằng gợi ý
                 // của AI — người dùng gõ tay rồi bấm nhầm sang lại là mất hết
                 // công, nên chỉ chiều "Theo AI gợi ý" mới nạp lại số.

@@ -9,6 +9,7 @@ import 'package:family_care/providers/finance_provider.dart';
 /// Điểm mấu chốt: khoản ĐÃ GÓP QUỸ CHUNG chỉ TRỪ BỚT khả năng còn lại, không
 /// được biến thành "số phải góp tiếp cho mục tiêu".
 void main() {
+  _shortfallTests();
   group('ContributionSuggestion', () {
     test('đọc được suggestedContribution của BE mới', () {
       final s = ContributionSuggestion.fromJson({
@@ -183,6 +184,86 @@ void main() {
         SkippedContributionMember.fromJson({}).reasonLabel,
         'Chưa đủ dữ liệu để ước tính',
       );
+    });
+  });
+}
+
+/// Cảnh báo "góp thế này không kịp hạn".
+///
+/// Ca thật 2026-08-18: mục tiêu 500 triệu, hạn 17/09/2029 (38 tháng còn lại),
+/// BE tính `recommendedMonthlyContribution` = 13.157.895đ. Người dùng đặt 5
+/// triệu/tháng → AI vẫn chia đều mà KHÔNG cảnh báo gì, trong khi thực tế chỉ
+/// đạt 37% mục tiêu đúng hạn.
+void _shortfallTests() {
+  group('evaluateContributionShortfall', () {
+    test('ca thật: 5tr/tháng cho mục tiêu cần 13,16tr/tháng', () {
+      final s = evaluateContributionShortfall(
+        planned: 5000001,
+        recommended: 13157895,
+        remaining: 500000000,
+      );
+      expect(s, isNotNull);
+      expect(s!.coveragePercent, 38); // 5.000.001 / 13.157.895
+      // Giữ mức 5tr thì cần 100 tháng, tức hơn 8 năm.
+      expect(s.monthsNeeded, 100);
+    });
+
+    test('góp đủ thì KHÔNG cảnh báo', () {
+      expect(
+        evaluateContributionShortfall(
+          planned: 13157895,
+          recommended: 13157895,
+          remaining: 500000000,
+        ),
+        isNull,
+      );
+    });
+
+    test('góp dư thì cũng không cảnh báo', () {
+      expect(
+        evaluateContributionShortfall(planned: 20000000, recommended: 13157895),
+        isNull,
+      );
+    });
+
+    test('lệch vài đồng do làm tròn thì bỏ qua, không dọa người dùng', () {
+      // Tổng các dòng gợi ý hay lệch vài đồng so với mục tiêu.
+      expect(
+        evaluateContributionShortfall(planned: 4999999, recommended: 5000001),
+        isNull,
+      );
+    });
+
+    test('BE chưa gửi recommended thì im lặng, KHÔNG tự đoán', () {
+      expect(
+        evaluateContributionShortfall(planned: 1000, recommended: null),
+        isNull,
+      );
+      expect(
+        evaluateContributionShortfall(planned: 1000, recommended: 0),
+        isNull,
+      );
+    });
+
+    test('chưa biết số còn thiếu thì không tính được số tháng', () {
+      final s = evaluateContributionShortfall(
+        planned: 5000000,
+        recommended: 13157895,
+      );
+      expect(s, isNotNull);
+      expect(s!.monthsNeeded, isNull);
+      expect(s.coveragePercent, 38);
+    });
+
+    test('góp 0đ thì không chia cho 0, trả null cho số tháng', () {
+      final s = evaluateContributionShortfall(
+        planned: 0,
+        recommended: 13157895,
+        remaining: 500000000,
+      );
+      expect(s, isNotNull);
+      expect(s!.coveragePercent, 0);
+      expect(s.monthsNeeded, isNull);
     });
   });
 }

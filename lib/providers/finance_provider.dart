@@ -731,6 +731,64 @@ class SkippedContributionMember {
   };
 }
 
+/// Kết quả đối chiếu "mức đang định góp" với "mức cần góp để kịp hạn".
+///
+/// Sinh ra để cảnh báo sớm: AI chia đúng số tiền người dùng đưa ra, nhưng
+/// **không tự đối chiếu** với `recommendedMonthlyContribution` mà BE đã tính.
+/// Ca thật gặp 2026-08-18: mục tiêu 500 triệu, hạn 17/09/2029, người dùng đặt
+/// 5 triệu/tháng → chỉ đạt 185 triệu, thiếu 315 triệu, mà không có cảnh báo nào.
+class ContributionShortfall {
+  /// Tổng số tiền dự định góp mỗi tháng (tổng các dòng gợi ý, hoặc số người
+  /// dùng tự nhập).
+  final double planned;
+
+  /// Mức cần góp mỗi tháng để đạt mục tiêu đúng hạn — BE tính, FE không đoán.
+  final double recommended;
+
+  /// Số tiền còn thiếu để đạt mục tiêu.
+  final double? remaining;
+
+  const ContributionShortfall({
+    required this.planned,
+    required this.recommended,
+    this.remaining,
+  });
+
+  /// Tỷ lệ đạt được nếu giữ mức hiện tại, 0..1.
+  double get coverage => recommended <= 0 ? 1 : planned / recommended;
+
+  /// Phần trăm làm tròn để hiện cho người dùng.
+  int get coveragePercent => (coverage * 100).round();
+
+  /// Số tháng cần nếu giữ nguyên mức hiện tại. `null` khi không tính được
+  /// (chưa biết số còn thiếu, hoặc mức góp bằng 0 → không bao giờ tới đích).
+  int? get monthsNeeded {
+    final left = remaining;
+    if (left == null || left <= 0 || planned <= 0) return null;
+    return (left / planned).ceil();
+  }
+}
+
+/// Trả về cảnh báo khi mức góp **không đủ** đạt mục tiêu đúng hạn.
+///
+/// `null` nghĩa là không cần cảnh báo: hoặc BE chưa gửi
+/// `recommendedMonthlyContribution` (không đoán thay BE), hoặc mức đang góp đã
+/// đủ. Dùng ngưỡng 1% để bỏ qua chênh lệch do làm tròn — tổng các dòng gợi ý
+/// thường lệch vài đồng so với mục tiêu.
+ContributionShortfall? evaluateContributionShortfall({
+  required double planned,
+  double? recommended,
+  double? remaining,
+}) {
+  if (recommended == null || recommended <= 0) return null;
+  if (planned >= recommended * 0.99) return null;
+  return ContributionShortfall(
+    planned: planned,
+    recommended: recommended,
+    remaining: remaining,
+  );
+}
+
 /// Toàn bộ response của `contribution-suggestions`, gồm cả phần metadata BE
 /// mới bổ sung.
 ///
