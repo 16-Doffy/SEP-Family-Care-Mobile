@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../models/feature_access.dart';
 import '../models/tab_option.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
@@ -49,6 +50,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   static const _kPollIntervalBackground = Duration(seconds: 30);
   Timer? _pollTimer;
   bool _verificationDialogOpen = false;
+  bool _featureLockedDialogOpen = false;
   NotificationProvider? _notif; // giữ ref để dùng trong dispose
   SosProvider? _sos; // giữ ref để dùng trong dispose
   // id các cảnh báo SOS đã bắn notification hệ thống — tránh poll 15s bắn lại
@@ -70,6 +72,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ApiClient.instance.onVerificationRequired = _showVerificationRequired;
+      ApiClient.instance.onFeatureLocked = _showFeatureLocked;
       // Notification hệ thống (khay + chuông). Chỉ chạy khi tiến trình app còn
       // sống — app tắt hẳn vẫn cần FCM (xem PushService).
       LocalNotificationService.instance
@@ -126,6 +129,9 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     if (ApiClient.instance.onVerificationRequired ==
         _showVerificationRequired) {
       ApiClient.instance.onVerificationRequired = null;
+    }
+    if (ApiClient.instance.onFeatureLocked == _showFeatureLocked) {
+      ApiClient.instance.onFeatureLocked = null;
     }
     if (_notif?.onTransient == _showTransientNotif) {
       _notif!.onTransient = null;
@@ -544,6 +550,61 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       ),
     );
     _verificationDialogOpen = false;
+  }
+
+  /// BE trả 403 `code: "FEATURE_LOCKED"` khi gói hiện tại không có quyền dùng
+  /// tính năng vừa gọi (xem `DE_XUAT_BE_FEATUREACCESS_ENFORCEMENT_2026-08-18.md`).
+  ///
+  /// CHỦ ĐỘNG không điều hướng đi đâu cả — chỉ nổi dialog đè lên đúng màn
+  /// đang đứng, đóng dialog là quay lại y nguyên chỗ cũ. 4 màn đã có khoá
+  /// riêng đẹp hơn (Lịch, Trợ lý AI, Album video/khuôn mặt AI, xem
+  /// `SubscriptionProvider`) sẽ tự chặn TRƯỚC khi gọi API nên hiếm khi rơi
+  /// vào dialog này; dialog này là lưới đỡ chung cho các tính năng còn lại
+  /// chưa kịp có khoá UI riêng.
+  Future<void> _showFeatureLocked(String message, String? featureKey) async {
+    if (!mounted || _featureLockedDialogOpen) return;
+    _featureLockedDialogOpen = true;
+    final label = featureKey != null
+        ? FeatureAccess.officialKeyLabels[featureKey]
+        : null;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.lock_outline_rounded, color: AppColors.link),
+        title: Text(
+          label != null ? '$label chưa nằm trong gói hiện tại' : 'Tính năng chưa nằm trong gói hiện tại',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16),
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(
+              'Để sau',
+              style: GoogleFonts.inter(color: AppColors.textMuted),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              context.push('/manager/subscription');
+            },
+            child: Text(
+              'Xem các gói',
+              style: GoogleFonts.inter(color: AppColors.link, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    _featureLockedDialogOpen = false;
   }
 
   void _go(int index) {

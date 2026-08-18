@@ -53,6 +53,12 @@ class ApiClient {
   void Function(String newAccess, String newRefresh)? onTokenRotated;
   void Function()? onSessionExpired;
   void Function(String message)? onVerificationRequired;
+  /// BE trả 403 kèm `code: "FEATURE_LOCKED"` khi gói hiện tại không có quyền
+  /// dùng tính năng vừa gọi (xem đề xuất `DE_XUAT_BE_FEATUREACCESS_
+  /// ENFORCEMENT_2026-08-18.md`). `featureKey` có thể null nếu BE chưa kịp
+  /// trả field này — nơi lắng nghe (`family_shell`) vẫn hiện được dialog,
+  /// chỉ là không biết chính xác quyền nào bị khoá để log/điều hướng riêng.
+  void Function(String message, String? featureKey)? onFeatureLocked;
 
   void setToken(String? token) => _token = token;
   void setRefreshToken(String? token) => _refreshToken = token;
@@ -110,6 +116,7 @@ class ApiClient {
     onTokenRotated = null;
     onSessionExpired = null;
     onVerificationRequired = null;
+    onFeatureLocked = null;
     for (final onReset in _sessionResetListeners) {
       // Một provider dọn lỗi không được chặn các provider còn lại — sót một
       // cái là rò dữ liệu tài khoản cũ sang tài khoản mới.
@@ -376,6 +383,11 @@ class ApiClient {
                   details?['code'] ??
                   details?['errorCode'])
               ?.toString();
+      if (response.statusCode == 403 && code == 'FEATURE_LOCKED') {
+        final featureKey =
+            (bodyMap?['featureKey'] ?? details?['featureKey'])?.toString();
+        onFeatureLocked?.call(message, featureKey);
+      }
       final retryAfterSeconds = _intValue(
         bodyMap?['retryAfterSeconds'] ??
             details?['retryAfterSeconds'] ??
