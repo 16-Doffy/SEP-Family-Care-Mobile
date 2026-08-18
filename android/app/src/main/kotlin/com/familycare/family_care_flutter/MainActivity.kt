@@ -17,9 +17,18 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var garminBridge: GarminBridgeService? = null
     private var garminBound = false
+
+    /// Yêu cầu Garmin đang chờ service bind xong (bấm "Ghép Garmin" lần đầu —
+    /// chưa có [GarminDeviceCache], nên không tự bind sẵn ở [onStart]).
+    private val pendingGarminRequests = mutableListOf<(GarminBridgeService) -> Unit>()
+
     private val garminConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            garminBridge = (service as? GarminBridgeService.LocalBinder)?.getService()
+            val bridge = (service as? GarminBridgeService.LocalBinder)?.getService() ?: return
+            garminBridge = bridge
+            val queued = pendingGarminRequests.toList()
+            pendingGarminRequests.clear()
+            queued.forEach { it(bridge) }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -46,10 +55,20 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /// CHỈ bind khi đã từng pair Garmin — bind vô điều kiện ở đây (bản cũ)
+    /// khiến MỌI user mở app đều tự tạo GarminBridgeService (kèm notification
+    /// thường trực), kể cả người chưa từng đụng tới Garmin. Lượt ghép nối
+    /// ĐẦU TIÊN (chưa có cache) bind qua [withGarminBridge] khi thật sự cần,
+    /// từ handler "getKnownDevices"/"confirmPair".
     override fun onStart() {
         super.onStart()
-        val intent = Intent(this, GarminBridgeService::class.java)
-        garminBound = bindService(intent, garminConnection, Context.BIND_AUTO_CREATE)
+        if (GarminDeviceCache.read(this) != null) {
+            garminBound = bindService(
+                Intent(this, GarminBridgeService::class.java),
+                garminConnection,
+                Context.BIND_AUTO_CREATE,
+            )
+        }
     }
 
     override fun onStop() {
@@ -57,7 +76,28 @@ class MainActivity : FlutterActivity() {
             unbindService(garminConnection)
             garminBound = false
         }
+        pendingGarminRequests.clear()
         super.onStop()
+    }
+
+    /// Dùng bridge đang bind sẵn nếu có; nếu chưa (lượt ghép Garmin đầu tiên,
+    /// trước khi có [GarminDeviceCache]) thì tự start + bind rồi chạy [onReady]
+    /// ngay khi [ServiceConnection.onServiceConnected] về.
+    private fun withGarminBridge(onReady: (GarminBridgeService) -> Unit) {
+        val bridge = garminBridge
+        if (bridge != null) {
+            onReady(bridge)
+            return
+        }
+        pendingGarminRequests.add(onReady)
+        if (!garminBound) {
+            GarminBridgeService.start(this)
+            garminBound = bindService(
+                Intent(this, GarminBridgeService::class.java),
+                garminConnection,
+                Context.BIND_AUTO_CREATE,
+            )
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -151,15 +191,7 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getKnownDevices" -> {
-                    // Promote sang started service NGAY từ bước liệt kê thiết
-                    // bị — nếu chỉ promote lúc confirmPair thì bridge có thể
-                    // bị hệ thống dọn ngay khi người dùng thoát màn ghép nối
-                    // giữa chừng (unbind mà chưa từng được start).
-                    GarminBridgeService.start(this)
-                    val bridge = garminBridge
-                    if (bridge == null) {
-                        result.error("NOT_BOUND", "Chưa kết nối được GarminBridgeService", null)
-                    } else {
+                    withGarminBridge { bridge ->
                         bridge.getKnownDevices { devices, error ->
                             if (error != null) {
                                 result.error("GARMIN_ERROR", error, null)
@@ -169,22 +201,31 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "checkDeviceReady" -> {
+                    val iqDeviceId = (call.argument<Number>("iqDeviceId"))?.toLong()
+                    val iqFriendlyName = call.argument<String>("iqFriendlyName") ?: "Garmin watch"
+                    if (iqDeviceId == null) {
+                        result.error("INVALID_ARGS", "Thiếu iqDeviceId", null)
+                    } else {
+                        withGarminBridge { bridge ->
+                            bridge.checkDeviceReadyForPairing(iqDeviceId, iqFriendlyName) { ready, error ->
+                                if (ready) result.success(null) else result.error("GARMIN_ERROR", error, null)
+                            }
+                        }
+                    }
+                }
                 "confirmPair" -> {
-                    GarminBridgeService.start(this)
-                    val bridge = garminBridge
                     val iqDeviceId = (call.argument<Number>("iqDeviceId"))?.toLong()
                     val iqFriendlyName = call.argument<String>("iqFriendlyName") ?: "Garmin watch"
                     val backendDeviceId = call.argument<String>("backendDeviceId")
                     val memberName = call.argument<String>("memberName") ?: ""
-                    if (bridge == null || iqDeviceId == null || backendDeviceId.isNullOrEmpty()) {
-                        result.error(
-                            "INVALID_ARGS",
-                            "Thiếu iqDeviceId/backendDeviceId hoặc chưa kết nối GarminBridgeService",
-                            null,
-                        )
+                    if (iqDeviceId == null || backendDeviceId.isNullOrEmpty()) {
+                        result.error("INVALID_ARGS", "Thiếu iqDeviceId/backendDeviceId", null)
                     } else {
-                        bridge.confirmPair(iqDeviceId, iqFriendlyName, backendDeviceId, memberName) { ok, error ->
-                            if (ok) result.success(null) else result.error("GARMIN_ERROR", error, null)
+                        withGarminBridge { bridge ->
+                            bridge.confirmPair(iqDeviceId, iqFriendlyName, backendDeviceId, memberName) { ok, error ->
+                                if (ok) result.success(null) else result.error("GARMIN_ERROR", error, null)
+                            }
                         }
                     }
                 }

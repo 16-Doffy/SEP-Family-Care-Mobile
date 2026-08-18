@@ -185,10 +185,78 @@ class GarminBridgeService : Service() {
         }
     }
 
+    /// Kiểm tra thiết bị đang `CONNECTED` và watch app (`GARMIN_APP_UUID`) đã
+    /// cài (`INSTALLED`) — điều kiện bắt buộc trước khi gửi bất kỳ message
+    /// nào. Dùng chung cho preflight ([checkDeviceReadyForPairing], gọi
+    /// TRƯỚC backend `pairDevice()`) và cho [confirmPair] (double-check
+    /// phòng race Bluetooth/app đổi trạng thái trong lúc chờ backend trả
+    /// lời). Callback trả `app` khớp instance SDK vừa xác nhận INSTALLED —
+    /// dùng chính app này để `sendMessage`, không tự dựng `IQApp` mới.
+    private fun checkDeviceReady(
+        device: IQDevice,
+        callback: (app: IQApp?, error: String?) -> Unit,
+    ) {
+        val iq = connectIQ
+        if (iq == null) {
+            callback(null, "ConnectIQ chưa khởi tạo")
+            return
+        }
+        try {
+            val status = iq.getDeviceStatus(device)
+            if (status != IQDevice.IQDeviceStatus.CONNECTED) {
+                Log.e(TAG, "checkDeviceReady: thiết bị chưa CONNECTED (status=$status)")
+                callback(
+                    null,
+                    "Đồng hồ Garmin chưa kết nối Bluetooth (trạng thái: ${status?.name ?: "UNKNOWN"})",
+                )
+                return
+            }
+            iq.getApplicationInfo(
+                GARMIN_APP_UUID,
+                device,
+                object : ConnectIQ.IQApplicationInfoListener {
+                    override fun onApplicationInfoReceived(app: IQApp) {
+                        callback(app, null)
+                    }
+
+                    override fun onApplicationNotInstalled(applicationId: String) {
+                        Log.e(TAG, "checkDeviceReady: watch app $applicationId chưa cài trên đồng hồ")
+                        callback(null, "Chưa cài watch app Family Care Garmin trên đồng hồ")
+                    }
+                },
+            )
+        } catch (e: InvalidStateException) {
+            callback(null, "ConnectIQ chưa sẵn sàng: ${e.message}")
+        } catch (e: ServiceUnavailableException) {
+            callback(null, "Garmin Connect Mobile chưa cài hoặc chưa chạy")
+        }
+    }
+
+    /// Preflight gọi từ FE TRƯỚC `POST /families/{familyId}/wearables` — xác
+    /// nhận thiết bị sẵn sàng nhận `PAIR_CONFIRMED` trước khi tạo bản ghi
+    /// pairing ở backend, tránh pair backend cho một thiết bị chưa kết nối
+    /// hoặc chưa cài watch app.
+    fun checkDeviceReadyForPairing(
+        iqDeviceId: Long,
+        iqFriendlyName: String,
+        callback: (ready: Boolean, error: String?) -> Unit,
+    ) {
+        val device = IQDevice(iqDeviceId, iqFriendlyName)
+        runWhenSdkReady {
+            checkDeviceReady(device) { app, error ->
+                mainHandler.post { callback(app != null, error) }
+            }
+        }
+    }
+
     /// Gọi SAU KHI FE đã pair xong qua `POST /families/{familyId}/wearables`
-    /// (có `backendDeviceId`). Lưu mapping IQDevice <-> backendDeviceId rồi
-    /// gửi `PAIR_CONFIRMED` — watch chỉ bắt đầu fall detection sau message
-    /// này.
+    /// (có `backendDeviceId`). Chạy lại [checkDeviceReady] (phòng race kể từ
+    /// lúc preflight) rồi gửi `PAIR_CONFIRMED` — watch chỉ bắt đầu fall
+    /// detection sau message này. **Chỉ lưu [GarminDeviceCache] khi
+    /// `sendMessage` trả `SUCCESS`** — lưu sớm hơn sẽ khiến service tin thiết
+    /// bị đã pair (và tự đăng ký lại sau khi tiến trình restart) dù watch
+    /// chưa từng nhận được message, đúng triệu chứng "backend pair thành
+    /// công nhưng watch vẫn WAIT_PAIR".
     fun confirmPair(
         iqDeviceId: Long,
         iqFriendlyName: String,
@@ -197,36 +265,46 @@ class GarminBridgeService : Service() {
         callback: (success: Boolean, error: String?) -> Unit,
     ) {
         val device = IQDevice(iqDeviceId, iqFriendlyName)
-        GarminDeviceCache.save(
-            applicationContext,
-            GarminDeviceCache.PairedDevice(iqDeviceId, iqFriendlyName, backendDeviceId),
-        )
         registerListenersFor(device)
         runWhenSdkReady {
-            val iq = connectIQ
-            if (iq == null) {
-                mainHandler.post { callback(false, "ConnectIQ chưa khởi tạo") }
-                return@runWhenSdkReady
-            }
-            try {
-                iq.sendMessage(
-                    device,
-                    IQApp(GARMIN_APP_UUID),
-                    mapOf(
-                        "type" to "PAIR_CONFIRMED",
-                        "deviceId" to backendDeviceId,
-                        "memberName" to memberName,
-                    ),
-                ) { _, _, status ->
-                    val ok = status == ConnectIQ.IQMessageStatus.SUCCESS
-                    Log.i(TAG, "PAIR_CONFIRMED -> $status")
-                    mainHandler.post { callback(ok, if (ok) null else status.name) }
+            checkDeviceReady(device) { app, error ->
+                if (app == null) {
+                    mainHandler.post { callback(false, error) }
+                    return@checkDeviceReady
                 }
-            } catch (e: InvalidStateException) {
-                mainHandler.post { callback(false, "ConnectIQ chưa sẵn sàng: ${e.message}") }
-            } catch (e: ServiceUnavailableException) {
-                mainHandler.post {
-                    callback(false, "Garmin Connect Mobile chưa cài hoặc chưa chạy")
+                val iq = connectIQ
+                if (iq == null) {
+                    mainHandler.post { callback(false, "ConnectIQ chưa khởi tạo") }
+                    return@checkDeviceReady
+                }
+                try {
+                    iq.sendMessage(
+                        device,
+                        app,
+                        mapOf(
+                            "type" to "PAIR_CONFIRMED",
+                            "deviceId" to backendDeviceId,
+                            "memberName" to memberName,
+                        ),
+                    ) { _, _, status ->
+                        val ok = status == ConnectIQ.IQMessageStatus.SUCCESS
+                        Log.i(TAG, "PAIR_CONFIRMED -> $status")
+                        if (ok) {
+                            GarminDeviceCache.save(
+                                applicationContext,
+                                GarminDeviceCache.PairedDevice(iqDeviceId, iqFriendlyName, backendDeviceId),
+                            )
+                        }
+                        mainHandler.post {
+                            callback(ok, if (ok) null else "Gửi xác nhận tới đồng hồ thất bại: ${status.name}")
+                        }
+                    }
+                } catch (e: InvalidStateException) {
+                    mainHandler.post { callback(false, "ConnectIQ chưa sẵn sàng: ${e.message}") }
+                } catch (e: ServiceUnavailableException) {
+                    mainHandler.post {
+                        callback(false, "Garmin Connect Mobile chưa cài hoặc chưa chạy")
+                    }
                 }
             }
         }
@@ -342,9 +420,16 @@ class GarminBridgeService : Service() {
         )
     }
 
+    /// `connectedDevice` (test thật 2026-08-18) đòi thêm 1 quyền Bluetooth
+    /// phải được CẤP RUNTIME (không chỉ khai Manifest) mới qua được
+    /// `startForeground` trên Android 14+ — app crash ngay lúc mở cho MỌI
+    /// user chưa từng cấp Bluetooth (SecurityException trong
+    /// `ActiveServices.validateForegroundServiceType`). Đổi sang
+    /// `specialUse` giống `SosGuardService` — không phụ thuộc quyền runtime
+    /// nào khác ngoài `FOREGROUND_SERVICE_SPECIAL_USE` đã khai sẵn.
     private fun startForegroundWith(notification: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }

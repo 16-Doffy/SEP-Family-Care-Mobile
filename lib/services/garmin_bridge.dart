@@ -56,6 +56,30 @@ class GarminBridge {
     }
   }
 
+  /// Preflight — gọi TRƯỚC `WearableProvider.pairDevice()` (backend) để xác
+  /// nhận thiết bị đang `CONNECTED` và watch app đã cài (`INSTALLED`). Ném
+  /// exception nếu chưa sẵn sàng; nơi gọi PHẢI dừng lại, không được tạo bản
+  /// ghi pairing ở backend cho một thiết bị chưa đủ điều kiện nhận
+  /// `PAIR_CONFIRMED`.
+  static Future<void> checkDeviceReady({
+    required int iqDeviceId,
+    required String iqFriendlyName,
+  }) async {
+    if (!_supported) {
+      throw Exception('Garmin chỉ hỗ trợ trên Android');
+    }
+    try {
+      await _channel.invokeMethod<void>('checkDeviceReady', {
+        'iqDeviceId': iqDeviceId,
+        'iqFriendlyName': iqFriendlyName,
+      });
+    } on PlatformException catch (e) {
+      throw Exception(e.message ?? 'Đồng hồ Garmin chưa sẵn sàng để ghép nối');
+    } on MissingPluginException {
+      throw Exception('Chưa build lại app — thiếu cầu nối Garmin native');
+    }
+  }
+
   /// Gọi SAU KHI đã pair xong qua API backend hiện có
   /// (`WearableProvider.pairDevice`) — [backendDeviceId] là `deviceId` BE trả
   /// về. Lưu mapping IQDevice <-> backendDeviceId trong native rồi gửi

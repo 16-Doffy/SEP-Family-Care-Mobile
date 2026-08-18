@@ -852,11 +852,18 @@ class _WearablesScreenState extends State<WearablesScreen> {
   /// Garmin watch KHÔNG gọi backend trực tiếp — nó chỉ là sensor source.
   /// Family Care Android làm bridge qua Garmin Connect IQ SDK. Flow:
   /// 1) liệt kê thiết bị Garmin đã pair với Garmin Connect Mobile trên máy;
-  /// 2) người dùng nhập mã hiện trên watch app (`FCG-735XT-XXXXXX`);
-  /// 3) ghép qua API backend hiện có (giống Wear OS, không có endpoint riêng
+  /// 2) preflight native: thiết bị phải `CONNECTED` + watch app phải
+  ///    `INSTALLED` — chạy TRƯỚC backend, để không tạo bản ghi pairing cho
+  ///    một thiết bị chưa thể nhận `PAIR_CONFIRMED`;
+  /// 3) người dùng nhập mã hiện trên watch app (`FCG-735XT-XXXXXX`);
+  /// 4) ghép qua API backend hiện có (giống Wear OS, không có endpoint riêng
   ///    cho Garmin);
-  /// 4) gửi `PAIR_CONFIRMED` xuống watch qua native — watch chỉ bắt đầu fall
-  ///    detection sau bước này.
+  /// 5) gửi `PAIR_CONFIRMED` xuống watch qua native (chạy lại check
+  ///    CONNECTED+INSTALLED phòng race từ lúc preflight) — watch chỉ bắt đầu
+  ///    fall detection sau bước này. Nếu bước này fail dù backend đã pair
+  ///    xong, KHÔNG báo thành công — chỉ cho thử lại tại chỗ
+  ///    ([_confirmGarminPairWithRetry]), không tự rollback pairDevice() vì
+  ///    đó là trạng thái thật ở server.
   ///
   /// **[CHƯA VERIFY]** — xem `KE_HOACH_GARMIN_CONNECTIQ_INTEGRATION_2026-08-18.md`.
   Future<void> _connectGarmin() async {
@@ -882,6 +889,28 @@ class _WearablesScreenState extends State<WearablesScreen> {
         ? devices.first
         : await _pickGarminDevice(devices);
     if (iqDevice == null || !mounted) return;
+
+    if (!iqDevice.isConnected) {
+      _snack(
+        Exception(
+          'Đồng hồ Garmin "${iqDevice.friendlyName}" chưa kết nối Bluetooth '
+          '(trạng thái: ${iqDevice.status}). Mở Garmin Connect Mobile để kết '
+          'nối lại rồi thử lại.',
+        ),
+      );
+      return;
+    }
+
+    try {
+      await GarminBridge.checkDeviceReady(
+        iqDeviceId: iqDevice.iqDeviceId,
+        iqFriendlyName: iqDevice.friendlyName,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e);
+      return;
+    }
 
     final code = await _askGarminCode();
     if (code == null || code.isEmpty || !mounted) return;
@@ -918,6 +947,19 @@ class _WearablesScreenState extends State<WearablesScreen> {
       return;
     }
     final memberName = context.read<AuthProvider>().user?.name ?? '';
+    await _confirmGarminPairWithRetry(iqDevice, backendDeviceId, memberName);
+  }
+
+  /// Gửi `PAIR_CONFIRMED` xuống watch; CHỈ báo "đã ghép" khi bước này trả
+  /// SUCCESS thật — pair backend thành công không đồng nghĩa watch đã nhận
+  /// được message. Nếu fail, giữ nguyên trạng thái backend (không rollback,
+  /// đó là dữ liệu thật ở server) và cho thử lại tại chỗ qua `SnackBarAction`
+  /// thay vì bắt người dùng ghép lại từ đầu.
+  Future<void> _confirmGarminPairWithRetry(
+    GarminIqDevice iqDevice,
+    String backendDeviceId,
+    String memberName,
+  ) async {
     try {
       await GarminBridge.confirmPair(
         iqDeviceId: iqDevice.iqDeviceId,
@@ -928,15 +970,25 @@ class _WearablesScreenState extends State<WearablesScreen> {
       if (!mounted) return;
       _snack('Đã ghép Garmin và xác nhận với đồng hồ.', ok: true);
     } catch (e) {
-      // Đã pair ở backend rồi — chỉ bước gửi PAIR_CONFIRMED xuống watch thất
-      // bại. KHÔNG rollback pairDevice() (đó là trạng thái thật ở server);
-      // báo rõ để người dùng biết watch chưa bắt đầu fall detection.
       if (!mounted) return;
-      _snack(
-        Exception(
-          'Đã ghép ở máy chủ nhưng CHƯA xác nhận được với đồng hồ '
-          '(${e.toString().replaceFirst('Exception: ', '')}). Đồng hồ sẽ '
-          'chưa tự phát hiện té ngã cho tới khi thử lại.',
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Đã ghép ở máy chủ nhưng CHƯA xác nhận được với đồng hồ '
+            '(${e.toString().replaceFirst('Exception: ', '')}). Đồng hồ sẽ '
+            'chưa tự phát hiện té ngã cho tới khi thử lại.',
+          ),
+          backgroundColor: AppColors.danger,
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Thử lại',
+            textColor: Colors.white,
+            onPressed: () => _confirmGarminPairWithRetry(
+              iqDevice,
+              backendDeviceId,
+              memberName,
+            ),
+          ),
         ),
       );
     }
@@ -954,6 +1006,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
             children: [
               for (final d in devices)
                 ListTile(
+                  enabled: d.isConnected,
                   leading: Icon(
                     Icons.watch_rounded,
                     color: d.isConnected
@@ -961,8 +1014,10 @@ class _WearablesScreenState extends State<WearablesScreen> {
                         : AppColors.textMuted,
                   ),
                   title: Text(d.friendlyName),
-                  subtitle: Text(d.status),
-                  onTap: () => Navigator.pop(ctx, d),
+                  subtitle: Text(
+                    d.isConnected ? d.status : '${d.status} — chưa kết nối',
+                  ),
+                  onTap: d.isConnected ? () => Navigator.pop(ctx, d) : null,
                 ),
             ],
           ),
