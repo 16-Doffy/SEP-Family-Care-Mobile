@@ -14,22 +14,52 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import kotlin.math.sqrt
 
 class SosGuardService : Service(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
+    private var usingWakeUpSensor = false
+    private var wakeLock: PowerManager.WakeLock? = null
     private val shakeDetector = ShakeDetector()
     private val fallDetector = FallDetector()
+
+    // Nhật ký nhịp tim của cảm biến: đếm mẫu và biên độ lớn nhất trong mỗi
+    // khoảng, in định kỳ. Đây là cách DUY NHẤT biết chắc cảm biến còn gửi dữ
+    // liệu khi màn hình đã tắt — nhìn UI thì không thể biết.
+    private var samplesSinceLog = 0
+    private var maxMagnitudeSinceLog = 0f
+    private var minMagnitudeSinceLog = Float.MAX_VALUE
+    private var lastHeartbeatMs = 0L
+    private var lastPhase = "idle"
 
     override fun onCreate() {
         super.onCreate()
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        // Bản WAKE-UP là mấu chốt của việc phát hiện té ngã khi màn hình tắt.
+        //
+        // getDefaultSensor(type) trả về bản NON-WAKE-UP: khi SoC vào chế độ
+        // ngủ (màn tắt một lúc), loại này KHÔNG đánh thức CPU và sự kiện bị
+        // rơi thẳng — onSensorChanged không được gọi lần nào, nên cú ngã đi
+        // qua mà không ai biết. Foreground service KHÔNG cứu được: nó chỉ giữ
+        // tiến trình khỏi bị giết, không ngăn CPU ngủ.
+        //
+        // Không phải máy nào cũng có bản wake-up nên phải rơi về bản thường,
+        // và khi đó wake lock bên dưới mới là thứ giữ cho cảm biến chạy.
+        accelerometer =
+            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
+                ?.also { usingWakeUpSensor = true }
+                ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        Log.i(
+            TAG,
+            "onCreate: accelerometer=${accelerometer?.name} wakeUp=$usingWakeUpSensor",
+        )
         createChannels()
     }
 
@@ -57,15 +87,41 @@ class SosGuardService : Service(), SensorEventListener {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        acquireWakeLock()
         registerSensor()
         running = true
         return START_STICKY
     }
 
+    /// Giữ CPU thức trong lúc canh cảm biến.
+    ///
+    /// Cần cả khi đã dùng wake-up sensor: máy không có bản wake-up sẽ rơi về
+    /// bản thường, lúc đó chỉ wake lock mới giữ được luồng dữ liệu khi màn
+    /// tắt. Có tốn pin, nhưng đây là tính năng cứu mạng và đã có thông báo
+    /// thường trực để người dùng biết mà tắt khi không cần.
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock =
+            power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        Log.i(TAG, "acquireWakeLock: held=${wakeLock?.isHeld}")
+    }
+
+    private fun releaseWakeLock() {
+        val lock = wakeLock ?: return
+        if (lock.isHeld) lock.release()
+        wakeLock = null
+    }
+
     override fun onDestroy() {
         sensorManager.unregisterListener(this)
+        releaseWakeLock()
         fallDetector.reset()
         running = false
+        Log.i(TAG, "onDestroy: đã gỡ listener và nhả wake lock")
         super.onDestroy()
     }
 
@@ -81,16 +137,61 @@ class SosGuardService : Service(), SensorEventListener {
         val magnitude = sqrt(x * x + y * y + z * z)
         val nowMs = SystemClock.elapsedRealtime()
 
+        logSensorHeartbeat(magnitude, nowMs)
+
         val shake = shakeEnabled && shakeDetector.addSample(magnitude, nowMs)
         val fall = fallEnabled && fallDetector.addSample(magnitude, nowMs)
-        if (shake || fall) {
+
+        // Đổi pha là lúc đáng in nhất: thấy "free_fall" nghĩa là đã bắt được
+        // pha rơi, còn đứng mãi ở "idle" nghĩa là cú ngã chưa đủ nhẹ để vượt
+        // ngưỡng — hai kết luận rất khác nhau khi đi chỉnh ngưỡng.
+        val phase = fallDetector.phaseName()
+        if (phase != lastPhase) {
+            Log.i(TAG, "fall phase: $lastPhase -> $phase (|a|=$magnitude)")
+            lastPhase = phase
+        }
+
+        if (fall) {
+            // Té ngã đi qua SosEmergencyFlowService — TOÀN BỘ đếm ngược/GPS/gửi
+            // SOS chạy trong service native, không phụ thuộc Activity/Flutter
+            // engine. Trước đây gọi chung SosAlertLauncher.launch(..., "sos-quick")
+            // như shake, khiến cú ngã không tự gửi được nếu người dùng không mở
+            // lại app — xem BAO_CAO_BE_FALL_DETECTION_BACKGROUND_2026-08-18.md.
+            Log.i(TAG, "KÍCH HOẠT té ngã: |a|=$magnitude -> native emergency flow")
             vibrateStrong()
-            // Lắc/té ngã vẫn qua /sos-quick (đếm ngược 3 giây + nút hủy) —
-            // khác với EmergencySosWatcherService dùng /sos-immediate (gửi
-            // thẳng, không đếm ngược) vì lý do khác nhau: ở đây vẫn hiện được
-            // UI của app bình thường, không có màn hệ thống nào chiếm chỗ.
+            SosEmergencyFlowService.start(this)
+        } else if (shake) {
+            // Lắc mạnh vẫn qua /sos-quick (đếm ngược 3 giây + nút hủy trong
+            // Flutter) — khác biệt được chấp nhận vì lắc thường xảy ra lúc
+            // đang cầm/dùng máy, không phải lúc bất tỉnh như té ngã.
+            Log.i(TAG, "KÍCH HOẠT lắc mạnh: |a|=$magnitude")
+            vibrateStrong()
             SosAlertLauncher.launch(this, "sos-quick")
         }
+    }
+
+    /// In một dòng mỗi 10 giây: số mẫu nhận được và biên độ nhỏ nhất/lớn nhất.
+    ///
+    /// Màn hình tắt mà nhật ký này NGỪNG in tức là cảm biến không gửi dữ liệu
+    /// nữa — lỗi nằm ở tầng đánh thức CPU. Nhật ký vẫn in đều mà không kích
+    /// hoạt tức là dữ liệu vẫn về, chỉ là cú ngã chưa vượt ngưỡng — lỗi nằm ở
+    /// tầng thuật toán. Không có dòng này thì hai ca đó nhìn giống hệt nhau.
+    private fun logSensorHeartbeat(magnitude: Float, nowMs: Long) {
+        samplesSinceLog++
+        if (magnitude > maxMagnitudeSinceLog) maxMagnitudeSinceLog = magnitude
+        if (magnitude < minMagnitudeSinceLog) minMagnitudeSinceLog = magnitude
+        if (lastHeartbeatMs == 0L) lastHeartbeatMs = nowMs
+        if (nowMs - lastHeartbeatMs < HEARTBEAT_INTERVAL_MS) return
+        Log.i(
+            TAG,
+            "sensor alive: $samplesSinceLog mẫu/10s " +
+                "|a| min=$minMagnitudeSinceLog max=$maxMagnitudeSinceLog " +
+                "wakeUp=$usingWakeUpSensor wakeLock=${wakeLock?.isHeld}",
+        )
+        samplesSinceLog = 0
+        maxMagnitudeSinceLog = 0f
+        minMagnitudeSinceLog = Float.MAX_VALUE
+        lastHeartbeatMs = nowMs
     }
 
     private fun registerSensor() {
@@ -185,6 +286,9 @@ class SosGuardService : Service(), SensorEventListener {
         const val EXTRA_FALL_ENABLED = "fallEnabled"
         private const val GUARD_CHANNEL_ID = "familycare_sos_guard"
         private const val NOTIFICATION_ID = 9101
+        private const val TAG = "SosGuard"
+        private const val WAKE_LOCK_TAG = "FamilyCare:SosGuard"
+        private const val HEARTBEAT_INTERVAL_MS = 10_000L
 
         @Volatile
         var running: Boolean = false

@@ -73,6 +73,28 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
+            NATIVE_SESSION_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "cacheSession" -> {
+                    val token = call.argument<String>("token")
+                    val familyId = call.argument<String>("familyId")
+                    val baseUrl = call.argument<String>("baseUrl")
+                    if (token != null && familyId != null && baseUrl != null) {
+                        TokenCache.save(applicationContext, token, familyId, baseUrl)
+                    }
+                    result.success(null)
+                }
+                "clearSession" -> {
+                    TokenCache.clear(applicationContext)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
             CALL_GUARD_CHANNEL,
         ).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -138,5 +160,6 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val SOS_GUARD_CHANNEL = "com.familycare.family_care/sos_guard"
         private const val CALL_GUARD_CHANNEL = "com.familycare.family_care/call_guard"
+        private const val NATIVE_SESSION_CHANNEL = "com.familycare.family_care/native_session"
     }
 }

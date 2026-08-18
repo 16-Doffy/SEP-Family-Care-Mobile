@@ -333,14 +333,11 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       );
       if (!mounted) return;
       await sos.sendSos(
-        // [VERIFY] `CreateSosAlertDto.sourceType` chỉ có
-        // MOBILE_APP | WEARABLE | SIMULATED_DEVICE — chưa có giá trị cho trigger
-        // tự động, nên nguồn được ghi vào `message`. Xem
-        // DE_XUAT_BE_SOS_FALL_DETECTION_2026-08-04.md.
         message: 'Phát hiện té ngã từ điện thoại — cần hỗ trợ ngay!',
         address: sosAddressOf(pos),
         latitude: pos?.latitude,
         longitude: pos?.longitude,
+        triggerReason: 'FALL_DETECTION',
       );
       if (mounted) _go(3); // chuyển sang tab SOS để theo dõi
     } catch (e) {

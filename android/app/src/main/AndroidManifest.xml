@@ -18,6 +18,9 @@
     <!-- Foreground service cho SOS nền và giữ cuộc gọi video khi khoá màn hình/xuống nền -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- SosEmergencyFlowService lấy GPS trong lúc chạy foreground service —
+         bắt buộc từ Android 14 (API 34) cho foregroundServiceType="location". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
@@ -80,6 +83,17 @@
             android:name=".CallGuardService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
+        <!-- Đếm ngược -> lấy GPS -> gửi SOS khi phát hiện té ngã, chạy độc lập
+             Activity/Flutter engine. Xem SosEmergencyFlowService. -->
+        <service
+            android:name=".SosEmergencyFlowService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+        <!-- Nhận action "Tôi ổn" / "Gửi SOS ngay" từ notification đếm ngược té
+             ngã — không mở MainActivity. -->
+        <receiver
+            android:name=".SosFallActionReceiver"
+            android:exported="false" />
         <!-- Bám theo màn Emergency SOS của hệ thống (chỉ ColorOS — xem
              EmergencySosMatcher). AccessibilityService, không phải foreground
              service — người dùng tự bật thủ công trong Cài đặt > Trợ năng,

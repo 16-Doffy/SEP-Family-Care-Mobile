@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'native_session_bridge.dart';
 
 const _kBase = String.fromEnvironment(
   'API_BASE_URL',
@@ -54,9 +55,28 @@ class ApiClient {
   void Function()? onSessionExpired;
   void Function(String message)? onVerificationRequired;
 
-  void setToken(String? token) => _token = token;
+  void setToken(String? token) {
+    _token = token;
+    _syncNativeSession();
+  }
+
   void setRefreshToken(String? token) => _refreshToken = token;
-  void setFamilyId(String? id) => _familyId = id;
+
+  void setFamilyId(String? id) {
+    _familyId = id;
+    _syncNativeSession();
+  }
+
+  /// Cache token+familyId hiện tại xuống native — xem `NativeSessionBridge`.
+  /// Chỉ đẩy khi có ĐỦ cả hai, vì `SosEmergencyFlowService` cần cả hai để
+  /// build request path `/families/{familyId}/sos/alerts`.
+  void _syncNativeSession() {
+    final t = _token;
+    final f = _familyId;
+    if (t != null && f != null) {
+      NativeSessionBridge.cacheSession(token: t, familyId: f, baseUrl: _kBase);
+    }
+  }
 
   String? get token => _token;
   String? get familyId => _familyId;
@@ -98,6 +118,7 @@ class ApiClient {
     onTokenRotated = null;
     onSessionExpired = null;
     onVerificationRequired = null;
+    NativeSessionBridge.clearSession();
     for (final onReset in _sessionResetListeners) {
       // Một provider dọn lỗi không được chặn các provider còn lại — sót một
       // cái là rò dữ liệu tài khoản cũ sang tài khoản mới.

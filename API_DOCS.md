@@ -138,8 +138,9 @@
   - Ghim bằng `test/member_relationship_test.dart` (11 case).
 
 ### SOS (10 operations — khớp `sos_provider.dart`; +2 endpoint mới 07/11)
-- `POST /api/v1/families/{familyId}/sos/alerts` — Kích hoạt SOS (mọi thành viên). Body `CreateSosAlertDto { sourceType, severity?, initialLatitude?, initialLongitude?, message? }`.
+- `POST /api/v1/families/{familyId}/sos/alerts` — Kích hoạt SOS (mọi thành viên). Body `CreateSosAlertDto { sourceType, triggerReason?, severity?, initialLatitude?, initialLongitude?, message? }`.
   - `sourceType`: `MOBILE_APP | WEARABLE | SIMULATED_DEVICE` (default `MOBILE_APP`)
+  - `triggerReason`: **[MỚI 2026-08-18, BE đã xác nhận contract]** `MANUAL | FALL_DETECTION` (default `MANUAL` nếu không truyền — FE luôn truyền tường minh). `FALL_DETECTION` KHÔNG bị chặn bởi `locationRequired` dù thiếu `initialLatitude/initialLongitude` — thiếu GPS vẫn trả `201 Created`, không phải `400` (BE đã implement rule này, xem `BAO_CAO_BE_FALL_DETECTION_BACKGROUND_2026-08-18.md`); các `triggerReason` khác vẫn bị chặn như cũ khi family bật `locationRequired`. **[VERIFY môi trường]** BE cần deploy migration + server rule này lên môi trường FE test trước — nếu test trên môi trường chưa deploy, case thiếu GPS vẫn có thể gặp `400` theo rule cũ.
   - `severity`: `LOW | MEDIUM | HIGH | CRITICAL`
 - `GET /api/v1/families/{familyId}/sos/alerts` — Lịch sử SOS. Query `status`: `ACTIVE | RESOLVED | CANCELED | FALSE_ALARM`.
 - `GET /api/v1/families/{familyId}/sos/alerts/{alertId}` — Chi tiết 1 alert (kèm phản hồi + vị trí). **[wire FE 2026-07-08]** icon ℹ️ trên alert card → `_SosAlertDetailSheet` (`JsonReportView`).

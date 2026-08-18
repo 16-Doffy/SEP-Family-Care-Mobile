@@ -405,6 +405,7 @@ class SosProvider extends ChangeNotifier {
     double? latitude,
     double? longitude,
     String sourceType = 'MOBILE_APP',
+    String triggerReason = 'MANUAL',
   }) async {
     final fid = _fid;
     if (fid == null) throw Exception('Chưa có gia đình');
@@ -414,9 +415,12 @@ class SosProvider extends ChangeNotifier {
     try {
       // address KHÔNG nằm trong CreateSosAlertDto theo API_DOCS — không gửi
       // vì backend có thể bật forbidNonWhitelisted và trả 400 cho field lạ.
+      // triggerReason: BE default là MANUAL nếu không truyền, nhưng truyền
+      // tường minh để dễ debug và khớp contract mới (2026-08-18).
       final created = await ApiClient.instance
           .post('/families/$fid/sos/alerts', {
             'sourceType': sourceType,
+            'triggerReason': triggerReason,
             'message': message,
             'initialLatitude': ?latitude,
             'initialLongitude': ?longitude,
