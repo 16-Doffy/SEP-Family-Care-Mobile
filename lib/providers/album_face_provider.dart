@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 
-import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
 String _str(dynamic v) => v?.toString() ?? '';
@@ -350,41 +349,10 @@ class AlbumFaceProvider extends ChangeNotifier {
   /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
   /// [ApiClient.addSessionResetListener].
   void resetForNewSession() {
-    _featureAccess = null;
     notifyListeners();
   }
 
-  FeatureAccess? _featureAccess;
-
   String? get _fid => ApiClient.instance.familyId;
-
-  /// Face suggestion là tính năng gói trả phí (key chính thức
-  /// `album.faceSuggestions`). Chưa biết quyền → fail-open, để BE trả 403.
-  bool get canUseFaceSuggestions =>
-      _featureAccess == null ||
-      _featureAccess!.isUnknown ||
-      _featureAccess!.flag(
-        'album.faceSuggestions',
-        aliases: const ['albumFaceSuggestions'],
-      );
-
-  Future<void> fetchFeatureAccess() async {
-    final fid = _fid;
-    if (fid == null) return;
-    try {
-      final data = await ApiClient.instance.get('/families/$fid/subscription');
-      final plan = data is Map && data['plan'] is Map
-          ? Map<String, dynamic>.from(data['plan'] as Map)
-          : const <String, dynamic>{};
-      final access = data is Map
-          ? data['featureAccess'] ?? plan['featureAccess']
-          : plan['featureAccess'];
-      _featureAccess = FeatureAccess.fromJson(access);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('AlbumFaceProvider: fetchFeatureAccess failed: $e');
-    }
-  }
 
   // POST /albums/media/{mediaId}/face-scan  body {force}
   Future<void> requestScan(String mediaId, {bool force = false}) async {

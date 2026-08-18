@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:family_care/providers/ai_chatbot_provider.dart';
+import 'package:family_care/providers/subscription_provider.dart';
 import 'package:family_care/services/api_client.dart';
 
 /// Rò rỉ dữ liệu giữa hai tài khoản trên cùng một máy.
@@ -67,9 +68,17 @@ void main() {
       expect(provider.sending, isFalse);
       expect(provider.loadingMessages, isFalse);
       expect(provider.loadingConversations, isFalse);
+    });
+
+    test('SubscriptionProvider dọn sạch featureAccess khi phiên kết thúc', () {
+      final provider = SubscriptionProvider();
+
+      provider.resetForNewSession();
+
       // Quyền của gói phải quay về "chưa biết" để fail-open, không giữ quyền
       // của gia đình cũ áp cho gia đình mới.
-      expect(provider.accessUnknown, isTrue);
+      expect(provider.isUnknown, isTrue);
+      expect(provider.loading, isFalse);
     });
 
     test('AiChatbotProvider tự đăng ký, không cần màn Đăng xuất nhớ gọi', () {

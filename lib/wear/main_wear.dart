@@ -7,6 +7,7 @@ import '../providers/chat_provider.dart';
 import '../providers/gps_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
+import '../providers/subscription_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/wear_quick_message_provider.dart';
 import '../providers/wearable_provider.dart';
@@ -23,6 +24,10 @@ void main() {
         ChangeNotifierProvider(create: (_) => TaskProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => CalendarProvider()),
+        // CalendarProvider.fetchBootstrap giờ cần SubscriptionProvider (nguồn
+        // featureAccess dùng chung, xem subscription_provider.dart) — thiếu ở
+        // đây thì màn Lịch/Trang chủ trên đồng hồ nổ ProviderNotFoundException.
+        ChangeNotifierProvider(create: (_) => SubscriptionProvider()),
         ChangeNotifierProvider(create: (_) => NotificationProvider()),
         // BẮT BUỘC: WearQuickMessageScreen đọc provider này ngay trong build().
         // Thiếu ở đây thì chạy `flutter run --target lib/wear/main_wear.dart`

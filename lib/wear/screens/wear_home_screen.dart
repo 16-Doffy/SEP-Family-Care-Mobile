@@ -6,6 +6,7 @@ import '../../providers/calendar_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/sos_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../providers/task_provider.dart';
 import '../wear_widgets.dart';
 import 'wear_alerts_screen.dart';
@@ -33,7 +34,10 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
       context.read<SosProvider>().fetchAlerts();
       context.read<GpsProvider>().fetchFamilyLocations();
       context.read<TaskProvider>().fetchMyAssignments();
-      context.read<CalendarProvider>().fetchBootstrap(DateTime.now());
+      context.read<CalendarProvider>().fetchBootstrap(
+        DateTime.now(),
+        context.read<SubscriptionProvider>(),
+      );
       context.read<NotificationProvider>().fetchNotifications();
     });
   }

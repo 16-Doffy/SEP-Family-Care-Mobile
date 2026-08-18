@@ -12,6 +12,7 @@ import '../providers/chat_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/tab_config_provider.dart';
+import '../providers/subscription_provider.dart';
 import '../screens/shared/incoming_call_screen.dart';
 import '../services/api_client.dart';
 import '../services/fall_detector_service.dart';
@@ -108,6 +109,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       context.read<SosProvider>().fetchSettings().then((_) {
         if (mounted) _syncFallDetector();
       });
+      // Nguồn duy nhất cho featureAccess của gia đình — trước đây 4 provider
+      // (AiChatbot/Album/AlbumFace/Calendar) mỗi cái tự gọi GET .../subscription
+      // ngay khi màn của chúng mở, giờ gọi 1 lần ở đây và 4 provider đó đọc lại.
+      context.read<SubscriptionProvider>().fetch();
       _refreshLive();
       _startPolling();
     });

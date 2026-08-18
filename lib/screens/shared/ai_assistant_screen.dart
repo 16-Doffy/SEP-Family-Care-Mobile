@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_colors.dart';
@@ -271,7 +272,9 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
       if (family.members.isEmpty) {
         unawaited(family.fetchMembers());
       }
-      await context.read<AiChatbotProvider>().bootstrap();
+      await context.read<AiChatbotProvider>().bootstrap(
+        canUseAssistant: context.read<SubscriptionProvider>().canUseAssistant,
+      );
       // Bootstrap chọn sẵn hội thoại gần nhất, nhưng ListView mặc định đứng ở
       // đầu danh sách (đầu là Daily Brief nếu có). Không cuộn xuống thì người
       // dùng mở Trợ lý AI lên chỉ thấy "Tổng quan hôm nay" chứ không thấy
@@ -344,8 +347,8 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
     // thành viên tải xong. Nếu chỉ Consumer AiChatbotProvider, dữ liệu member
     // về sau sẽ không kích hoạt build lại và UUID "Người nhận" bị kẹt trên
     // thẻ cho tới khi có một thay đổi chat khác.
-    return Consumer2<AiChatbotProvider, FamilyProvider>(
-      builder: (context, ai, _, __) {
+    return Consumer3<AiChatbotProvider, FamilyProvider, SubscriptionProvider>(
+      builder: (context, ai, _, sub, child) {
         return Scaffold(
           backgroundColor: context.colors.background,
           appBar: AppBar(
@@ -420,11 +423,11 @@ class _AIAssistantScreenState extends State<AIAssistantScreen> {
           body: Column(
             children: [
               Divider(height: 1, color: context.colors.divider),
-              if (ai.loadingAccess && ai.messages.isEmpty)
+              if (sub.loading && ai.messages.isEmpty)
                 const Expanded(
                   child: Center(child: CircularProgressIndicator()),
                 )
-              else if (!ai.canUseAssistant)
+              else if (!sub.canUseAssistant)
                 // Đã biết chắc gói không có ai.assistant → chặn tại đây, không
                 // gọi API để rồi hiện banner đỏ 403.
                 const Expanded(child: _UpgradePanel())

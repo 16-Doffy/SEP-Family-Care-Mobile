@@ -10,6 +10,7 @@ import '../../models/user.dart';
 import '../../providers/album_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../services/album_pin_store.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
@@ -71,7 +72,6 @@ class _AlbumScreenState extends State<AlbumScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AlbumProvider>().fetchMedia();
-      context.read<AlbumProvider>().fetchFeatureAccess();
       context.read<AlbumProvider>().fetchCollections();
       context.read<FamilyProvider>().fetchMembers();
       _loadPinned();
@@ -130,8 +130,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
   }
 
   Future<void> _pickAndUpload(ImageSource source, {required bool video}) async {
-    final album = context.read<AlbumProvider>();
-    if (video && !album.canUploadVideo) {
+    if (video && !context.read<SubscriptionProvider>().canUploadVideo) {
       _snack(Exception('Gói hiện tại chưa hỗ trợ tải video lên album.'));
       return;
     }

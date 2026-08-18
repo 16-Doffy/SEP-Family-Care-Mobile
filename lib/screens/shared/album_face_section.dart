@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/album_face_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -53,6 +54,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
   Timer? _cooldownTimer;
 
   AlbumFaceProvider get _face => context.read<AlbumFaceProvider>();
+  SubscriptionProvider get _sub => context.read<SubscriptionProvider>();
 
   Future<void> _ensureMembersLoaded() async {
     final family = context.read<FamilyProvider>();
@@ -81,9 +83,8 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       if (mounted) setState(() => _loading = false);
       return;
     }
-    await _face.fetchFeatureAccess();
     await _ensureMembersLoaded();
-    if (!_face.canUseFaceSuggestions) {
+    if (!_sub.canUseFaceSuggestions) {
       if (mounted) setState(() => _loading = false);
       return;
     }
@@ -381,7 +382,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 ),
               ),
             )
-          else if (!_face.canUseFaceSuggestions)
+          else if (!_sub.canUseFaceSuggestions)
             _lockedNote()
           else if (!widget.isSafe)
             _waitingForModerationNote()

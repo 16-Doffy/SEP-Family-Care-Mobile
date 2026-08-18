@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/calendar_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../wear_widgets.dart';
 
 class WearCalendarScreen extends StatefulWidget {
@@ -16,7 +17,10 @@ class _WearCalendarScreenState extends State<WearCalendarScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<CalendarProvider>().fetchBootstrap(DateTime.now()),
+      (_) => context.read<CalendarProvider>().fetchBootstrap(
+        DateTime.now(),
+        context.read<SubscriptionProvider>(),
+      ),
     );
   }
 

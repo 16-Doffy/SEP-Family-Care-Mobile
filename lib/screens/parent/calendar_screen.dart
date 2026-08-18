@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/calendar_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
@@ -70,7 +71,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Future<void> _reload() async {
     final family = context.read<FamilyProvider>();
     await Future.wait([
-      context.read<CalendarProvider>().fetchBootstrap(_focus),
+      context.read<CalendarProvider>().fetchBootstrap(
+        _focus,
+        context.read<SubscriptionProvider>(),
+      ),
       // Cần cho ô chọn người tham gia; chỉ tải một lần vì danh sách ít đổi.
       if (family.members.isEmpty) family.fetchMembers(),
     ]);

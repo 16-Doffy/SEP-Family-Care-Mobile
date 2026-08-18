@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/album_media.dart';
-import '../models/feature_access.dart';
 import '../services/api_client.dart';
 
 /// Đánh dấu "không truyền tham số này" cho [AlbumProvider.updateMedia], phân
@@ -36,8 +35,6 @@ class AlbumProvider extends ChangeNotifier {
     _mediaType = null;
     _moderationStatus = null;
     _collectionId = null;
-    // Quyền gói về "chưa biết" để fail-open, không áp quyền gia đình cũ.
-    _featureAccess = null;
     notifyListeners();
   }
 
@@ -54,7 +51,6 @@ class AlbumProvider extends ChangeNotifier {
   AlbumMediaType? _mediaType;
   AlbumModerationStatus? _moderationStatus;
   String? _collectionId;
-  FeatureAccess? _featureAccess;
 
   List<AlbumMedia> get items => List.unmodifiable(_items);
   List<AlbumCollection> get collections => List.unmodifiable(_collections);
@@ -71,26 +67,6 @@ class AlbumProvider extends ChangeNotifier {
   bool get hasMore =>
       _totalPages == null ? _items.length >= _limit : _page < _totalPages!;
   bool get hasPendingItems => _items.any((m) => m.isPending);
-  bool get faceAccessUnknown =>
-      _featureAccess == null || _featureAccess!.isUnknown;
-  bool get canUploadVideo =>
-      faceAccessUnknown || _featureAccess!.albumVideoUpload;
-
-  Future<void> fetchFeatureAccess() async {
-    try {
-      final data = await ApiClient.instance.get('/families/$_fid/subscription');
-      final plan = data is Map && data['plan'] is Map
-          ? Map<String, dynamic>.from(data['plan'] as Map)
-          : const <String, dynamic>{};
-      final access = data is Map
-          ? data['featureAccess'] ?? plan['featureAccess']
-          : null;
-      _featureAccess = FeatureAccess.fromJson(access);
-      notifyListeners();
-    } catch (_) {
-      // Không tự khóa tính năng khi không đọc được subscription; BE vẫn enforce.
-    }
-  }
 
   String get _fid {
     final fid = ApiClient.instance.familyId;

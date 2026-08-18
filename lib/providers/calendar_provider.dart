@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../models/feature_access.dart';
 import '../services/api_client.dart';
 import '../theme/app_colors.dart';
+import 'subscription_provider.dart';
 
 String? _str(dynamic v) => v?.toString();
 DateTime? _date(dynamic v) {
@@ -165,7 +165,7 @@ class CalendarProvider extends ChangeNotifier {
   /// [ApiClient.addSessionResetListener].
   void resetForNewSession() {
     events = [];
-    featureAccess = null;
+    _sub = null;
     loading = false;
     error = null;
     _lastMonth = null;
@@ -173,7 +173,6 @@ class CalendarProvider extends ChangeNotifier {
   }
 
   List<FamilyCalendarEvent> events = [];
-  FeatureAccess? featureAccess;
   bool loading = false;
   String? error;
 
@@ -181,17 +180,16 @@ class CalendarProvider extends ChangeNotifier {
   /// tránh nhảy về tháng hiện tại và làm event vừa sửa biến mất khỏi danh sách.
   DateTime? _lastMonth;
 
-  /// Chưa gọi được, hoặc BE trả `featureAccess` rỗng → coi như KHÔNG BIẾT.
-  /// Fail-open và để BE trả 403 quyết định, thay vì tự chặn người dùng khỏi
+  /// Gắn ở [fetchBootstrap] — nguồn `featureAccess` dùng chung cho cả app
+  /// (`SubscriptionProvider`), xem ghi chú ở đó. `null` cho tới khi màn Lịch
+  /// bootstrap lần đầu; fail-open trong lúc đó, không tự chặn người dùng khỏi
   /// tính năng mà gói của họ vốn có (Free Plan có "Calendar view/create basic
   /// event" theo mô tả của Nhật).
-  bool get _accessUnknown => featureAccess == null || featureAccess!.isUnknown;
+  SubscriptionProvider? _sub;
 
-  bool get canCreateEvents => _accessUnknown || featureAccess!.calendarEnabled;
-  bool get canUseReminders =>
-      _accessUnknown || featureAccess!.calendarReminders;
-  bool get canUseRecurring =>
-      _accessUnknown || featureAccess!.calendarRecurringEvents;
+  bool get canCreateEvents => _sub?.canCreateEvents ?? true;
+  bool get canUseReminders => _sub?.canUseReminders ?? true;
+  bool get canUseRecurring => _sub?.canUseRecurring ?? true;
 
   /// Nhận diện "bị khóa do gói" từ cả hai nguồn: check phía FE
   /// ([FeatureLockedException]) và 403 do BE trả về.
@@ -207,50 +205,24 @@ class CalendarProvider extends ChangeNotifier {
     return fid;
   }
 
-  Future<void> fetchBootstrap(DateTime month) async {
+  /// [sub] là `SubscriptionProvider` (nguồn `featureAccess` dùng chung cho cả
+  /// app, xem `lib/providers/subscription_provider.dart`) — trước đây
+  /// `CalendarProvider` tự gọi `GET .../subscription` ở đây, giờ chỉ đọc lại
+  /// dữ liệu đã có, và tự fetch hộ nếu `SubscriptionProvider` chưa kịp có gì
+  /// (ví dụ mở thẳng màn Lịch trước khi `family_shell` fetch xong).
+  Future<void> fetchBootstrap(DateTime month, SubscriptionProvider sub) async {
     loading = true;
     error = null;
     notifyListeners();
     try {
-      await Future.wait([
-        fetchFeatureAccess(notify: false),
-        fetchEvents(month, notify: false),
-      ]);
+      if (sub.isUnknown) await sub.fetch();
+      _sub = sub;
+      await fetchEvents(month, notify: false);
     } catch (e) {
       error = e.toString();
     } finally {
       loading = false;
       notifyListeners();
-    }
-  }
-
-  Future<void> fetchFeatureAccess({bool notify = true}) async {
-    try {
-      final data = await ApiClient.instance.get('/families/$_fid/subscription');
-      final plan = data is Map && data['plan'] is Map
-          ? Map<String, dynamic>.from(data['plan'] as Map)
-          : const <String, dynamic>{};
-      final access = data is Map
-          ? data['featureAccess'] ?? plan['featureAccess']
-          : plan['featureAccess'];
-      featureAccess = FeatureAccess.fromJson(access);
-      // Schema featureAccess chưa được BE chốt (Swagger khai `type: object`
-      // trần) — log raw để đối chiếu key thật với giả định calendar.enabled /
-      // calendar.reminders / calendar.recurringEvents. Xem VERIFY #1.
-      // flag() trả false CẢ KHI key không tồn tại, nên "không có quyền" và
-      // "sai tên key" nhìn giống hệt nhau nếu không có dòng log này.
-      debugPrint(
-        'CalendarProvider: subscription keys='
-        '${data is Map ? data.keys.toList() : data.runtimeType} '
-        'plan keys=${plan.keys.toList()} '
-        'featureAccess=${featureAccess!.raw} '
-        '(unknown=${featureAccess!.isUnknown}) '
-        '→ create=$canCreateEvents reminders=$canUseReminders '
-        'recurring=$canUseRecurring',
-      );
-      if (notify) notifyListeners();
-    } catch (e) {
-      debugPrint('CalendarProvider: fetchFeatureAccess failed: $e');
     }
   }
 
