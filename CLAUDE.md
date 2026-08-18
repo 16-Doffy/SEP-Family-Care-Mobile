@@ -149,3 +149,10 @@ test mapping tương ứng — đây là chỗ bắt các bug enum/DTO sai đã 
 - Commit convention: `feat:` / `fix:` / `refactor:` / `chore:`, mô tả tiếng Việt.
 - `.gitattributes` ép LF trong repo (trừ `.bat`/`.ps1`) — nếu thấy cả file "modified" mà không sửa gì
   thì là nhiễu CRLF, không phải thay đổi thật.
+- Commit message chỉ mô tả **thay đổi kỹ thuật thật**: API/CRUD đã nối, bug đã sửa, cách verify.
+  Không đưa quy ước làm việc nội bộ vào message.
+- `flutter analyze --no-fatal-infos` (0 error) + `flutter test` (toàn bộ pass) trước mỗi commit.
+- Merge `NDuy` → `main` chỉ khi fast-forward sạch; `git fetch origin` và đối chiếu `origin/giap`
+  trước khi push để không đè commit của người khác.
+- Dọn `git status --short` trước khi `git add`: loại file tạm lúc test (`tmp_*.png`, `tmp_*.xml`,
+  `.tmp_report_audit/`) khỏi commit code.

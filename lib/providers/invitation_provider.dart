@@ -10,6 +10,7 @@ class JoinRequest {
   final String? requesterName;
   final String? requesterEmail;
   final String? familyName;
+  final String? familyId;
 
   const JoinRequest({
     required this.id,
@@ -18,6 +19,7 @@ class JoinRequest {
     this.requesterName,
     this.requesterEmail,
     this.familyName,
+    this.familyId,
   });
 
   bool get isPending => status.toUpperCase() == 'PENDING';
@@ -40,6 +42,9 @@ class JoinRequest {
           user['fullName']?.toString() ?? user['displayName']?.toString(),
       requesterEmail: user['email']?.toString(),
       familyName: family['name']?.toString(),
+      familyId: family['id']?.toString() ??
+          json['familyId']?.toString() ??
+          json['referenceId']?.toString(),
     );
   }
 }

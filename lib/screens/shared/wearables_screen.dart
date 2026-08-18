@@ -437,9 +437,9 @@ class _WearablesScreenState extends State<WearablesScreen> {
           ],
         ),
         const SizedBox(height: 14),
-        _infoRow('Device ID', device.id),
-        _infoRow('Identifier', device.deviceIdentifier),
-        _infoRow('Last seen', _fmtTime(device.lastSeenAt)),
+        _infoRow('Mã thiết bị', device.id),
+        _infoRow('Định danh', device.deviceIdentifier),
+        _infoRow('Lần cuối kết nối', _fmtTime(device.lastSeenAt)),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -619,7 +619,9 @@ class _WearablesScreenState extends State<WearablesScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 86,
+          // 86 vừa đủ cho nhãn tiếng Anh cũ; nhãn tiếng Việt dài hơn
+          // ("Lần cuối kết nối") sẽ bị xuống dòng nếu không nới ra.
+          width: 108,
           child: Text(
             label,
             style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
@@ -813,9 +815,7 @@ class _WearablesScreenState extends State<WearablesScreen> {
                 child: const Text('Hủy'),
               ),
               FilledButton(
-                onPressed: canSave
-                    ? () => Navigator.pop(ctx, code)
-                    : null,
+                onPressed: canSave ? () => Navigator.pop(ctx, code) : null,
                 child: const Text('Kết nối'),
               ),
             ],

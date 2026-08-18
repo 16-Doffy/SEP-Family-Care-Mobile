@@ -51,9 +51,16 @@ class FallDetectionTuning {
   /// Sau một lần phát hiện thì nghỉ, tránh bắn liên tiếp cùng một cú ngã.
   final Duration cooldown;
 
+  /// Giữ **khớp với `FallDetector.kt` phía Android** — cùng một cú ngã mà bản
+  /// Dart (app đang mở) và bản native (chạy nền) cho kết quả khác nhau thì
+  /// không thể chẩn đoán được gì.
+  ///
+  /// Ngưỡng rơi tự do nới 3.0 → 6.0 m/s² ngày 2026-08-17: người ngã khi điện
+  /// thoại nằm trong túi quần chỉ tụt xuống khoảng 4–7 m/s², không về gần 0
+  /// như lúc thả rơi máy. Xem giải thích đầy đủ trong `FallDetector.kt`.
   const FallDetectionTuning({
-    this.freeFallThreshold = 3.0,
-    this.minFreeFall = const Duration(milliseconds: 100),
+    this.freeFallThreshold = 6.0,
+    this.minFreeFall = const Duration(milliseconds: 80),
     this.impactThreshold = 25.0,
     this.impactWindow = const Duration(milliseconds: 900),
     this.cooldown = const Duration(seconds: 30),

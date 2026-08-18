@@ -30,8 +30,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
-    final isManager = user?.isAdministrative ?? false;
-    final isMember = !(user?.isAdministrative ?? true);
+    final isManager = user?.role == UserRole.manager;
+    final isDeputy = user?.role == UserRole.deputy;
+    final isAdministrative = isManager || isDeputy;
+    final isMember = !isAdministrative;
     final themeController = context.watch<ThemeModeController>();
     final colors = context.colors;
 
@@ -168,7 +170,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             // ── Gia đình — theo role ──────────────────────────────────
             _section('Gia đình', [
-              if (isManager) ...[
+              if (auth.workspaces.length > 1)
+                _tile(
+                  Icons.switch_account_outlined,
+                  'Chuyển gia đình',
+                  subtitle: user?.familyName,
+                  onTap: () => context.push('/select-family'),
+                ),
+              if (isAdministrative) ...[
                 _tile(
                   Icons.groups_2_outlined,
                   'Thành viên gia đình',
@@ -271,8 +280,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 16),
 
             _section('Khác', [
-              _tile(Icons.help_outline_rounded, 'Trợ giúp & FAQ', onTap: () {}),
-              _tile(Icons.description_outlined, 'Điều khoản sử dụng', onTap: () {}),
+              _tile(
+                Icons.help_outline_rounded,
+                'Trợ giúp & FAQ',
+                onTap: () => _showUnavailableNotice('Trợ giúp & FAQ'),
+              ),
+              _tile(
+                Icons.description_outlined,
+                'Điều khoản sử dụng',
+                onTap: () => _showUnavailableNotice('Điều khoản sử dụng'),
+              ),
             ]),
             const SizedBox(height: 16),
 
@@ -312,31 +329,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     null => 'KHÁCH',
   };
 
+  void _showUnavailableNotice(String feature) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('$feature đang được cập nhật.')));
+  }
+
   Widget _infoRow(IconData icon, String label, String value) => Row(
     children: [
       Icon(icon, size: 18, color: context.colors.textMuted),
       const SizedBox(width: 10),
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: context.colors.textMuted,
+      // Expanded là bắt buộc: thiếu nó thì Column nhận ràng buộc rộng vô hạn,
+      // email dài không cắt được và tràn ra ngoài (lỗi "RIGHT OVERFLOWED").
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: context.colors.textMuted,
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: context.colors.textPrimary,
+            const SizedBox(height: 2),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: context.colors.textPrimary,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ],
   );
@@ -377,56 +406,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String label, {
     String? subtitle,
     required VoidCallback onTap,
-  }) =>
-      InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            children: [
-              AppFeatureIcon(
-                icon: icon,
-                color: AppColors.link,
-                backgroundColor: AppColors.link.withValues(alpha: 0.08),
-                size: 38,
-                iconSize: 20,
-                radius: 12,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        color: context.colors.textPrimary,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: context.colors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: context.colors.textMuted,
-                size: 20,
-              ),
-            ],
+  }) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(20),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          AppFeatureIcon(
+            icon: icon,
+            color: AppColors.link,
+            backgroundColor: AppColors.link.withValues(alpha: 0.08),
+            size: 38,
+            iconSize: 20,
+            radius: 12,
           ),
-        ),
-      );
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    color: context.colors.textPrimary,
+                  ),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: context.colors.textMuted,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Icon(
+            Icons.chevron_right_rounded,
+            color: context.colors.textMuted,
+            size: 20,
+          ),
+        ],
+      ),
+    ),
+  );
 
   void _showThemeModeSheet(BuildContext context) {
     showModalBottomSheet<void>(
@@ -465,13 +493,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         icon: switch (mode) {
                           AppThemePreference.system =>
                             Icons.brightness_auto_outlined,
-                          AppThemePreference.light =>
-                            Icons.light_mode_outlined,
+                          AppThemePreference.light => Icons.light_mode_outlined,
                           AppThemePreference.dark => Icons.dark_mode_outlined,
                         },
                         color: AppColors.link,
-                        backgroundColor:
-                            AppColors.link.withValues(alpha: 0.08),
+                        backgroundColor: AppColors.link.withValues(alpha: 0.08),
                         size: 38,
                         iconSize: 20,
                         radius: 12,

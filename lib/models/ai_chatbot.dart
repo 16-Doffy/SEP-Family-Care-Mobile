@@ -564,6 +564,21 @@ class AiPendingAction {
       ],
       'CREATE_CALENDAR_EVENT' ||
       'CALENDAR_EVENT_CREATE' => ['title', 'startTime', 'endTime', 'location'],
+      // Kế hoạch đóng góp mục tiêu: BE thường gửi kèm `uiHints.fields` nên
+      // nhánh này ít khi chạy. Nhưng nếu thiếu uiHints thì `preview.keys
+      // .take(6)` ở dưới có thể CẮT MẤT `distributionMode`/`warnings` — đúng
+      // hai thứ nói cho người dùng biết đây chỉ là đề xuất của AI. Liệt kê
+      // tường minh để chúng luôn lọt vào danh sách hiển thị.
+      'CREATE_GOAL_CONTRIBUTION_PLAN' => [
+        'goalName',
+        'periodMonth',
+        'periodYear',
+        'distributionMode',
+        'monthlyContributionTarget',
+        'totalAvailableAmount',
+        'warnings',
+        'safetyNote',
+      ],
       _ => preview.keys.take(6).toList(),
     };
     final fields = <AiActionField>[];
@@ -606,6 +621,16 @@ class AiPendingAction {
     'location' => 'Địa điểm',
     'assignee' || 'assignedTo' || 'assignedToName' => 'Người làm',
     'dueAt' || 'dueDate' => 'Hạn',
+    // Kế hoạch đóng góp mục tiêu — nhãn phải nói rõ đây là ĐỀ XUẤT của AI,
+    // không phải nghĩa vụ đóng góp.
+    'goalName' => 'Mục tiêu',
+    'periodMonth' => 'Tháng',
+    'periodYear' => 'Năm',
+    'distributionMode' => 'Kiểu phân bổ',
+    'monthlyContributionTarget' => 'Mục tiêu góp mỗi tháng',
+    'totalAvailableAmount' => 'Tổng khả dụng cả nhà',
+    'warnings' => 'Lưu ý',
+    'safetyNote' => 'Lưu ý',
     _ => key,
   };
 }

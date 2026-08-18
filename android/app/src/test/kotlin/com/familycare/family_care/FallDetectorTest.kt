@@ -99,6 +99,53 @@ class FallDetectorTest {
         assertEquals("idle", detector.phaseName())
     }
 
+    @Test
+    fun `nga voi dien thoai trong tui van phat hien duoc`() {
+        // Mẫu đo thực tế của người ngã khi máy nằm trong túi quần: biên độ chỉ
+        // tụt xuống khoảng 4-5 m/s² chứ không về gần 0 như lúc thả rơi máy.
+        // Ngưỡng cũ 3.0 bỏ sót hoàn toàn ca này.
+        val detector = FallDetector()
+        val samples = listOf(
+            9.8f to 0L,
+            5.2f to 100L,
+            4.4f to 150L,
+            4.9f to 200L,
+            27.5f to 260L,
+            9.7f to 320L,
+        )
+        assertEquals(1, runSamples(detector, samples))
+    }
+
+    @Test
+    fun `di lai binh thuong khong bi coi la nga`() {
+        // Bước chân làm biên độ dao động quanh 9.8 và có nhịp nhún nhẹ, nhưng
+        // không bao giờ xuống dưới 6.0 và cũng không có cú va đập 25+.
+        val detector = FallDetector()
+        val samples = listOf(
+            9.8f to 0L,
+            7.2f to 100L,
+            12.5f to 200L,
+            6.8f to 300L,
+            13.1f to 400L,
+            8.4f to 500L,
+        )
+        assertEquals(0, runSamples(detector, samples))
+    }
+
+    @Test
+    fun `ngoi phich xuong ghe khong bi coi la nga`() {
+        // Có pha nhẹ khi ngồi xuống nhưng va đập chỉ tầm 1.5g, dưới ngưỡng 25.
+        val detector = FallDetector()
+        val samples = listOf(
+            9.8f to 0L,
+            5.0f to 100L,
+            4.8f to 180L,
+            15.0f to 240L,
+            9.8f to 300L,
+        )
+        assertEquals(0, runSamples(detector, samples))
+    }
+
     private fun runSamples(detector: FallDetector, samples: List<Pair<Float, Long>>): Int {
         var hits = 0
         samples.forEach { (magnitude, at) ->

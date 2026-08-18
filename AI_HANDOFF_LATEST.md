@@ -1,6 +1,647 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-Last updated: **2026-08-10**
+## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (18/08/2026 tối)
+
+### Phiên này làm gì
+
+Trọng tâm phiên này là **hệ thống `featureAccess` / phân tầng gói dịch vụ**,
+trải trên **cả 3 chỗ**: `d:\Desktop\sep` (Admin Web), `D:\Desktop\mobile-sep`
+(app này), và một văn bản đề xuất gửi Backend. Không đụng gì tới các luồng
+album/SOS/AI cũ — xem mục "Còn tồn đọng từ trước" bên dưới để biết những gì
+**chưa** được xử lý trong phiên này.
+
+**Vấn đề gốc phát hiện:** đối chiếu toàn bộ `apps/api/src/services/*.ts`
+(repo `d:\Desktop\sep`, **không phải backend đang chạy thật** — xem cảnh báo
+quan trọng bên dưới) thì chỉ có `calendar.service.ts` gọi
+`assertFeatureEnabled`. 23/26 quyền còn lại (tài chính, nhiệm vụ/thưởng,
+album, AI, SOS nâng cao, chat) **không bị chặn ở đâu cả** — gói Miễn phí gọi
+thẳng API vẫn dùng được đầy đủ tính năng trả phí.
+
+### ⚠️ Phát hiện quan trọng — backend thật KHÁC repo `apps/api` cục bộ
+
+Cả web lẫn mobile đều trỏ API tới **`https://api.familycare-digital.com`** —
+server triển khai riêng, **không phải** `apps/api` trong repo `d:\Desktop\sep`.
+Sửa `apps/api` cục bộ **không có tác dụng gì với app thật** — đã xác nhận với
+user, không có workflow/cấu hình nào deploy `apps/api` lên domain đó. Muốn
+sửa enforcement ở tầng server phải **báo Backend thật**, không tự sửa được.
+
+### Đã gửi đề xuất Backend — BE ĐÃ TRẢ LỜI, đã chốt thiết kế
+
+File: `D:\Desktop\mobile-sep\DE_XUAT_BE_FEATUREACCESS_ENFORCEMENT_2026-08-18.md`
+(có mục "Cập nhật 2026-08-18" cuối file ghi lại toàn bộ trao đổi này).
+
+**Vòng 1** — BE gửi bản thiết kế 3 gói FREE/MONTHLY/YEARLY kèm quota (15
+lịch, 20 công việc, 30 giao dịch/tháng, 5 lượt AI/tháng — **quota này CHƯA
+enforce được thật**, chỉ là con số mong muốn dài hạn, đừng ghi số cụ thể lên
+UI). Xác nhận quan trọng: Monthly/Yearly giống hệt nhau; AI mặc định
+**không mở** ở Free; **real-time tracking SOS là tính năng trả phí** (chỉ vị
+trí gửi 1 lần lúc tạo cảnh báo là miễn phí — khác với đề xuất ban đầu của AI,
+từng xếp `sos.liveLocation` vào Free vì lý do an toàn, đã sửa lại theo đúng
+quyết định của BE, xem mục dưới); thành viên gia đình không phải điểm bán
+chính, không cần khớp số chính xác với admin.
+
+**Vòng 2** — BE trả lời 2 câu hỏi còn lại, **cả hai đều CHỐT, không cần hỏi
+thêm**:
+1. **Format lỗi 403**: dùng `code: "FEATURE_LOCKED"` + `featureKey` cho
+   tính năng bị khoá theo gói; nếu sau này có quota thật thì dùng
+   `"QUOTA_EXCEEDED"` — **2 code riêng, không dùng chung**. Khớp *chính xác*
+   với những gì AI đã code sẵn (`ApiClient.onFeatureLocked` chỉ bắt đúng
+   `FEATURE_LOCKED`) — không cần sửa gì.
+2. **Fall Detection / Automatic SOS**: MVP coi là **1 cụm tính năng trả phí
+   duy nhất** (phát hiện té ngã → tự động tạo SOS), khoá chung. FE có thể
+   hiển thị 2 dòng ở trang bán hàng nhưng cùng 1 công tắc — hiện tại đã đúng
+   vậy (`sos.fallDetection`, chưa tách 2 dòng hiển thị, việc này là tuỳ chọn
+   marketing không bắt buộc).
+
+**Việc còn lại chỉ còn phụ thuộc BE lên code thật trên server**
+(`api.familycare-digital.com`), FE không còn gì phải hỏi hay chờ quyết định
+thiết kế nữa.
+
+### Đã xây xong, chạy được — CHƯA CÓ TÁC DỤNG cho tới khi BE thật sự deploy
+
+Thêm `ApiClient.onFeatureLocked` (cùng pattern `onSessionExpired`/
+`onVerificationRequired` có sẵn) — bắt 403 kèm `code: "FEATURE_LOCKED"`,
+`family_shell.dart` hiện dialog đè lên đúng màn đang đứng (không điều hướng
+đi đâu, đóng dialog là quay lại y nguyên chỗ cũ), nút "Xem các gói" dẫn tới
+`/manager/subscription`. Đây là **lưới đỡ chung** cho 19 tính năng chưa có
+khoá UI riêng — vô hại, không tự kích hoạt cho tới khi BE thật sự deploy
+code trả `code: "FEATURE_LOCKED"` trên server thật (hiện vẫn trả "Forbidden"
+trần, không có `code`) — **thiết kế đã chốt xong, chỉ còn chờ BE lên code**,
+không cần FE làm gì thêm khi việc đó xảy ra (tự chạy đúng ngay).
+
+Đã sửa thêm: `sos.liveLocation` (web, `apps/web/src/lib/feature-catalog.ts`)
+chuyển từ tầng `core` (Free) sang `advanced` (trả phí) theo đúng xác nhận
+của BE ở Vòng 1 — chỉ đổi phân loại trong code (ảnh hưởng nút chọn nhanh
+"Gói miễn phí", giờ tính 7 tính năng cơ bản thay vì 8), **không tự đổi dữ
+liệu gói Free đang lưu** — user cần tự vào Admin Web tắt "SOS vị trí trực
+tiếp" ở gói Free nếu muốn khớp. Đã merge thẳng vào `main` (web), production
+đã cập nhật.
+
+### Đã xây xong, ĐANG hoạt động thật ngay bây giờ
+
+- **`SubscriptionProvider`** (`lib/providers/subscription_provider.dart`,
+  app scope, nạp 1 lần ở `family_shell`) — gom 4 provider
+  (`AiChatbotProvider`/`AlbumProvider`/`AlbumFaceProvider`/`CalendarProvider`)
+  trước đây mỗi cái tự gọi `GET .../subscription` riêng thành 1 nguồn duy
+  nhất. `CalendarProvider` vẫn giữ logic `FeatureLockedException` nội bộ
+  nhưng đọc quyền qua `SubscriptionProvider` truyền vào `fetchBootstrap`.
+- **4 màn có khoá UI thật, hoạt động ngay** (không cần chờ BE, vì đọc
+  `featureAccess` trả cùng response `/subscription`, đã có sẵn từ trước):
+  Lịch (`calendar.enabled/reminders/recurringEvents` — **duy nhất được BE
+  chặn thật ở server**), Trợ lý AI (`ai.assistant`), Tải video Album
+  (`album.videoUpload`), Gợi ý khuôn mặt AI (`album.faceSuggestions`).
+- Đồng bộ 18/26 nhãn tiếng Việt trong `lib/models/feature_access.dart` khớp
+  đúng chữ bên Admin Web (vd "Sự kiện lặp lại" → "Lịch lặp lại"), thêm
+  `officialKeyGroups` khớp 7 nhóm bên `apps/web/src/lib/feature-catalog.ts`.
+- Sửa 2 bug thật ở `subscription_screen.dart` (màn Gói đăng ký), phát hiện từ
+  ảnh chụp live: Gói tháng hiện đúng số tiền nhưng gắn nhầm nhãn "/năm" (code
+  cũ chỉ đọc field `annualPrice`, không đọc `billingPeriod`/`monthlyPrice`/
+  `yearlyPrice` mà BE đã đổi từ lâu); Gói năm trùng màu xanh với Gói tháng
+  (nhánh màu cũ so `code == 'GOLD'/'PREMIUM'`, planCode thật là
+  FREE/MONTHLY/YEARLY nên không bao giờ khớp) — đổi Gói năm sang tím-hồng,
+  thêm ribbon "Tiết kiệm X%".
+- Thiết kế lại thẻ gói: chia tính năng theo 7 nhóm thay vì liệt kê phẳng
+  21-23 dòng.
+
+### Mobile đã merge `NDuy` → `main`
+
+User chọn đợi BE trả lời đủ 2 câu hỏi ở Vòng 2 rồi mới merge 1 lần, tránh
+chia nhỏ main thành nhiều lần merge cho cùng một tính năng — đã xảy ra ngay
+sau khi BE chốt xong (xem mục trên). Fast-forward sạch, không xung đột,
+`flutter analyze` sạch trước khi merge.
+
+Trạng thái nhánh lúc chốt phiên: mobile `main` và `NDuy` đã khớp nhau tại
+`055e502` (đã push — vài commit cuối cùng chỉ là dọn lại tên commit của
+chính file này theo yêu cầu user, không đổi code). Web `main` và `NDuy` đã
+khớp nhau tại `f2cb4ac`, đã deploy production.
+
+### Web (`d:\Desktop\sep`) — đã xong, đã deploy production
+
+Tách danh mục 26 key ra `apps/web/src/lib/feature-catalog.ts` dùng chung cho
+Admin, thẻ gói công khai, `UpgradePlanDialog`. Ẩn 5 quyền "chưa có tính năng
+thật" khỏi hộp Sửa của admin (2 loại lý do khác nhau, ghi rõ trong code:
+"chưa xây" như `finance.aiOcrSuggestion`/`chat.announcements` — có thể xây
+thật sau này; "không phải công tắc riêng" như 3 key con AI — do BE không
+guard riêng, mãi mãi không cần tách). Sửa bug khoá cả 2 chiều (quyền lỡ bật
+sai từ dữ liệu cũ không tắt được — giờ chỉ khoá chiều BẬT thêm). Thiết kế
+lại card admin + `FeatureLockedDialog` (cùng cơ chế `onFeatureLocked`, cũng
+chờ BE). Sửa bug biểu đồ "Doanh thu theo ngày" ở trang Dashboard admin (nhãn
+số tiền cố định tràn đè khi nhiều người mua cùng lúc — bỏ nhãn, dùng tooltip).
+
+Production đã build xong tại `family-care-admin.vercel.app`. Dọn Vercel: đổi
+tên Team sang `family-care-admin-web` (link cũ dạng
+`...-team3-museum-project.vercel.app` vẫn còn chạy song song, Vercel không
+tắt ngay). Còn 3 project rác trên Vercel (`sep-family-care-web-api`,
+`-swmz`, `-98hi`) — build nhầm `apps/api` (không phải backend thật) nên báo
+đỏ mỗi lần push, **vô hại, không ảnh hưởng project thật**
+(`sep-family-care-third-s-web`), user tự xoá khi rảnh, không phải việc code.
+
+### Quy tắc vẫn còn hiệu lực từ phiên trước — không đổi
+
+**KHÔNG tự chạy test runtime trên máy ảo.** Chỉ sửa code + chạy
+`flutter analyze` và `flutter test`. Phần bấm thử trên app **user tự làm**.
+Đã tuân thủ đúng trong toàn bộ phiên này — mọi thay đổi chỉ xác minh bằng
+`flutter analyze` (0 error, 0 warning, sạch trên toàn repo) và `tsc --noEmit`
+phía web, **chưa chạy `flutter test` đầy đủ lại sau các thay đổi cuối** —
+cần user tự chạy qua `scripts/self_test.ps1` trước khi coi các thay đổi
+subscription là đã xác minh xong (dù `flutter analyze` sạch, chưa chắc mọi
+test cũ vẫn pass — đặc biệt `test/calendar_member_widget_test.dart`,
+`test/ai_session_reset_test.dart` vừa sửa signature theo API mới).
+
+---
+
+## 🟡 Còn tồn đọng từ phiên trước 18/08 — CHƯA đụng tới trong phiên này
+
+Hai việc dưới đây có từ **trước** phiên hôm nay, không liên quan gì tới
+`featureAccess`, và **vẫn y nguyên chưa sửa** — verify lại bằng grep ngay
+trước khi viết mục này (`sosResponderLog` vẫn ra 21 kết quả,
+`sos_screen.dart` dispose vẫn huỷ `_locationStreamTimer` vô điều kiện).
+
+1. **🔴 Bug thật, độc lập, chưa sửa:** `sos_screen.dart` dispose gỡ
+   `onTrackStart/onTrackStop` và huỷ `_locationStreamTimer` vô điều kiện →
+   người phát SOS rời màn SOS thì vị trí của chính họ ngừng cập nhật, người
+   đi cứu đuổi theo điểm đứng yên. Nên sửa bất kể trạng thái các việc khác.
+2. **Log tạm `sosResponderLog()`** (định nghĩa `lib/services/sos_realtime_service.dart`,
+   21 chỗ gọi rải trong `family_shell.dart`, `sos_provider.dart`,
+   `family_map_screen.dart`) — vẫn đang bật, chưa xoá. Xoá bằng
+   `grep -rn "sosResponderLog" lib/` ra hết, kèm field
+   `_loggedResponderCount` trong `family_map_screen.dart`.
+
+Các mục "cần user tự test lại" khác từ handoff cũ (retest `analyze-draft`,
+retest AI tài chính theo member, kiểm markdown) — **không có bằng chứng gì
+trong phiên này về việc đã làm hay chưa**. Nhiều commit không liên quan
+(`cf120d4`, `c8e325e` — AI gợi ý đóng góp mục tiêu, cảnh báo mức góp) nằm
+giữa handoff cũ và phiên này, cho thấy ít nhất một phiên khác đã chạy — khả
+năng cao các mục đó đã được xử lý ở phiên đó, nhưng **đừng coi là chắc chắn
+xong** nếu chưa thấy ghi nhận rõ ràng ở đâu khác.
+
+---
+
+> **Snapshot hiện hành — 16/08/2026 (đêm muộn, sau khi merge `NDuy` → `main`).**
+> Phần này thay thế mọi thông tin nhánh, commit, trạng thái kiểm thử và kết
+> luận đã lỗi thời ở các mục lịch sử phía dưới. Lịch sử vẫn được giữ nguyên để
+> truy vết.
+
+## Snapshot hiện hành — Git, phạm vi và quy tắc commit
+
+- **`main` và `NDuy` đang khớp nhau hoàn toàn**, cả 2 đã push lên remote, tại
+  commit `826e46a`. Đã merge fast-forward sạch (không conflict, đã kiểm
+  `origin/giap` không có gì mới trước khi merge). 4 commit gần nhất:
+  `61a188e` family workspace, `50e2ef5` fix map, `c43ce5d` feat album Phase
+  1+2, `826e46a` fix + polish Album Collection sau test runtime (chi tiết ở
+  mục "Cập nhật 2026-08-16 (đêm)" phía dưới).
+- Worktree **sạch**, không còn file FE tracked nào chưa commit. Chỉ còn
+  artefact tạm không nên stage: `.tmp_report_audit/`, `tmp_*.png`,
+  `tmp_*.xml`, `tmp_report6_mobile_images/`, `BuildDocx.cs`,
+  `build_report6.ps1`, `diagram*_labels*`, `diagram*_relations*`,
+  `docs/usecase-diagram-rebuild/`, `tools/`, shortcut. Không đưa tài khoản,
+  mật khẩu, token, secret vào handoff hay commit.
+- `flutter analyze --no-fatal-infos` → 0 error (1 warning đã biết, giữ tạm có
+  chủ đích: `_fetchFirstFamilyContextLegacy` unused, `auth_provider.dart:352`);
+  `flutter test` → 481/481 pass — verify lại trên cả `NDuy` lẫn `main` sau
+  merge, không chỉ 1 nhánh.
+- **Quy tắc commit/push mới đã thêm vào `CLAUDE.md` mục "Git"** (rút kinh
+  nghiệm từ đợt này gộp quá nhiều fix vào 1 commit) — đọc lại đó trước khi
+  code tiếp, không lặp lại ở đây.
+- Đang **chờ BE trả lời tiếp** vấn đề `analyze-draft` (parse `hasPerson`/
+  `topicMatch` từ response dạng plain-text đôi lúc vẫn sai, đôi lúc vẫn dính
+  lại `AI_INVALID_RESPONSE`) — xem chi tiết mục "Cập nhật 2026-08-16 (đêm)".
+
+## Trạng thái chức năng cần tiếp tục kiểm thử
+
+### AI chatbox và lịch gia đình
+
+- BE đã chuẩn hóa nội dung khi có `pendingAction`/`pendingActions`: FE phải
+  render theo `actionType`, không tin fallback text do model sinh ra.
+- Calendar AI đã có rule BE cho participant: cụm “cả nhà/cả gia đình/mọi người”
+  chọn toàn bộ thành viên ACTIVE; không chỉ rõ người tham gia thì thêm người tạo;
+  participant id không hợp lệ không được tạo pending action lỗi.
+- Cần regression runtime trên APK mới: tạo/sửa/hủy/xác nhận lịch, kiểm tra card,
+  danh sách lịch, toast/notification và participant sau khi xác nhận.
+
+### Nhiệm vụ, deadline và UX
+
+- Commit `748e490` chứa cải tiến deadline và danh sách nhiệm vụ. Cần kiểm thử
+  Manager/Deputy/Member sau khi cài APK: task mới có vị trí dễ thấy, thứ tự theo
+  deadline/trạng thái hợp lý, task quá hạn hiển thị rõ, và quyền bắt đầu/nộp/duyệt
+  đúng người.
+- Phần thưởng hiện theo flow thủ công: tạo/cập nhật/xóa phần thưởng khi quản lý
+  nhiệm vụ. Không mô tả hoặc giả định tự động thanh toán sau duyệt nếu chưa có
+  cấu hình và xác nhận runtime tương ứng.
+
+### Multi-family context
+
+- Một tài khoản có thể thuộc nhiều family. FE phải lưu và dùng family hiện hành
+  thay vì chọn phần tử đầu của `/families/my`; flow chọn/chuyển family đang cần
+  regression với account thuộc cả `Gia Đình Của Duy` và `NDuy`.
+- Điểm cần kiểm tra: sau chọn `NDuy` với role Deputy, danh sách nhiệm vụ phải
+  dùng đúng workspace và hiển thị assignment của user. Nếu không, ghi request,
+  familyId và response API đã che dữ liệu nhạy cảm để đối chiếu BE.
+
+### Report 6 và Use-case diagram
+
+- Report 6 được làm ngoài repository, chủ yếu tại
+  `D:\Desktop\BÁO-CÁO-NEW\Report6_Software User Guides (1).docx` và file tổng
+  `D:\Desktop\file__lam_chung.docx`. User Manual/screenshot đã được bổ sung;
+  còn cần rà soát trực quan cuối cùng, vị trí ảnh, caption và placeholder.
+- Với Installation Guide do FE phụ trách, lệnh đúng là `pnpm dev:web` cho Web
+  Admin và `flutter run` cho Mobile. Cấu hình BE, database, secret và lệnh BE
+  vẫn do BE chịu trách nhiệm.
+- Use-case đang được chỉnh trong `D:\Downloads\usecase-diagram (6).drawio`.
+  Có bốn actor chính: Guest, Family Member, Family Manager và System Admin;
+  Family Manager kế thừa Family Member, Deputy không là actor riêng. Cần audit
+  lần cuối quan hệ `include`/`extend` và xuất SVG/PDF hoặc PNG 200–300%/300 DPI
+  để tránh sơ đồ tổng thể bị mờ hoặc không đọc được.
+
+## Điểm chờ BE xác nhận / regression liên đội
+
+- Multi-family: API và quyền task theo family đang chọn sau khi đổi workspace.
+- Finance: kiểm tra endpoint báo cáo jar target/actual sau expense đã map
+  category → jar; không được suy diễn số thực tế từ phần trăm phân bổ nếu API
+  chưa trả đúng dữ liệu kỳ.
+- Calendar AI: xác nhận regression payload participant và nội dung pending
+  action chuẩn sau deploy BE.
+- Các vấn đề SOS, notification, payment hoặc service bên thứ ba trong lịch sử
+  không được coi là đã pass nếu chưa có test runtime mới và bằng chứng tương ứng.
+
+## Checklist trước commit/merge kế tiếp
+
+- Chỉ stage các file của một thay đổi có chủ đích; tách code FE, tài liệu và
+  artefact phát sinh thành các commit riêng.
+- Chạy kiểm tra phù hợp sau khi hoàn tất code, tối thiểu `flutter analyze` và
+  test/build có liên quan; kiểm tra CI của commit trước khi phát hành APK.
+- Đọc `git status --short` trước khi commit để loại trừ file report, ảnh tạm,
+  file trích xuất sơ đồ và shortcut.
+
+Last updated: **2026-08-16 (đêm)**
+
+## Cập nhật 2026-08-16 (đêm) — test runtime thật Album Collection, nhiều vòng đối chiếu BE
+
+Tiếp nối commit `c43ce5d`. Sau khi push, test thật qua emulator (build APK
+debug `android-x64` + `adb install`, không dùng `flutter run`) và log
+`debugPrint` tạm trong `_analyzeAndUpload` để đối chiếu response thật của
+`analyze-draft` — không đoán qua UI, luôn xác nhận bằng log trước khi kết
+luận đúng/sai.
+
+**1. [BE FIX VERIFIED — 1 phần] `AI_INVALID_RESPONSE` đã hết, nhưng còn lỗi
+mới nghiêm trọng hơn.** BE báo lỗi cũ do adapter gọi Cloudflare Workers AI
+sai format — đã vá 2 lần (lần 1 không hết, lần 2 verify log thật mới hết).
+Từ đó về sau `analysisStatus` ra đúng `COMPLETED` thay vì kẹt
+`UNAVAILABLE`. **Nhưng phát hiện bug mới:** khi Cloudflare trả plain text
+thay vì JSON (fallback path BE tự mô tả), model AI **suy luận đúng** ngay
+trong text (`summary` có dòng `**Has Person:** False` / `**Topic Match:**
+MISMATCH` kèm lý do rõ ràng), nhưng **field cấu trúc BE trích ra sai** —
+`hasPerson` trả `true` dù text nói `False`, `topicMatch` trả `UNKNOWN` dù
+text nói `MISMATCH`. Hệ quả: `recommendation` không bao giờ ra `WARN`, luôn
+`ALLOW` bất kể ảnh có người hay không, khớp chủ đề hay không. **Đã báo BE**
+kèm 2 ví dụ log cụ thể (ảnh trái cây gán album "sea"/"ANH LMH") — lỗi nằm ở
+bước parse text→field phía BE, không phải AI trả sai, không phải FE.
+**Practical impact:** nhánh `WARN` của `_analyzeAndUpload` vẫn **chưa từng
+được verify runtime thật** — code đã viết đúng theo spec nhưng chưa có dữ
+liệu thật để xác nhận UI hoạt động đúng khi gặp WARN.
+
+**2. Loạt fix FE phát hiện lúc test thật (đã sửa, chưa commit — xem mục
+Snapshot):**
+- **"Tất cả ảnh" hiện sai số mục** — card dùng `album.items.length`, tức số
+  của lần fetch gần nhất trong bộ nhớ, không phải tổng thật. Nếu trước đó
+  vừa xem 1 album cụ thể (list đã bị lọc) rồi quay lại tab Bộ sưu tập, số
+  hiển thị vẫn là số đã lọc. **Đã sửa:** chuyển sang tab Bộ sưu tập thì tự
+  fetch lại không lọc nếu đang có `collectionId`/`mediaType` filter còn sót.
+- **Multi-select upload thiếu** — nhánh "Chọn ảnh từ thư viện" chỉ pick được
+  1 ảnh. Đã đổi sang `picker.pickMultiImage()`, xử lý tuần tự từng file qua
+  `_analyzeAndUploadAll` (không song song, tránh nhiều sheet WARN chồng
+  nhau). Camera/video vẫn chọn đơn (BE nhận đúng 1 file/request).
+  Ảnh mới upload báo timeout do BE xử lý AI vượt quá timeout mặc định 15s
+  của `ApiClient` (`Exception: Kết nối đến server quá lâu`) — không phải
+  bug, rơi đúng vào nhánh UNAVAILABLE hiện có, nhưng **UI hiện chung 1 sheet
+  cho cả 2 trường hợp** (BE trả UNAVAILABLE thật / FE tự timeout) — không
+  phân biệt được nguyên nhân qua UI, chỉ phân biệt được qua log. Đã báo BE
+  về độ trễ AI call không ổn định (có lúc 5-8s, có lúc >15s).
+- **Không có UI sửa/xóa album** — provider đã có `updateCollection`/
+  `deleteCollection` từ Phase 1 nhưng chưa nối nút nào. Đã thêm: nút **⋮**
+  trên mỗi card album → sheet Sửa (đổi tên/mô tả) hoặc Xóa (có xác nhận,
+  nói rõ media không bị xóa theo).
+- **Không gán được album cho ảnh đã upload trước đó** — đối chiếu Swagger
+  xác nhận `PATCH .../albums/media/{mediaId}` (`UpdateAlbumMediaDto`) đã có
+  sẵn field `collectionId` (`null` = gỡ khỏi album), chỉ là FE chưa dùng.
+  Đã thêm dropdown Album vào sheet "Sửa mô tả/quyền xem" +
+  `AlbumProvider.updateMedia()` param `collectionId` (dùng sentinel
+  `Object? = _unsetCollectionId` để phân biệt "không đổi" vs "gửi null tường
+  minh để gỡ" — 3 trạng thái, không nhầm lẫn).
+- **Card album trong "Bộ sưu tập" xấu, không rõ ràng** — `mediaCount` không
+  đáng tin (xem điểm cũ) nên trước đó chỉ còn nhãn xám phẳng. Đã thêm ảnh
+  nền thật (`_coverFor` tìm 1 media khớp collectionId trong list đang tải)
+  khi có, gradient màu thương hiệu khi album còn trống (thay xám chết). Card
+  "Tạo album" đổi hẳn sang style nút hành động (nền nhạt + viền, icon/chữ
+  giữa) để không lẫn với card nội dung. 3 card rỗng còn lại ("Đã ghim" /
+  "Tất cả ảnh" khi trống / "Video") mỗi loại 1 gradient riêng (cam / xanh
+  dương / tím) thay vì cùng 1 màu xám.
+- **Chi tiết ảnh không hiện thuộc album nào** — đã thêm chip trong
+  `_infoPanel`, mờ nhạt "Không thuộc album" nếu chưa gán (trạng thái bình
+  thường, đa số ảnh cũ), chip màu thương hiệu + tên album thật nếu đã gán.
+  **Bấm vào chip đã gán → nhảy thẳng ra danh sách ảnh của album đó** (pop
+  viewer trả về `collectionId`, `_openDetail` đọc kết quả để chuyển tab +
+  lọc).
+- **Loading khi chờ `analyze-draft`** — trước đó bấm "Tải lên" xong màn hình
+  đứng im vài giây không phản hồi gì (BE có lúc mất 5-10s). Đã thêm dialog
+  "Đang phân tích ảnh..." không cho bấm ra ngoài, tự đóng khi có kết quả.
+
+**3. Không phải bug, chỉ ghi nhận lại (đã hỏi rõ, không tự sửa):**
+- **Ghim ảnh ("Đã ghim") không lưu qua lần mở app** — pre-existing, không
+  thuộc phạm vi Album Collection. `_pinnedIds` chỉ là `Set<String>` sống
+  trong session, code đã tự gắn nhãn "bản xem trước" từ trước. Muốn lưu
+  thật cần bàn riêng (lưu local hay cần BE thêm field) — chưa làm.
+- **Face suggestion "Quét lại" không ra gợi ý** — đúng thiết kế, không phải
+  bug. Cần ít nhất 1 thành viên đã đăng ký Face Profile để so khớp; ảnh test
+  toàn người ngoài gia đình (celeb, ảnh stock) nên không bao giờ khớp được.
+  Không đụng `AlbumFaceProvider`/`AlbumFaceSection` trong suốt đợt test này,
+  đúng yêu cầu ban đầu.
+- **502 Bad Gateway thoáng qua** (`ApiClient: invalid JSON response (502)`
+  từ `.../albums/media`, đồng thời SOS `fetchAlerts` cũng 502 cùng lúc) —
+  verify log xác nhận đây là BE thật sự down/restart tạm thời (khả năng lúc
+  BE đang deploy bản vá analyze-draft), không phải bug FE. `_items` bị xóa
+  khi fetch lỗi (đúng hành vi hiện có), tự về lại bình thường sau khi BE
+  online lại + bấm refresh.
+
+**4. Ghi chú môi trường test (để phiên sau đỡ mất thời gian lặp lại):**
+- Build `flutter build apk --debug --target-platform android-x64` (không
+  build full-arch ~228MB, quá nặng so với dung lượng emulator hay gần đầy) +
+  `adb install -r` — không cần `flutter run`, app chạy độc lập sau khi cài,
+  đóng terminal không ảnh hưởng gì.
+- Emulator `Medium_Phone` hay báo `INSTALL_FAILED_INSUFFICIENT_STORAGE`
+  (đĩa ảo mặc định 6GB, nhiều app Google preload chiếm gần hết) — cách xử
+  lý nhanh: `adb shell pm clear com.company.familycare` (dọn cache app
+  mình) hoặc nặng hơn thì **Wipe Data** cả máy ảo qua Device Manager (mất
+  hết session, phải đăng nhập lại). Nên tăng Internal Storage AVD lên
+  8-10GB để đỡ lặp lại.
+- Kéo-thả ảnh từ máy thật vào cửa sổ emulator **không tự động vào
+  MediaStore** — picker hệ thống (Photo Picker) không thấy ảnh mới. Cách
+  quét lại:
+  `adb shell content call --uri content://media/external/file --method scan_volume --arg external`.
+  Nếu vẫn không thấy (Photo Picker có cache riêng), thêm
+  `adb shell am force-stop com.google.android.providers.media.module`. Ảnh
+  nên đặt ở `/sdcard/DCIM/Camera` (ổn định hơn `/sdcard/Download`).
+- `adb shell` với path Unix (`/sdcard/...`, `/data/...`) chạy qua Git
+  Bash/MSYS bị tự động dịch path sai (vd `/data` → `D:/Git/data`) — dùng
+  **PowerShell** cho mọi lệnh `adb shell` có path tuyệt đối kiểu Unix.
+
+## Cập nhật 2026-08-16 — Album Collection + analyze-draft (Phase 1+2 FE), gap featureAccess
+
+**1. Album Collection + analyze-draft đã wire FE (chưa test runtime).** BE xác
+nhận đã ship 3 endpoint mới (`GET/POST/PATCH/DELETE /albums/collections`,
+`POST/GET /albums/media` nhận thêm `collectionId`, `POST
+/albums/media/analyze-draft`) — verify trực tiếp qua `/api/docs-json` server
+live trước khi code (file dump `family-care-api.json` ở root là bản cũ, không
+có 3 path này). Đã cập nhật `API_DOCS.md` mục Album cùng lúc. Code:
+`AlbumProvider.fetchCollections/createCollection/updateCollection/
+deleteCollection/analyzeDraft`, tab "Bộ sưu tập" (`album_screen.dart`) có card
+"+ Tạo album" + card collection thật, sheet upload có dropdown chọn album, flow
+`_analyzeAndUpload` xử lý `ALLOW/WARN/SKIPPED/UNAVAILABLE`. Không đụng
+`AlbumFaceProvider`/`AlbumFaceSection`. `flutter analyze` 0 issue, `flutter
+test` 481/481 pass. **Chưa test qua emulator** — script test ở
+`docs/ALBUM_COLLECTION_TEST_SCRIPT.md`. UI chỉ có nút Tạo album, **chưa có nút
+Sửa/Xóa album** dù provider đã có `updateCollection`/`deleteCollection` (không
+nằm trong yêu cầu Phase 1, để dành nếu cần sau).
+
+**1b. [Runtime PASS + fix nhỏ] User đã tự test qua emulator ngay sau khi code
+xong:** tạo album, upload ảnh gán đúng album qua dropdown, lọc theo album ra
+đúng ảnh — flow chính chạy đúng. Multi-select ảnh khi upload từ thư viện thiếu
+→ đã bổ sung `pickMultiImage()` (chỉ áp dụng nhánh "Chọn ảnh từ thư viện", camera/
+video vẫn chọn đơn), `_analyzeAndUploadAll` xử lý tuần tự từng file để sheet WARN
+không chồng nhau. **[VERIFY LIVE — mediaCount không đáng tin]** card album ngoài
+danh sách báo "0 mục" dù bên trong đã có ảnh thật (verify: bấm vào lọc đúng ra
+1 ảnh) — field `mediaCount` của `GET /albums/collections` không cập nhật theo
+thời gian thực. Đã bỏ hiển thị số này ở card (chỉ còn nhãn "Album" chung), xem
+chi tiết `API_DOCS.md` mục Album. Cần hỏi BE trước khi hiển thị lại.
+
+**2. [GHI NHẬN — không phải bug, chỉ để biết phạm vi thật] `featureAccess`
+(gating theo gói subscription) chỉ áp dụng cho 6/26 key BE khai trong
+`officialKeys` (`feature_access.dart`):** `calendar.enabled`,
+`calendar.reminders`, `calendar.recurringEvents`, `album.videoUpload`,
+`album.faceSuggestions`, `ai.assistant`. Ba key `ai.financeSummary` /
+`ai.taskSummary` / `ai.savingSuggestions` có getter trong model nhưng
+**không có màn nào gọi tới** (dead code, không gate gì cả). Toàn bộ
+`finance.*` (6 key), `tasks.*` (4 key), `sos.*` (4 key), `chat.*` (3 key) —
+**17 key hoàn toàn chưa có dòng code nào check** ở FE. Nghĩa là nếu gói Free bị
+giới hạn các tính năng này, FE hiện không tự chặn/ẩn ở giao diện, chỉ dựa vào
+BE trả 403 (nếu BE có enforce). Không tự ý thêm gate cho các key này — cần hỏi
+BE trước xem có thật sự cần giới hạn theo gói không, đúng theo cách đã làm với
+Album Collection (hỏi trước, không đoán).
+
+## Cập nhật 2026-08-14 (tối) — đồng bộ NDuy, verify jar-target-actual, khởi động test toàn diện flow
+
+**1. Đồng bộ Git (đã xong):** `NDuy` fast-forward lên `origin/main` (`a9f76ef`),
+9 file đang sửa dở được stash trước/pop lại sau, không mất gì và không còn
+conflict. `flutter analyze` 0 error, `flutter test` 481/481 pass — xem chi
+tiết ở khối Snapshot phía trên. Còn 11 commit local chưa push lên
+`origin/NDuy`.
+
+**2. [BE FIX VERIFIED] `jar-target-actual` không còn trả `actualAmount = 0`.**
+Test runtime qua Sổ thu chi → "Hạn mức theo tỷ lệ thu nhập — thực chi": sau
+khi tạo vài khoản chi map đúng category → jar (Ăn uống → Spending), field
+`actualAmount` hiện đúng số thật (`Spending: 635.122đ / 4.848.098đ`), không còn
+kẹt ở 0 như bug cũ (nguồn gọi: `WalletProvider.fetchJarTargetActualReport()`,
+[wallet_screen.dart:157](lib/screens/parent/wallet_screen.dart#L157)). Rút bug
+này khỏi danh sách cần theo dõi.
+
+**3. Đợt test toàn diện AI Chatbox (đã hoàn tất trước đó trong phiên, tách
+riêng khỏi các mục Git/jar ở trên):**
+- 2 bug FE đã sửa và **đã nằm trong `a9f76ef`** (verify lại bằng grep sau khi
+  pull, không phải sửa mới lần này): UUID thô ở 4 field Danh mục/Mục
+  tiêu/Mô hình/Người nhận → `resolveAiPreviewField()` +
+  4 resolver riêng, [ai_assistant_screen.dart:110-166](lib/screens/shared/ai_assistant_screen.dart#L110-L166);
+  tràn layout lưới Lịch khi ≥3 sự kiện/ngày → giới hạn `max = 2`,
+  [calendar_screen.dart:995](lib/screens/parent/calendar_screen.dart#L995).
+- **Cần báo BE** (bằng chứng ảnh chụp có, chưa gửi team): (a) AI suy luận sai
+  ngày cho cụm "cuối tuần này" ở luồng AI hỏi lại nhiều lượt (ra 13/08 thứ Năm
+  thay vì 15-16/08 thứ Bảy/CN); (b) giờ "ngay bây giờ" có lúc vẫn về `00:00`
+  thay vì giờ thực — chập chờn, lúc đúng lúc sai giữa các lần test; (c) lỗi 502
+  "Server trả dữ liệu không đúng định dạng JSON" khi xác nhận
+  `ALLOCATE_FUND_BY_MODEL`, tái hiện độc lập ở nhiều mức tiền khác nhau.
+- Đã xác nhận **không phải bug** (PASS): phân quyền Member bị chặn đúng khi
+  ghi khoản chi (banner tiếng Việt đầy đủ, không lọt `pendingAction`);
+  `ACTION_PLAN_CARD` nhiều bước hoạt động đúng contract.
+
+**4. Bắt đầu kế hoạch test toàn diện từng flow (theo thứ tự thanh nav) —
+CHƯA XONG, mới làm dở Home Dashboard:**
+- Đã lập kế hoạch chi tiết (13 flow, ưu tiên các domain có `[VERIFY]`/bug đã
+  biết trong `API_DOCS.md`: SOS, Chat, Subscription, Finance Goal Contribution
+  Plans, Tasks Reward) — quy trình: test qua máy ảo bằng adb (uiautomator dump
+  lấy toạ độ, screencap đọc kết quả, nhờ user gõ tay câu tiếng Việt vì
+  `adb shell input text` mất dấu và ADBKeyBoard không ổn định trên máy ảo này)
+  → đối chiếu API_DOCS → sửa FE ngay nếu là bug FE → ghi handoff → chuyển flow
+  tiếp theo.
+- **Đã test xong:** Home Dashboard (Manager) — số liệu đúng (Quỹ Gia Đình,
+  Nhiệm vụ, 3 thành viên), nút Thông báo hoạt động đúng (lần đầu tưởng lỗi do
+  chị tính sai toạ độ khi bấm, không phải bug thật), màn Thông báo hiển thị
+  nội dung hợp lý không có UUID/JSON thô.
+- **Đang dở, chưa kết luận:** lỡ tay lạc sang màn Bản đồ gia đình (Map) —
+  bản đồ tải đúng, marker "Tôi" hiện đúng vị trí emulator, toggle "Chia sẻ vị
+  trí của bạn" bấm thử chưa xác nhận được có đổi trạng thái thật không (chưa
+  kiểm tra kỹ, cần test lại).
+- **Chưa test:** Chat, Calendar (regression), Tasks (kèm Reward), Wallet/Tài
+  chính (Sổ thu chi, Mô hình, Ngân sách, Mục tiêu, Goal Contribution, Hỗ trợ
+  chi tiêu), Album, SOS (ưu tiên cao — 2 bug FE đã ghi nhận trong
+  `API_DOCS.md` cần verify: parse `sosAlertId`, sensor SOS thiếu vị trí),
+  Profile/Settings (kèm bug wearable disconnect báo thành công khống),
+  Members/Family, Subscription, Calls (video LiveKit), smoke Auth.
+- Tài khoản test đã có sẵn: Manager (`ngophamnhutduy050302@gmail.com`),
+  Deputy (`duynpnse161783@fpt.edu.vn`, đã là Phó nhóm trong gia đình NDuy),
+  Member (`nhatdeptrai281003@gmail.com`) — không cần tạo lại.
+- Kế hoạch chi tiết lưu ngoài repo tại
+  `C:\Users\N DUY\.claude\plans\gi-ch-gi-p-em-indexed-wren.md` (không phải file
+  của repo, chỉ tham chiếu nếu cần agent khác tiếp tục).
+
+**5. Việc ngoài phạm vi code repo (không ảnh hưởng trạng thái app):** đã rà
+soát và sửa use-case diagram (`D:\Downloads\usecase-diagram (8).drawio`, ngoài
+repo) theo đúng chức năng thật của app — thêm 5 use case còn thiếu (View
+Notifications, Make/Join Video Call, Enroll Face Profile, Review Spending
+Support Request, View/Resolve Budget Alert), sửa 1 quan hệ sai (Ledger Entry
+phải thuộc Family Manager, không phải Family Member), dọn 2 use case trùng
+lặp. Còn 3 đường nối "lửng" (chưa bind thật vào actor) cần user tự kéo lại
+trong draw.io — không phải việc của repo này nên không lặp chi tiết ở đây.
+
+## FE implementation 2026-08-14 — explicit multi-workspace selection
+
+- BE confirmed that an account can have multiple ACTIVE family memberships.
+  `GET /families/my` returns those memberships; the JWT does **not** contain a
+  current-family claim. Each protected family request is authorized using its
+  `:familyId` path parameter.
+- FE no longer treats the first item of `/families/my` as the current family.
+  The selected `familyId` is persisted locally as `current_family_id`; on app
+  restore, FE validates that it is still returned by `/families/my`. If it is
+  missing, FE clears it and presents an explicit workspace picker instead of
+  silently entering another family.
+- Added `/select-family` and a **Chuyển gia đình** entry in Hồ sơ for accounts
+  with multiple memberships. Selecting a workspace updates `ApiClient.familyId`
+  and resets app-scope provider caches before entering that workspace.
+- Creating a family now makes the newly returned family id current immediately;
+  it no longer depends on the old, incorrect token-claim refresh assumption.
+- Join-request polling remembers the request just submitted. Once that exact
+  request becomes APPROVED, it reads its `familyId` / `referenceId`, refreshes
+  memberships and selects that family instead of an unrelated historical one.
+- Runtime retest still needed after installing this FE build: sign in to an
+  account with both **Gia Đình Của Duy** and **NDuy**, select NDuy (Deputy),
+  then open Nhiệm vụ and verify the assignment appears in
+  `GET /families/{NDuy}/tasks/my-assignments`.
+
+## Runtime 2026-08-14 — task assignment / multi-workspace
+
+- Card task quản trị trước đây hiển thị `${active.length} người được giao`, trong
+  đó `active.length` là số assignment record, không phải số thành viên duy nhất.
+  FE đã deduplicate theo `assignedToMemberId`: một người sẽ hiển thị tên, nhiều
+  người hiển thị tối đa hai tên rồi `và N người khác`.
+- Task giao trong workspace `NDuy` không xuất hiện khi đăng nhập `lê anh sĩ` vì
+  session hiện tự chọn workspace `Gia Đình Của Duy` (role Manager). Đây là cùng
+  lỗi thiếu workspace picker/switch flow, không thể kết luận task assignment mất
+  cho tới khi chọn được `NDuy` và gọi `GET .../tasks/my-assignments` trong đúng
+  family context.
+- Nếu sau khi switch đúng `NDuy` vẫn có nhiều assignment record cho một task/
+  member không phải task định kỳ, BE cần kiểm tra tránh duplicate assignment.
+
+## Runtime 2026-08-13 — membership đa gia đình / chọn workspace (thiếu flow FE/BE)
+
+- Đối chiếu trực tiếp bằng `POST /auth/login`, `GET /auth/me` và `GET /families/my`
+  của tài khoản `duynpnse161783@fpt.edu.vn` cho thấy **hai membership ACTIVE**:
+  `Gia Đình Của Duy` với role `FAMILY_MANAGER` và `NDuy` với role
+  `DEPUTY_MEMBER`.
+- Vì `AuthProvider._fetchFamilyContext()` hiện lấy `GET /families/my` rồi chọn
+  `list.first`, app vào `Gia Đình Của Duy` (đứng đầu response), dù danh sách
+  member của `NDuy` vẫn hiển thị tài khoản này là Phó nhóm. Đây không phải cache
+  session và làm không thể test Deputy của `NDuy` theo đúng workspace.
+- BE đã xác nhận user **được** thuộc nhiều family. Tuy nhiên Swagger hiện chỉ có
+  `GET /families/my`, chưa có API chọn/chuyển workspace. Access token có family/member
+  claims, nên FE không thể chỉ đổi `familyId` cục bộ: UI có thể hiện family B nhưng
+  request vẫn mang claim family A. Cần BE bổ sung API switch workspace (cấp token mới
+  theo membership được chọn), hoặc một cơ chế chọn workspace tương đương được document.
+  Sau đó FE làm workspace picker và lưu workspace đã chọn; không suy luận theo thứ tự,
+  role hay ngày tạo.
+- **FE fix cùng phiên:** `ProfileScreen` tách đúng Manager và Deputy; trước đó
+  dùng `isAdministrative` như `isManager`, làm Deputy thấy menu Manager-only.
+  Deputy nay vẫn thấy nhóm quản trị chung, nhưng không thấy Mời thành viên, Duyệt
+  yêu cầu tham gia hoặc Gói đăng ký. Chưa thể verify runtime patch cho Deputy
+  NDuy vì BE workspace selection đang sai.
+
+## Xác nhận runtime 2026-08-12 — Calendar AI participant payload (BE FIX VERIFIED)
+
+- BE đã sửa `CalendarAiTools` đúng theo thông báo: prompt có “cho cả nhà”/“cả gia đình”/
+  “mọi người” lấy toàn bộ member `ACTIVE`; không nêu người tham gia thì thêm người tạo;
+  participant ID do AI trả phải thuộc member đang active mới được tạo pending action.
+- **Đã test runtime thành công bằng proposal mới** (không dùng lại proposal cũ đã hết hạn):
+  “Tạo lịch đi dã ngoại 15h đến 18h ngày 15/08/2026 tại Công viên Ánh Sáng cho cả nhà.”
+  Card `CREATE_CALENDAR_EVENT` ở trạng thái `PENDING` trả content chuẩn, bấm **Xác nhận tạo
+  lịch** thành công, chuyển sang “Đã thực hiện đề xuất”, rồi sự kiện **Đi dã ngoại** xuất hiện
+  trong Calendar list với 15/08, 15:00–18:00, Công viên Ánh Sáng.
+- Lỗi cũ “Sự kiện cần ít nhất một người tham gia” chỉ áp dụng cho pending proposal được tạo
+  trước khi BE deploy và/hoặc đã hết hạn; không tái hiện với proposal mới. **Không cần sửa FE**:
+  FE chỉ confirm bằng `messageId` và reload conversation, không tự tạo hay làm mất participant
+  payload.
+
+## Cập nhật cuối phiên 2026-08-10 — Report 6, ảnh minh chứng và AI Chatbox
+
+### Report 6 — trạng thái file và ảnh đã chèn
+
+- **File nguồn đã chỉnh:** `D:\Desktop\BÁO-CÁO-NEW\Report6_Software User Guides (1).docx`.
+  Không dùng `rp6.docx` để chuyển sang bản báo cáo chung, vì file đó không phải bản đã
+  được bổ sung ảnh.
+- Đã phục hồi ảnh sau khi phát hiện thao tác xóa bảng placeholder đã xóa theo một số ảnh
+  nằm trong bảng. Bản hiện tại có **13 ảnh nhúng thực sự** trong DOCX (đã kiểm tra
+  `word/media/*`), kích thước khoảng 5.9 MB.
+- Backup trước khi phục hồi: `D:\Desktop\BÁO-CÁO-NEW\Report6_Software User Guides (1).before-image-restore.docx`.
+- Ảnh đã được đặt lại ngoài bảng placeholder, trước caption tương ứng: Hình **6.6, 6.7,
+  6.10, 6.11, 6.12, 6.13, 6.15, 6.17, 6.18, 6.19, 6.21** (Hình 6.21 có ảnh Hồ sơ và
+  Khai báo tài chính tháng).
+- Khi chuyển sang Google Docs: **upload trực tiếp DOCX đã chỉnh**, mở bằng Google Docs,
+  rồi chỉ copy `3. User Manual` sang file chung. Không copy toàn bộ nội dung trực tiếp từ
+  Word; ảnh inline/bảng có thể mất. Bản Google Docs đã upload trước đó không tự cập nhật.
+- Ảnh còn cần chụp/điền: **6.1–6.4** (DB/Backend/Web/Flutter runtime), **6.8** (family
+  invite/join), **6.14** (AI calendar pending), **6.16** (chat family test sạch),
+  **6.20** (AI multi-turn có Sửa/Hủy/Xác nhận), và **6.22–6.30** (Web Admin).
+
+### AI Chatbox — kết quả đối chiếu mới nhất
+
+- **[BE BUG] Calendar content mâu thuẫn pending action:** yêu cầu tạo lịch có thể trả
+  `pendingAction: CREATE_CALENDAR_EVENT`/thẻ xác nhận hoàn chỉnh nhưng `content` lại nói
+  “Mình chưa tạo được thẻ xác nhận…” và còn nhắc đến loại giao dịch/số tiền. FE đã được
+  đối chiếu: không suy luận action từ chữ; chỉ render card khi BE gửi
+  `pendingAction`/`pendingActions[]`. **BE đã báo sửa:** với action `PENDING`, content
+  được chuẩn hóa theo actionType; calendar phải trả “Mình đã tạo đề xuất lịch. Vui lòng
+  kiểm tra thông tin và xác nhận trên ứng dụng để hoàn tất nhé.” FE thêm regression test
+  parse/render đúng payload mới; còn cần test runtime sau khi app nhận BE deploy mới.
+- **[BE BUG] Expense proposal thiếu pending action:** prompt ghi khoản chi có lúc chỉ trả
+  text yêu cầu “xác nhận trên ứng dụng”, không trả `pendingAction CREATE_LEDGER_ENTRY`,
+  nên FE không thể dựng nút xác nhận. Luồng khoản thu cùng chức năng hoạt động. BE phải
+  trả action đầy đủ hoặc nói rõ lý do không tạo được đề xuất.
+- **[BE BUG] Jar target vs actual:** sau chia quỹ 3.000.000đ theo 80/20, target đúng phải
+  Spending 2.400.000đ/Savings 600.000đ. Ledger expense 100.000đ map đúng vào Spending,
+  nhưng endpoint report từng trả target 80.000đ/20.000đ. Đây là lỗi tính `targetAmount`
+  của BE; không phải FE tự phân bổ khoản chi.
+- Hình AI calendar có câu content mâu thuẫn chỉ dùng làm bằng chứng bug, **không** dùng
+  làm Hình 6.14 của User Manual. Hình 6.14 phải là luồng sạch có title/time/location và
+  nút Hủy/Xác nhận/Chỉnh.
+- **[BE FIX VERIFIED 2026-08-12] Calendar thiếu người tham gia:** BE đã map “cho cả nhà”
+  sang các member `ACTIVE` và có fallback người tạo. Proposal mới xác nhận thành công,
+  chuyển sang trạng thái hoàn tất và tạo được sự kiện trong Calendar. Card cũ tạo trước khi
+  deploy/hết hạn không dùng để kết luận hồi quy; FE không cần thay đổi payload participant.
+
+### Domain cần gửi BE để cấu hình
+
+- **Web Frontend production (CORS / `WEB_URL`):** `https://family-care-admin.vercel.app`.
+- **Web local development:** `http://localhost:3000`.
+- **Mobile không có HTTPS domain:** deep-link callback là `familycare://app` (Android
+  manifest: scheme `familycare`, host `app`). Ví dụ:
+  `familycare://app/payment-success`, `familycare://app/payment-failed`,
+  `familycare://app/join?code=<CODE>`.
+- Không dùng API URL làm FE origin. Dùng Web URL cho CORS/`WEB_URL`; dùng deep-link riêng
+  cho redirect/callback về Mobile.
+
+### Ghi chú cài đặt Report 6
+
+- Nội dung hướng dẫn cài đặt phải theo source hiện tại: Backend là **Node.js/TypeScript,
+  Express/Prisma và pnpm**, không phải Spring Boot/Maven/PilahubApplication. Mobile là
+  Flutter (`flutter pub get`, `flutter run`), không phải `npm run android`.
+- Hình 6.4 cần chứng cứ runtime: terminal có `Syncing files to device…` và emulator đang
+  mở FamilyCare; ảnh Device Manager là bằng chứng bổ trợ về AVD, không thay thế ảnh app.
 
 ## Cập nhật cuối phiên 2026-08-10 — Reward nhiệm vụ, phiên family mới và chuẩn bị ảnh Report 6
 

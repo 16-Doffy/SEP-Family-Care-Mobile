@@ -1,5 +1,31 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
+import '../services/sos_realtime_service.dart';
+
+typedef SosRealtimeLocation = ({
+  double lat,
+  double lng,
+  double? accuracy,
+  String? sourceType,
+  DateTime? recordedAt,
+  String? deviceId,
+});
+
+class SosResponderLocation {
+  final String alertId;
+  final String responderMemberId;
+  final String displayName;
+  final String? avatarUrl;
+  final SosRealtimeLocation location;
+
+  const SosResponderLocation({
+    required this.alertId,
+    required this.responderMemberId,
+    required this.displayName,
+    this.avatarUrl,
+    required this.location,
+  });
+}
 
 class SosAlert {
   final String id;
@@ -196,6 +222,7 @@ class SosProvider extends ChangeNotifier {
   /// nhìn thấy dữ liệu của người trước. Đăng ký tự động qua
   /// [ApiClient.addSessionResetListener].
   void resetForNewSession() {
+    stopRealtime();
     _alerts = [];
     _contacts = [];
     _settings = null;
@@ -203,6 +230,8 @@ class SosProvider extends ChangeNotifier {
     _loading = false;
     _sending = false;
     _error = null;
+    _latestRealtimeLocations.clear();
+    _responderLocationsByAlert.clear();
     notifyListeners();
   }
 
@@ -358,22 +387,222 @@ class SosProvider extends ChangeNotifier {
   bool _loading = false;
   bool _sending = false;
   String? _error;
+  bool _realtimeOn = false;
+  final Map<String, SosRealtimeLocation> _latestRealtimeLocations = {};
+  final Map<String, Map<String, SosResponderLocation>>
+  _responderLocationsByAlert = {};
+
+  void Function(SosAlert alert)? onNewRealtimeAlert;
+  void Function(String alertId, Map<String, dynamic> payload)?
+  onRealtimeResolved;
 
   List<SosAlert> get alerts => _alerts;
   List<SosAlert> get activeAlerts => _alerts.where((a) => a.isActive).toList();
   bool get loading => _loading;
   bool get sending => _sending;
   String? get error => _error;
+  bool get realtimeConnected => SosRealtimeService.instance.connected;
+
+  SosRealtimeLocation? realtimeLocationOf(String alertId) =>
+      _latestRealtimeLocations[alertId];
+
+  List<SosResponderLocation> responderLocationsFor(String alertId) {
+    return List.unmodifiable(
+      _responderLocationsByAlert[alertId]?.values ??
+          const <SosResponderLocation>[],
+    );
+  }
 
   String? get _fid => ApiClient.instance.familyId;
 
+  // ── Realtime (Socket.IO /sos) ────────────────────────────────────────────
+  void startRealtime() {
+    if (_realtimeOn) return;
+    _realtimeOn = true;
+    final svc = SosRealtimeService.instance;
+    svc.onSnapshot = _applyRealtimeSnapshot;
+    svc.onNewAlert = _applyRealtimeNewAlert;
+    svc.onLocation = _applyRealtimeLocation;
+    svc.onResponderLocation = _applyRealtimeResponderLocation;
+    svc.onResolved = _applyRealtimeResolved;
+    svc.onResponse = (_) => fetchAlerts(silent: true);
+    svc.onKicked = _handleRealtimeKicked;
+    svc.connect();
+  }
+
+  void stopRealtime() {
+    if (!_realtimeOn) return;
+    _realtimeOn = false;
+    final svc = SosRealtimeService.instance;
+    svc.onSnapshot = null;
+    svc.onNewAlert = null;
+    svc.onLocation = null;
+    svc.onResponderLocation = null;
+    svc.onResponse = null;
+    svc.onResolved = null;
+    svc.onKicked = null;
+    svc.disconnect();
+    _latestRealtimeLocations.clear();
+    _responderLocationsByAlert.clear();
+  }
+
+  void _applyRealtimeSnapshot(
+    Map<String, dynamic> alertJson,
+    Map<String, dynamic>? lastLocation,
+  ) {
+    final alert = SosAlert.fromJson(alertJson);
+    _upsertAlert(alert);
+    final loc = _parseRealtimeLocation(lastLocation);
+    if (alert.id.isNotEmpty && loc != null) {
+      _latestRealtimeLocations[alert.id] = loc;
+    }
+    notifyListeners();
+  }
+
+  void _applyRealtimeNewAlert(Map<String, dynamic> alertJson) {
+    final alert = SosAlert.fromJson(alertJson);
+    _upsertAlert(alert);
+    notifyListeners();
+    if (alert.id.isNotEmpty) onNewRealtimeAlert?.call(alert);
+  }
+
+  void _applyRealtimeLocation(String alertId, Map<String, dynamic> point) {
+    final loc = _parseRealtimeLocation(point);
+    if (loc == null) return;
+    _latestRealtimeLocations[alertId] = loc;
+    notifyListeners();
+  }
+
+  void _applyRealtimeResponderLocation(SosResponderLocationEvent event) {
+    final loc = _parseRealtimeLocation(event.point);
+    if (loc == null) {
+      // Chỗ nuốt event nguy hiểm nhất: BE bắn đúng nhưng tên field toạ độ lệch
+      // thì marker không bao giờ hiện mà không có lỗi nào.
+      sosResponderLog(
+        'PARSE THẤT BẠI point=${event.point} — không đọc được latitude/lat '
+        'hoặc longitude/lng, bỏ qua event',
+      );
+      return;
+    }
+    final displayName =
+        SosAlert._memberName(event.responderMember) ??
+        event.responderMember['displayName']?.toString() ??
+        'Đang tới';
+    final user = event.responderMember['user'];
+    final avatarUrl =
+        event.responderMember['avatarUrl']?.toString() ??
+        (user is Map ? user['avatarUrl']?.toString() : null);
+    final perAlert = Map<String, SosResponderLocation>.from(
+      _responderLocationsByAlert[event.sosAlertId] ?? const {},
+    );
+    perAlert[event.responderMemberId] = SosResponderLocation(
+      alertId: event.sosAlertId,
+      responderMemberId: event.responderMemberId,
+      displayName: displayName,
+      avatarUrl: avatarUrl,
+      location: loc,
+    );
+    _responderLocationsByAlert[event.sosAlertId] = perAlert;
+    sosResponderLog(
+      'LƯU STATE alertId=${event.sosAlertId} responder="$displayName" '
+      'lat=${loc.lat} lng=${loc.lng} → responderLocationsFor().length='
+      '${perAlert.length}',
+    );
+    notifyListeners();
+  }
+
+  void _applyRealtimeResolved(String alertId, Map<String, dynamic> payload) {
+    _latestRealtimeLocations.remove(alertId);
+    _responderLocationsByAlert.remove(alertId);
+    final status = payload['status']?.toString() ?? 'RESOLVED';
+    _alerts = [
+      for (final alert in _alerts)
+        if (alert.id == alertId)
+          SosAlert(
+            id: alert.id,
+            status: status,
+            severity: alert.severity,
+            message: alert.message,
+            address: alert.address,
+            senderName: alert.senderName,
+            triggeredByUserId: alert.triggeredByUserId,
+            createdAt: alert.createdAt,
+            resolutionNote:
+                payload['resolutionNote']?.toString() ?? alert.resolutionNote,
+            resolvedByName: alert.resolvedByName,
+            latitude: alert.latitude,
+            longitude: alert.longitude,
+          )
+        else
+          alert,
+    ];
+    notifyListeners();
+    onRealtimeResolved?.call(alertId, payload);
+  }
+
+  void _handleRealtimeKicked(String workspaceId) {
+    if (_fid != null && workspaceId != _fid) return;
+    _realtimeOn = false;
+    _latestRealtimeLocations.clear();
+    _responderLocationsByAlert.clear();
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugApplyResponderLocation(Map<String, dynamic> payload) {
+    _applyRealtimeResponderLocation(
+      SosResponderLocationEvent.fromJson(payload),
+    );
+  }
+
+  @visibleForTesting
+  void debugApplyResolved(String alertId) {
+    _applyRealtimeResolved(alertId, {'status': 'RESOLVED'});
+  }
+
+  void _upsertAlert(SosAlert alert) {
+    if (alert.id.isEmpty) return;
+    final i = _alerts.indexWhere((a) => a.id == alert.id);
+    if (i == -1) {
+      _alerts = [alert, ..._alerts];
+      return;
+    }
+    _alerts = [
+      for (var index = 0; index < _alerts.length; index++)
+        index == i ? alert : _alerts[index],
+    ];
+  }
+
+  SosRealtimeLocation? _parseRealtimeLocation(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final lat = _doubleOf(json['latitude'] ?? json['lat']);
+    final lng = _doubleOf(json['longitude'] ?? json['lng']);
+    if (lat == null || lng == null) return null;
+    return (
+      lat: lat,
+      lng: lng,
+      accuracy: _doubleOf(json['accuracy']),
+      sourceType: json['sourceType']?.toString(),
+      recordedAt: DateTime.tryParse(
+        json['recordedAt']?.toString() ?? json['createdAt']?.toString() ?? '',
+      ),
+      deviceId: json['deviceId']?.toString(),
+    );
+  }
+
+  static double? _doubleOf(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
   // GET /families/{familyId}/sos/alerts
-  Future<void> fetchAlerts() async {
+  Future<void> fetchAlerts({bool silent = false}) async {
     final fid = _fid;
     if (fid == null) return;
-    _loading = true;
+    if (!silent) _loading = true;
     _error = null;
-    notifyListeners();
+    if (!silent) notifyListeners();
     try {
       final data = await ApiClient.instance.get('/families/$fid/sos/alerts');
       final raw = data is List
@@ -387,11 +616,18 @@ class SosProvider extends ChangeNotifier {
           .whereType<Map>()
           .map((e) => SosAlert.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+      final activeIds = _alerts
+          .where((a) => a.isActive)
+          .map((a) => a.id)
+          .toSet();
+      _responderLocationsByAlert.removeWhere(
+        (alertId, _) => !activeIds.contains(alertId),
+      );
     } catch (e) {
       _error = e.toString();
       debugPrint('SosProvider: fetchAlerts failed: $e');
     } finally {
-      _loading = false;
+      if (!silent) _loading = false;
       notifyListeners();
     }
   }
@@ -475,6 +711,7 @@ class SosProvider extends ChangeNotifier {
               'resolutionNote': resolutionNote,
             if (action == 'resolve' && isFalseAlarm) 'isFalseAlarm': true,
           });
+      _responderLocationsByAlert.remove(alertId);
       await fetchAlerts();
     } finally {
       _sending = false;
@@ -562,12 +799,64 @@ class SosProvider extends ChangeNotifier {
     }
   }
 
+  bool pushLocationRealtime(
+    String alertId,
+    double latitude,
+    double longitude, {
+    double? accuracy,
+    String sourceType = 'MOBILE_GPS',
+    String? deviceId,
+    DateTime? recordedAt,
+  }) {
+    final fid = _fid;
+    if (fid == null || fid.isEmpty) return false;
+    return SosRealtimeService.instance.pushLocation(
+      workspaceId: fid,
+      alertId: alertId,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      sourceType: sourceType,
+      recordedAt: recordedAt,
+      deviceId: deviceId,
+    );
+  }
+
+  bool pushResponderLocationRealtime(
+    String alertId,
+    double latitude,
+    double longitude, {
+    double? accuracy,
+    String sourceType = 'MOBILE_GPS',
+    DateTime? recordedAt,
+  }) {
+    final fid = _fid;
+    if (fid == null || fid.isEmpty) return false;
+    return SosRealtimeService.instance.pushResponderLocation(
+      workspaceId: fid,
+      alertId: alertId,
+      latitude: latitude,
+      longitude: longitude,
+      accuracy: accuracy,
+      sourceType: sourceType,
+      recordedAt: recordedAt,
+    );
+  }
+
   // GET .../sos/alerts/{alertId}/location/current — vị trí MỚI NHẤT của alert
   // (BE bổ sung 2026-07-10, dành cho người theo dõi vừa vào xem). Trả null nếu
   // alert chưa có điểm vị trí nào hoặc gọi lỗi — caller tự fallback.
   Future<({double lat, double lng, String? sourceType})?> fetchCurrentLocation(
     String alertId,
   ) async {
+    final realtime = _latestRealtimeLocations[alertId];
+    if (realtime != null) {
+      return (
+        lat: realtime.lat,
+        lng: realtime.lng,
+        sourceType: realtime.sourceType,
+      );
+    }
     final fid = _fid;
     if (fid == null) return null;
     try {

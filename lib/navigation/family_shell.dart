@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../models/feature_access.dart';
 import '../models/tab_option.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
@@ -12,12 +13,14 @@ import '../providers/chat_provider.dart';
 import '../providers/notification_provider.dart';
 import '../providers/sos_provider.dart';
 import '../providers/tab_config_provider.dart';
+import '../providers/subscription_provider.dart';
 import '../screens/shared/incoming_call_screen.dart';
 import '../services/api_client.dart';
 import '../services/fall_detector_service.dart';
 import '../services/local_notification_service.dart';
 import '../services/push_service.dart';
 import '../services/sos_location.dart';
+import '../services/sos_realtime_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_surface_colors.dart';
 import '../theme/app_ui_tokens.dart';
@@ -40,16 +43,16 @@ class FamilyShell extends StatefulWidget {
 }
 
 class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
-  // BE chưa có push/websocket — poll nhẹ ở tầng shell (sống suốt phiên đăng
-  // nhập, mọi tab) để banner SOS + chuông thông báo cập nhật trên các thiết bị
-  // khác khi app đang mở. Dừng khi app xuống nền cho đỡ pin/băng thông, và
-  // fetch lại NGAY khi quay lại foreground để không phải chờ hết 1 chu kỳ.
+  // Poll nhẹ ở tầng shell vẫn giữ làm fallback cho SOS/notification nếu socket
+  // rớt. Realtime chính: /notifications, /chat, /sos và /locations.
   static const _kPollInterval = Duration(seconds: 15);
   // Ở nền vẫn poll (để SOS nổ được khi user đang ở app khác), chỉ giãn chu kỳ.
   static const _kPollIntervalBackground = Duration(seconds: 30);
   Timer? _pollTimer;
   bool _verificationDialogOpen = false;
+  bool _featureLockedDialogOpen = false;
   NotificationProvider? _notif; // giữ ref để dùng trong dispose
+  SosProvider? _sos; // giữ ref để dùng trong dispose
   // id các cảnh báo SOS đã bắn notification hệ thống — tránh poll 15s bắn lại
   // cùng một cảnh báo mỗi chu kỳ.
   final Set<String> _notifiedSosIds = {};
@@ -60,6 +63,8 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   bool _appInForeground = true;
   CallProvider? _call; // giữ ref để dùng trong dispose
   bool _incomingCallScreenOpen = false;
+  final Map<String, Timer> _responderTrackTimers = {};
+  final Set<String> _responderPushInFlight = {};
 
   @override
   void initState() {
@@ -67,6 +72,7 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ApiClient.instance.onVerificationRequired = _showVerificationRequired;
+      ApiClient.instance.onFeatureLocked = _showFeatureLocked;
       // Notification hệ thống (khay + chuông). Chỉ chạy khi tiến trình app còn
       // sống — app tắt hẳn vẫn cần FCM (xem PushService).
       LocalNotificationService.instance
@@ -87,6 +93,13 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       // ở trên, để nhận được cuộc gọi đến bất kể đang ở tab nào.
       _call = context.read<CallProvider>()..onIncomingCall = _onIncomingCall;
       _call!.startRealtime();
+      _sos = context.read<SosProvider>()
+        ..onNewRealtimeAlert = _onRealtimeSosNew
+        ..onRealtimeResolved = _onRealtimeSosResolved;
+      _sos!.startRealtime();
+      final sosRealtime = SosRealtimeService.instance;
+      sosRealtime.onResponderTrackStart = _onResponderTrackStart;
+      sosRealtime.onResponderTrackStop = _onResponderTrackStop;
       // Cấu hình thanh nav nằm trong secure storage → đọc bất đồng bộ. Chưa
       // đọc xong thì tabsFor() trả mặc định của role, nên thanh nav vẫn dựng
       // được ngay, không chờ.
@@ -99,6 +112,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       context.read<SosProvider>().fetchSettings().then((_) {
         if (mounted) _syncFallDetector();
       });
+      // Nguồn duy nhất cho featureAccess của gia đình — trước đây 4 provider
+      // (AiChatbot/Album/AlbumFace/Calendar) mỗi cái tự gọi GET .../subscription
+      // ngay khi màn của chúng mở, giờ gọi 1 lần ở đây và 4 provider đó đọc lại.
+      context.read<SubscriptionProvider>().fetch();
       _refreshLive();
       _startPolling();
     });
@@ -113,6 +130,9 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         _showVerificationRequired) {
       ApiClient.instance.onVerificationRequired = null;
     }
+    if (ApiClient.instance.onFeatureLocked == _showFeatureLocked) {
+      ApiClient.instance.onFeatureLocked = null;
+    }
     if (_notif?.onTransient == _showTransientNotif) {
       _notif!.onTransient = null;
     }
@@ -121,6 +141,21 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       _call!.onIncomingCall = null;
     }
     _call?.stopRealtime();
+    if (_sos?.onNewRealtimeAlert == _onRealtimeSosNew) {
+      _sos!.onNewRealtimeAlert = null;
+    }
+    if (_sos?.onRealtimeResolved == _onRealtimeSosResolved) {
+      _sos!.onRealtimeResolved = null;
+    }
+    final sosRealtime = SosRealtimeService.instance;
+    if (sosRealtime.onResponderTrackStart == _onResponderTrackStart) {
+      sosRealtime.onResponderTrackStart = null;
+    }
+    if (sosRealtime.onResponderTrackStop == _onResponderTrackStop) {
+      sosRealtime.onResponderTrackStop = null;
+    }
+    _stopAllResponderTracking();
+    _sos?.stopRealtime();
     super.dispose();
   }
 
@@ -293,6 +328,100 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
     }
   }
 
+  void _onRealtimeSosNew(SosAlert alert) {
+    if (!mounted || alert.id.isEmpty || _notifiedSosIds.contains(alert.id)) {
+      return;
+    }
+    _notifiedSosIds.add(alert.id);
+    final myId = context.read<AuthProvider>().user?.id;
+    if (alert.isMine(myId)) return;
+    LocalNotificationService.instance.show(
+      title: '${alert.senderName} cần trợ giúp khẩn cấp!',
+      body: alert.message.isNotEmpty
+          ? alert.message
+          : 'Cảnh báo SOS từ gia đình',
+      isSos: true,
+      payload: 'SOS_ALERT|${alert.id}',
+    );
+  }
+
+  void _onRealtimeSosResolved(String alertId, Map<String, dynamic> _) {
+    _stopResponderTracking(alertId);
+  }
+
+  void _onResponderTrackStart(SosTrackStartEvent event) {
+    if (!mounted || event.alertId.isEmpty) {
+      sosResponderLog(
+        'BỎ QUA track:start mounted=$mounted alertId="${event.alertId}"',
+      );
+      return;
+    }
+    _stopResponderTracking(event.alertId);
+    final interval = Duration(seconds: event.intervalSec.clamp(3, 60).toInt());
+    sosResponderLog(
+      'BẮT ĐẦU timer đẩy GPS alertId=${event.alertId} '
+      'intervalSec gốc=${event.intervalSec} → dùng=${interval.inSeconds}s',
+    );
+
+    Future<void> pushOnce() async {
+      if (!mounted || _responderPushInFlight.contains(event.alertId)) {
+        sosResponderLog(
+          'BỎ LƯỢT đẩy mounted=$mounted đang-gửi='
+          '${_responderPushInFlight.contains(event.alertId)}',
+        );
+        return;
+      }
+      _responderPushInFlight.add(event.alertId);
+      try {
+        final pos = await resolveSosPosition();
+        if (pos == null || !mounted) {
+          sosResponderLog(
+            'KHÔNG đẩy được: lấy GPS thất bại (pos=null) hoặc màn đã huỷ '
+            '(mounted=$mounted)',
+          );
+          return;
+        }
+        final ok = context.read<SosProvider>().pushResponderLocationRealtime(
+          event.alertId,
+          pos.latitude,
+          pos.longitude,
+          accuracy: pos.accuracy,
+          sourceType: 'MOBILE_GPS',
+          recordedAt: DateTime.now(),
+        );
+        sosResponderLog(
+          'GỌI push alertId=${event.alertId} lat=${pos.latitude} '
+          'lng=${pos.longitude} → trả về $ok',
+        );
+      } finally {
+        _responderPushInFlight.remove(event.alertId);
+      }
+    }
+
+    pushOnce();
+    _responderTrackTimers[event.alertId] = Timer.periodic(
+      interval,
+      (_) => pushOnce(),
+    );
+  }
+
+  void _onResponderTrackStop(String alertId) {
+    _stopResponderTracking(alertId);
+  }
+
+  void _stopResponderTracking(String alertId) {
+    _responderTrackTimers.remove(alertId)?.cancel();
+    _responderPushInFlight.remove(alertId);
+  }
+
+  void _stopAllResponderTracking() {
+    for (final timer in _responderTrackTimers.values) {
+      timer.cancel();
+    }
+    _responderTrackTimers.clear();
+    _responderPushInFlight.clear();
+  }
+
   // ── Phát hiện té ngã ──────────────────────────────────────────────────────
   // Bật/tắt theo đúng cài đặt `autoCreateAlertFromFall` của gia đình, gọi lại
   // từ build() nên tự đồng bộ khi Trưởng/Phó nhóm đổi cài đặt. Idempotent.
@@ -418,6 +547,61 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
       ),
     );
     _verificationDialogOpen = false;
+  }
+
+  /// BE trả 403 `code: "FEATURE_LOCKED"` khi gói hiện tại không có quyền dùng
+  /// tính năng vừa gọi (xem `DE_XUAT_BE_FEATUREACCESS_ENFORCEMENT_2026-08-18.md`).
+  ///
+  /// CHỦ ĐỘNG không điều hướng đi đâu cả — chỉ nổi dialog đè lên đúng màn
+  /// đang đứng, đóng dialog là quay lại y nguyên chỗ cũ. 4 màn đã có khoá
+  /// riêng đẹp hơn (Lịch, Trợ lý AI, Album video/khuôn mặt AI, xem
+  /// `SubscriptionProvider`) sẽ tự chặn TRƯỚC khi gọi API nên hiếm khi rơi
+  /// vào dialog này; dialog này là lưới đỡ chung cho các tính năng còn lại
+  /// chưa kịp có khoá UI riêng.
+  Future<void> _showFeatureLocked(String message, String? featureKey) async {
+    if (!mounted || _featureLockedDialogOpen) return;
+    _featureLockedDialogOpen = true;
+    final label = featureKey != null
+        ? FeatureAccess.officialKeyLabels[featureKey]
+        : null;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.lock_outline_rounded, color: AppColors.link),
+        title: Text(
+          label != null ? '$label chưa nằm trong gói hiện tại' : 'Tính năng chưa nằm trong gói hiện tại',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16),
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(
+              'Để sau',
+              style: GoogleFonts.inter(color: AppColors.textMuted),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              context.push('/manager/subscription');
+            },
+            child: Text(
+              'Xem các gói',
+              style: GoogleFonts.inter(color: AppColors.link, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+    _featureLockedDialogOpen = false;
   }
 
   void _go(int index) {

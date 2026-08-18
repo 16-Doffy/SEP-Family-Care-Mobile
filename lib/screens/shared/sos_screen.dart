@@ -11,6 +11,7 @@ import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../services/sos_location.dart';
+import '../../services/sos_realtime_service.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../utils/sos_alert_location.dart';
@@ -106,6 +107,7 @@ class _SOSScreenState extends State<SOSScreen>
   double? _localLat, _localLng; // GPS lưu local khi API chưa có
   String? _sentAlertId; // id alert vừa tạo, để Đóng/confirm-safety đúng alert
   Timer? _locationStreamTimer; // gửi vị trí định kỳ trong lúc alert đang active
+  bool _waitingTrackStart = false;
   // Điểm gửi lỗi (mất mạng tạm thời) được giữ lại để flush bằng
   // pushLocationBatch ở lần gửi thành công kế tiếp — tránh mất hẳn vị trí SOS
   // chỉ vì rớt mạng vài chục giây. Cap để không phình vô hạn nếu mất mạng dài.
@@ -154,6 +156,7 @@ class _SOSScreenState extends State<SOSScreen>
       context.read<SosProvider>().fetchAlerts();
       // Danh bạ khẩn cấp của gia đình cho hàng nút gọi nhanh.
       context.read<SosProvider>().fetchEmergencyContacts();
+      _attachSosRealtimeTrackingCallbacks();
       // Hệ thống phát hiện Emergency SOS đang chiếm màn hình → gửi thẳng,
       // không đếm ngược (không có UI nào hiện được lúc đó để người dùng hủy).
       if (widget.immediate && mounted) {
@@ -169,6 +172,9 @@ class _SOSScreenState extends State<SOSScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    final realtime = SosRealtimeService.instance;
+    realtime.onTrackStart = null;
+    realtime.onTrackStop = null;
     _pulseCtrl.dispose();
     _countTimer?.cancel();
     _locationStreamTimer?.cancel();
@@ -191,8 +197,9 @@ class _SOSScreenState extends State<SOSScreen>
     _triggerSOS(locationTimeout: const Duration(seconds: 3));
   }
 
-  // Gửi vị trí mỗi 20s cho tới khi alert được đóng (confirm-safety) hoặc màn
-  // hình bị huỷ — POST .../sos/alerts/{alertId}/locations (xem SosProvider).
+  // BE realtime /sos sẽ bắn sos:track:start sau khi tạo alert. Khi đó FE gửi
+  // vị trí qua sos:location:push theo intervalSec của server. REST 20s bên dưới
+  // chỉ còn là fallback nếu socket không trả track:start hoặc socket rớt.
   // "2026-07-10T15:18:52.190Z" → "10/07 22:18" (giờ máy) cho dễ đọc
   static String _fmtAlertTime(String iso) {
     final d = DateTime.tryParse(iso)?.toLocal();
@@ -201,21 +208,61 @@ class _SOSScreenState extends State<SOSScreen>
     return '${two(d.day)}/${two(d.month)} ${two(d.hour)}:${two(d.minute)}';
   }
 
-  void _startLocationStreaming(String alertId) {
+  void _attachSosRealtimeTrackingCallbacks() {
+    final realtime = SosRealtimeService.instance;
+    realtime.onTrackStart = _onSosTrackStart;
+    realtime.onTrackStop = _onSosTrackStop;
+    realtime.connect();
+  }
+
+  void _onSosTrackStart(SosTrackStartEvent event) {
+    if (!mounted || event.alertId.isEmpty) return;
+    final currentAlertId = _sentAlertId;
+    if (currentAlertId != null && currentAlertId != event.alertId) return;
+    _waitingTrackStart = false;
+    _startLocationStreaming(
+      event.alertId,
+      interval: Duration(seconds: event.intervalSec.clamp(3, 60).toInt()),
+      preferSocket: true,
+    );
+  }
+
+  void _onSosTrackStop(String alertId) {
+    if (_sentAlertId == null || _sentAlertId == alertId) {
+      _stopLocationStreaming();
+    }
+  }
+
+  void _startLocationStreaming(
+    String alertId, {
+    Duration interval = const Duration(seconds: 20),
+    bool preferSocket = false,
+  }) {
     _locationStreamTimer?.cancel();
     _pendingLocationPoints.clear();
-    _locationStreamTimer = Timer.periodic(const Duration(seconds: 20), (
-      _,
-    ) async {
+    Future<void> pushOnce() async {
       final pos = await _getLocation();
       if (pos == null || !mounted) return;
       final sosProvider = context.read<SosProvider>();
-      final ok = await sosProvider.pushLocation(
-        alertId,
-        pos.latitude,
-        pos.longitude,
-        accuracy: pos.accuracy,
-      );
+      var ok = false;
+      if (preferSocket) {
+        ok = sosProvider.pushLocationRealtime(
+          alertId,
+          pos.latitude,
+          pos.longitude,
+          accuracy: pos.accuracy,
+          sourceType: 'MOBILE_GPS',
+          recordedAt: DateTime.now(),
+        );
+      }
+      ok =
+          ok ||
+          await sosProvider.pushLocation(
+            alertId,
+            pos.latitude,
+            pos.longitude,
+            accuracy: pos.accuracy,
+          );
       if (!mounted) return;
       if (!ok) {
         _pendingLocationPoints.add((
@@ -238,12 +285,16 @@ class _SOSScreenState extends State<SOSScreen>
         );
         if (mounted && flushed) _pendingLocationPoints.clear();
       }
-    });
+    }
+
+    pushOnce();
+    _locationStreamTimer = Timer.periodic(interval, (_) => pushOnce());
   }
 
   void _stopLocationStreaming() {
     _locationStreamTimer?.cancel();
     _locationStreamTimer = null;
+    _waitingTrackStart = false;
     _pendingLocationPoints.clear();
   }
 
@@ -328,7 +379,9 @@ class _SOSScreenState extends State<SOSScreen>
       final alertId = await sosProvider.sendSos(
         message: widget.immediate
             ? 'SOS khẩn cấp — phát hiện qua màn hình Cấp cứu khẩn cấp của máy'
-            : 'SOS khẩn cấp từ ứng dụng Family Care',
+            : (widget.autoTrigger
+                  ? 'Phát hiện té ngã/lắc mạnh từ điện thoại'
+                  : 'SOS khẩn cấp từ ứng dụng Family Care'),
         address: sosAddressOf(pos),
         latitude: pos?.latitude,
         longitude: pos?.longitude,
@@ -341,7 +394,16 @@ class _SOSScreenState extends State<SOSScreen>
           _apiOk = true;
           _sentAlertId = alertId;
         });
-        _startLocationStreaming(alertId);
+        _waitingTrackStart = true;
+        Future.delayed(const Duration(seconds: 6), () {
+          if (!mounted ||
+              !_waitingTrackStart ||
+              _sentAlertId != alertId ||
+              _locationStreamTimer != null) {
+            return;
+          }
+          _startLocationStreaming(alertId);
+        });
       }
     } catch (e) {
       // API thất bại → KHÔNG báo thành công, show lỗi để user biết
@@ -1111,6 +1173,23 @@ class _SOSScreenState extends State<SOSScreen>
                               ),
                             );
                           }
+                          // Vừa nhận đi cứu thì thứ cần ngay là ĐƯỜNG ĐI, không
+                          // phải ở lại màn danh sách. Mở bản đồ luôn; màn bản đồ
+                          // tự vẽ đường tới điểm SOS.
+                          //
+                          // Không cần khởi động gửi vị trí ở đây: BE bắn
+                          // `sos:responder:track:start` ngay sau ON_THE_WAY và
+                          // `family_shell` đã bắt sẵn, chạy suốt phiên. Tự start
+                          // thêm ở màn bản đồ sẽ thành HAI luồng cùng đẩy.
+                          if (!mine && context.mounted) {
+                            final lat = alert.latitude;
+                            final lng = alert.longitude;
+                            context.push(
+                              '/map?alertId=${Uri.encodeQueryComponent(alert.id)}'
+                              '${lat != null ? '&lat=$lat' : ''}'
+                              '${lng != null ? '&lng=$lng' : ''}',
+                            );
+                          }
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -1275,209 +1354,237 @@ class _SOSScreenState extends State<SOSScreen>
     final hasGps = _localLat != null && _localLng != null;
     return Scaffold(
       backgroundColor: _sosBg,
+      // Nội dung màn này cao cố định (icon 84 + tiêu đề + toạ độ + mini map
+      // 180 + nút xem bản đồ + nút Đóng). Trên máy màn thấp, hoặc khi đang có
+      // banner "Bạn đang phát cảnh báo SOS" chiếm thêm chỗ ở trên, tổng chiều
+      // cao vượt khung và Flutter báo "BOTTOM OVERFLOWED BY 106 PIXELS".
+      //
+      // Center + Column không co lại được nên phải cho cuộn. ConstrainedBox
+      // với minHeight = chiều cao khung giữ nguyên dáng CĂN GIỮA khi màn đủ
+      // cao (đa số máy), chỉ khi nội dung dài hơn khung mới sinh ra cuộn.
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.sos_rounded, size: 84, color: AppColors.sos),
-                Text(
-                  'SOS đã gửi!',
-                  style: GoogleFonts.inter(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w700,
-                    color: _sosText,
-                  ),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 16,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  _apiOk
-                      ? 'Thông báo đã gửi đến gia đình'
-                      : 'Đã ghi nhận — thành viên đang được thông báo',
-                  style: GoogleFonts.inter(fontSize: 14, color: _sosSecondary),
-                  textAlign: TextAlign.center,
-                ),
-
-                // GPS coordinates
-                if (hasGps) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.sos_rounded,
+                      size: 84,
+                      color: AppColors.sos,
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.location_on_rounded,
-                          size: 16,
-                          color: _sosMuted,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${_localLat!.toStringAsFixed(5)}, ${_localLng!.toStringAsFixed(5)}',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            color: _sosSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Inline Mini Map
-                  Container(
-                    height: 180,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: _sosControlBorder),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: FlutterMap(
-                        options: MapOptions(
-                          initialCenter: LatLng(_localLat!, _localLng!),
-                          initialZoom: 15.0,
-                          interactionOptions: const InteractionOptions(
-                            flags: InteractiveFlag.none,
-                          ),
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.familycare.app',
-                          ),
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: LatLng(_localLat!, _localLng!),
-                                width: 40,
-                                height: 40,
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: AppColors.sos,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black26,
-                                        blurRadius: 8,
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
-                                      Icons.sos_rounded,
-                                      size: 20,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // Mở Bản đồ lớn in-app. Ẩn trong flow lắc/té ngã trên màn
-                  // khóa để người dùng không rời khỏi giao diện SOS khi chưa
-                  // mở khóa máy.
-                  if (!_lockRouteExit)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1A73E8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 0,
-                        ),
-                        onPressed: () {
-                          context.push('/map?lat=$_localLat&lng=$_localLng');
-                        },
-                        icon: const Icon(
-                          Icons.map_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        label: Text(
-                          'Xem bản đồ lớn trong ứng dụng',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                ] else ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Không lấy được GPS',
-                    style: GoogleFonts.inter(fontSize: 12, color: _sosMuted),
-                  ),
-                ],
-
-                if (!_apiOk) ...[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.amber.withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Text(
-                      'Chức năng SOS đang chờ BE triển khai',
+                    Text(
+                      'SOS đã gửi!',
                       style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: Colors.amber.shade200,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                        color: _sosText,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _apiOk
+                          ? 'Thông báo đã gửi đến gia đình'
+                          : 'Đã ghi nhận — thành viên đang được thông báo',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: _sosSecondary,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                  ),
-                ],
 
-                const SizedBox(height: 32),
-                GestureDetector(
-                  onTap: _cancelSOS,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 32,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: AppColors.danger, width: 2),
-                    ),
-                    child: Text(
-                      'Đóng',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.danger,
+                    // GPS coordinates
+                    if (hasGps) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.location_on_rounded,
+                              size: 16,
+                              color: _sosMuted,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_localLat!.toStringAsFixed(5)}, ${_localLng!.toStringAsFixed(5)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: _sosSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Inline Mini Map
+                      Container(
+                        height: 180,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: _sosControlBorder),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: FlutterMap(
+                            options: MapOptions(
+                              initialCenter: LatLng(_localLat!, _localLng!),
+                              initialZoom: 15.0,
+                              interactionOptions: const InteractionOptions(
+                                flags: InteractiveFlag.none,
+                              ),
+                            ),
+                            children: [
+                              TileLayer(
+                                urlTemplate:
+                                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName: 'com.familycare.app',
+                              ),
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    point: LatLng(_localLat!, _localLng!),
+                                    width: 40,
+                                    height: 40,
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: AppColors.sos,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black26,
+                                            blurRadius: 8,
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.sos_rounded,
+                                          size: 20,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      // Mở Bản đồ lớn in-app. Ẩn trong flow lắc/té ngã trên màn
+                      // khóa để người dùng không rời khỏi giao diện SOS khi chưa
+                      // mở khóa máy.
+                      if (!_lockRouteExit)
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1A73E8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                            onPressed: () {
+                              context.push(
+                                '/map?lat=$_localLat&lng=$_localLng',
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.map_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            label: Text(
+                              'Xem bản đồ lớn trong ứng dụng',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ] else ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Không lấy được GPS',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: _sosMuted,
+                        ),
+                      ),
+                    ],
+
+                    if (!_apiOk) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.amber.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Text(
+                          'Chức năng SOS đang chờ BE triển khai',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.amber.shade200,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 32),
+                    GestureDetector(
+                      onTap: _cancelSOS,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: AppColors.danger, width: 2),
+                        ),
+                        child: Text(
+                          'Đóng',
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.danger,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

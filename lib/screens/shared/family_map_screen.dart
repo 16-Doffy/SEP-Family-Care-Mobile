@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +10,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/sos_realtime_service.dart';
+import '../../providers/family_provider.dart';
 import '../../providers/gps_provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../theme/app_colors.dart';
@@ -19,7 +20,19 @@ import '../../theme/app_surface_colors.dart';
 class FamilyMapScreen extends StatefulWidget {
   final double? initialLat;
   final double? initialLng;
-  const FamilyMapScreen({super.key, this.initialLat, this.initialLng});
+
+  /// Cảnh báo cần bám theo khi mở từ thông báo SOS hoặc từ nút "Tôi đang đến".
+  ///
+  /// Ưu tiên hơn [initialLat]/[initialLng]: có id thì tra được vị trí mới nhất
+  /// của người phát qua realtime, thay vì toạ độ tĩnh lúc tạo cảnh báo.
+  final String? initialAlertId;
+
+  const FamilyMapScreen({
+    super.key,
+    this.initialLat,
+    this.initialLng,
+    this.initialAlertId,
+  });
   @override
   State<FamilyMapScreen> createState() => _FamilyMapScreenState();
 }
@@ -27,16 +40,18 @@ class FamilyMapScreen extends StatefulWidget {
 class _FamilyMapScreenState extends State<FamilyMapScreen> {
   final _mapCtrl = MapController();
 
+  GpsProvider? _gpsProvider;
   LatLng? _myPos;
   double? _myAccuracy;
   bool _locating = false;
   String? _locError;
 
-  // Đẩy vị trí định kỳ khi đang bật chia sẻ + màn bản đồ đang mở. Chỉ chạy
-  // trong lúc mở màn này (chưa có background service) — đủ cho luồng "cả nhà
-  // cùng mở bản đồ xem nhau".
-  static const _kPushInterval = Duration(seconds: 30);
+  // RTR foreground: khi màn bản đồ đang mở, máy chia sẻ đẩy GPS mới lên REST;
+  // BE lưu xong sẽ broadcast marker realtime qua namespace `/locations`.
+  static const _kPushInterval = Duration(seconds: 5);
   Timer? _pushTimer;
+  bool _pushInFlight = false;
+  final Map<String, SosRealtimeLocation> _latestSosLocations = {};
 
   // ── Chỉ đường A→B (A = vị trí của tôi, B = thành viên/điểm SOS) ──────────
   // Thuần FE, KHÔNG cần BE: vẽ ngay đường thẳng (tính offline bằng latlong2)
@@ -44,11 +59,27 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   // key). OSRM lỗi/không mạng → giữ nguyên đường thẳng, không vỡ tính năng.
   List<LatLng> _routePoints = const [];
   LatLng? _routeTarget;
+  LatLng? _routeOrigin;
   String? _routeLabel;
+  _RouteTargetRef? _routeTargetRef;
   double? _routeDistanceM;
   double? _routeDurationS;
   bool _routing = false;
   bool _routeIsRoad = false;
+  int _routeSeq = 0;
+  Timer? _routeRefreshDebounce;
+
+  /// Số responder đã log gần nhất theo alertId — chỉ để chống spam log tạm
+  /// (xem [sosResponderLog]). Xóa cùng lúc với đám log kia.
+  final Map<String, int> _loggedResponderCount = {};
+
+  /// Cảnh báo đã tự thu camera bao trọn người ứng cứu — mỗi cảnh báo chỉ thu
+  /// một lần, xem [_maybeFitToResponders].
+  final Set<String> _fittedResponderAlerts = {};
+
+  /// Đã log cảnh báo "không tra được memberId của mình" chưa — chống spam,
+  /// xoá cùng lúc với đám log tạm [sosResponderLog].
+  bool _loggedMissingMyMemberId = false;
 
   String? get _myUserId => context.read<AuthProvider>().user?.id;
 
@@ -62,7 +93,41 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     return '${mins ~/ 60} giờ ${mins % 60} phút';
   }
 
-  Future<void> _routeTo(LatLng target, {String? label}) async {
+  /// Điểm SOS để mở bản đồ vào, theo thứ tự tin cậy giảm dần:
+  /// vị trí realtime mới nhất của cảnh báo → toạ độ truyền qua URL → toạ độ
+  /// lưu trong bản ghi cảnh báo.
+  ///
+  /// Chỉ dựa vào lat/lng trên URL là chưa đủ: cảnh báo có thể được tạo lúc
+  /// chưa lấy được GPS (khi đó `alert.latitude` null), và người phát có thể đã
+  /// di chuyển khỏi điểm ban đầu.
+  LatLng? _initialSosTarget() {
+    final alertId = widget.initialAlertId;
+    if (alertId != null && alertId.isNotEmpty) {
+      final sos = context.read<SosProvider>();
+      final live =
+          sos.realtimeLocationOf(alertId) ?? _latestSosLocations[alertId];
+      if (live != null) return LatLng(live.lat, live.lng);
+    }
+    if (widget.initialLat != null && widget.initialLng != null) {
+      return LatLng(widget.initialLat!, widget.initialLng!);
+    }
+    if (alertId != null && alertId.isNotEmpty) {
+      for (final alert in context.read<SosProvider>().activeAlerts) {
+        if (alert.id != alertId) continue;
+        final lat = alert.latitude;
+        final lng = alert.longitude;
+        if (lat != null && lng != null) return LatLng(lat, lng);
+      }
+    }
+    return null;
+  }
+
+  Future<void> _routeTo(
+    LatLng target, {
+    String? label,
+    _RouteTargetRef? followRef,
+    bool fitCamera = true,
+  }) async {
     if (_myPos == null) await _locateMe(center: false);
     final from = _myPos;
     if (from == null) {
@@ -94,9 +159,12 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       return;
     }
     if (!mounted) return;
+    final seq = ++_routeSeq;
     setState(() {
       _routing = true;
+      _routeOrigin = from;
       _routeTarget = target;
+      _routeTargetRef = followRef;
       _routeLabel = label;
       // Đường thẳng hiển thị tức thì (không chờ mạng).
       _routePoints = [from, target];
@@ -106,7 +174,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           .toDouble();
       _routeDurationS = null;
     });
-    _fitRoute();
+    if (fitCamera) _fitRoute();
 
     // Nâng cấp lên tuyến đường bộ thật. Gọi trực tiếp bằng http (KHÔNG dùng
     // ApiClient) để không gửi Bearer token của mình sang dịch vụ bên thứ ba.
@@ -134,7 +202,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                   ),
                 )
                 .toList();
-            if (pts.length >= 2 && mounted) {
+            if (pts.length >= 2 && mounted && seq == _routeSeq) {
               setState(() {
                 _routePoints = pts;
                 _routeIsRoad = true;
@@ -142,7 +210,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                     (r['distance'] as num?)?.toDouble() ?? _routeDistanceM;
                 _routeDurationS = (r['duration'] as num?)?.toDouble();
               });
-              _fitRoute();
+              if (fitCamera) _fitRoute();
             }
           }
         }
@@ -151,7 +219,79 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       // Giữ đường thẳng — vẫn dùng được để định hướng.
       debugPrint('Route: OSRM thất bại, dùng đường thẳng: $e');
     } finally {
-      if (mounted) setState(() => _routing = false);
+      if (mounted && seq == _routeSeq) setState(() => _routing = false);
+    }
+  }
+
+  /// Cảnh báo của CHÍNH MÌNH vừa có người ứng cứu đầu tiên → **tự vẽ đường**
+  /// giữa mình và người đang tới, không bắt người phát phải bấm vào pin rồi
+  /// chọn "Chỉ đường tới đây".
+  ///
+  /// Người đang kêu cứu là người ít có điều kiện thao tác nhất, nên đường đi
+  /// phải hiện sẵn. Vẽ xong `_routeTo` tự thu camera ôm trọn tuyến, giải quyết
+  /// luôn chuyện camera khoá ở vị trí người phát (zoom 15, thấy chưa tới 2km)
+  /// khiến người ứng cứu cách vài km nằm ngoài khung.
+  ///
+  /// Đường tự vẽ này **tự bám theo** người ứng cứu khi họ di chuyển, nhờ
+  /// `followRef` + [_syncRouteWithMovingPin] có sẵn.
+  ///
+  /// Chỉ tự làm **một lần cho mỗi cảnh báo**, và chỉ khi đang không có tuyến
+  /// nào: người dùng xoá đường đi hoặc tự chọn điểm khác thì tôn trọng, không
+  /// vẽ đè lại mỗi 5 giây khi vị trí cập nhật.
+  void _maybeFitToResponders(
+    String? currentUserId,
+    List<SosAlert> alerts,
+    List<_MemberPin> pins,
+  ) {
+    if (_routePoints.length >= 2) return; // đang có tuyến — không đè
+    for (final alert in alerts) {
+      if (!alert.isMine(currentUserId)) continue;
+      if (_fittedResponderAlerts.contains(alert.id)) continue;
+
+      final responders = [
+        for (final pin in pins)
+          if (pin.isResponder && pin.alertId == alert.id) pin,
+      ];
+      if (responders.isEmpty) continue;
+      final me = _myPos;
+      if (me == null) continue;
+
+      // Nhiều người cùng tới thì vẽ đường tới người GẦN NHẤT — đó là người sắp
+      // đến nơi, cũng là thông tin người đang kêu cứu cần nhất.
+      _MemberPin nearest = responders.first;
+      var nearestM = const Distance().as(LengthUnit.Meter, me, nearest.latlng);
+      for (final pin in responders.skip(1)) {
+        final d = const Distance().as(LengthUnit.Meter, me, pin.latlng);
+        if (d < nearestM) {
+          nearest = pin;
+          nearestM = d;
+        }
+      }
+
+      _fittedResponderAlerts.add(alert.id);
+
+      // Dưới 50m thì _routeTo từ chối vẽ và bắn snackbar "Bạn đang ở ngay tại
+      // điểm này" — với đường tự vẽ thì đó là tiếng ồn vô nghĩa. Người ứng cứu
+      // đã tới sát nơi rồi, chỉ cần thu camera cho thấy cả hai.
+      final targets = [me, for (final pin in responders) pin.latlng];
+      // Không gọi được giữa lúc build — hoãn sang frame kế tiếp.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (nearestM < 50) {
+          _mapCtrl.fitCamera(
+            CameraFit.bounds(
+              bounds: LatLngBounds.fromPoints(targets),
+              padding: const EdgeInsets.fromLTRB(60, 120, 60, 260),
+            ),
+          );
+          return;
+        }
+        _routeTo(
+          nearest.latlng,
+          label: nearest.name,
+          followRef: nearest.routeRef,
+        );
+      });
     }
   }
 
@@ -166,13 +306,70 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   }
 
   void _clearRoute() {
+    _routeRefreshDebounce?.cancel();
+    _routeSeq++;
     setState(() {
       _routePoints = const [];
       _routeTarget = null;
+      _routeOrigin = null;
+      _routeTargetRef = null;
       _routeLabel = null;
       _routeDistanceM = null;
       _routeDurationS = null;
       _routeIsRoad = false;
+    });
+  }
+
+  void _syncRouteWithMovingPin(List<_MemberPin> pins) {
+    if (_routePoints.length < 2) return;
+    var ref = _routeTargetRef;
+
+    // Route mở từ /map?lat=...&lng=... của cảnh báo SOS cũ chưa có alertId.
+    // Khi snapshot realtime về và chỉ có 1 pin SOS, tự gắn route theo pin đó.
+    if (ref == null && _routeLabel == 'Điểm SOS') {
+      final sosPins = pins.where((p) => p.isSos && p.routeRef != null).toList();
+      if (sosPins.length == 1) ref = sosPins.first.routeRef;
+    }
+    if (ref == null) return;
+
+    _MemberPin? tracked;
+    for (final pin in pins) {
+      if (pin.routeRef == ref) {
+        tracked = pin;
+        break;
+      }
+    }
+    if (tracked == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _routeTargetRef == ref) _clearRoute();
+      });
+      return;
+    }
+
+    final previousTarget = _routeTarget;
+    final previousOrigin = _routeOrigin;
+    final currentOrigin = _myPos;
+    final targetMoved =
+        previousTarget == null ||
+        const Distance().as(LengthUnit.Meter, previousTarget, tracked.latlng) >
+            10;
+    final originMoved =
+        previousOrigin != null &&
+        currentOrigin != null &&
+        const Distance().as(LengthUnit.Meter, previousOrigin, currentOrigin) >
+            20;
+    if (!targetMoved && !originMoved) return;
+
+    final nextTarget = tracked;
+    _routeRefreshDebounce?.cancel();
+    _routeRefreshDebounce = Timer(const Duration(milliseconds: 450), () {
+      if (!mounted || nextTarget.routeRef != ref) return;
+      _routeTo(
+        nextTarget.latlng,
+        label: nextTarget.name,
+        followRef: ref,
+        fitCamera: false,
+      );
     });
   }
 
@@ -194,16 +391,41 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _refreshFamilyLocations().then((_) {
+    _gpsProvider = context.read<GpsProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Danh sách thành viên là thứ DUY NHẤT nối được `responderMemberId` (id
+      // bản ghi thành viên, do BE gửi kèm vị trí người ứng cứu) với `userId`
+      // của phiên đăng nhập. Thiếu nó thì không nhận ra "người đang tới chính
+      // là mình" và bản đồ hiện mình hai lần.
+      //
+      // Màn này trước đây CHỈ ĐỌC `FamilyProvider.members` mà không hề nạp —
+      // là màn duy nhất trong repo quên bước này. Vào thẳng bản đồ (từ thông
+      // báo SOS, hoặc từ tab Bản đồ) mà chưa ghé màn nào khác thì danh sách
+      // rỗng và mọi so khớp theo memberId đều trượt.
+      final family = context.read<FamilyProvider>();
+      if (family.members.isEmpty) unawaited(family.fetchMembers());
+      await _refreshFamilyLocations();
+      if (mounted) {
+        _gpsProvider?.startRealtime(myUserId: _myUserId);
         if (mounted) _syncPushTimer();
-      });
-      if (widget.initialLat != null && widget.initialLng != null) {
-        // Vào từ cảnh báo SOS → tự vẽ đường từ vị trí của tôi tới điểm SOS.
-        final target = LatLng(widget.initialLat!, widget.initialLng!);
+      }
+      final target = _initialSosTarget();
+      if (target != null) {
+        // Vào từ cảnh báo SOS (thông báo, hoặc vừa bấm "Tôi đang đến") → tự vẽ
+        // đường từ vị trí của tôi tới điểm SOS, không bắt bấm thêm gì.
         _mapCtrl.move(target, 16);
         _locateMe(center: false).then((_) {
-          if (mounted) _routeTo(target, label: 'Điểm SOS');
+          if (!mounted) return;
+          final alertId = widget.initialAlertId;
+          _routeTo(
+            target,
+            label: 'Điểm SOS',
+            // Có alertId thì gắn route vào đúng cảnh báo đó để
+            // _syncRouteWithMovingPin tự cập nhật khi người phát di chuyển.
+            followRef: alertId != null && alertId.isNotEmpty
+                ? _RouteTargetRef('sos', alertId)
+                : null,
+          );
         });
       } else {
         _locateMe(center: true);
@@ -214,6 +436,8 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   @override
   void dispose() {
     _pushTimer?.cancel();
+    _routeRefreshDebounce?.cancel();
+    _gpsProvider?.stopRealtime();
     super.dispose();
   }
 
@@ -234,33 +458,36 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   }
 
   Future<void> _pushMyLocationNow() async {
-    if (!mounted) return;
+    if (!mounted || _pushInFlight) return;
     final gps = context.read<GpsProvider>();
     if (!gps.mySharing) return;
-    final pos = _myPos;
-    if (pos == null) return;
-    await gps.updateLocation(
-      pos.latitude,
-      pos.longitude,
-      accuracy: _myAccuracy ?? 18,
-      silent: true, // timer nền — không nhấp nháy UI
-    );
+    _pushInFlight = true;
+    try {
+      final pos = await _locateMe(center: false, silent: true);
+      if (pos == null) return;
+      await gps.updateLocation(
+        pos.latitude,
+        pos.longitude,
+        accuracy: pos.accuracy,
+        silent: true, // timer nền — không nhấp nháy UI
+      );
+    } finally {
+      _pushInFlight = false;
+    }
   }
 
   Future<void> _toggleSharing(bool value) async {
     final gps = context.read<GpsProvider>();
     final messenger = ScaffoldMessenger.of(context);
     try {
-      if (value && _myPos == null) {
-        await _locateMe(center: false);
-      }
+      final freshPosition = value ? await _locateMe(center: false) : null;
       await gps.toggleSharing(value, myUserId: _myUserId);
       if (!mounted) return;
-      if (value && _myPos != null) {
+      if (value && freshPosition != null) {
         await gps.updateLocation(
-          _myPos!.latitude,
-          _myPos!.longitude,
-          accuracy: _myAccuracy ?? 18,
+          freshPosition.latitude,
+          freshPosition.longitude,
+          accuracy: freshPosition.accuracy,
           myUserId: _myUserId,
         );
         if (!mounted) return;
@@ -291,25 +518,96 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     }
   }
 
-  Future<void> _refreshFamilyLocations() async {
+  Future<void> _refreshFamilyLocations({
+    bool silent = false,
+    bool includeSosLocationFallback = false,
+  }) async {
     await Future.wait([
-      context.read<GpsProvider>().fetchFamilyLocations(myUserId: _myUserId),
-      context.read<SosProvider>().fetchAlerts(),
+      context.read<GpsProvider>().fetchFamilyLocations(
+        myUserId: _myUserId,
+        silent: silent,
+      ),
+      context.read<SosProvider>().fetchAlerts(silent: silent),
     ]);
+    if (includeSosLocationFallback) {
+      await _refreshCurrentSosLocations();
+    }
+  }
+
+  Future<void> _refreshCurrentSosLocations() async {
+    if (!mounted) return;
+    final sos = context.read<SosProvider>();
+    final activeAlerts = sos.activeAlerts.where((a) => a.id.isNotEmpty);
+    final activeIds = activeAlerts.map((a) => a.id).toSet();
+    final next = <String, SosRealtimeLocation>{};
+
+    for (final entry in _latestSosLocations.entries) {
+      if (activeIds.contains(entry.key)) next[entry.key] = entry.value;
+    }
+
+    final results = await Future.wait([
+      for (final alert in activeAlerts)
+        sos
+            .fetchCurrentLocation(alert.id)
+            .then((loc) => (id: alert.id, loc: loc)),
+    ]);
+    if (!mounted) return;
+
+    for (final result in results) {
+      final loc = result.loc;
+      if (loc != null) {
+        next[result.id] = (
+          lat: loc.lat,
+          lng: loc.lng,
+          accuracy: null,
+          sourceType: loc.sourceType,
+          recordedAt: null,
+          deviceId: null,
+        );
+      }
+    }
+
+    var changed = next.length != _latestSosLocations.length;
+    if (!changed) {
+      for (final entry in next.entries) {
+        final prev = _latestSosLocations[entry.key];
+        if (prev == null ||
+            prev.lat != entry.value.lat ||
+            prev.lng != entry.value.lng ||
+            prev.sourceType != entry.value.sourceType) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) return;
+    setState(() {
+      _latestSosLocations
+        ..clear()
+        ..addAll(next);
+    });
   }
 
   Future<void> _refreshMap() async {
     setState(() => _locError = null);
-    await Future.wait([_refreshFamilyLocations(), _locateMe(center: false)]);
+    await Future.wait([
+      _refreshFamilyLocations(includeSosLocationFallback: true),
+      _locateMe(center: false),
+    ]);
   }
 
   // ── Lấy GPS thiết bị ────────────────────────────────────────────────────
 
-  Future<void> _locateMe({bool center = false}) async {
-    setState(() {
-      _locating = true;
-      _locError = null;
-    });
+  Future<Position?> _locateMe({
+    bool center = false,
+    bool silent = false,
+  }) async {
+    if (!silent) {
+      setState(() {
+        _locating = true;
+        _locError = null;
+      });
+    }
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -317,8 +615,8 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       }
       if (perm == LocationPermission.deniedForever ||
           perm == LocationPermission.denied) {
-        setState(() => _locError = 'Chưa cấp quyền GPS');
-        return;
+        if (!silent) setState(() => _locError = 'Chưa cấp quyền GPS');
+        return null;
       }
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -326,21 +624,47 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           timeLimit: Duration(seconds: 12),
         ),
       );
-      if (!mounted) return;
-      final latlng = LatLng(pos.latitude, pos.longitude);
-      setState(() {
-        _myPos = latlng;
-        _myAccuracy = pos.accuracy;
-        // _buildPins() tự tạo lại pin "Tôi" từ _myPos/_myAccuracy mỗi lần
-        // rebuild — không còn giữ danh sách pin trong state (kiến trúc cũ _pins).
-      });
-      if (center) {
-        _mapCtrl.move(latlng, 15);
+      _applyMyPosition(pos, center: center);
+      return pos;
+    } on TimeoutException {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        _applyMyPosition(last, center: center);
+        if (mounted && !silent) {
+          setState(() {
+            _locError =
+                'GPS phản hồi chậm, đang dùng vị trí gần nhất của thiết bị';
+          });
+        }
+        return last;
       }
+      if (mounted && !silent) {
+        setState(() {
+          _locError = 'GPS phản hồi chậm. Vui lòng thử lại ở nơi thoáng hơn';
+        });
+      }
+      return null;
     } catch (e) {
-      if (mounted) setState(() => _locError = 'Không lấy được GPS: $e');
+      if (mounted && !silent) {
+        setState(() => _locError = 'Không lấy được GPS. Vui lòng thử lại');
+      }
+      return null;
     } finally {
-      if (mounted) setState(() => _locating = false);
+      if (mounted && !silent) setState(() => _locating = false);
+    }
+  }
+
+  void _applyMyPosition(Position pos, {required bool center}) {
+    if (!mounted) return;
+    final latlng = LatLng(pos.latitude, pos.longitude);
+    setState(() {
+      _myPos = latlng;
+      _myAccuracy = pos.accuracy;
+      // _buildPins() tự tạo lại pin "Tôi" từ _myPos/_myAccuracy mỗi lần
+      // rebuild — không còn giữ danh sách pin trong state (kiến trúc cũ _pins).
+    });
+    if (center) {
+      _mapCtrl.move(latlng, 15);
     }
   }
 
@@ -350,8 +674,13 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final gps = context.watch<GpsProvider>();
+    // watch chứ không read: danh sách thành viên nạp bất đồng bộ, phải dựng
+    // lại pin khi nó về thì mới bỏ được pin trùng của người đang ứng cứu.
+    context.watch<FamilyProvider>();
     final alerts = context.watch<SosProvider>().activeAlerts;
     final pins = _buildPins(auth.user?.id, gps.shares, alerts);
+    _syncRouteWithMovingPin(pins);
+    _maybeFitToResponders(auth.user?.id, alerts, pins);
     final sosPins = pins.where((p) => p.isSos).toList();
 
     final defaultCenter = _myPos ?? const LatLng(10.7769, 106.7009); // HCM
@@ -705,6 +1034,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
     List<SosAlert> alerts,
   ) {
     final pins = <_MemberPin>[];
+    final myMemberId = _resolveMyMemberId(currentUserId, shares);
     SosAlert? myActiveSos;
     for (final alert in alerts) {
       if (alert.isActive && alert.isMine(currentUserId)) {
@@ -725,45 +1055,183 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
       );
     }
 
+    // Người đã có pin SOS thì KHÔNG dựng thêm pin chia sẻ thường ngày cho họ
+    // nữa — nếu không, người đang kêu cứu hiện 2 lần (1 chấm đỏ SOS + 1 chấm
+    // xanh dương) ở hai toạ độ hơi lệch nhau, vì hai nguồn dữ liệu khác nhau.
+    // Gom sau vòng lặp alert bên dưới rồi mới dựng pin chia sẻ.
+    final coveredBySos = <String>{};
+    // Người đang trên đường tới cứu đã có pin "ĐANG TỚI" riêng — không dựng
+    // thêm pin chia sẻ thường ngày cho họ, nếu không họ hiện 2 lần ở hai toạ
+    // độ lệch nhau trên máy của mọi người khác.
+    final coveredByResponderMemberIds = <String>{};
+
+    final sos = context.read<SosProvider>();
+    for (final alert in alerts) {
+      // ── Pin người ứng cứu ────────────────────────────────────────────────
+      // PHẢI dựng TRƯỚC đoạn kiểm tra toạ độ cảnh báo bên dưới.
+      //
+      // Bug đã sửa (verify bằng log runtime 17/08): khối này vốn nằm SAU
+      // `if (lat == null || lng == null) continue;`. Cảnh báo không có toạ độ
+      // — rất hay gặp với chính người phát, vì `sos:location` không được BE
+      // dội ngược về máy họ và bản ghi alert cũng có thể không kèm lat/lng —
+      // thì `continue` nhảy qua alert, và pin người ứng cứu KHÔNG BAO GIỜ
+      // được thêm. Log thật cho thấy máy người phát nhận đủ
+      // `sos:responder:location` và lưu state đúng (`length=1`), nhưng
+      // `DỰNG MARKER` không chạy lần nào.
+      //
+      // Vị trí người ứng cứu độc lập hoàn toàn với việc cảnh báo có toạ độ
+      // hay không — không được buộc hai thứ vào nhau.
+      final responders = sos.responderLocationsFor(alert.id);
+      // Chỉ log khi SỐ LƯỢNG đổi — _buildPins chạy lại mỗi lần rebuild nên log
+      // vô điều kiện sẽ ngập logcat và che mất event thật.
+      if (_loggedResponderCount[alert.id] != responders.length) {
+        _loggedResponderCount[alert.id] = responders.length;
+        sosResponderLog(
+          'DỰNG MARKER alertId=${alert.id} số responder=${responders.length} '
+          '${responders.map((r) => r.displayName).toList()}',
+        );
+      }
+      for (final responder in responders) {
+        // BE broadcast vị trí người ứng cứu cho CẢ PHÒNG, nên chính người bấm
+        // "Tôi đang tới" cũng nhận lại vị trí của mình. Dựng luôn thì họ thấy
+        // mình hai lần: pin "Tôi" (GPS máy, chính xác hơn) và pin "Đang tới"
+        // (đi vòng qua server nên trễ, lệch vài mét) — đúng triệu chứng
+        // "icon di chuyển một nơi, Tôi một nơi". Bỏ pin đi vòng, giữ pin "Tôi".
+        if (myMemberId != null && responder.responderMemberId == myMemberId) {
+          continue;
+        }
+        pins.add(
+          _MemberPin(
+            latlng: LatLng(responder.location.lat, responder.location.lng),
+            name: responder.displayName,
+            isMe: false,
+            isSos: false,
+            isResponder: true,
+            alertId: alert.id,
+            memberId: responder.responderMemberId,
+            avatarUrl: responder.avatarUrl,
+            accuracy: responder.location.accuracy,
+          ),
+        );
+        coveredByResponderMemberIds.add(responder.responderMemberId);
+      }
+
+      // ── Pin điểm SOS ─────────────────────────────────────────────────────
+      // Phần này mới cần toạ độ của cảnh báo; thiếu thì bỏ qua ĐÚNG pin này,
+      // không ảnh hưởng pin người ứng cứu ở trên.
+      final realtime = sos.realtimeLocationOf(alert.id);
+      final current = realtime ?? _latestSosLocations[alert.id];
+      final lat = current?.lat ?? alert.latitude;
+      final lng = current?.lng ?? alert.longitude;
+      if (lat == null || lng == null) continue;
+      // Cảnh báo do CHÍNH MÌNH phát: pin "Tôi" (GPS trực tiếp, chính xác hơn)
+      // đã đại diện vị trí này rồi → không thêm pin SOS nữa, tránh cùng một
+      // người hiện 2 lần trong danh sách.
+      if (!alert.isMine(currentUserId)) {
+        pins.add(
+          _MemberPin(
+            latlng: LatLng(lat, lng),
+            name: alert.senderName,
+            isMe: false,
+            isSos: true,
+            alertId: alert.id,
+          ),
+        );
+        final senderId = alert.triggeredByUserId;
+        if (senderId != null && senderId.isNotEmpty) coveredBySos.add(senderId);
+      }
+    }
+
+    // memberId của những người đang ứng cứu, đổi sang userId để đối chiếu với
+    // `share.userId` khi `share.memberId` rỗng. Chỉ là đường phòng thủ —
+    // `share.memberId` gần như luôn có.
+    final coveredByResponderUserIds = <String>{};
+    if (coveredByResponderMemberIds.isNotEmpty) {
+      for (final member in context.read<FamilyProvider>().members) {
+        if (coveredByResponderMemberIds.contains(member.id) &&
+            member.userId.isNotEmpty) {
+          coveredByResponderUserIds.add(member.userId);
+        }
+      }
+    }
+
+    // Pin chia sẻ vị trí thường ngày — dựng SAU CÙNG để biết ai đã có pin SOS
+    // hoặc pin "ĐANG TỚI" mà bỏ qua. Chỉ bỏ khi pin kia thực sự đã được thêm
+    // ở trên (cảnh báo thiếu toạ độ thì không thêm được), nếu không sẽ mất
+    // hẳn người đó khỏi bản đồ.
+    //
+    // Cảnh báo đóng lại → provider xoá `_responderLocationsByAlert` → hai set
+    // này rỗng → pin thường tự hiện lại, không cần dọn gì thêm.
     for (final share in shares) {
       if (share.latitude == null || share.longitude == null) continue;
       if (share.userId.isNotEmpty && share.userId == currentUserId) continue;
+      if (coveredBySos.contains(share.userId)) continue;
+      final shareMemberId = share.memberId;
+      if (shareMemberId != null &&
+          coveredByResponderMemberIds.contains(shareMemberId)) {
+        continue;
+      }
+      if (coveredByResponderUserIds.contains(share.userId)) continue;
       pins.add(
         _MemberPin(
           latlng: LatLng(share.latitude!, share.longitude!),
           name: share.displayName,
           isMe: false,
           isSos: false,
+          memberId: share.memberId,
           userId: share.userId,
           updatedAt: share.updatedAt,
-        ),
-      );
-    }
-
-    for (final alert in alerts) {
-      if (!alert.hasLocation) continue;
-      // Cảnh báo do CHÍNH MÌNH phát: pin "Tôi" (GPS trực tiếp, chính xác hơn)
-      // đã đại diện vị trí này rồi → không thêm pin SOS nữa, tránh cùng một
-      // người hiện 2 lần trong danh sách.
-      if (alert.isMine(currentUserId)) continue;
-      pins.add(
-        _MemberPin(
-          latlng: LatLng(alert.latitude!, alert.longitude!),
-          name: alert.senderName,
-          isMe: false,
-          isSos: true,
-          alertId: alert.id,
         ),
       );
     }
     return pins;
   }
 
+  /// `familyMember.id` của chính mình — cần để nhận ra pin người ứng cứu do
+  /// server dội ngược về chính là mình.
+  ///
+  /// `SosResponderLocation` chỉ mang `responderMemberId` (id bản ghi thành
+  /// viên), trong khi phiên đăng nhập chỉ biết `userId` — phải tra bảng thành
+  /// viên để nối hai thứ. Rơi về `gps.shares` nếu danh sách thành viên chưa
+  /// tải xong; cả hai đều không có thì trả null và chấp nhận hiện trùng, chứ
+  /// không đoán bằng tên hiển thị (trùng tên là ẩn nhầm người khác).
+  String? _resolveMyMemberId(
+    String? currentUserId,
+    List<LocationShare> shares,
+  ) {
+    if (currentUserId == null || currentUserId.isEmpty) return null;
+    for (final member in context.read<FamilyProvider>().members) {
+      if (member.userId == currentUserId && member.id.isNotEmpty) {
+        return member.id;
+      }
+    }
+    for (final share in shares) {
+      final memberId = share.memberId;
+      if (share.userId == currentUserId &&
+          memberId != null &&
+          memberId.isNotEmpty) {
+        return memberId;
+      }
+    }
+    // Không tra được thì mọi so khớp theo memberId đều trượt và bản đồ sẽ hiện
+    // trùng. Log một lần cho mỗi lần đổi trạng thái để còn biết đường mà lần.
+    if (!_loggedMissingMyMemberId) {
+      _loggedMissingMyMemberId = true;
+      sosResponderLog(
+        'KHÔNG tra được memberId của mình — sẽ hiện TRÙNG pin. '
+        'userId=$currentUserId '
+        'số thành viên đã nạp=${context.read<FamilyProvider>().members.length} '
+        'số share=${shares.length}',
+      );
+    }
+    return null;
+  }
+
   Marker _buildMarker(_MemberPin pin) {
     return Marker(
       point: pin.latlng,
-      width: pin.isSos ? 70 : 60,
-      height: pin.isSos ? 80 : 70,
+      width: pin.isSos || pin.isResponder ? 96 : 88,
+      height: pin.isSos || pin.isResponder ? 98 : 90,
       child: GestureDetector(
         onTap: () => _showPinDetail(pin),
         child: _PinWidget(pin: pin),
@@ -896,7 +1364,11 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                   ),
                   onPressed: () {
                     Navigator.of(context).pop();
-                    _routeTo(pin.latlng, label: pin.name);
+                    _routeTo(
+                      pin.latlng,
+                      label: pin.name,
+                      followRef: pin.routeRef,
+                    );
                   },
                   icon: const Icon(
                     Icons.directions_rounded,
@@ -1010,6 +1482,20 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         }
       } else {
         await sos.respond(alertId, 'ON_THE_WAY', message: 'Tôi đang đến');
+        // Đã đứng sẵn trên bản đồ rồi — vẽ đường tại chỗ, KHÔNG push thêm một
+        // màn bản đồ nữa chồng lên. Gắn followRef theo cảnh báo để tuyến tự
+        // cập nhật khi người phát di chuyển.
+        //
+        // Cũng không khởi động gửi vị trí ở đây: BE bắn
+        // `sos:responder:track:start` sau ON_THE_WAY, `family_shell` đã bắt
+        // sẵn và chạy suốt phiên.
+        if (mounted) {
+          _routeTo(
+            pin.latlng,
+            label: 'Điểm SOS',
+            followRef: _RouteTargetRef('sos', alertId),
+          );
+        }
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1151,21 +1637,29 @@ class _PinWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color bg = pin.color;
+    final icon = pin.isSos
+        ? Icons.location_on_rounded
+        : pin.isResponder
+        ? Icons.directions_run_rounded
+        : pin.isMe
+        ? Icons.my_location_rounded
+        : Icons.person_pin_circle_rounded;
+    final avatarUrl = pin.avatarUrl;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Bubble
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          constraints: const BoxConstraints(maxWidth: 84),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
           decoration: BoxDecoration(
             color: bg,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             boxShadow: [
               BoxShadow(
-                color: bg.withValues(alpha: 0.4),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
+                color: bg.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -1180,29 +1674,67 @@ class _PinWidget extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        // Pointer
-        CustomPaint(size: const Size(10, 6), painter: _TrianglePainter(bg)),
+        const SizedBox(height: 2),
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: pin.isSos ? 48 : 42,
+              height: pin.isSos ? 48 : 42,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: bg.withValues(alpha: pin.isSos ? 0.18 : 0.14),
+                border: Border.all(
+                  color: bg.withValues(alpha: pin.isSos ? 0.34 : 0.24),
+                  width: pin.isSos ? 2 : 1.5,
+                ),
+              ),
+            ),
+            Container(
+              width: pin.isSos ? 36 : 32,
+              height: pin.isSos ? 36 : 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.22),
+                    blurRadius: 12,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: avatarUrl != null && avatarUrl.isNotEmpty
+                  ? Image.network(avatarUrl, fit: BoxFit.cover)
+                  : null,
+            ),
+            if (avatarUrl == null || avatarUrl.isEmpty)
+              Icon(icon, color: bg, size: pin.isSos ? 34 : 29)
+            else if (pin.isResponder)
+              Positioned(
+                right: 2,
+                bottom: 2,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: bg,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: const Icon(
+                    Icons.directions_run_rounded,
+                    color: Colors.white,
+                    size: 10,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ],
     );
   }
-}
-
-class _TrianglePainter extends CustomPainter {
-  final Color color;
-  const _TrianglePainter(this.color);
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final path = ui.Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(size.width / 2, size.height)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter old) => false;
 }
 
 // ── Member legend (bottom card) ──────────────────────────────────────────────
@@ -1281,11 +1813,17 @@ class _MemberLegend extends StatelessWidget {
                   child: Text(
                     sharing
                         ? 'Đang chia sẻ vị trí của bạn'
+                        : sharingUnavailable
+                        ? 'Chia sẻ vị trí đang được phát triển'
                         : 'Chia sẻ vị trí của bạn',
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: sharing ? AppColors.safe : AppColors.textSecondary,
+                      color: sharing
+                          ? AppColors.safe
+                          : sharingUnavailable
+                          ? AppColors.textMuted
+                          : AppColors.textSecondary,
                     ),
                   ),
                 ),
@@ -1368,10 +1906,12 @@ class _MemberLegend extends StatelessWidget {
               _LegendDot(color: AppColors.avatarBlue, label: 'Gia đình'),
               SizedBox(width: 12),
               _LegendDot(color: AppColors.sos, label: 'SOS'),
+              SizedBox(width: 12),
+              _LegendDot(color: AppColors.success, label: 'Đang tới'),
             ],
           ),
           // Bật/tắt chia sẻ vị trí của mình — khi bật, màn này đẩy vị trí
-          // định kỳ 30s để các thành viên khác thấy mình trên bản đồ.
+          // định kỳ để các thành viên khác thấy mình trên bản đồ.
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Row(
@@ -1388,11 +1928,17 @@ class _MemberLegend extends StatelessWidget {
                   child: Text(
                     sharing
                         ? 'Đang chia sẻ vị trí của bạn'
+                        : sharingUnavailable
+                        ? 'Chia sẻ vị trí đang được phát triển'
                         : 'Chia sẻ vị trí của bạn',
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: sharing ? AppColors.safe : AppColors.textSecondary,
+                      color: sharing
+                          ? AppColors.safe
+                          : sharingUnavailable
+                          ? AppColors.textMuted
+                          : AppColors.textSecondary,
                     ),
                   ),
                 ),
@@ -1423,11 +1969,7 @@ class _MemberLegend extends StatelessWidget {
                       height: 10,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: pin.isSos
-                            ? AppColors.sos
-                            : pin.isMe
-                            ? AppColors.primary500
-                            : AppColors.avatarBlue,
+                        color: pin.color,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1470,6 +2012,27 @@ class _MemberLegend extends StatelessWidget {
                         ),
                         child: Text(
                           'SOS',
+                          style: GoogleFonts.inter(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (pin.isResponder) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.success,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          'ĐANG TỚI',
                           style: GoogleFonts.inter(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -1553,9 +2116,12 @@ class _MemberPin {
   final String name;
   final bool isMe;
   final bool isSos;
+  final bool isResponder;
   final double? accuracy;
   final String? alertId;
+  final String? memberId;
   final String? userId;
+  final String? avatarUrl;
   final String? updatedAt;
 
   const _MemberPin({
@@ -1563,14 +2129,40 @@ class _MemberPin {
     required this.name,
     required this.isMe,
     required this.isSos,
+    this.isResponder = false,
     this.accuracy,
     this.alertId,
+    this.memberId,
     this.userId,
+    this.avatarUrl,
     this.updatedAt,
   });
 
+  _RouteTargetRef? get routeRef {
+    if (isMe) return null;
+    if (isSos && alertId != null && alertId!.isNotEmpty) {
+      return _RouteTargetRef('sos', alertId!);
+    }
+    if (isResponder &&
+        alertId != null &&
+        alertId!.isNotEmpty &&
+        memberId != null &&
+        memberId!.isNotEmpty) {
+      return _RouteTargetRef('sos-responder', '$alertId:$memberId');
+    }
+    if (memberId != null && memberId!.isNotEmpty) {
+      return _RouteTargetRef('member', memberId!);
+    }
+    if (userId != null && userId!.isNotEmpty) {
+      return _RouteTargetRef('user', userId!);
+    }
+    return null;
+  }
+
   Color get color => isSos
       ? AppColors.sos
+      : isResponder
+      ? AppColors.success
       : isMe
       ? AppColors.primary500
       : AppColors.avatarBlue;
@@ -1579,11 +2171,29 @@ class _MemberPin {
       ? 'Vị trí của tôi'
       : isSos
       ? 'SOS: $name'
+      : isResponder
+      ? '$name đang tới'
       : name;
 
   String get subtitle => isSos
       ? 'Cảnh báo khẩn cấp'
+      : isResponder
+      ? 'Đang tới điểm SOS'
       : isMe
       ? 'Thiết bị hiện tại'
       : 'Thành viên gia đình';
+}
+
+class _RouteTargetRef {
+  final String type;
+  final String id;
+
+  const _RouteTargetRef(this.type, this.id);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _RouteTargetRef && other.type == type && other.id == id;
+
+  @override
+  int get hashCode => Object.hash(type, id);
 }

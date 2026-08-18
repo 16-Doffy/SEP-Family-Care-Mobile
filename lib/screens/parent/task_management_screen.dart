@@ -19,6 +19,7 @@ class TaskManagementScreen extends StatefulWidget {
 
 class _TaskManagementScreenState extends State<TaskManagementScreen> {
   String? _filter;
+  _TaskSort _sort = _TaskSort.newest;
 
   static const _statusCfg = {
     'DRAFT': (
@@ -60,9 +61,38 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     });
   }
 
-  List<FamilyTask> _filtered(List<FamilyTask> tasks) => _filter == null
-      ? tasks
-      : tasks.where((t) => t.status == _filter).toList();
+  List<FamilyTask> _visibleTasks(List<FamilyTask> tasks) {
+    final visible = _filter == null
+        ? List<FamilyTask>.from(tasks)
+        : tasks.where((t) => t.status == _filter).toList();
+
+    switch (_sort) {
+      case _TaskSort.newest:
+        // API does not document an ordering guarantee. A user expects the task
+        // just created to be immediately visible at the top of this screen.
+        visible.sort(
+          (a, b) => (b.createdAt?.millisecondsSinceEpoch ?? 0).compareTo(
+            a.createdAt?.millisecondsSinceEpoch ?? 0,
+          ),
+        );
+      case _TaskSort.dueSoon:
+        // Tasks without a deadline are intentionally placed after dated tasks.
+        visible.sort((a, b) {
+          final aDue = a.dueAt?.millisecondsSinceEpoch;
+          final bDue = b.dueAt?.millisecondsSinceEpoch;
+          if (aDue == null && bDue == null) return 0;
+          if (aDue == null) return 1;
+          if (bDue == null) return -1;
+          return aDue.compareTo(bDue);
+        });
+    }
+    return visible;
+  }
+
+  String get _sortLabel => switch (_sort) {
+    _TaskSort.newest => 'Mới tạo',
+    _TaskSort.dueSoon => 'Hạn gần nhất',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -239,6 +269,68 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               ),
               const SizedBox(height: 8),
 
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Sắp xếp:',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    PopupMenuButton<_TaskSort>(
+                      initialValue: _sort,
+                      tooltip: 'Sắp xếp nhiệm vụ',
+                      onSelected: (value) => setState(() => _sort = value),
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: _TaskSort.newest,
+                          child: Text('Mới tạo'),
+                        ),
+                        PopupMenuItem(
+                          value: _TaskSort.dueSoon,
+                          child: Text('Hạn gần nhất'),
+                        ),
+                      ],
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.progressTrack),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.sort_rounded,
+                              size: 16,
+                              color: AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _sortLabel,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () =>
@@ -246,7 +338,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     children: [
-                      ..._filtered(
+                      ..._visibleTasks(
                         tasks,
                       ).map((task) => _taskCard(context, task)),
                       const SizedBox(height: 40),
@@ -263,6 +355,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   Widget _taskCard(BuildContext context, FamilyTask task) {
     final st = _statusCfg[task.status] ?? _statusCfg['ACTIVE']!;
+    final overdue = _isTaskOverdue(context, task);
     return GestureDetector(
       onTap: () => _showTaskDetailSheet(context, task),
       child: Container(
@@ -308,6 +401,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     runSpacing: 4,
                     children: [
                       _chip(st.label, st.bg, st.color),
+                      if (overdue)
+                        _chip(
+                          'Quá hạn',
+                          AppColors.dangerLight,
+                          AppColors.danger,
+                        ),
                       if (task.isRecurring)
                         _chip(
                           task.schedule?.label ?? "Định kỳ",
@@ -343,6 +442,27 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         ),
       ),
     );
+  }
+
+  bool _isTaskOverdue(BuildContext context, FamilyTask task) {
+    if (task.status == 'COMPLETED' || task.status == 'CANCELED') return false;
+    final now = DateTime.now();
+    final activeAssignments = context
+        .watch<TaskProvider>()
+        .assignmentsFor(task.id)
+        .where(
+          (a) =>
+              a.status != 'APPROVED' &&
+              a.status != 'CANCELED' &&
+              a.status != 'REJECTED',
+        );
+    // Khi task đã có phân công, hạn của từng người làm mới là hạn thực tế.
+    // Nếu chưa giao, dùng hạn chung của task.
+    final assignmentDues = activeAssignments
+        .map((a) => a.dueAt)
+        .whereType<DateTime>();
+    return assignmentDues.any((due) => due.isBefore(now)) ||
+        (task.dueAt?.isBefore(now) ?? false);
   }
 
   // ── Task detail bottom sheet: assignments + actions ──────────────────────
@@ -537,6 +657,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     final titleCtrl = TextEditingController(text: task.title);
     final descCtrl = TextEditingController(text: task.description ?? '');
     String priority = task.priority;
+    // Task định kỳ có hạn trên từng assignment được sinh từ lịch; không dùng
+    // dueAt chung của task để tránh nhầm với chu kỳ lặp.
+    DateTime? dueAt = task.isRecurring ? null : task.dueAt;
     bool submitting = false;
     String? sheetError;
 
@@ -580,6 +703,19 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 const SizedBox(height: 6),
                 _inputBox(titleCtrl, 'Tên nhiệm vụ'),
                 const SizedBox(height: 12),
+                if (!task.isRecurring) ...[
+                  _deadlineField(
+                    dueAt: dueAt,
+                    onPick: () async {
+                      final picked = await _pickDeadline(ctx, dueAt);
+                      if (picked != null) setSheet(() => dueAt = picked);
+                    },
+                    onClear: dueAt == null
+                        ? null
+                        : () => setSheet(() => dueAt = null),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Text(
                   'Mô tả',
                   style: GoogleFonts.inter(
@@ -659,6 +795,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                   'title': titleCtrl.text.trim(),
                                   'description': descCtrl.text.trim(),
                                   'priority': priority,
+                                  if (!task.isRecurring)
+                                    'dueAt': dueAt?.toIso8601String(),
                                 });
                             if (ctx.mounted) Navigator.pop(ctx);
                           } catch (e) {
@@ -698,6 +836,18 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   }
 
   Widget _assignmentCard(BuildContext context, TaskAssignment a) {
+    // Reviewer và người thực hiện phải khác nhau. Không chỉ Deputy: Manager tự
+    // giao việc cho chính mình cũng không được tự duyệt assignment đó.
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    final currentMemberId = context
+        .read<FamilyProvider>()
+        .members
+        .where((m) => m.userId == currentUserId || m.id == currentUserId)
+        .firstOrNull
+        ?.id;
+    final isOwnAssignment =
+        currentMemberId != null && a.assignedToMemberId == currentMemberId;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -741,7 +891,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   ],
                 ),
               ),
-              if (a.status == 'SUBMITTED')
+              if (a.status == 'SUBMITTED' && !isOwnAssignment)
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.link,
@@ -756,6 +906,15 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
                     ),
+                  ),
+                ),
+              if (a.status == 'SUBMITTED' && isOwnAssignment)
+                Text(
+                  'Chờ Manager duyệt',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
                   ),
                 ),
               // Duyệt/từ chối xong vẫn xem lại được bài nộp (chế độ chỉ xem)
@@ -830,7 +989,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 padding: const EdgeInsets.only(top: 14),
                 child: Column(
                   children: [
-                    if (a.status == 'ASSIGNED' || a.status == 'PENDING')
+                    if (a.status == 'ASSIGNED')
                       SizedBox(
                         width: double.infinity,
                         height: 40,
@@ -953,6 +1112,24 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     // status), nên KHÔNG có proofs sẵn trên TaskAssignment dù
     // latestSubmissionId có giá trị — luôn phải gọi riêng endpoint
     // submissions để lấy submission đầy đủ (kèm proofs) trước khi duyệt.
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    final currentMemberId = context
+        .read<FamilyProvider>()
+        .members
+        .where((m) => m.userId == currentUserId || m.id == currentUserId)
+        .firstOrNull
+        ?.id;
+    if (!readOnly &&
+        currentMemberId != null &&
+        a.assignedToMemberId == currentMemberId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bạn không thể tự duyệt công việc do mình thực hiện.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
     final messenger = ScaffoldMessenger.of(context);
     showDialog(
       context: context,
@@ -1389,6 +1566,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         .where((m) => m.isActive)
         .toList();
     String? selectedId;
+    DateTime? dueAt;
     bool submitting = false;
     String? sheetError;
     showModalBottomSheet(
@@ -1446,6 +1624,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
+              const SizedBox(height: 8),
+              _deadlineField(
+                dueAt: dueAt,
+                onPick: () async {
+                  final picked = await _pickDeadline(ctx, dueAt);
+                  if (picked != null) setSheet(() => dueAt = picked);
+                },
+                onClear: dueAt == null
+                    ? null
+                    : () => setSheet(() => dueAt = null),
+              ),
               if (sheetError != null) ...[
                 const SizedBox(height: 8),
                 Container(
@@ -1485,6 +1674,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                             await context.read<TaskProvider>().assignTask(
                               task.id,
                               assignedToMemberId: selectedId!,
+                              dueAt: dueAt,
                             );
                             if (ctx.mounted) Navigator.pop(ctx);
                           } catch (e) {
@@ -1938,8 +2128,11 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     String taskType = 'AD_HOC';
     String priority = 'MEDIUM';
     String? categoryId;
+    DateTime? dueAt;
     String repeatType = 'DAILY';
     final intervalCtrl = TextEditingController(text: '1');
+    DateTime recurringStartDate = DateTime.now();
+    DateTime? recurringEndDate;
     bool submitting = false;
 
     showModalBottomSheet(
@@ -2014,6 +2207,20 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   const SizedBox(height: 6),
                   _inputBox(descCtrl, 'Chi tiết công việc (tùy chọn)'),
                   const SizedBox(height: 12),
+
+                  if (taskType == 'AD_HOC') ...[
+                    _deadlineField(
+                      dueAt: dueAt,
+                      onPick: () async {
+                        final picked = await _pickDeadline(ctx, dueAt);
+                        if (picked != null) setSheet(() => dueAt = picked);
+                      },
+                      onClear: dueAt == null
+                          ? null
+                          : () => setSheet(() => dueAt = null),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
 
                   Text(
                     'Danh mục',
@@ -2130,6 +2337,63 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       keyboardType: TextInputType.number,
                     ),
                     const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _datePickerField(
+                            label: 'Bắt đầu',
+                            value: recurringStartDate,
+                            onPick: () async {
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate: recurringStartDate,
+                                firstDate: DateTime.now().subtract(
+                                  const Duration(days: 1),
+                                ),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 730),
+                                ),
+                              );
+                              if (picked != null) {
+                                setSheet(() {
+                                  recurringStartDate = picked;
+                                  if (recurringEndDate != null &&
+                                      recurringEndDate!.isBefore(picked)) {
+                                    recurringEndDate = null;
+                                  }
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _datePickerField(
+                            label: 'Kết thúc (tuỳ chọn)',
+                            value: recurringEndDate,
+                            onPick: () async {
+                              final picked = await showDatePicker(
+                                context: ctx,
+                                initialDate:
+                                    recurringEndDate ?? recurringStartDate,
+                                firstDate: recurringStartDate,
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 730),
+                                ),
+                              );
+                              if (picked != null) {
+                                setSheet(() => recurringEndDate = picked);
+                              }
+                            },
+                            onClear: recurringEndDate == null
+                                ? null
+                                : () =>
+                                      setSheet(() => recurringEndDate = null),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                   ],
 
                   ElevatedButton(
@@ -2158,7 +2422,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                   repeatInterval:
                                       int.tryParse(intervalCtrl.text.trim()) ??
                                       1,
-                                  startDate: DateTime.now(),
+                                  startDate: recurringStartDate,
+                                  endDate: recurringEndDate,
                                 );
                               } else {
                                 await taskProvider.createTask(
@@ -2167,6 +2432,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                   taskCategoryId: categoryId,
                                   taskType: taskType,
                                   priority: priority,
+                                  dueAt: dueAt,
                                 );
                               }
                               if (ctx.mounted) Navigator.pop(ctx);
@@ -2274,6 +2540,166 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       ),
     );
   }
+
+  /// Deadline belongs to the task/assignment data, not a client-side timer.
+  /// FE only lets the manager choose and render it; BE remains the source of
+  /// truth for status transitions.
+  Future<DateTime?> _pickDeadline(
+    BuildContext context,
+    DateTime? current,
+  ) async {
+    final now = DateTime.now();
+    final initial = current ?? now;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime(initial.year, initial.month, initial.day),
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 2),
+    );
+    if (date == null || !context.mounted) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(current ?? now),
+    );
+    if (time == null) return null;
+    final picked = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    if (!picked.isAfter(now)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Hạn hoàn thành phải ở thời điểm tương lai.'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+      return null;
+    }
+    return picked;
+  }
+
+  Widget _deadlineField({
+    required DateTime? dueAt,
+    required Future<void> Function() onPick,
+    VoidCallback? onClear,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        'Hạn hoàn thành (tuỳ chọn)',
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textSecondary,
+        ),
+      ),
+      const SizedBox(height: 6),
+      InkWell(
+        onTap: onPick,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.progressTrack, width: 1.5),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.event_outlined,
+                size: 18,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  dueAt == null
+                      ? 'Chọn ngày và giờ hạn'
+                      : _fmtDateTime(dueAt),
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: dueAt == null
+                        ? AppColors.textMuted
+                        : AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              if (onClear != null)
+                GestureDetector(
+                  onTap: onClear,
+                  child: const Icon(
+                    Icons.close_rounded,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textMuted,
+                ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _datePickerField({
+    required String label,
+    required DateTime? value,
+    required Future<void> Function() onPick,
+    VoidCallback? onClear,
+  }) => InkWell(
+    onTap: onPick,
+    borderRadius: BorderRadius.circular(14),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.progressTrack),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.calendar_today_outlined,
+            size: 15,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              value == null
+                  ? label
+                  : '$label: ${value.day}/${value.month}/${value.year}',
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: value == null
+                    ? AppColors.textMuted
+                    : AppColors.textPrimary,
+              ),
+            ),
+          ),
+          if (onClear != null)
+            GestureDetector(
+              onTap: onClear,
+              child: const Icon(
+                Icons.close_rounded,
+                size: 14,
+                color: AppColors.textSecondary,
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
 
   // ── Small widgets ──────────────────────────────────────────────────────────
 
@@ -2421,13 +2847,25 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         .where((a) => a.status != 'CANCELED')
         .toList(growable: false);
 
-    final assignee = switch (active.length) {
+    // Một người có thể có nhiều assignment record (ví dụ task định kỳ hoặc dữ
+    // liệu bị tạo lặp). Card tóm tắt phải nói số *người nhận duy nhất*, không
+    // dùng active.length vì đó chỉ là số bản ghi assignment.
+    final assigneesByMemberId = <String, String>{};
+    for (final assignment in active) {
+      final memberId = assignment.assignedToMemberId.trim();
+      if (memberId.isEmpty || assigneesByMemberId.containsKey(memberId)) {
+        continue;
+      }
+      final name = assignment.assignedToName?.trim();
+      assigneesByMemberId[memberId] =
+          name == null || name.isEmpty ? 'Thành viên' : name;
+    }
+    final assigneeNames = assigneesByMemberId.values.toList(growable: false);
+    final assignee = switch (assigneeNames.length) {
       0 => 'Chưa giao cho ai',
-      1 =>
-        active.first.assignedToName?.trim().isNotEmpty == true
-            ? active.first.assignedToName!.trim()
-            : 'Thành viên',
-      _ => '${active.length} người được giao',
+      1 => assigneeNames.first,
+      2 => '${assigneeNames[0]}, ${assigneeNames[1]}',
+      _ => '${assigneeNames[0]}, ${assigneeNames[1]} và ${assigneeNames.length - 2} người khác',
     };
 
     // Ưu tiên hạn của assignment (sát thực tế hơn), không có thì lấy hạn task.
@@ -2849,6 +3287,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   }
 }
 
+enum _TaskSort { newest, dueSoon }
+
 // GET .../schedule (refresh mới nhất), PATCH .../schedule (sửa lịch lặp),
 // POST .../schedule/generate-assignments (tạo hàng loạt phân công theo
 // khoảng ngày cho 1 thành viên).
@@ -2870,6 +3310,8 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
   String? _genMemberId;
   DateTime _genFrom = DateTime.now();
   DateTime _genTo = DateTime.now().add(const Duration(days: 30));
+  TimeOfDay _genStartTime = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay? _genDueTime = const TimeOfDay(hour: 18, minute: 0);
   bool _generating = false;
   String? _genError;
 
@@ -2934,6 +3376,16 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
       setState(() => _genError = 'Chọn thành viên');
       return;
     }
+    if (_genTo.isBefore(_genFrom)) {
+      setState(() => _genError = 'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu');
+      return;
+    }
+    if (_genDueTime != null &&
+        (_genDueTime!.hour * 60 + _genDueTime!.minute) <=
+            (_genStartTime.hour * 60 + _genStartTime.minute)) {
+      setState(() => _genError = 'Giờ hạn phải muộn hơn giờ bắt đầu');
+      return;
+    }
     setState(() {
       _generating = true;
       _genError = null;
@@ -2944,6 +3396,8 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
         assignedToMemberId: _genMemberId!,
         fromDate: _genFrom,
         toDate: _genTo,
+        startTime: _timeText(_genStartTime),
+        dueTime: _genDueTime == null ? null : _timeText(_genDueTime!),
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3188,6 +3642,45 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _timePickerField(
+                      label: 'Bắt đầu',
+                      value: _genStartTime,
+                      onPick: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: _genStartTime,
+                        );
+                        if (picked != null) {
+                          setState(() => _genStartTime = picked);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _timePickerField(
+                      label: 'Hạn (tuỳ chọn)',
+                      value: _genDueTime,
+                      onPick: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: _genDueTime ?? _genStartTime,
+                        );
+                        if (picked != null) {
+                          setState(() => _genDueTime = picked);
+                        }
+                      },
+                      onClear: _genDueTime == null
+                          ? null
+                          : () => setState(() => _genDueTime = null),
+                    ),
+                  ),
+                ],
+              ),
               if (_genError != null) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -3235,4 +3728,55 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
       ),
     );
   }
+
+  String _timeText(TimeOfDay value) =>
+      '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
+  Widget _timePickerField({
+    required String label,
+    required TimeOfDay? value,
+    required Future<void> Function() onPick,
+    VoidCallback? onClear,
+  }) => InkWell(
+    onTap: onPick,
+    borderRadius: BorderRadius.circular(12),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.progressTrack),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.access_time_rounded,
+            size: 16,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              value == null ? label : '$label: ${_timeText(value)}',
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: value == null
+                    ? AppColors.textMuted
+                    : AppColors.textPrimary,
+              ),
+            ),
+          ),
+          if (onClear != null)
+            GestureDetector(
+              onTap: onClear,
+              child: const Icon(
+                Icons.close_rounded,
+                size: 14,
+                color: AppColors.textSecondary,
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
 }

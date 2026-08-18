@@ -142,6 +142,34 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           // sẽ throw và rơi về gói cứng, phải tryParse qua toString
           final annual =
               double.tryParse(p['annualPrice']?.toString() ?? '') ?? 0;
+          // Contract đổi: BE giờ trả `billingPeriod` + `monthlyPrice`/`yearlyPrice`
+          // riêng (khớp Admin Web), `annualPrice` không còn nghĩa là "giá cả
+          // năm" cho gói THÁNG như bản ghi cũ 2026-07-13 (đã lỗi thời — lúc đó
+          // BE chỉ có 1 field annualPrice dùng chung). Không đọc field mới thì
+          // Gói tháng hiện đúng SỐ (200.000) nhưng gắn nhãn sai "/năm" — bug
+          // quan sát thật 18/08/2026, ảnh chụp màn Gói đăng ký.
+          // Suy `billingPeriod` từ planCode khi BE không trả field này, cùng
+          // logic `planBillingPeriod` bên Admin Web (`admin/plans/page.tsx`).
+          final billingPeriod = p['billingPeriod']?.toString() ??
+              (code == 'FREE'
+                  ? 'FREE'
+                  : RegExp('YEAR|NAM', caseSensitive: false).hasMatch(code)
+                      ? 'YEARLY'
+                      : 'MONTHLY');
+          final monthlyPrice =
+              double.tryParse(p['monthlyPrice']?.toString() ?? '') ?? annual;
+          final yearlyPrice =
+              double.tryParse(p['yearlyPrice']?.toString() ?? '') ?? annual;
+          final priceValue = billingPeriod == 'YEARLY'
+              ? yearlyPrice
+              : billingPeriod == 'MONTHLY'
+                  ? monthlyPrice
+                  : 0.0;
+          final periodLabel = billingPeriod == 'YEARLY'
+              ? '/năm'
+              : billingPeriod == 'MONTHLY'
+                  ? '/tháng'
+                  : '';
           final maxM = p['maxMembers']?.toString() ?? '∞';
           final stoMB =
               double.tryParse(p['storageLimit']?.toString() ?? '') ?? 0;
@@ -154,24 +182,35 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           // finance.advanced/reports.advanced/sos.enabled/storage.unlimited —
           // không key nào tồn tại nên các dòng đó không bao giờ hiện, kể cả gói
           // trả phí. Đi qua officialKeys thì gõ sai tên là lộ ra ngay lúc build.
+          //
+          // Mã hoá "1|nhóm|nhãn" (nhóm rỗng = mục nền tảng, luôn có, không nằm
+          // trong 26 key) để _PlanCard chia màn hình theo nhóm thay vì liệt kê
+          // phẳng 21-23 dòng liền một mạch — quan sát thật 18/08/2026, người
+          // dùng phải cuộn qua một bức tường chữ mới hết một gói.
           final features = <String>[
-            '1|Nhiệm vụ & sổ thu chi cơ bản',
-            '1|Chat nhóm & Thông báo',
+            '1||Nhiệm vụ & sổ thu chi cơ bản',
+            '1||Chat nhóm & Thông báo',
             for (final key in FeatureAccess.officialKeys)
               if (feat.flag(key))
-                '1|${FeatureAccess.officialKeyLabels[key] ?? key}',
+                '1|${FeatureAccess.officialKeyGroups[key] ?? ''}|${FeatureAccess.officialKeyLabels[key] ?? key}',
           ];
 
           Color color;
           List<Color> gradient;
           IconData icon;
+          // planCode thật là FREE/MONTHLY/YEARLY (không còn GOLD/PREMIUM cũ) —
+          // nhánh màu trước đây so `code == 'GOLD' || 'PREMIUM'` không bao giờ
+          // khớp, nên Gói năm rơi vào nhánh else và TRÙNG MÀU XANH với Gói
+          // tháng. Bug quan sát thật 18/08/2026 — hai thẻ nhìn như cùng hạng.
+          // Đổi Gói năm sang tím-hồng đậm, khác hẳn xanh của Gói tháng, để
+          // đúng vai "gói cao cấp nhất" mà ribbon Tiết kiệm đang gợi ý.
           if (code == 'FREE') {
             color = const Color(0xFF6B7280);
             gradient = const [Color(0xFFF3F4F6), Color(0xFFE5E7EB)];
             icon = Icons.home_outlined;
-          } else if (code == 'GOLD' || code == 'PREMIUM') {
-            color = const Color(0xFFD97706);
-            gradient = const [Color(0xFFF59E0B), Color(0xFFFBBF24)];
+          } else if (billingPeriod == 'YEARLY') {
+            color = const Color(0xFF7C3AED);
+            gradient = const [Color(0xFF7C3AED), Color(0xFFC026D3)];
             icon = Icons.workspace_premium_outlined;
           } else {
             color = const Color(0xFF2563EB);
@@ -182,10 +221,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
           return _PlanData(
             id: code,
             name: name,
-            // BE định giá theo năm (annualPrice) — hiển thị đúng như web admin
-            price: annual > 0 ? '${_fmtPrice(annual.round())} ₫' : '0 ₫',
-            priceValue: annual,
-            period: '/năm',
+            price: priceValue > 0 ? '${_fmtPrice(priceValue.round())} ₫' : '0 ₫',
+            priceValue: priceValue,
+            period: periodLabel,
             icon: icon,
             color: color,
             gradientColors: gradient,
@@ -197,6 +235,23 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             features: features,
           );
         }).toList();
+        // Ribbon "Tiết kiệm X%" cho gói năm so với mua 12 tháng lẻ — cùng cách
+        // tính PriceSummary bên Admin Web đang dùng, để hai nơi không lệch số.
+        _PlanData? monthlyPlan;
+        for (final p in mapped) {
+          if (p.period == '/tháng') monthlyPlan = p;
+        }
+        if (monthlyPlan != null && monthlyPlan.priceValue > 0) {
+          final monthlyTotal = monthlyPlan.priceValue * 12;
+          for (var i = 0; i < mapped.length; i++) {
+            final p = mapped[i];
+            if (p.period != '/năm' || p.priceValue <= 0) continue;
+            if (p.priceValue >= monthlyTotal) continue;
+            final percent =
+                ((monthlyTotal - p.priceValue) / monthlyTotal * 100).round();
+            if (percent > 0) mapped[i] = p.withSavingsLabel('Tiết kiệm $percent%');
+          }
+        }
         if (mounted) setState(() => _plans = mapped);
       }
     } catch (_) {
@@ -532,6 +587,53 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 }
 
+/// Thứ tự nhóm hiển thị — khớp `FEATURE_GROUPS` bên
+/// `apps/web/src/lib/feature-catalog.ts` để hai nền tảng chia cùng một cách.
+const _kFeatureGroupOrder = [
+  'Lịch gia đình',
+  'Tài chính',
+  'Nhiệm vụ và phần thưởng',
+  'Album',
+  'Trợ lý AI',
+  'SOS và an toàn',
+  'Nhắn tin',
+];
+
+/// Gom các dòng "flag|group|label" (hoặc "flag|label" từ bản fallback cũ)
+/// thành danh sách theo nhóm, mục nền tảng (group rỗng) luôn đứng đầu, các
+/// nhóm còn lại theo đúng [_kFeatureGroupOrder]. Chỉ giữ dòng đang bật
+/// (flag == '1') — dòng tắt không hiện ở màn mua gói, đúng hành vi cũ.
+List<MapEntry<String, List<String>>> _groupedFeatureLines(
+  List<String> lines,
+) {
+  final baseline = <String>[];
+  final byGroup = <String, List<String>>{};
+  for (final f in lines) {
+    final parts = f.split('|');
+    if (parts.isEmpty || parts[0] != '1') continue;
+    final group = parts.length >= 3 ? parts[1] : '';
+    final label = parts.length >= 3
+        ? parts[2]
+        : (parts.length == 2 ? parts[1] : f);
+    if (group.isEmpty) {
+      baseline.add(label);
+    } else {
+      byGroup.putIfAbsent(group, () => []).add(label);
+    }
+  }
+  final result = <MapEntry<String, List<String>>>[];
+  if (baseline.isNotEmpty) result.add(MapEntry('', baseline));
+  for (final g in _kFeatureGroupOrder) {
+    if (byGroup.containsKey(g)) result.add(MapEntry(g, byGroup[g]!));
+  }
+  // Phòng khi BE thêm key với nhóm mới chưa kịp cập nhật _kFeatureGroupOrder —
+  // vẫn hiện thay vì âm thầm mất dữ liệu.
+  for (final e in byGroup.entries) {
+    if (!_kFeatureGroupOrder.contains(e.key)) result.add(e);
+  }
+  return result;
+}
+
 class _PlanCard extends StatelessWidget {
   final _PlanData plan;
   final bool isCurrent;
@@ -570,7 +672,10 @@ class _PlanCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // ── Plan header gradient ─────────────────────────
-          Container(
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -645,45 +750,86 @@ class _PlanCard extends StatelessWidget {
               ],
             ),
           ),
+              if (plan.savingsLabel != null)
+                Positioned(
+                  top: -10,
+                  right: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      borderRadius: BorderRadius.circular(999),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.success.withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      plan.savingsLabel!,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
 
           // ── Features ────────────────────────────────────
+          // Chia theo nhóm (Lịch, Tài chính, Nhiệm vụ...) thay vì liệt kê phẳng
+          // 21-23 dòng liền — quan sát thật 18/08/2026: người dùng phải cuộn
+          // qua một bức tường chữ mới đọc hết một gói, khó cân nhắc mua.
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...plan.features.map((f) {
-                  final enabled = f.startsWith('1|');
-                  final text = f.length > 2 ? f.substring(2) : f;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        Icon(
-                          enabled
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.cancel_outlined,
-                          size: 16,
-                          color: enabled
-                              ? AppColors.success
-                              : AppColors.textMuted,
+                for (final entry in _groupedFeatureLines(plan.features)) ...[
+                  if (entry.key.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10, bottom: 6),
+                      child: Text(
+                        entry.key.toUpperCase(),
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4,
+                          color: AppColors.textMuted,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            text,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              color: enabled
-                                  ? AppColors.textPrimary
-                                  : AppColors.textMuted,
+                      ),
+                    ),
+                  for (final text in entry.value)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: 16,
+                            color: AppColors.success,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              text,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  );
-                }),
+                ],
                 const SizedBox(height: 16),
 
                 // ── CTA Button ───────────────────────────
@@ -752,7 +898,12 @@ class _PlanData {
   final String members;
   final String storage;
   final String db;
+  // Mỗi dòng mã hoá "flag|group|label" (flag: 1 bật/0 tắt). Bản fallback cũ
+  // chỉ có "flag|label" (không nhóm) — _PlanCard đọc cả hai dạng.
   final List<String> features;
+  // "Tiết kiệm 17%" cho gói năm so với mua 12 tháng lẻ — null nếu không áp
+  // dụng (gói tháng/miễn phí, hoặc không đủ dữ liệu để so sánh).
+  final String? savingsLabel;
 
   const _PlanData({
     required this.id,
@@ -767,5 +918,22 @@ class _PlanData {
     required this.storage,
     required this.db,
     required this.features,
+    this.savingsLabel,
   });
+
+  _PlanData withSavingsLabel(String? label) => _PlanData(
+    id: id,
+    name: name,
+    price: price,
+    priceValue: priceValue,
+    period: period,
+    icon: icon,
+    color: color,
+    gradientColors: gradientColors,
+    members: members,
+    storage: storage,
+    db: db,
+    features: features,
+    savingsLabel: label,
+  );
 }

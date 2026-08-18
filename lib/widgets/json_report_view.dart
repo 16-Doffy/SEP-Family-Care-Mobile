@@ -22,10 +22,18 @@ class JsonReportView extends StatelessWidget {
     required this.data,
     required this.financeReportMode,
     required int depth,
-  })  : _depth = depth,
-        super();
+  }) : _depth = depth,
+       super();
 
-  static const _financeLabels = <String, String>{
+  /// Nhãn tiếng Việt cho tên field BE.
+  ///
+  /// Áp dụng cho **mọi** nơi dùng widget này, không riêng màn tài chính. Trước
+  /// đây map này chỉ được tra khi `financeReportMode == true`, nên Trợ lý AI /
+  /// Phần thưởng / Hỗ trợ / SOS rơi hết về [_labelize] và hiện nhãn tiếng Anh
+  /// sinh từ tên field ("Total Expense", "Active Budget Plan", "Period Start"…)
+  /// ngay trên màn người dùng thường thấy. Key nào chưa có ở đây vẫn rơi về
+  /// [_labelize] — thêm dần khi gặp field mới.
+  static const _labels = <String, String>{
     'budgetPlan': 'Kế hoạch ngân sách',
     'budgetPlanReport': 'Báo cáo ngân sách',
     'goal': 'Mục tiêu tiết kiệm',
@@ -91,6 +99,58 @@ class JsonReportView extends StatelessWidget {
     'actualValue': 'Giá trị thực tế',
     'resolutionNote': 'Ghi chú xử lý',
     'resolvedAt': 'Thời gian xử lý',
+    // Bổ sung 2026-08-17 sau khi thấy nhãn tiếng Anh lộ ra ở màn Trợ lý AI.
+    'id': 'Mã',
+    'balance': 'Số dư',
+    'totalIncome': 'Tổng thu',
+    'activeBudgetPlan': 'Kế hoạch ngân sách đang dùng',
+    'lineCount': 'Số danh mục',
+    'usagePercent': 'Đã dùng',
+    'budgetAlerts': 'Cảnh báo ngân sách',
+    'summary': 'Tóm tắt',
+    'title': 'Tiêu đề',
+    'description': 'Mô tả',
+    'amount': 'Số tiền',
+    'count': 'Số lượng',
+    'total': 'Tổng',
+    'month': 'Tháng',
+    'year': 'Năm',
+    'jar': 'Hũ',
+    'jarName': 'Tên hũ',
+    'jars': 'Các hũ',
+    'categoryName': 'Tên danh mục',
+    'family': 'Gia đình',
+    'scope': 'Phạm vi',
+    'task': 'Nhiệm vụ',
+    'tasks': 'Nhiệm vụ',
+    'calendar': 'Lịch',
+    'events': 'Sự kiện',
+    'finance': 'Tài chính',
+    'sos': 'Khẩn cấp',
+    'album': 'Ảnh',
+    'members': 'Thành viên',
+    'memberName': 'Thành viên',
+    'generatedAt': 'Tạo lúc',
+    'updatedAt': 'Cập nhật lúc',
+    'createdAt': 'Tạo lúc',
+    'startTime': 'Bắt đầu',
+    'endTime': 'Kết thúc',
+    'dueDate': 'Hạn chót',
+    'assignee': 'Người thực hiện',
+    'assigneeName': 'Người thực hiện',
+    'reward': 'Phần thưởng',
+    'rewardName': 'Tên phần thưởng',
+    'points': 'Điểm',
+    'priority': 'Mức ưu tiên',
+    'progressPercentage': 'Tiến độ',
+    'message': 'Nội dung',
+    'reason': 'Lý do',
+    'location': 'Vị trí',
+    'latitude': 'Vĩ độ',
+    'longitude': 'Kinh độ',
+    'address': 'Địa chỉ',
+    'phone': 'Số điện thoại',
+    'email': 'Email',
   };
 
   static const _technicalKeys = <String>{
@@ -115,11 +175,19 @@ class JsonReportView extends StatelessWidget {
 
   static bool _looksLikeMoney(String key) {
     final k = key.toLowerCase();
-    return k.contains('amount') || k.contains('income') || k.contains('expense') ||
-        k.contains('spending') || k.contains('total') || k.contains('balance') ||
-        k.contains('price') || k.contains('shortage') || k.contains('planned') ||
-        k.contains('actual') || k.contains('contribution') ||
-        k.contains('threshold') || k.contains('variance');
+    return k.contains('amount') ||
+        k.contains('income') ||
+        k.contains('expense') ||
+        k.contains('spending') ||
+        k.contains('total') ||
+        k.contains('balance') ||
+        k.contains('price') ||
+        k.contains('shortage') ||
+        k.contains('planned') ||
+        k.contains('actual') ||
+        k.contains('contribution') ||
+        k.contains('threshold') ||
+        k.contains('variance');
   }
 
   static String _fmtMoney(num v) {
@@ -198,7 +266,10 @@ class JsonReportView extends StatelessWidget {
   static String _labelize(String key) {
     // camelCase / snake_case → "Camel Case"
     final spaced = key
-        .replaceAllMapped(RegExp(r'([a-z0-9])([A-Z])'), (m) => '${m[1]} ${m[2]}')
+        .replaceAllMapped(
+          RegExp(r'([a-z0-9])([A-Z])'),
+          (m) => '${m[1]} ${m[2]}',
+        )
         .replaceAll('_', ' ');
     return spaced[0].toUpperCase() + spaced.substring(1);
   }
@@ -211,10 +282,12 @@ class JsonReportView extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: map.entries
-            .where((e) =>
-                !financeReportMode ||
-                (!_technicalKeys.contains(e.key) &&
-                    !(_depth > 0 && e.key == 'lines')))
+            .where(
+              (e) =>
+                  !financeReportMode ||
+                  (!_technicalKeys.contains(e.key) &&
+                      !(_depth > 0 && e.key == 'lines')),
+            )
             .map((e) => _entryRow(e.key, e.value))
             .toList(),
       );
@@ -224,46 +297,63 @@ class JsonReportView extends StatelessWidget {
       if (list.isEmpty) return _empty();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: list.asMap().entries.map((e) => _listItem(e.key, e.value)).toList(),
+        children: list
+            .asMap()
+            .entries
+            .map((e) => _listItem(e.key, e.value))
+            .toList(),
       );
     }
-    return Text(data?.toString() ?? '—',
-        style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary));
+    return Text(
+      data?.toString() ?? '—',
+      style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+    );
   }
 
-  Widget _empty() => Text('Không có dữ liệu',
-      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted));
+  Widget _empty() => Text(
+    'Không có dữ liệu',
+    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+  );
 
   Widget _entryRow(String key, dynamic value) {
     final isComplex = value is Map || value is List;
     if (isComplex) {
-      final label = financeReportMode ? (_financeLabels[key] ?? _labelize(key)) : _labelize(key);
+      final label = _labels[key] ?? _labelize(key);
       return Padding(
         padding: const EdgeInsets.only(top: 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Trước đây tiêu đề nhóm (Family/Scope/Task/Calendar...) tô màu
-          // xám nhạt (textSecondary) giống hệt nhãn field thường, nhìn không
-          // phân biệt được đâu là tiêu đề nhóm — đổi màu nổi bật + gạch chân
-          // mảnh để tách nhóm rõ ràng hơn.
-          Container(
-            padding: const EdgeInsets.only(bottom: 4),
-            decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: AppColors.primary100, width: 1.5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Trước đây tiêu đề nhóm (Family/Scope/Task/Calendar...) tô màu
+            // xám nhạt (textSecondary) giống hệt nhãn field thường, nhìn không
+            // phân biệt được đâu là tiêu đề nhóm — đổi màu nổi bật + gạch chân
+            // mảnh để tách nhóm rõ ràng hơn.
+            Container(
+              padding: const EdgeInsets.only(bottom: 4),
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: AppColors.primary100, width: 1.5),
+                ),
+              ),
+              child: Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primary600,
+                ),
               ),
             ),
-            child: Text(label,
-                style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w800, color: AppColors.primary600)),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 10, top: 6),
-            child: JsonReportView._nested(
-              data: value,
-              financeReportMode: financeReportMode,
-              depth: _depth + 1,
+            Padding(
+              padding: const EdgeInsets.only(left: 10, top: 6),
+              child: JsonReportView._nested(
+                data: value,
+                financeReportMode: financeReportMode,
+                depth: _depth + 1,
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       );
     }
     if (value == null) {
@@ -276,23 +366,23 @@ class JsonReportView extends StatelessWidget {
         : value is num && _looksLikeMoney(key)
         ? _fmtMoney(value)
         : lowerKey.contains('time') ||
-                (value is String && _looksLikeIsoDateTime(raw))
+              (value is String && _looksLikeIsoDateTime(raw))
         ? _fmtDateTime(raw)
         : lowerKey.endsWith('at') ||
-                lowerKey.contains('date') ||
-                lowerKey == 'deadline' ||
-                lowerKey == 'periodstart' ||
-                lowerKey == 'periodend'
+              lowerKey.contains('date') ||
+              lowerKey == 'deadline' ||
+              lowerKey == 'periodstart' ||
+              lowerKey == 'periodend'
         ? _fmtDate(raw)
         : value is bool
         ? (value ? 'Có' : 'Không')
         : lowerKey == 'status' ||
-                lowerKey == 'periodtype' ||
-                lowerKey == 'categorytype' ||
-                lowerKey == 'essentialtype' ||
-                lowerKey == 'riskseverity' ||
-                lowerKey == 'severity' ||
-                lowerKey == 'alerttype'
+              lowerKey == 'periodtype' ||
+              lowerKey == 'categorytype' ||
+              lowerKey == 'essentialtype' ||
+              lowerKey == 'riskseverity' ||
+              lowerKey == 'severity' ||
+              lowerKey == 'alerttype'
         ? _fmtStatus(raw)
         : _sanitizeText(raw);
     return _valueRow(key, display);
@@ -318,14 +408,24 @@ class JsonReportView extends StatelessWidget {
           Expanded(
             flex: 3,
             child: Text(
-                financeReportMode ? (_financeLabels[key] ?? _labelize(key)) : _labelize(key),
-                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              _labels[key] ?? _labelize(key),
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppColors.textMuted,
+              ),
+            ),
           ),
           Expanded(
             flex: 4,
-            child: Text(display,
-                textAlign: TextAlign.right,
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+            child: Text(
+              display,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
           ),
         ],
       ),
@@ -351,8 +451,10 @@ class JsonReportView extends StatelessWidget {
     }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Text('• ${value?.toString() ?? '—'}',
-          style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary)),
+      child: Text(
+        '• ${value?.toString() ?? '—'}',
+        style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary),
+      ),
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:family_care/models/user.dart';
 import 'package:family_care/providers/auth_provider.dart';
 import 'package:family_care/providers/calendar_provider.dart';
 import 'package:family_care/providers/family_provider.dart';
+import 'package:family_care/providers/subscription_provider.dart';
 import 'package:family_care/screens/parent/calendar_screen.dart';
 
 /// Chặn mọi lời gọi mạng: màn hình gọi fetchBootstrap trong postFrameCallback.
@@ -15,7 +16,7 @@ class _FakeCalendarProvider extends CalendarProvider {
   }
 
   @override
-  Future<void> fetchBootstrap(DateTime month) async {}
+  Future<void> fetchBootstrap(DateTime month, SubscriptionProvider sub) async {}
 }
 
 AppUser _user(UserRole role) => AppUser(
@@ -54,6 +55,9 @@ Future<void> _pump(WidgetTester tester, UserRole role) async {
           create: (_) => _FakeCalendarProvider([_eventToday()]),
         ),
         ChangeNotifierProvider<FamilyProvider>(create: (_) => FamilyProvider()),
+        ChangeNotifierProvider<SubscriptionProvider>(
+          create: (_) => SubscriptionProvider(),
+        ),
       ],
       child: const MaterialApp(home: CalendarScreen()),
     ),

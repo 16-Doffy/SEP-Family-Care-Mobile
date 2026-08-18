@@ -402,6 +402,14 @@ Base: `/api/v1/families/{familyId}/albums/...` · provider `album_provider.dart`
 - **[MỚI 2026-07-30] Nhiều khuôn mặt trong một ảnh:** Swagger live đã có `FaceSuggestionsApiResponseDto` và example `data.faces[]`, mỗi face có candidates riêng. FE vẫn hỗ trợ thêm response phẳng để tương thích dữ liệu cũ, giữ ứng viên điểm cao nhất **theo từng face**, hiển thị confidence và yêu cầu user xác nhận trước khi tạo tag.
 - **[SỬA 2026-08-02] Scan retry/rate-limit:** GET trạng thái được parse thêm `retryAllowed` và `maxProcessingSeconds`; khi được phép, FE gọi `POST .../face-scan/retry` thay vì tạo thêm force scan. Lỗi `429 FACE_SCAN_FORCE_RESCAN_RATE_LIMITED` đọc `retryAfterSeconds`, `cooldownSeconds` và header `Retry-After`, khóa nút và đếm ngược. Swagger live vẫn thiếu response schema cho POST scan, GET status và POST retry; parser status vì vậy giữ dạng phòng thủ.
 - **[MỚI 2026-07-28] Gỡ tag — quyền fail-open:** response tag của `GET .../tags` **không** được Swagger document field quyền nào. FE đọc `permissions.canRemove`/`canRemove` nếu có, còn **thiếu thì vẫn cho bấm gỡ** và để BE trả 403 (`AlbumTag.canRemove` = `canRemoveFlag ?? true`). Lý do: tag do AI tự gắn buộc phải gỡ được, nếu default `false` thì BE thiếu field là user mắc kẹt với tag sai. Nếu BE chốt được contract quyền, sửa lại theo BE.
+- **[MỚI 2026-08-16, BE xác nhận + verify qua `/api/docs-json` server live, wire FE Phase 1+2] Album Collection + analyze-draft:** file dump `family-care-api.json` ở root repo là bản cũ, **không** có 3 endpoint dưới — đã verify trực tiếp qua swagger live trước khi code.
+  - `GET/POST /albums/collections` (`CreateAlbumCollectionDto {name (bắt buộc, max 120), description?, coverMediaId?}`) · `GET/PATCH/DELETE /albums/collections/{collectionId}` (`UpdateAlbumCollectionDto`, gửi `description`/`coverMediaId` = `null` để xóa). `DELETE` chỉ xóa mềm collection — media đã upload vẫn còn, giữ nguyên `collectionId` để audit. Swagger **chưa document response DTO** cho cả 3 method này (chỉ có request DTO) — FE parse phòng thủ (`id`, `name`, `description`, `coverMediaId`, `createdAt`, `mediaCount`). Wire: `AlbumProvider.fetchCollections/createCollection/updateCollection/deleteCollection`.
+  - **[VERIFY LIVE 2026-08-16 — `mediaCount` không đáng tin]** `GET /albums/collections` trả `mediaCount = 0` cho collection đã thật sự có ảnh (upload xong, lọc `GET .../media?collectionId=` vẫn ra đúng ảnh) — field không được BE tính lại theo thời gian thực, hoặc field này chưa implement thật. FE **không hiển thị** số này ở card album nữa (chỉ hiện nhãn chung "Album") để tránh báo sai số cho người dùng. Cần hỏi BE có định tính live không trước khi hiển thị lại.
+  - `POST /albums/media` và `GET /albums/media` nhận thêm `collectionId` (optional, uuid) — POST gắn media vào album khi upload, GET lọc theo album. Không truyền `collectionId` ở GET thì trả tất cả (kể cả media cũ `collectionId = null`) — đúng hành vi "Tất cả ảnh".
+  - `POST /albums/media/analyze-draft` — multipart `{file (bắt buộc), collectionId?, topic? (max 120), declaredContentIntent? (PEOPLE | SCENE_OR_OBJECT)}`. Theo mô tả BE: **không lưu DB, không upload R2, không gọi face-scan** — chỉ cảnh báo mềm. Response chưa có DTO trong Swagger; field xác nhận qua BE (không phải suy đoán): `recommendation` (`ALLOW | WARN`), `analysisStatus` (`COMPLETED | SKIPPED | UNAVAILABLE`), `warnings[]`, `detectedLabels[]`, `summary`. `SKIPPED`/`UNAVAILABLE` **không chặn** upload — FE hỏi xác nhận rồi vẫn cho tải lên bình thường. Wire: `AlbumProvider.analyzeDraft`, gọi trước `uploadMedia` trong `_analyzeAndUpload` (`album_screen.dart`).
+  - Không đụng face recognition (`AlbumFaceProvider`/`AlbumFaceSection`/face-scan/face-suggestions) — 2 flow độc lập hoàn toàn, giữ nguyên như trước.
+  - **[BE FIX 2026-08-17 (đợt 3) — parser fallback plain-text của `analyze-draft`, FE KHÔNG phải đổi code]** BE vá nốt 3 điểm FE báo sau đợt test 7 lượt hôm 16-17/08: (1) **giảm false positive `hasPerson = true`** với ảnh vật thể/trái cây; (2) **không suy ra `detectedLabels` từ raw reasoning nữa** nên hết nhãn ảo kiểu `mountain` cho ảnh dứa/đào; (3) **lọc bỏ text placeholder** `"short reason or empty string"` khỏi `warnings` (trước đây lộ thẳng ra UI). **[VERIFY]** FE chưa retest sau khi BE deploy — phải chạy lại đúng bộ ảnh cũ (trái cây tổng hợp, dâu tây, dứa) gán vào album lệch chủ đề (`sea` / `anh LMH`) rồi mới gỡ nhãn. Đây cũng là **cơ hội đầu tiên verify được nhánh `WARN`** của `_analyzeAndUpload` (`album_screen.dart`) — nhánh này viết đúng spec nhưng **chưa từng chạy thật lần nào** vì trước bản vá `recommendation` luôn ra `ALLOW`.
+  - **[XÁC MINH 2026-08-17 — BE KHÔNG có 2 thứ sau]** grep toàn bộ `family-care-api.json`: (1) **không có endpoint xóa hàng loạt** nào cho album (chỉ `bulk`/`batch` duy nhất trong repo là `sos/alerts/{alertId}/locations/batch`); (2) **không có field `isPinned`/`favorite`/`starred`** trên media, cũng không có endpoint ghim. Hệ quả FE: xóa nhiều ảnh = gọi `DELETE /albums/media/{mediaId}` **tuần tự N lần** (`AlbumProvider.softDeleteMany`, có tiến độ + báo số lỗi, không nguyên tử); ghim ảnh lưu **cục bộ theo máy** (`AlbumPinStore`, `flutter_secure_storage`, khóa `album_pinned_{userId}_{familyId}`), UI gắn nhãn "chỉ trên máy này". Đề xuất BE bổ sung: `DE_XUAT_BE_ALBUM_PIN_BULK_DELETE_2026-08-17.md` (mức Nên có, không chặn).
 
 ### Finance — Model & Jars
 - `GET /api/v1/families/{familyId}/finance/model-templates` — Mẫu có sẵn: `FIVE_JARS`, `EIGHTY_TWENTY`, `CUSTOM` (constant, không lưu DB). **[wire FE 2026-07-08]** nút ℹ️ trong `FinanceModelScreen` (info sheet, không đổi luồng chọn mô hình — UI đã hardcode đúng theo mẫu này từ trước).
@@ -473,6 +481,12 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 
 ### Finance — Goal Contribution Plans — **[wire FE 2026-07-07]**
 - `GET .../financial-goals/{goalId}/contribution-suggestions` — Gợi ý đóng góp/tháng theo từng thành viên. Query `month`, `year` (bắt buộc).
+  - **[BE ĐỔI LOGIC 2026-08-18 — đã wire FE]** Khoản **đã góp quỹ chung KHÔNG còn bị lấy làm "số phải góp tiếp cho mục tiêu"**, nó chỉ **trừ bớt khả năng còn lại**. Công thức BE: `availableAmount = incomeAmount - personalExpenseAmount - sharedContributionAmount`; `suggestedContribution = contributionTargetAmount * availableAmount / totalAvailableAmount`.
+  - Response có thể là **mảng cũ** hoặc **object mới** `{ suggestions[], skippedMembers[], warnings[], basis, monthlyContributionTarget, explicitMonthlyContributionTarget, recommendedMonthlyContribution, remainingAmount, totalAvailableAmount }`. FE parse được **cả hai** (`ContributionSuggestionResult.fromJson`) nên không vỡ dù BE deploy trước hay sau.
+  - Mỗi phần tử `suggestions[]` thêm: `suggestedContribution` (tên mới của `suggestedAmount`), `incomeAmount`, `personalExpenseAmount`, `sharedContributionAmount`, `availableAmount`, `incomeSource`, `expenseSource`, `sharedContributionSource`, `displayName` ở gốc.
+  - `skippedMembers[].reason` đã biết 4 mã: `MISSING_MONTHLY_FINANCE`, `INCOME_NOT_VISIBLE`, `EXPENSE_NOT_VISIBLE`, `NO_AVAILABLE_AMOUNT` — FE dịch sang tiếng Việt, mã lạ hiển thị nguyên văn thay vì nuốt.
+  - **POST `.../contribution-plans/confirm` GIỮ NGUYÊN body cũ** `{ periodMonth, periodYear, dueDate, members[{memberId, plannedAmount}] }` — REST **không** nhận `distributionMode`. Chỉ luồng AI mới có `distributionMode` trong `pendingAction`.
+  - Wire FE: `FinanceProvider.fetchContributionSuggestionResult` (bản cũ `fetchContributionSuggestions` giữ lại, trả `.suggestions`), màn `goal_contribution_screen.dart`. **[VERIFY]** chưa chạy runtime với BE thật sau khi BE deploy.
 - `POST .../financial-goals/{goalId}/contribution-plans/confirm` — Xác nhận/cập nhật kế hoạch đóng góp theo tháng. Body `ConfirmGoalContributionPlanDto { periodMonth, periodYear, dueDate, members[] }`.
 - `POST .../financial-goals/{goalId}/contribution-plans/{planId}/submit` — Thành viên xác nhận đã đóng góp. Body `SubmitGoalContributionPlanDto { amount, note? }`.
 - `POST .../financial-goals/{goalId}/contribution-plans/{planId}/approve` — Manager/deputy duyệt khoản đóng góp (ghi vào sổ sách). Body `ReviewGoalContributionPlanDto { note? }`.
@@ -645,6 +659,33 @@ AI nào ngoài Swagger.
 - `DELETE /api/v1/families/{familyId}/ai-chatbot/conversations/{conversationId}` — xóa hội thoại kèm toàn bộ tin nhắn.
 - `GET /api/v1/families/{familyId}/ai-chatbot/daily-brief` — tổng quan hôm nay, kèm quick actions theo `uiHints`.
 
+**[BE FIX 2026-08-17 — phạm vi tài chính của AI, FE KHÔNG phải đổi code]**
+Trước bản vá, hỏi "list danh sách thu chi thực tế của từng thành viên" bị AI
+trả lời "tôi không có quyền truy cập" — **kể cả tài khoản Trưởng nhóm** (đã
+tự test runtime để loại trừ FE). Nguyên nhân BE xác nhận: AI **chưa có tool**
+để đọc dữ liệu tháng theo từng thành viên, không phải lỗi phân quyền.
+
+- BE thêm AI tool **`list_member_monthly_finances`**, mở cho
+  `FAMILY_MANAGER` **và `DEPUTY_MEMBER`** — khớp với `canManageFinance` của
+  REST, tức Deputy dùng được.
+- Quyền do BE đọc từ JWT/context; **FE vẫn chỉ gửi `{ content }`**, không gửi
+  role, không phải sửa gì.
+- Field bị ẩn hoặc member chưa khai báo → AI nói rõ "dữ liệu bị ẩn/chưa có",
+  không trả về câu từ chối chung chung nữa.
+- BE cũng sửa phần đề xuất đóng góp mục tiêu tài chính: số góp mỗi thành viên
+  tính theo `actualIncome - actualPersonalExpense - actualSharedContribution`,
+  thiếu số thực tế thì fallback sang số dự kiến; preview xác nhận mục tiêu
+  hiển thị căn cứ tính theo từng người. BE báo 5 test suite / 76 test pass.
+- **[VERIFY]** FE chưa chạy lại runtime sau bản vá này — cần test lại đúng câu
+  trên bằng **cả Trưởng nhóm lẫn Phó nhóm** rồi mới gỡ nhãn.
+
+**Hai điểm BE trả về cho FE tự xử (BE xác nhận không nằm trong scope của họ):**
+- **Markdown `###` lộ ra UI:** BE trả markdown, FE chưa render/lược. Logic BE
+  không sai — FE tự render hoặc lược ký hiệu.
+- **Tên hũ `Savings`/`Spending`:** là **dữ liệu** (tên hũ mặc định BE tạo),
+  không phải chuỗi trong FE. Muốn tiếng Việt phải đổi tên hũ trong dữ liệu,
+  hoặc BE map display name trước khi đưa vào response AI.
+
 **Sprint 3 (2026-08-09, backward-compatible — BE xác nhận endpoint cũ ở trên
 giữ nguyên, FE không bắt buộc đổi flow ngay):** một `aiMessage` giờ có thể có
 NHIỀU đề xuất cùng lúc trong `pendingActions[]` (kế hoạch nhiều bước),
@@ -698,6 +739,18 @@ coi là "bước 0" duy nhất).
   riêng và fallback recover `pendingAction`: Manager/Deputy yêu cầu chia quỹ
   tháng tương lai không còn bị trả text `PERMISSION_NOTICE` sai; cần regression
   runtime để xác nhận luôn có thẻ xác nhận.
+- **[Cập nhật BE 2026-08-10 — content PENDING chuẩn hóa]** Khi response có
+  `pendingAction`/`pendingActions[]` với `status = PENDING`, BE không dùng lại
+  text do model sinh tự do mà trả content chuẩn theo `actionType`. Riêng
+  `CREATE_CALENDAR_EVENT` trả: “Mình đã tạo đề xuất lịch. Vui lòng kiểm tra
+  thông tin và xác nhận trên ứng dụng để hoàn tất nhé.” FE giữ nguyên content
+  server trả về và render thẻ dựa trên cấu trúc action, không suy đoán theo chữ.
+- **[BE fix verified 2026-08-12 — calendar participants]** Với
+  `CREATE_CALENDAR_EVENT`, prompt “cho cả nhà”/“cả gia đình”/“mọi người” được BE map
+  sang toàn bộ member `ACTIVE`; nếu không nêu participant thì thêm người tạo. ID do AI
+  trả phải được xác thực thuộc member active trước khi tạo pending action. Runtime đã
+  xác nhận proposal mới tạo lịch cho cả nhà confirm thành công; FE vẫn chỉ gửi
+  `messageId` vào endpoint confirm và không tự tạo participant payload.
 - **Cập nhật 2026-08-07:** `entryDate` của Ledger **cũng là UTC thật**, không còn phải wall-clock local gắn `Z` như ghi nhận trước đây. Verify runtime: tạo khoản chi lúc 20:19 giờ VN (13:19 UTC), sổ thu chi từng hiện `13:18` — lộ ra `WalletProvider.displayEntryDate` tự cắt `Z` rồi đọc số UTC như giờ local, lỗi FE đã sửa (không phải BE). **Support request chưa verify lại** — nếu đụng tới thì phải test runtime riêng, không suy diễn theo ledger.
 - **[Sửa 2026-08-09]** `CREATE_LEDGER_ENTRY` từng lỗi chập chờn không sinh `pendingAction` (AI tự báo lỗi định dạng ngày). Nguyên nhân: `entryDate` do AI sinh ra không ổn định format. BE đã normalize trước khi validate: `YYYY-MM-DD` → `YYYY-MM-DDT00:00:00+07:00`; datetime thiếu timezone → tự thêm `+07:00`; text/ngày không parse được → fallback ngày hiện tại theo giờ VN. Cần test lại luồng "Ghi khoản chi ... hôm nay/tuần này" để xác nhận đã hết chập chờn.
 - **[Sửa 2026-08-09]** Thông báo từ chối quyền (`PERMISSION_NOTICE`, "Bạn không có quyền...") từng mất dấu tiếng Việt không nhất quán — BE xác nhận đã sửa, giờ có dấu đầy đủ.

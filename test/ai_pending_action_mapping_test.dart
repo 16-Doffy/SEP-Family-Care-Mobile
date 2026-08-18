@@ -13,6 +13,7 @@ import 'package:family_care/models/ai_chatbot.dart';
 /// không. Sai chỗ này thì người dùng bấm vào chỉ nhận 409 (đã xử lý) hoặc 410
 /// (đã hết hạn).
 void main() {
+  _goalContributionPlanTests();
   group('AiPendingAction — đọc field', () {
     test('đọc actionType, status, preview và expiresAt', () {
       final a = AiPendingAction.fromJson({
@@ -235,5 +236,92 @@ void main() {
         expect(AiMessage.fromJson({'id': 'm', 'content': 'x'}).isUser, isFalse);
       },
     );
+  });
+}
+
+/// Kế hoạch đóng góp mục tiêu — BE bổ sung 2026-08-18 các field nói rõ đây là
+/// ĐỀ XUẤT của AI (`distributionMode`, `warnings`, `safetyNote`). FE không
+/// được để rơi mất mấy field này, vì đó chính là thứ phân biệt "AI gợi ý" với
+/// "bắt buộc phải góp".
+void _goalContributionPlanTests() {
+  group('CREATE_GOAL_CONTRIBUTION_PLAN', () {
+    test('uiHints.fields của BE được giữ NGUYÊN VẸN, không lọc bớt', () {
+      final a = AiPendingAction.fromJson({
+        'actionType': 'CREATE_GOAL_CONTRIBUTION_PLAN',
+        'status': 'PENDING',
+        'preview': {'goalName': 'Du lịch Đà Lạt'},
+        'uiHints': {
+          'fields': [
+            {'key': 'goalName', 'label': 'Mục tiêu', 'value': 'Du lịch Đà Lạt'},
+            {
+              'key': 'distributionMode',
+              'label': 'Kiểu phân bổ',
+              'value': 'AI_SUGGESTED',
+            },
+            {
+              'key': 'warnings',
+              'label': 'Lưu ý',
+              'value': 'Một người chưa khai thu nhập',
+            },
+            {
+              'key': 'safetyNote',
+              'label': 'Lưu ý',
+              'value': 'Bạn vẫn chỉnh được',
+            },
+          ],
+        },
+      });
+      final keys = a.displayFields.map((f) => f.key).toList();
+      expect(
+        keys,
+        containsAll(['goalName', 'distributionMode', 'warnings', 'safetyNote']),
+      );
+      expect(a.displayFields, hasLength(4));
+    });
+
+    test('không có uiHints thì vẫn giữ được distributionMode và warnings', () {
+      // Nhánh dự phòng cũ cắt còn 6 field đầu của preview — dễ rơi mất đúng
+      // hai field quan trọng nhất nếu chúng nằm cuối.
+      final a = AiPendingAction.fromJson({
+        'actionType': 'CREATE_GOAL_CONTRIBUTION_PLAN',
+        'status': 'PENDING',
+        'preview': {
+          'goalName': 'Du lịch Đà Lạt',
+          'periodMonth': 9,
+          'periodYear': 2026,
+          'monthlyContributionTarget': 9000000,
+          'totalAvailableAmount': 24000000,
+          'distributionMode': 'AI_SUGGESTED',
+          'warnings': 'Một người chưa khai thu nhập',
+          'safetyNote': 'Bạn vẫn chỉnh được trước khi xác nhận',
+        },
+      });
+      final keys = a.displayFields.map((f) => f.key).toList();
+      expect(keys, contains('distributionMode'));
+      expect(keys, contains('warnings'));
+      expect(keys, contains('safetyNote'));
+    });
+
+    test('nhãn tiếng Việt cho field mới', () {
+      final a = AiPendingAction.fromJson({
+        'actionType': 'CREATE_GOAL_CONTRIBUTION_PLAN',
+        'status': 'PENDING',
+        'preview': {'distributionMode': 'MANUAL', 'warnings': 'x'},
+      });
+      final byKey = {for (final f in a.displayFields) f.key: f.label};
+      expect(byKey['distributionMode'], 'Kiểu phân bổ');
+      expect(byKey['warnings'], 'Lưu ý');
+    });
+
+    test('actionType này vẫn được coi là hành động FE hiểu được', () {
+      expect(
+        AiPendingAction.knownActionTypes,
+        contains('CREATE_GOAL_CONTRIBUTION_PLAN'),
+      );
+      expect(
+        AiPendingAction.financeActionTypes,
+        contains('CREATE_GOAL_CONTRIBUTION_PLAN'),
+      );
+    });
   });
 }

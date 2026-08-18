@@ -34,6 +34,7 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
   bool _loading = false;
   String? _error;
   bool _showMyRequests = false;
+  String? _submittedRequestId;
 
   @override
   void initState() {
@@ -131,10 +132,11 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
       _error = null;
     });
     try {
-      await context.read<InvitationProvider>().requestJoinByCode(
+      final request = await context.read<InvitationProvider>().requestJoinByCode(
         code,
         message: _messageCtrl.text,
       );
+      _submittedRequestId = request.id;
       if (mounted) {
         setState(() => _showMyRequests = true);
         await _loadMyRequests();
@@ -153,11 +155,15 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     try {
       await invitationProvider.fetchMyJoinRequests();
       if (!mounted) return;
-      final approved = invitationProvider.myJoinRequests.any(
-        (request) => request.status.toUpperCase() == 'APPROVED',
+      final approved = invitationProvider.myJoinRequests.where(
+        (request) =>
+            request.id == _submittedRequestId &&
+            request.status.toUpperCase() == 'APPROVED',
       );
-      if (approved) {
-        await auth.refreshFamilyContext();
+      if (approved.isNotEmpty) {
+        await auth.refreshFamilyContext(
+          preferredFamilyId: approved.first.familyId,
+        );
         if (!mounted) return;
         if (auth.hasFamily) {
           _poller?.cancel();
