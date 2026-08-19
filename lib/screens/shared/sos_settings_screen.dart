@@ -10,8 +10,10 @@ import '../../theme/app_surface_colors.dart';
 
 /// Cài đặt SOS của gia đình — 4 công tắc khớp UpdateSosSettingsDto.
 ///
-/// Chỉ Manager/Deputy được đổi (config cấp gia đình, cùng nhóm quyền với
-/// canResolveSos). Member xem read-only kèm ghi chú.
+/// **2026-08-19**: BE đã nới guard `PATCH .../sos/settings` cho cả 3 vai trò
+/// (FAMILY_MANAGER / DEPUTY_MEMBER / FAMILY_MEMBER — xác nhận qua Swagger),
+/// nên 4 công tắc này giờ mọi thành viên đều sửa được. Danh bạ khẩn cấp
+/// (thêm/sửa/xoá) vẫn Manager/Deputy-only — Swagger 2 endpoint đó chưa đổi.
 class SosSettingsScreen extends StatefulWidget {
   const SosSettingsScreen({super.key});
 
@@ -338,7 +340,9 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
   Widget build(BuildContext context) {
     final sos = context.watch<SosProvider>();
     final s = sos.settings ?? const SosSettings();
-    final canEdit = context.watch<AuthProvider>().user?.canResolveSos ?? false;
+    // Danh bạ khẩn cấp (thêm/sửa/xoá) vẫn Manager/Deputy-only theo Swagger.
+    final canEditContacts =
+        context.watch<AuthProvider>().user?.canResolveSos ?? false;
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -359,11 +363,6 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (!canEdit)
-                  _note(
-                    'Chỉ Trưởng nhóm hoặc Phó nhóm mới thay đổi được cài đặt '
-                    'SOS. Bạn đang xem ở chế độ chỉ đọc.',
-                  ),
                 _deviceGuardSection(),
                 _emergencyWatcherSection(),
                 _tile(
@@ -371,9 +370,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
                   title: 'Bật SOS',
                   subtitle: 'Cho phép gửi cảnh báo khẩn cấp trong gia đình.',
                   value: s.isEnabled,
-                  onChanged: canEdit
-                      ? (v) => _toggle(s.copyWith(isEnabled: v))
-                      : null,
+                  onChanged: (v) => _toggle(s.copyWith(isEnabled: v)),
                 ),
                 _tile(
                   icon: Icons.groups_rounded,
@@ -381,9 +378,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
                   subtitle:
                       'Khi có SOS, gửi thông báo tới mọi người trong nhà.',
                   value: s.notifyAllMembers,
-                  onChanged: canEdit
-                      ? (v) => _toggle(s.copyWith(notifyAllMembers: v))
-                      : null,
+                  onChanged: (v) => _toggle(s.copyWith(notifyAllMembers: v)),
                 ),
                 _tile(
                   icon: Icons.accessibility_new_rounded,
@@ -395,9 +390,8 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
                       'giây để bạn bấm "Tôi ổn" trước khi gửi. Cài đặt này áp '
                       'dụng cho quy tắc SOS của gia đình.',
                   value: s.autoCreateAlertFromFall,
-                  onChanged: canEdit
-                      ? (v) => _toggle(s.copyWith(autoCreateAlertFromFall: v))
-                      : null,
+                  onChanged: (v) =>
+                      _toggle(s.copyWith(autoCreateAlertFromFall: v)),
                 ),
                 _tile(
                   icon: Icons.location_on_rounded,
@@ -405,9 +399,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
                   subtitle:
                       'Yêu cầu đính kèm vị trí khi gửi SOS để người nhà tìm nhanh.',
                   value: s.locationRequired,
-                  onChanged: canEdit
-                      ? (v) => _toggle(s.copyWith(locationRequired: v))
-                      : null,
+                  onChanged: (v) => _toggle(s.copyWith(locationRequired: v)),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -422,7 +414,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
                         ),
                       ),
                     ),
-                    if (canEdit)
+                    if (canEditContacts)
                       IconButton(
                         tooltip: 'Thêm liên hệ',
                         onPressed: _showContactForm,
@@ -454,7 +446,7 @@ class _SosSettingsScreenState extends State<SosSettingsScreen>
                               'Ưu tiên ${contact.priorityOrder}',
                           ].join(' · '),
                         ),
-                        trailing: canEdit
+                        trailing: canEditContacts
                             ? PopupMenuButton<String>(
                                 onSelected: (value) {
                                   if (value == 'edit') {

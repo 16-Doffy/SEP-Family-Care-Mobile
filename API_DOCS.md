@@ -153,6 +153,9 @@
 - `POST /api/v1/families/{familyId}/sos/alerts/{alertId}/confirm-safety` — Người kích hoạt tự xác nhận an toàn.
 - `PATCH /api/v1/families/{familyId}/sos/alerts/{alertId}/resolve` — Resolve (FAMILY_MANAGER / DEPUTY_MEMBER). Body `ResolveSosAlertDto { resolutionNote? }`.
 - `PATCH /api/v1/families/{familyId}/sos/alerts/{alertId}/cancel` — Cancel (FAMILY_MANAGER / DEPUTY_MEMBER). Body `ResolveSosAlertDto { resolutionNote? }`.
+- `GET /api/v1/families/{familyId}/sos/settings` — Cài đặt SOS gia đình (mọi thành viên xem).
+- `PATCH /api/v1/families/{familyId}/sos/settings` — **[Swagger xác nhận 2026-08-19]** Sửa được bởi **cả 3 vai trò** `FAMILY_MANAGER | DEPUTY_MEMBER | FAMILY_MEMBER` (BE đã nới guard, trước đó FE khoá nhầm chỉ Manager/Deputy — đã sửa `sos_settings_screen.dart`). Body `UpdateSosSettingsDto { isEnabled?, notifyAllMembers?, autoCreateAlertFromFall?, locationRequired? }`.
+- `POST /api/v1/families/{familyId}/sos/emergency-contacts` · `PATCH/DELETE .../emergency-contacts/{contactId}` — Vẫn **FAMILY_MANAGER / DEPUTY_MEMBER only** theo Swagger (không đổi cùng đợt nới guard trên). `GET` thì mọi thành viên xem được.
 
 > ⚠️ SOS location chỉ gửi được **trong ngữ cảnh 1 alert đang active** (`.../alerts/{alertId}/locations`). Vẫn KHÔNG có location tracking độc lập ngoài SOS.
 > ⚠️ **Response parse (fix main 2026-07-10, verify live)**: BE trả id ở field **`sosAlertId`** (KHÔNG phải `id`) → `sendSos()` đọc `created['sosAlertId'] ?? created['id']` (thiếu → bug 404 "Tôi đang đến"). Người gửi ở `triggeredByMember.user.fullName` (nested); toạ độ trả **STRING**; list alert đọc thêm key `items`. `SosAlert` có thêm `severity`/`resolutionNote`/`resolvedByName`.
