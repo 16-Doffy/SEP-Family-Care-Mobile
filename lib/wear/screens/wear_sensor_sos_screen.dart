@@ -94,6 +94,53 @@ extension _TriggerSpec on _Trigger {
       'source': 'wear_os_emulator',
     },
   };
+
+  /// Chuỗi mẫu (chuỗi hiển thị, giá trị số) chạy trên UI trước khi mở cảnh
+  /// báo — mỗi mẫu được so với [isAbnormal] theo thời gian thực, **hệ thống
+  /// chỉ mở đếm ngược khi có mẫu thật sự vượt ngưỡng**, không phải cứ chạy
+  /// hết chuỗi là tự động mở. Đây là so ngưỡng đơn giản (1 lần so sánh),
+  /// **không phải thuật toán phân tích đầy đủ** kiểu rơi-tự-do/thời-gian-duy-
+  /// trì của bản detector thật (đã hoãn sau mùa bảo vệ) — nhưng vẫn là một
+  /// bước "phát hiện" thật sự, không phải luôn luôn báo động vô điều kiện.
+  /// Mẫu cuối luôn khớp đúng [rawValue]/[reading] đã gửi BE.
+  List<(String, double)> get signalSamples => switch (this) {
+    _Trigger.fall => const [
+      ('1.0 g', 1.0),
+      ('0.9 g', 0.9),
+      ('0.3 g', 0.3),
+      ('0.1 g', 0.1),
+      ('0.2 g', 0.2),
+      ('1.8 g', 1.8),
+      ('3.2 g', 3.2),
+    ],
+    _Trigger.heartHigh => const [
+      ('78 bpm', 78),
+      ('92 bpm', 92),
+      ('110 bpm', 110),
+      ('126 bpm', 126),
+      ('136 bpm', 136),
+      ('142 bpm', 142),
+    ],
+    _Trigger.heartLow => const [
+      ('76 bpm', 76),
+      ('65 bpm', 65),
+      ('58 bpm', 58),
+      ('50 bpm', 50),
+      ('44 bpm', 44),
+      ('38 bpm', 38),
+    ],
+  };
+
+  /// Ngưỡng "phát hiện bất thường" — trùng đúng số đã gửi BE trong [rawValue]
+  /// (`thresholdHigh: 130`, `thresholdLow: 50`) để nhất quán; té ngã dùng
+  /// mốc va đập 2.5g (dưới mức 3.2g của mẫu cuối, dư khoảng cách để chuỗi
+  /// luôn kết ở đúng mẫu phát hiện được, không rơi vào trường hợp chạy hết
+  /// chuỗi mà chưa phát hiện gì).
+  bool isAbnormal(double value) => switch (this) {
+    _Trigger.fall => value >= 2.5,
+    _Trigger.heartHigh => value > 130,
+    _Trigger.heartLow => value < 50,
+  };
 }
 
 class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
@@ -108,6 +155,10 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
 
   bool _sending = false;
   bool _sent = false;
+  bool _signalRunning = false;
+  _Trigger? _signalTrigger;
+  String? _signalReading;
+  Timer? _signalTimer;
   String? _alertId;
   bool _alertCreated = false;
   String? _error;
@@ -119,15 +170,18 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
   void initState() {
     super.initState();
     // Cần deviceId để gửi sự kiện cảm biến → phải biết tài khoản đã ghép
-    // wearable nào chưa.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => context.read<WearableProvider>().fetchCurrentDevice(),
-    );
+    // wearable nào chưa. Cần SosSettings để biết gia đình có bật SOS/tự tạo
+    // cảnh báo té ngã hay không trước khi cho bấm nút giả lập.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WearableProvider>().fetchCurrentDevice();
+      context.read<SosProvider>().fetchSettings();
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _signalTimer?.cancel();
     _stopLocationStreaming();
     FallDetectorService.instance.stop();
     super.dispose();
@@ -172,6 +226,108 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
       _pending = null;
       _countdown = 0;
     });
+  }
+
+  /// Chặn bấm nút giả lập khi gia đình/thiết bị chưa đủ điều kiện để BE thật
+  /// sự tạo cảnh báo — tránh bấm, đợi 20 giây rồi chỉ nhận về "đã gửi sự
+  /// kiện" mà không có cảnh báo nào, dễ gây hiểu nhầm lúc demo.
+  bool _canStartSignal(_Trigger trigger) {
+    final device = context.read<WearableProvider>().currentDevice;
+    final settings = context.read<SosProvider>().settings;
+    if (device == null || !device.isPaired || !device.sosEnabled) return false;
+    if (settings == null || !settings.isEnabled) return false;
+    if (trigger == _Trigger.fall && !settings.autoCreateAlertFromFall) {
+      return false;
+    }
+    return true;
+  }
+
+  String _blockedReason(_Trigger trigger) {
+    final device = context.read<WearableProvider>().currentDevice;
+    final settings = context.read<SosProvider>().settings;
+    if (device == null || !device.isPaired) return 'Chưa ghép thiết bị đeo';
+    if (!device.sosEnabled) return 'SOS của wearable đang tắt';
+    if (settings == null) return 'Chưa tải cài đặt SOS gia đình';
+    if (!settings.isEnabled) return 'SOS gia đình đang tắt';
+    if (trigger == _Trigger.fall && !settings.autoCreateAlertFromFall) {
+      return 'Chưa bật tự tạo SOS khi té ngã';
+    }
+    return 'Chưa đủ điều kiện tạo SOS';
+  }
+
+  void _showSignalBlocked(_Trigger trigger) {
+    HapticFeedback.lightImpact();
+    setState(() => _error = _blockedReason(trigger));
+  }
+
+  /// Chạy chuỗi mẫu giả lập trên UI — **KHÔNG gọi API/mở đếm ngược ngay khi
+  /// bấm**. Mỗi mẫu hiện lên rồi được so với [_Trigger.isAbnormal]; chỉ khi
+  /// một mẫu thật sự vượt ngưỡng thì mới coi là "hệ thống đã phát hiện" và
+  /// gọi [_raise] để mở màn đếm ngược. Nếu chạy hết chuỗi mà không mẫu nào
+  /// vượt ngưỡng (không xảy ra với chuỗi demo cố định hiện tại, nhưng vẫn xử
+  /// lý đúng nếu có), quay lại trạng thái bình thường, không mở cảnh báo.
+  ///
+  /// Đây là so ngưỡng đơn giản (1 phép so sánh/mẫu), khác thuật toán phân
+  /// tích đầy đủ (rơi tự do + thời gian duy trì) của bản detector thật đã
+  /// hoãn sau mùa bảo vệ — nhưng vẫn là một bước phát hiện có thật, không
+  /// phải mở cảnh báo vô điều kiện sau khi chuỗi chạy xong.
+  void _runSignal(_Trigger trigger) {
+    if (!_canStartSignal(trigger)) {
+      _showSignalBlocked(trigger);
+      return;
+    }
+    if (_signalRunning || _pending != null || _sending || _sent) return;
+    HapticFeedback.selectionClick();
+    final samples = trigger.signalSamples;
+    var index = 0;
+    _signalTimer?.cancel();
+    setState(() {
+      _signalRunning = true;
+      _signalTrigger = trigger;
+      _error = null;
+    });
+    // Dùng `timer.cancel()` (tham số của chính callback) để tự huỷ — không
+    // dựa vào `_signalTimer` bên ngoài, vì `Timer.periodic()` chỉ gán xong
+    // biến đó SAU khi lệnh này chạy hết, nên gọi `_signalTimer?.cancel()`
+    // ngay trong lượt tick đầu tiên có thể huỷ nhầm timer cũ thay vì timer
+    // hiện tại.
+    _signalTimer = Timer.periodic(const Duration(milliseconds: 260), (timer) {
+      if (!mounted || index >= samples.length) {
+        // Hết chuỗi mà chưa mẫu nào vượt ngưỡng — không phát hiện gì, không
+        // mở cảnh báo.
+        timer.cancel();
+        if (mounted) {
+          setState(() {
+            _signalRunning = false;
+            _signalTrigger = null;
+          });
+        }
+        return;
+      }
+      final (display, value) = samples[index];
+      index++;
+      setState(() => _signalReading = display);
+      if (trigger.isAbnormal(value)) {
+        timer.cancel();
+        setState(() {
+          _signalRunning = false;
+          _signalTrigger = null;
+        });
+        _raise(trigger);
+      }
+    });
+  }
+
+  /// Nút làm mới ở header — phòng trường hợp `GET /sos/settings` hoặc
+  /// `device.sosEnabled` không phản ánh ngay thay đổi vừa thực hiện trên điện
+  /// thoại (BE chưa xác nhận độ trễ cache, xem
+  /// BAO_CAO_BE_KE_HOACH_WEARABLE_SENSOR_UI_PREFLIGHT_2026-08-19.md).
+  Future<void> _refreshGateState() async {
+    HapticFeedback.selectionClick();
+    await Future.wait([
+      context.read<WearableProvider>().fetchCurrentDevice(),
+      context.read<SosProvider>().fetchSettings(),
+    ]);
   }
 
   Future<void> _send(_Trigger trigger) async {
@@ -356,7 +512,14 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
                       color: WearPalette.sos,
                     ),
                   )
-                : null,
+                : GestureDetector(
+                    onTap: _refreshGateState,
+                    child: const Icon(
+                      Icons.refresh_rounded,
+                      size: 16,
+                      color: WearPalette.faint,
+                    ),
+                  ),
           ),
           const SizedBox(height: 8),
           if (_error != null) ...[
@@ -400,8 +563,19 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
           const SizedBox(height: 10),
           // Máy ảo không có gia tốc kế thật để thử, nên phải có nút giả lập.
           const WearSectionLabel('Giả lập (demo)'),
-          ..._Trigger.values.map(
-            (t) => Padding(
+          const SizedBox(height: 2),
+          const Text(
+            'Gửi một sự kiện cảm biến lên máy chủ — máy chủ tự quyết định có '
+            'tạo cảnh báo hay không, khác với nút SOS thủ công.',
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 9, color: WearPalette.faint),
+          ),
+          const SizedBox(height: 6),
+          ..._Trigger.values.map((t) {
+            final canStart = _canStartSignal(t);
+            final running = _signalRunning && _signalTrigger == t;
+            return Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: WearTile(
                 icon: t.icon,
@@ -410,12 +584,21 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
                   _Trigger.heartHigh => 'Giả lập nhịp tim cao',
                   _Trigger.heartLow => 'Giả lập nhịp tim thấp',
                 },
-                subtitle: t.reading.isEmpty ? t.eventType : t.reading,
-                color: WearPalette.amber,
-                onTap: paired ? () => _raise(t) : null,
+                subtitle: running
+                    ? (_signalReading ?? '')
+                    : (canStart
+                          ? (t.reading.isEmpty ? t.eventType : t.reading)
+                          : _blockedReason(t)),
+                color: running
+                    ? WearPalette.green
+                    : (canStart ? WearPalette.amber : WearPalette.faint),
+                filled: running,
+                onTap: (paired && !_signalRunning)
+                    ? () => _runSignal(t)
+                    : null,
               ),
-            ),
-          ),
+            );
+          }),
         ],
       ),
     );
