@@ -674,6 +674,32 @@ class _WalletScreenState extends State<WalletScreen> {
                   trackedAmount: jarInfo.trackedAmount,
                 ),
               ),
+              // Hũ vượt tỷ lệ mô hình là chuyện đáng biết, NHƯNG nó không tạo
+              // cảnh báo tài chính (cảnh báo chỉ sinh từ kế hoạch ngân sách và
+              // mục tiêu tiết kiệm). Không nói ra thì người dùng thấy hũ đỏ rồi
+              // sang tab Cảnh báo tìm mãi không có, tưởng app hỏng.
+              if (jarInfo.rows.any((r) => r.isOverBudget)) ...[
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFDBA74)),
+                  ),
+                  child: Text(
+                    'Vượt tỷ lệ hũ chỉ được báo ở đây, KHÔNG tạo cảnh báo tài '
+                    'chính. Muốn được nhắc khi vượt chi thì đặt hạn mức trong '
+                    '"Kế hoạch ngân sách" cho đúng kỳ đang chi.',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      height: 1.4,
+                      color: const Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
               // Hiện phần chi không gán hũ để tổng khớp với tổng chi tiêu.
               if (jarInfo.unmappedAmount > 0)
                 _jarRow(

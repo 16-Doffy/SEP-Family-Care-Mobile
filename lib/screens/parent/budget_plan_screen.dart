@@ -34,6 +34,45 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
     return '${buf.toString()} ₫';
   }
 
+  /// Dải cảnh báo cam khi kế hoạch ACTIVE nhưng kỳ chưa tới / đã qua.
+  /// `null` khi kỳ đang bao gồm hôm nay — không thêm dòng thừa.
+  Widget? _periodWarningLine(BudgetPlan plan) {
+    final warning = plan.periodWarning;
+    if (warning == null) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFFDBA74)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.event_busy_rounded,
+              size: 14,
+              color: Color(0xFF92400E),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                warning,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  height: 1.35,
+                  color: const Color(0xFF92400E),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _fmtDate(String iso) {
     final d = DateTime.tryParse(iso);
     if (d == null) return iso;
@@ -229,6 +268,10 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                 color: AppColors.textMuted,
               ),
             ),
+            // "Đang áp dụng" mà kỳ chưa tới / đã qua thì trông như kế hoạch có
+            // hiệu lực ngay bây giờ — người dùng ghi khoản chi hôm nay rồi chờ
+            // cảnh báo vượt ngân sách mãi không thấy. Nói thẳng ra.
+            ?_periodWarningLine(plan),
             const SizedBox(height: 10),
             Row(
               children: [

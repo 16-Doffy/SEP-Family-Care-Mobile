@@ -439,6 +439,69 @@ class BudgetPlan {
     'CANCELED' => 'Đã hủy',
     _ => 'Bản nháp',
   };
+
+  DateTime? get periodStartDate => DateTime.tryParse(periodStart);
+  DateTime? get periodEndDate => DateTime.tryParse(periodEnd);
+
+  /// Kỳ của kế hoạch có bao gồm ngày [d] không.
+  ///
+  /// `null` = không đọc được mốc thời gian → coi như có, để không tự dựng cảnh
+  /// báo dựa trên dữ liệu mình không chắc.
+  bool coversDate(DateTime d) {
+    final day = DateTime(d.year, d.month, d.day);
+    final start = periodStartDate;
+    final end = periodEndDate;
+    if (start != null &&
+        day.isBefore(DateTime(start.year, start.month, start.day))) {
+      return false;
+    }
+    if (end != null && day.isAfter(DateTime(end.year, end.month, end.day))) {
+      return false;
+    }
+    return true;
+  }
+
+  /// Trạng thái ACTIVE nhưng kỳ **chưa tới** hoặc **đã qua**.
+  ///
+  /// Gặp thật 19/08: người dùng tạo kế hoạch cho tháng 9, dòng ngân sách 5 triệu,
+  /// rồi ghi khoản chi 8 triệu vào **tháng 8** và chờ cảnh báo vượt ngân sách.
+  /// Không có cảnh báo nào — đúng, vì khoản chi nằm ngoài kỳ của kế hoạch.
+  /// Nhưng thẻ chỉ ghi "Đang áp dụng" nên trông như kế hoạch đang có hiệu lực
+  /// ngay bây giờ.
+  bool get isFuturePeriod {
+    final start = periodStartDate;
+    if (status != 'ACTIVE' || start == null) return false;
+    final today = DateTime.now();
+    return DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).isBefore(DateTime(start.year, start.month, start.day));
+  }
+
+  bool get isExpiredPeriod {
+    final end = periodEndDate;
+    if (status != 'ACTIVE' || end == null) return false;
+    final today = DateTime.now();
+    return DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).isAfter(DateTime(end.year, end.month, end.day));
+  }
+
+  /// Câu giải thích khi kế hoạch ACTIVE nhưng chưa/không còn hiệu lực hôm nay.
+  String? get periodWarning {
+    if (isFuturePeriod) {
+      return 'Kỳ của kế hoạch này chưa bắt đầu — các khoản chi hôm nay KHÔNG '
+          'được tính vào đây và sẽ không sinh cảnh báo vượt ngân sách.';
+    }
+    if (isExpiredPeriod) {
+      return 'Kỳ của kế hoạch này đã kết thúc — các khoản chi hôm nay không '
+          'còn được tính vào đây.';
+    }
+    return null;
+  }
 }
 
 // 1 dòng ngân sách thuộc BudgetPlan — chỉ có khi lấy chi tiết 1 plan
