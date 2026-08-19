@@ -5,6 +5,7 @@ import 'package:family_care/services/api_client.dart';
 import 'package:family_care/screens/shared/task_submission_recap.dart';
 
 void main() {
+  _pickSubmissionTests();
   _overdueContractTests();
   group('TaskAssignment.labelOf', () {
     // Sheet giao việc cảnh báo "đã được giao (…)" khi chỉ cầm chuỗi status,
@@ -82,6 +83,99 @@ void _overdueContractTests() {
 
     test('exception thường thì cắt tiền tố Exception:', () {
       expect(submitProofErrorMessage(Exception('mất mạng')), 'mất mạng');
+    });
+  });
+}
+
+TaskSubmission _sub(String id, String status, String? at) => TaskSubmission(
+  id: id,
+  assignmentId: 'a1',
+  status: status,
+  submittedAt: at == null ? null : DateTime.parse(at),
+);
+
+/// Bug máy thật 19/08: mở sheet duyệt lại bốc trúng bài nộp CŨ đã xử lý xong,
+/// bấm Duyệt thì BE trả "Chỉ có thể duyệt minh chứng đang chờ xem xét". Gốc là
+/// code lấy `list.last` — phần tử cuối mảng, không phải bài mới nhất.
+void _pickSubmissionTests() {
+  group('pickSubmissionToShow', () {
+    test('BE trả mới-nhất-trước: KHÔNG được lấy phần tử cuối', () {
+      final picked = pickSubmissionToShow([
+        _sub('moi', TaskSubmission.waitingReview, '2026-08-19T13:00:00Z'),
+        _sub('cu', 'REJECTED', '2026-08-18T09:00:00Z'),
+      ]);
+      expect(picked!.id, 'moi');
+    });
+
+    test('BE trả cũ-trước: vẫn ra bài mới nhất', () {
+      final picked = pickSubmissionToShow([
+        _sub('cu', 'REJECTED', '2026-08-18T09:00:00Z'),
+        _sub('moi', TaskSubmission.waitingReview, '2026-08-19T13:00:00Z'),
+      ]);
+      expect(picked!.id, 'moi');
+    });
+
+    test('ưu tiên bài đang chờ duyệt dù có bài đã duyệt mới hơn', () {
+      // Người duyệt cần xử lý bài còn chờ, không phải bài đã xong.
+      final picked = pickSubmissionToShow([
+        _sub('da-duyet', 'APPROVED', '2026-08-19T15:00:00Z'),
+        _sub('cho-duyet', TaskSubmission.waitingReview, '2026-08-19T10:00:00Z'),
+      ]);
+      expect(picked!.id, 'cho-duyet');
+    });
+
+    test('nhiều bài chờ duyệt thì lấy bài chờ mới nhất', () {
+      final picked = pickSubmissionToShow([
+        _sub('cho-cu', TaskSubmission.waitingReview, '2026-08-19T08:00:00Z'),
+        _sub('cho-moi', TaskSubmission.waitingReview, '2026-08-19T12:00:00Z'),
+      ]);
+      expect(picked!.id, 'cho-moi');
+    });
+
+    test('không còn bài chờ duyệt thì lấy bài mới nhất để xem lại', () {
+      final picked = pickSubmissionToShow([
+        _sub('cu', 'REJECTED', '2026-08-18T09:00:00Z'),
+        _sub('moi', 'APPROVED', '2026-08-19T09:00:00Z'),
+      ]);
+      expect(picked!.id, 'moi');
+      expect(picked.isWaitingReview, isFalse);
+    });
+
+    test('thiếu submittedAt thì coi là cũ hơn bài có mốc', () {
+      final picked = pickSubmissionToShow([
+        _sub('khong-moc', 'APPROVED', null),
+        _sub('co-moc', 'APPROVED', '2026-08-19T09:00:00Z'),
+      ]);
+      expect(picked!.id, 'co-moc');
+    });
+
+    test('danh sách rỗng trả null', () {
+      expect(pickSubmissionToShow(const []), isNull);
+    });
+  });
+
+  group('TaskSubmission — enum và isLate theo Swagger 19/08', () {
+    test('mặc định là WAITING_REVIEW, không phải PENDING', () {
+      final s = TaskSubmission.fromJson({'id': 's1'});
+      expect(s.status, 'WAITING_REVIEW');
+      expect(s.isWaitingReview, isTrue);
+    });
+
+    test('đọc isLate và submittedAt của BE', () {
+      final s = TaskSubmission.fromJson({
+        'id': 's1',
+        'status': 'APPROVED',
+        'isLate': true,
+        'submittedAt': '2026-08-19T13:40:00Z',
+      });
+      expect(s.isLate, isTrue);
+      expect(s.isWaitingReview, isFalse);
+      expect(s.submittedAt, isNotNull);
+    });
+
+    test('BE chưa trả isLate thì mặc định false, không nổ', () {
+      expect(TaskSubmission.fromJson({'id': 's1'}).isLate, isFalse);
+      expect(TaskSubmission.fromJson({'id': 's1'}).submittedAt, isNull);
     });
   });
 }

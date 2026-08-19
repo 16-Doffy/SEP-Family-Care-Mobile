@@ -461,6 +461,14 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     );
   }
 
+  /// Nhãn tiếng Việt cho status của **bài nộp** (khác status của phân công).
+  static String _submissionStatusLabel(String status) => switch (status) {
+    'APPROVED' => 'đã duyệt',
+    'REJECTED' => 'đã từ chối',
+    TaskSubmission.waitingReview => 'đang chờ duyệt',
+    _ => status.toLowerCase(),
+  };
+
   bool _isTaskOverdue(BuildContext context, FamilyTask task) {
     if (task.status == 'COMPLETED' || task.status == 'CANCELED') return false;
     final now = DateTime.now();
@@ -1183,6 +1191,23 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     }
     if (!context.mounted) return;
 
+    // Bài đã duyệt/từ chối rồi thì KHÔNG dựng nút Duyệt/Từ chối nữa — BE chỉ
+    // nhận `PATCH .../review` cho bài còn WAITING_REVIEW. Trước đây sheet vẫn
+    // hiện nút, bấm vào là dính "Chỉ có thể duyệt minh chứng đang chờ xem xét"
+    // mà không có đường nào thoát. Hạ xuống chế độ chỉ xem cho đúng sự thật.
+    final readOnlySheet = readOnly || !submission.isWaitingReview;
+    if (!readOnly && !submission.isWaitingReview) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Bài nộp này đã được xử lý (${_submissionStatusLabel(submission.status)}). '
+            'Chỉ xem lại được, không duyệt lại.',
+          ),
+          backgroundColor: AppColors.urgent,
+        ),
+      );
+    }
+
     final noteCtrl = TextEditingController();
     bool submitting = false;
     showModalBottomSheet(
@@ -1206,7 +1231,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  readOnly
+                  readOnlySheet
                       ? 'Bài nộp của ${a.assignedToName ?? 'thành viên'}'
                       : 'Duyệt công việc',
                   style: GoogleFonts.inter(
@@ -1222,7 +1247,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     color: AppColors.textSecondary,
                   ),
                 ),
-                if (readOnly) ...[
+                if (readOnlySheet) ...[
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1241,6 +1266,29 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         color: a.statusColor,
                       ),
                     ),
+                  ),
+                ],
+                // BE bổ sung `isLate` 19/08 đúng theo đề xuất của FE — người
+                // duyệt không còn phải tự nhẩm ngày để biết bài có nộp trễ.
+                if (submission.isLate) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.schedule_rounded,
+                        size: 15,
+                        color: Color(0xFF92400E),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Nộp sau hạn',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF92400E),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
                 if (submission.submissionNote != null &&
@@ -1275,7 +1323,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   ...submission.proofs.map(_proofPreview),
                 ],
                 // Ghi chú đánh giá cũ (nếu có) — hiện ở chế độ xem lại
-                if (readOnly && (submission.reviewNote ?? '').isNotEmpty) ...[
+                if (readOnlySheet &&
+                    (submission.reviewNote ?? '').isNotEmpty) ...[
                   const SizedBox(height: 14),
                   Text(
                     'Ghi chú đánh giá',
@@ -1302,12 +1351,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     ),
                   ),
                 ],
-                if (!readOnly) ...[
+                if (!readOnlySheet) ...[
                   const SizedBox(height: 16),
                   _inputBox(noteCtrl, 'Ghi chú (tùy chọn)'),
                 ],
                 const SizedBox(height: 16),
-                if (!readOnly)
+                if (!readOnlySheet)
                   Row(
                     children: [
                       Expanded(
@@ -1449,7 +1498,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 // thưởng nào (BE tắt tự tạo, hoặc lần tạo tự động thất bại) →
                 // đây là đường khôi phục duy nhất, không có nút này thì thành
                 // viên không bao giờ nhận được thưởng của bài nộp đó.
-                if (readOnly &&
+                if (readOnlySheet &&
                     submission.status == 'APPROVED' &&
                     (a.rewardSetting ?? a.task?.rewardSetting) != null &&
                     !context.watch<TaskProvider>().rewardSettlements.any(
