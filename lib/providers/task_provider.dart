@@ -1,6 +1,23 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
+/// Phân công đã quá hạn chưa.
+///
+/// Quá hạn KHÔNG phải một trạng thái của BE (enum không có `OVERDUE`) — chỉ là
+/// so `dueAt` với hiện tại. Các trạng thái đã kết thúc thì không tính: việc đã
+/// duyệt/từ chối/huỷ thì hạn không còn ý nghĩa.
+///
+/// Hàm thuần, nhận [now] để test được mà không phụ thuộc đồng hồ máy.
+bool isAssignmentOverdue(TaskAssignment a, {DateTime? now}) {
+  if (a.status == 'APPROVED' ||
+      a.status == 'CANCELED' ||
+      a.status == 'REJECTED') {
+    return false;
+  }
+  final due = a.dueAt ?? a.task?.dueAt;
+  return due != null && due.isBefore(now ?? DateTime.now());
+}
+
 /// Chọn bài nộp nào để hiển thị / đưa ra duyệt.
 ///
 /// Bug gặp trên máy thật 19/08: code cũ lấy `list.last` — **phần tử cuối mảng**,
