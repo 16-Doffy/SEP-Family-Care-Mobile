@@ -1033,10 +1033,17 @@ class TaskProvider extends ChangeNotifier {
     await fetchMyAssignments();
   }
 
+  /// [taskId] để làm mới đúng danh sách phân công của task đang mở.
+  ///
+  /// Đo trên máy thật 19/08: duyệt xong BE đã đổi sang APPROVED nhưng hàng phân
+  /// công vẫn hiện "Chờ duyệt" — vì ở đây chỉ gọi `fetchTasks()` (danh sách
+  /// task), còn sheet chi tiết đọc theo `_assignmentsByTask[taskId]` và không
+  /// ai nạp lại. Người duyệt tưởng bấm hụt nên bấm lại.
   Future<void> reviewSubmission(
     String submissionId, {
     required bool approved,
     String? reviewNote,
+    String? taskId,
   }) async {
     await ApiClient.instance
         .patch('/families/$_fid/tasks/submissions/$submissionId/review', {
@@ -1045,6 +1052,9 @@ class TaskProvider extends ChangeNotifier {
             'reviewNote': reviewNote,
         });
     await fetchTasks();
+    if (taskId != null && taskId.isNotEmpty) {
+      await fetchTaskAssignments(taskId);
+    }
   }
 
   // GET .../assignments/{id}/submissions — BE không embed submission trong
