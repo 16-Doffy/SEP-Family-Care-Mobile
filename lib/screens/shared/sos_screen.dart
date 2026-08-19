@@ -1074,7 +1074,10 @@ class _SOSScreenState extends State<SOSScreen>
                           final lat = current?.lat ?? alert.latitude!;
                           final lng = current?.lng ?? alert.longitude!;
                           if (context.mounted) {
-                            context.push('/map?lat=$lat&lng=$lng');
+                            context.push(
+                              '/map?alertId=${Uri.encodeQueryComponent(alert.id)}'
+                              '&lat=$lat&lng=$lng',
+                            );
                           }
                         },
                         child: Container(
@@ -1505,8 +1508,11 @@ class _SOSScreenState extends State<SOSScreen>
                               elevation: 0,
                             ),
                             onPressed: () {
+                              final alertId = _sentAlertId;
                               context.push(
-                                '/map?lat=$_localLat&lng=$_localLng',
+                                '/map?'
+                                '${alertId != null ? 'alertId=${Uri.encodeQueryComponent(alertId)}&' : ''}'
+                                'lat=$_localLat&lng=$_localLng',
                               );
                             },
                             icon: const Icon(

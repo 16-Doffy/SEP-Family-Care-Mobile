@@ -409,14 +409,30 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
         _gpsProvider?.startRealtime(myUserId: _myUserId);
         if (mounted) _syncPushTimer();
       }
+      if (!mounted) return;
       final target = _initialSosTarget();
-      if (target != null) {
-        // Vào từ cảnh báo SOS (thông báo, hoặc vừa bấm "Tôi đang đến") → tự vẽ
-        // đường từ vị trí của tôi tới điểm SOS, không bắt bấm thêm gì.
+      final alertId = widget.initialAlertId;
+      // Cảnh báo là CỦA CHÍNH MÌNH thì không tự vẽ đường tới đó — vô nghĩa
+      // (route trùng vị trí mình) và tệ hơn: route rác này chiếm
+      // `_routePoints`, kích hoạt guard đầu `_maybeFitToResponders`
+      // (`if (_routePoints.length >= 2) return;`), KHOÁ VĨNH VIỄN route thật
+      // tới người ứng cứu sau này dù họ có tới thật. Bug xác nhận qua test
+      // 2026-08-19: bấm "Bản đồ lớn"/"Xem bản đồ lớn" trên chính cảnh báo
+      // mình vừa gửi (không kèm alertId lúc đó) → tự vẽ "Đường tới Điểm SOS"
+      // tới chính mình → route người ứng cứu không bao giờ vẽ được nữa.
+      final isOwnAlert =
+          alertId != null &&
+          alertId.isNotEmpty &&
+          context.read<SosProvider>().activeAlerts.any(
+            (a) => a.id == alertId && a.isMine(_myUserId),
+          );
+      if (target != null && !isOwnAlert) {
+        // Vào từ cảnh báo SOS CỦA NGƯỜI KHÁC (thông báo, hoặc vừa bấm "Tôi
+        // đang đến") → tự vẽ đường từ vị trí của tôi tới điểm SOS, không bắt
+        // bấm thêm gì.
         _mapCtrl.move(target, 16);
         _locateMe(center: false).then((_) {
           if (!mounted) return;
-          final alertId = widget.initialAlertId;
           _routeTo(
             target,
             label: 'Điểm SOS',
@@ -428,6 +444,9 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
           );
         });
       } else {
+        // Cảnh báo của chính mình (hoặc không có target): chỉ định vị, để
+        // `_maybeFitToResponders` (chạy mỗi build) tự vẽ đường tới người ứng
+        // cứu ngay khi họ xuất hiện.
         _locateMe(center: true);
       }
     });
