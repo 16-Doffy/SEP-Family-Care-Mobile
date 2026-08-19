@@ -383,7 +383,12 @@ class _WalletScreenState extends State<WalletScreen> {
 
   /// Report target/actual theo hu tu BE cho model tai chinh dang active.
   /// Khong tu cong ledger o FE de tranh lech voi mapping category -> jar.
-  ({List<_JarOverviewRow> rows, double unmappedAmount, String? note})
+  ({
+    List<_JarOverviewRow> rows,
+    double unmappedAmount,
+    double trackedAmount,
+    String? note,
+  })
   _jarBreakdown(BuildContext context, double income) {
     const empty = <_JarOverviewRow>[];
     final finance = context.watch<FinanceProvider>();
@@ -399,6 +404,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: 0,
+        trackedAmount: 0,
         note:
             'Gia \u0111\u00ecnh ch\u01b0a c\u00f3 m\u00f4 h\u00ecnh t\u00e0i ch\u00ednh \u0111ang \u00e1p d\u1ee5ng \u0111\u1ec3 xem b\u00e1o c\u00e1o theo h\u0169.',
       );
@@ -408,6 +414,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: 0,
+        trackedAmount: 0,
         note:
             '\u0110ang t\u1ea3i b\u00e1o c\u00e1o th\u1ef1c chi theo h\u0169 t\u1eeb Backend...',
       );
@@ -417,6 +424,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: 0,
+        trackedAmount: 0,
         note:
             'Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c b\u00e1o c\u00e1o theo h\u0169: $_jarTargetReportError',
       );
@@ -429,6 +437,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: report?.unmappedAmount ?? 0,
+        trackedAmount: 0,
         note:
             'Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u target/actual theo h\u0169 cho k\u1ef3 n\u00e0y.',
       );
@@ -452,7 +461,18 @@ class _WalletScreenState extends State<WalletScreen> {
             .toList()
           ..sort((a, b) => b.pct.compareTo(a.pct));
 
-    return (rows: rows, unmappedAmount: report.unmappedAmount ?? 0, note: null);
+    final unmapped = report.unmappedAmount ?? 0;
+    // BE chưa trả `trackedAmount` thì cộng bù: tổng thực chi các hũ + phần chưa
+    // gán hũ — đúng bằng mẫu số BE dùng để tính targetAmount.
+    final tracked =
+        report.trackedAmount ??
+        (rows.fold<double>(0, (sum, r) => sum + r.actual) + unmapped);
+    return (
+      rows: rows,
+      unmappedAmount: unmapped,
+      trackedAmount: tracked,
+      note: null,
+    );
   }
 
   List<Widget> _buildOverview(BuildContext context, WalletProvider state) {
@@ -482,11 +502,7 @@ class _WalletScreenState extends State<WalletScreen> {
         onAllocateSurplus: () {
           final goals = context.read<FinanceProvider>().activeGoals;
           if (goals.isEmpty) return;
-          _showSurplusGoalPicker(
-            context,
-            goals,
-            period: state.period.previous,
-          );
+          _showSurplusGoalPicker(context, goals, period: state.period.previous);
         },
       ),
 
@@ -607,8 +623,15 @@ class _WalletScreenState extends State<WalletScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Nhãn cũ ("Hạn mức theo tỷ lệ thu nhập") nói SAI thứ BE
+                    // tính. Swagger ghi rõ:
+                    //   targetAmount = trackedAmount * targetPercentage / 100
+                    // `trackedAmount` là TỔNG CHI đã theo dõi trong kỳ, không
+                    // phải thu nhập. Nên đây là "tỷ trọng chi tiêu", không phải
+                    // hạn mức — và số bên phải TĂNG THEO mức chi, đúng như
+                    // người dùng thấy và tưởng app tính sai.
                     Text(
-                      'Hạn mức theo tỷ lệ thu nhập — thực chi',
+                      'Tỷ trọng chi tiêu theo hũ',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -617,7 +640,10 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Số bên phải được tính từ tổng thu nhập tháng, không phải số tiền của lần chia quỹ vừa thực hiện.',
+                      'So sánh tiền đã chi ở mỗi hũ với tỷ lệ của mô hình, tính '
+                      'trên TỔNG CHI trong kỳ (${_fmt(jarInfo.trackedAmount.round())}) '
+                      '— không phải hạn mức lấy từ thu nhập. Chi càng nhiều thì '
+                      'cả hai số đều tăng; điều đáng nhìn là tỷ lệ phần trăm.',
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         height: 1.35,
@@ -629,7 +655,11 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
               const SizedBox(height: 10),
               ...jarInfo.rows.asMap().entries.map(
-                (e) => _jarRow(e.value, _jarColor(e.key)),
+                (e) => _jarRow(
+                  e.value,
+                  _jarColor(e.key),
+                  trackedAmount: jarInfo.trackedAmount,
+                ),
               ),
               // Hiện phần chi không gán hũ để tổng khớp với tổng chi tiêu.
               if (jarInfo.unmappedAmount > 0)
@@ -2683,11 +2713,14 @@ class _WalletScreenState extends State<WalletScreen> {
 
   /// 1 dòng hũ: tên + % , số thực chi trên số kế hoạch, thanh tiến độ. Vượt kế
   /// hoạch thì đổi sang màu cảnh báo để nhìn ra ngay hũ nào đang quá tay.
-  Widget _jarRow(_JarOverviewRow row, Color color) {
+  Widget _jarRow(_JarOverviewRow row, Color color, {double trackedAmount = 0}) {
     final over = row.isOverBudget;
     final ratio = row.target > 0
         ? (row.actual / row.target).clamp(0.0, 1.0)
         : (row.actual > 0 ? 1.0 : 0.0);
+    // Tỷ trọng thực tế của hũ này trong tổng chi — đúng công thức BE:
+    // actualPercentage = actualAmount / trackedAmount.
+    final ratioActual = trackedAmount > 0 ? row.actual / trackedAmount : 0.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -2714,15 +2747,32 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
               ),
-              Text(
-                row.target > 0
-                    ? '${_fmt(row.actual.round())} / ${_fmt(row.target.round())}'
-                    : _fmt(row.actual.round()),
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: over ? AppColors.danger : AppColors.textSecondary,
-                ),
+              // Tỷ lệ thực tế mới là con số đáng so với mô hình. Hai số tiền
+              // cùng tăng mỗi lần chi thêm (vì mẫu số là tổng chi) nên nhìn
+              // vào chúng không kết luận được gì — xem giải thích ở phần đầu
+              // mục "Tỷ trọng chi tiêu theo hũ".
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (row.pct > 0)
+                    Text(
+                      '${(ratioActual * 100).round()}% thực tế',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: over ? AppColors.danger : AppColors.textPrimary,
+                      ),
+                    ),
+                  Text(
+                    row.target > 0
+                        ? '${_fmt(row.actual.round())} / ${_fmt(row.target.round())}'
+                        : _fmt(row.actual.round()),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
