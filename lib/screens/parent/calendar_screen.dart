@@ -580,15 +580,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       _field(locationCtrl, 'Vị trí hoặc cuộc gọi video'),
                     ]),
                     const SizedBox(height: 18),
+                    // ĐÃ BỎ công tắc "Cả ngày": nó là nút giả — `value: false`
+                    // cứng, `onChanged` rỗng, bấm không có gì xảy ra. Không
+                    // nối được vì BE KHÔNG có field all-day:
+                    // `CreateCalendarEventDto` chỉ nhận title, description,
+                    // location, startTime, endTime, isRecurring,
+                    // recurrenceRule, reminderEnabled (đối chiếu Swagger
+                    // 2026-08-19). Một công tắc trông bấm được mà không làm gì
+                    // tệ hơn là không có. Muốn có thật phải đề xuất BE thêm
+                    // field trước.
                     _formGroup([
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: _sheetLabel('Cả ngày'),
-                        value: false,
-                        onChanged: (_) {},
-                        activeThumbColor: _calendarIosRed,
-                      ),
-                      _groupDivider(),
                       _sheetPickerRow(
                         label: 'Bắt đầu',
                         children: [
@@ -622,7 +623,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         label: 'Lặp lại',
                         mutedValue: provider.canUseRecurring
                             ? 'Không'
-                            : 'Cần gói',
+                            : 'Nâng gói',
+                        onLockedTap: provider.canUseRecurring
+                            ? null
+                            : () => _showUpgradeSheet(
+                                'Lịch lặp lại',
+                                'Tạo sự kiện lặp lại hằng tuần, hằng tháng '
+                                    'thuộc gói trả phí.',
+                              ),
                         children: [
                           Switch(
                             value: recurring,
@@ -681,7 +689,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         label: 'Cảnh báo',
                         mutedValue: provider.canUseReminders
                             ? 'Không'
-                            : 'Cần gói',
+                            : 'Nâng gói',
+                        onLockedTap: provider.canUseReminders
+                            ? null
+                            : () => _showUpgradeSheet(
+                                'Nhắc lịch',
+                                'Nhận thông báo nhắc trước giờ diễn ra sự kiện '
+                                    'thuộc gói trả phí.',
+                              ),
                         children: [
                           Switch(
                             value: reminder,
@@ -1301,15 +1316,106 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Giải thích vì sao công tắc bị khoá, kèm lối đi tiếp.
+  ///
+  /// Trước đây hàng bị khoá chỉ là công tắc xám kèm chữ "Cần gói" — bấm vào
+  /// không có gì xảy ra, không nói vì sao, cũng không chỉ đường nâng gói.
+  /// Người dùng tưởng app hỏng chứ không nghĩ là tính năng trả phí.
+  void _showUpgradeSheet(String featureName, String description) {
+    // `/manager/subscription` là route MANAGER-ONLY (xem _managerOnlyPaths
+    // trong app_router). Deputy/Member bấm vào sẽ bị redirect về home — hiện
+    // nút "Xem các gói" cho họ là dẫn vào ngõ cụt. Cùng cách xử lý với
+    // `_handleError` phía trên, không được làm khác đi.
+    final canUpgrade =
+        context.read<AuthProvider>().user?.canManageSubscription ?? false;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.lock_outline_rounded,
+                    color: AppColors.link,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$featureName thuộc gói trả phí',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                canUpgrade
+                    ? description
+                    : '$description\n\nVui lòng liên hệ Trưởng nhóm để nâng cấp gói.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (canUpgrade)
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      context.push('/manager/subscription');
+                    },
+                    child: const Text('Xem các gói'),
+                  ),
+                ),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    canUpgrade ? 'Để sau' : 'Đã hiểu',
+                    style: GoogleFonts.inter(color: AppColors.textMuted),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sheetPickerRow({
     required String label,
     String? mutedValue,
     required List<Widget> children,
+    VoidCallback? onLockedTap,
   }) {
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
+          if (onLockedTap != null) ...[
+            Icon(Icons.lock_outline_rounded, size: 15, color: _calendarMuted),
+            const SizedBox(width: 6),
+          ],
           _sheetLabel(label),
           const Spacer(),
           if (mutedValue != null)
@@ -1318,9 +1424,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
               style: GoogleFonts.inter(fontSize: 15, color: _calendarMuted),
             ),
           const SizedBox(width: 8),
-          ...children,
+          // Công tắc bị khoá không nhận chạm (onChanged: null) nên bọc
+          // IgnorePointer để cú chạm rơi xuống InkWell bên dưới — không thì
+          // bấm trúng công tắc là không có gì xảy ra, người dùng tưởng app đơ.
+          ...children.map(
+            (c) => onLockedTap == null ? c : IgnorePointer(child: c),
+          ),
         ],
       ),
+    );
+    if (onLockedTap == null) return row;
+    return InkWell(
+      onTap: onLockedTap,
+      borderRadius: BorderRadius.circular(8),
+      child: row,
     );
   }
 
