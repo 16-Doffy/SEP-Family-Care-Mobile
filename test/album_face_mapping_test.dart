@@ -2,8 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:family_care/models/album_media.dart';
 import 'package:family_care/providers/album_face_provider.dart';
+import 'package:family_care/screens/shared/album_face_section.dart';
 
 void main() {
+  _emptySuggestionsMessageTests();
   test('FaceSuggestion reads member name from nested backend payload', () {
     final suggestion = FaceSuggestion.fromJson({
       'id': 's1',
@@ -233,5 +235,53 @@ void main() {
     expect(tag.id, 'tag-1');
     expect(tag.taggedMemberId, 'member-1');
     expect(tag.taggedMemberName, 'Zap MEM 2');
+  });
+}
+
+/// Ba nguyên nhân "danh sách gợi ý rỗng" phải ra ba câu khác nhau. Trước đây
+/// gộp chung nên xác nhận gợi ý thành công xong vẫn bị in lý do thất bại ngay
+/// cạnh cái thẻ vừa tạo (gặp trên máy thật 19/08).
+void _emptySuggestionsMessageTests() {
+  group('emptySuggestionsMessage', () {
+    test('vừa xác nhận gợi ý xong thì báo đã xử lý xong, không đổ lỗi', () {
+      final msg = emptySuggestionsMessage(
+        resolvedSomeSuggestion: true,
+        hasAnyTag: true,
+      );
+      expect(msg, contains('Đã xử lý xong'));
+      expect(msg, isNot(contains('quá nhỏ')));
+      expect(msg, isNot(contains('gỡ thẻ')));
+    });
+
+    test('vừa xử lý xong được ưu tiên hơn cả khi ảnh chưa kịp có thẻ', () {
+      // Bỏ qua gợi ý (reject) không tạo thẻ nào, nhưng vẫn không phải lỗi quét.
+      final msg = emptySuggestionsMessage(
+        resolvedSomeSuggestion: true,
+        hasAnyTag: false,
+      );
+      expect(msg, contains('Đã xử lý xong'));
+      expect(msg, isNot(contains('chưa ai đăng ký')));
+    });
+
+    test('ảnh đã có thẻ thì giải thích vì sao không gợi ý lại', () {
+      final msg = emptySuggestionsMessage(
+        resolvedSomeSuggestion: false,
+        hasAnyTag: true,
+      );
+      expect(msg, contains('gỡ thẻ'));
+      expect(msg, isNot(contains('quá nhỏ')));
+    });
+
+    test(
+      'chưa có thẻ và chưa xử lý gì thì mới liệt kê nguyên nhân quét hụt',
+      () {
+        final msg = emptySuggestionsMessage(
+          resolvedSomeSuggestion: false,
+          hasAnyTag: false,
+        );
+        expect(msg, contains('quá nhỏ'));
+        expect(msg, contains('Hồ sơ khuôn mặt'));
+      },
+    );
   });
 }

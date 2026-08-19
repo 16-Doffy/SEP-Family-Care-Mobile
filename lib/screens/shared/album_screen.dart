@@ -2868,6 +2868,9 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                       .map((t) => t.taggedMemberId)
                       .where((id) => id.isNotEmpty)
                       .toSet(),
+                  // Tách riêng khỏi taggedMemberIds: có thẻ mà BE không trả id
+                  // thì set trên rỗng, không dùng để kết luận "chưa có thẻ".
+                  hasAnyTag: media.tags.isNotEmpty,
                   onChanged: _refreshCurrent,
                 ),
                 const SizedBox(height: 12),
