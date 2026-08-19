@@ -11,6 +11,30 @@ import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
+/// Câu giải thích khi danh sách gợi ý rỗng.
+///
+/// Rỗng có ba nguyên nhân khác hẳn nhau, trước đây gộp chung một câu nên báo
+/// sai: xác nhận gợi ý xong (thẻ đã tạo) vẫn bị in lý do thất bại. Hàm thuần,
+/// tách khỏi BuildContext để unit test được.
+String emptySuggestionsMessage({
+  required bool resolvedSomeSuggestion,
+  required bool hasAnyTag,
+}) {
+  // Vừa Xác nhận / Bỏ qua xong — rỗng là kết quả mong đợi, không phải lỗi.
+  if (resolvedSomeSuggestion) {
+    return 'Đã xử lý xong toàn bộ gợi ý. Thẻ bạn xác nhận đã được tạo. '
+        'Bấm “Quét lại” nếu muốn AI tìm thêm người khác trong ảnh.';
+  }
+  // Ảnh đã có thẻ → BE không gợi ý lại người đã được gắn thẻ.
+  if (hasAnyTag) {
+    return 'Chưa có gợi ý mới. Những người đã được gắn thẻ trong ảnh này sẽ '
+        'không được gợi ý lại — gỡ thẻ rồi quét lại nếu muốn AI nhận diện '
+        'từ đầu.';
+  }
+  return 'Chưa có gợi ý nào. Thường do khuôn mặt trong ảnh quá nhỏ, bị che '
+      'hoặc chưa ai đăng ký Hồ sơ khuôn mặt. Bạn vẫn có thể gắn thẻ thủ công.';
+}
+
 /// Section "Người trong ảnh" trong màn chi tiết ảnh album.
 ///
 /// Quét khuôn mặt → BE trả gợi ý thành viên → user Xác nhận (tạo tag chính
@@ -26,6 +50,7 @@ class AlbumFaceSection extends StatefulWidget {
     required this.isImage,
     required this.isSafe,
     required this.taggedMemberIds,
+    required this.hasAnyTag,
     this.onChanged,
   });
 
@@ -36,6 +61,16 @@ class AlbumFaceSection extends StatefulWidget {
   /// Id thành viên đã được gắn thẻ trên media (memberId hoặc userId tùy BE trả).
   /// Dùng để không hiện lại gợi ý cho người vốn đã có thẻ trong ảnh.
   final Set<String> taggedMemberIds;
+
+  /// Ảnh đã có thẻ nào chưa — **không** suy ra từ [taggedMemberIds].
+  ///
+  /// Đo trên máy thật 19/08: chip thẻ hiện đúng tên thành viên nhưng
+  /// [taggedMemberIds] lại rỗng, tức BE trả tên mà không trả id ở bất kỳ field
+  /// nào parser đang thử (`taggedMemberId` / `memberId` / `userId` /
+  /// `member.id` / `user.id`). Việc chọn câu thông báo chỉ cần biết "có thẻ hay
+  /// không" nên đọc thẳng số thẻ, không phụ thuộc id. Đã hỏi BE id nằm ở đâu.
+  final bool hasAnyTag;
+
   final VoidCallback? onChanged;
 
   @override
@@ -52,6 +87,14 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
   int? _maxProcessingSeconds;
   int _cooldownRemaining = 0;
   Timer? _cooldownTimer;
+
+  /// Người dùng đã Xác nhận / Bỏ qua ít nhất một gợi ý trong lượt xem này.
+  ///
+  /// Danh sách gợi ý rỗng có hai nguyên nhân trái ngược nhau: quét không ra ai,
+  /// hoặc **đã xử lý hết**. Không phân biệt thì sau khi xác nhận thành công màn
+  /// hình lại in lý do thất bại ("khuôn mặt quá nhỏ, bị che…") ngay bên cạnh
+  /// cái thẻ vừa tạo xong. Đặt lại mỗi lần quét lại vì lúc đó là lượt mới.
+  bool _resolvedSomeSuggestion = false;
 
   AlbumFaceProvider get _face => context.read<AlbumFaceProvider>();
   SubscriptionProvider get _sub => context.read<SubscriptionProvider>();
@@ -132,8 +175,13 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         scan == FaceScanState.notScanned;
   }
 
+  /// Số nhịp liên tiếp thấy `scanned` mà gợi ý vẫn rỗng — xem giải thích trong
+  /// vòng lặp bên dưới. Đặt lại mỗi lần bắt đầu một lượt poll mới.
+  int _emptyScannedStreak = 0;
+
   Future<({FaceScanStatusInfo info, List<FaceSuggestion> suggestions})>
   _pollScanStatus({bool waitBeforeFirstCheck = false}) async {
+    _emptyScannedStreak = 0;
     var info = const FaceScanStatusInfo(state: FaceScanState.processing);
     var suggestions = const <FaceSuggestion>[];
 
@@ -162,10 +210,27 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         );
       }
       final scan = info.state;
-      if (scan == FaceScanState.scanned ||
-          scan == FaceScanState.noFace ||
-          scan == FaceScanState.failed) {
+      // `noFace`/`failed` là kết luận cuối, dừng ngay được.
+      if (scan == FaceScanState.noFace || scan == FaceScanState.failed) {
         return (info: info, suggestions: suggestions);
+      }
+      // `scanned` KHÔNG được coi là kết luận cuối khi gợi ý còn rỗng.
+      //
+      // BE đánh dấu job xong và ghi bảng gợi ý là hai bước riêng. Lệch nhau
+      // vài trăm mili-giây là đủ để FE thấy "scanned + 0 gợi ý", thoát vòng
+      // lặp, rồi KHÔNG BAO GIỜ đọc lại — người dùng thấy "Đã quét · Chưa có
+      // gợi ý nào" dù BE có kết quả ngay sau đó. Bỏ lỡ vĩnh viễn vì không có
+      // cơ chế tự đọc lại.
+      //
+      // Đọc thêm 2 nhịp (~3 giây) rồi mới kết luận là rỗng thật.
+      if (scan == FaceScanState.scanned) {
+        if (suggestions.isNotEmpty) {
+          return (info: info, suggestions: suggestions);
+        }
+        _emptyScannedStreak++;
+        if (_emptyScannedStreak >= 3) {
+          return (info: info, suggestions: suggestions);
+        }
       }
     }
 
@@ -176,6 +241,8 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
     setState(() {
       _busy = true;
       _scanWaitingTooLong = false;
+      // Lượt quét mới → kết quả cũ không còn nói lên điều gì.
+      _resolvedSomeSuggestion = false;
     });
     try {
       final isAlreadyProcessing = _scan == FaceScanState.processing;
@@ -255,9 +322,10 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
       // refresh: onChanged gọi setState ở parent, làm widget này có thể bị
       // dựng lại và mất state — khi đó `!mounted` sẽ chặn luôn việc xóa gợi ý,
       // để lại gợi ý đã xác nhận kèm nút Xác nhận như chưa xử lý.
-      setState(
-        () => _suggestions = _suggestions.where((e) => e.id != s.id).toList(),
-      );
+      setState(() {
+        _suggestions = _suggestions.where((e) => e.id != s.id).toList();
+        _resolvedSomeSuggestion = true;
+      });
       _snack(confirm ? 'Đã xác nhận và gắn thẻ' : 'Đã bỏ qua gợi ý', ok: true);
       if (confirm) widget.onChanged?.call();
     } catch (e) {
@@ -429,7 +497,10 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 _effectiveScan == FaceScanState.noFace) ...[
               const SizedBox(height: 8),
               Text(
-                'Chưa có gợi ý nào. Bạn vẫn có thể gắn thẻ thủ công.',
+                emptySuggestionsMessage(
+                  resolvedSomeSuggestion: _resolvedSomeSuggestion,
+                  hasAnyTag: widget.hasAnyTag,
+                ),
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: context.colors.textMuted,

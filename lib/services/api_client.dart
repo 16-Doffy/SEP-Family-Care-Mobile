@@ -20,6 +20,7 @@ class ApiException implements Exception {
   final String? code;
   final int? retryAfterSeconds;
   final int? cooldownSeconds;
+
   /// Dữ liệu lỗi có cấu trúc BE trả thêm (ví dụ quỹ khả dụng theo kỳ).
   ///
   /// Trước đây client chỉ giữ `code`/`message`, làm FE không thể dùng các field
@@ -54,6 +55,7 @@ class ApiClient {
   void Function(String newAccess, String newRefresh)? onTokenRotated;
   void Function()? onSessionExpired;
   void Function(String message)? onVerificationRequired;
+
   /// BE trả 403 kèm `code: "FEATURE_LOCKED"` khi gói hiện tại không có quyền
   /// dùng tính năng vừa gọi (xem đề xuất `DE_XUAT_BE_FEATUREACCESS_
   /// ENFORCEMENT_2026-08-18.md`). `featureKey` có thể null nếu BE chưa kịp
@@ -404,9 +406,24 @@ class ApiClient {
                   details?['code'] ??
                   details?['errorCode'])
               ?.toString();
-      if (response.statusCode == 403 && code == 'FEATURE_LOCKED') {
+      // Chấp nhận CẢ HAI bộ tên field.
+      //
+      // Thoả thuận đã chốt với BE là `code: "FEATURE_LOCKED"` + `featureKey`,
+      // và BE báo đã sửa. Nhưng bản chạy thật hôm 18/08 đo được là
+      // `code: "FEATURE_NOT_AVAILABLE"` + `feature` — có log thật, không phải
+      // phỏng đoán. Chưa ai xác nhận server đã deploy bản mới.
+      //
+      // Bắt cả tên cũ là lưới đỡ 4 dòng: BE deploy rồi thì chạy theo tên mới,
+      // chưa deploy hoặc lỡ rollback thì dialog vẫn nổ đúng. Không có mặt trái
+      // — hai mã này cùng nghĩa "gói hiện tại không có quyền dùng".
+      if (response.statusCode == 403 &&
+          (code == 'FEATURE_LOCKED' || code == 'FEATURE_NOT_AVAILABLE')) {
         final featureKey =
-            (bodyMap?['featureKey'] ?? details?['featureKey'])?.toString();
+            (bodyMap?['featureKey'] ??
+                    bodyMap?['feature'] ??
+                    details?['featureKey'] ??
+                    details?['feature'])
+                ?.toString();
         onFeatureLocked?.call(message, featureKey);
       }
       final retryAfterSeconds = _intValue(

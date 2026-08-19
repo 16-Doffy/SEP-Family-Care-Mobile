@@ -6,6 +6,7 @@ import '../../models/finance_period.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/finance_alert_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -31,6 +32,7 @@ class _JarOverviewRow {
     required this.target,
     required this.actual,
     required this.status,
+    this.isSavingLike = false,
   });
 
   final String name;
@@ -39,8 +41,22 @@ class _JarOverviewRow {
   final double actual;
   final String status;
 
-  bool get isOverBudget =>
+  /// Hũ tích luỹ — vượt tỷ lệ là chuyện tốt, không tô đỏ.
+  final bool isSavingLike;
+
+  bool get isAboveTarget =>
       status == 'OVER_TARGET' || (target > 0 && actual > target);
+
+  /// Chỉ hũ **chi tiêu** vượt tỷ lệ mới đáng báo động. Tiết kiệm nhiều hơn dự
+  /// định mà tô đỏ như tiêu quá tay là gán sai ý nghĩa cho dữ liệu.
+  bool get isOverBudget => isAboveTarget && !isSavingLike;
+
+  /// Nhãn ngắn cho phần chênh lệch so với mô hình.
+  String? get deltaLabel {
+    if (pct <= 0) return null;
+    if (isAboveTarget) return isSavingLike ? 'trên mức' : 'vượt mức';
+    return null;
+  }
 }
 
 class WalletScreen extends StatefulWidget {
@@ -73,6 +89,10 @@ class _WalletScreenState extends State<WalletScreen> {
       context.read<WalletProvider>().fetchWallets(),
       context.read<SupportRequestProvider>().fetchRequests(),
       context.read<FinanceProvider>().fetchAll(),
+      // Cảnh báo tài chính trước đây CHỈ được nạp bên trong màn cảnh báo, mà
+      // lối vào duy nhất lại nằm sâu trong menu Hồ sơ → vượt ngân sách xong
+      // không ai biết. Nạp ở đây để dựng được thẻ cảnh báo ngay trên màn Ví.
+      context.read<FinanceAlertProvider>().fetchAlerts(),
       if (family.members.isEmpty) family.fetchMembers(),
     ]);
     if (!mounted) return;
@@ -383,7 +403,12 @@ class _WalletScreenState extends State<WalletScreen> {
 
   /// Report target/actual theo hu tu BE cho model tai chinh dang active.
   /// Khong tu cong ledger o FE de tranh lech voi mapping category -> jar.
-  ({List<_JarOverviewRow> rows, double unmappedAmount, String? note})
+  ({
+    List<_JarOverviewRow> rows,
+    double unmappedAmount,
+    double trackedAmount,
+    String? note,
+  })
   _jarBreakdown(BuildContext context, double income) {
     const empty = <_JarOverviewRow>[];
     final finance = context.watch<FinanceProvider>();
@@ -399,6 +424,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: 0,
+        trackedAmount: 0,
         note:
             'Gia \u0111\u00ecnh ch\u01b0a c\u00f3 m\u00f4 h\u00ecnh t\u00e0i ch\u00ednh \u0111ang \u00e1p d\u1ee5ng \u0111\u1ec3 xem b\u00e1o c\u00e1o theo h\u0169.',
       );
@@ -408,6 +434,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: 0,
+        trackedAmount: 0,
         note:
             '\u0110ang t\u1ea3i b\u00e1o c\u00e1o th\u1ef1c chi theo h\u0169 t\u1eeb Backend...',
       );
@@ -417,6 +444,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: 0,
+        trackedAmount: 0,
         note:
             'Kh\u00f4ng t\u1ea3i \u0111\u01b0\u1ee3c b\u00e1o c\u00e1o theo h\u0169: $_jarTargetReportError',
       );
@@ -429,6 +457,7 @@ class _WalletScreenState extends State<WalletScreen> {
       return (
         rows: empty,
         unmappedAmount: report?.unmappedAmount ?? 0,
+        trackedAmount: 0,
         note:
             'Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u target/actual theo h\u0169 cho k\u1ef3 n\u00e0y.',
       );
@@ -439,6 +468,7 @@ class _WalletScreenState extends State<WalletScreen> {
             .map(
               (item) => _JarOverviewRow(
                 name: item.jarName,
+                isSavingLike: item.isSavingLike,
                 pct: item.targetPercentage,
                 target:
                     item.targetAmount ??
@@ -452,7 +482,18 @@ class _WalletScreenState extends State<WalletScreen> {
             .toList()
           ..sort((a, b) => b.pct.compareTo(a.pct));
 
-    return (rows: rows, unmappedAmount: report.unmappedAmount ?? 0, note: null);
+    final unmapped = report.unmappedAmount ?? 0;
+    // BE chưa trả `trackedAmount` thì cộng bù: tổng thực chi các hũ + phần chưa
+    // gán hũ — đúng bằng mẫu số BE dùng để tính targetAmount.
+    final tracked =
+        report.trackedAmount ??
+        (rows.fold<double>(0, (sum, r) => sum + r.actual) + unmapped);
+    return (
+      rows: rows,
+      unmappedAmount: unmapped,
+      trackedAmount: tracked,
+      note: null,
+    );
   }
 
   List<Widget> _buildOverview(BuildContext context, WalletProvider state) {
@@ -480,15 +521,19 @@ class _WalletScreenState extends State<WalletScreen> {
             context.watch<AuthProvider>().user?.canManageFinance == true,
         carrySurplus: _carrySurplus,
         onAllocateSurplus: () {
-          final goals = context.read<FinanceProvider>().activeGoals;
-          if (goals.isEmpty) return;
-          _showSurplusGoalPicker(
-            context,
-            goals,
-            period: state.period.previous,
-          );
+          final goals = context.read<FinanceProvider>().contributableGoals;
+          // `return` trắng ở đây làm dòng checklist "Kết chuyển số dư" bấm vào
+          // KHÔNG CÓ GÌ XẢY RA — người dùng tưởng nút hỏng. Không có mục tiêu
+          // nào nhận được tiền thì phải nói ra và chỉ đường tạo mục tiêu.
+          if (goals.isEmpty) {
+            _promptCreateGoalForSurplus(context);
+            return;
+          }
+          _showSurplusGoalPicker(context, goals, period: state.period.previous);
         },
       ),
+
+      ..._financeAlertCard(context),
 
       ..._carryOverCard(context, state),
 
@@ -607,8 +652,15 @@ class _WalletScreenState extends State<WalletScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Nhãn cũ ("Hạn mức theo tỷ lệ thu nhập") nói SAI thứ BE
+                    // tính. Swagger ghi rõ:
+                    //   targetAmount = trackedAmount * targetPercentage / 100
+                    // `trackedAmount` là TỔNG CHI đã theo dõi trong kỳ, không
+                    // phải thu nhập. Nên đây là "tỷ trọng chi tiêu", không phải
+                    // hạn mức — và số bên phải TĂNG THEO mức chi, đúng như
+                    // người dùng thấy và tưởng app tính sai.
                     Text(
-                      'Hạn mức theo tỷ lệ thu nhập — thực chi',
+                      'Tỷ trọng chi tiêu theo hũ',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -617,7 +669,10 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Số bên phải được tính từ tổng thu nhập tháng, không phải số tiền của lần chia quỹ vừa thực hiện.',
+                      'So sánh tiền đã chi ở mỗi hũ với tỷ lệ của mô hình, tính '
+                      'trên TỔNG CHI trong kỳ (${_fmt(jarInfo.trackedAmount.round())}) '
+                      '— không phải hạn mức lấy từ thu nhập. Chi càng nhiều thì '
+                      'cả hai số đều tăng; điều đáng nhìn là tỷ lệ phần trăm.',
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         height: 1.35,
@@ -629,8 +684,38 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
               const SizedBox(height: 10),
               ...jarInfo.rows.asMap().entries.map(
-                (e) => _jarRow(e.value, _jarColor(e.key)),
+                (e) => _jarRow(
+                  e.value,
+                  _jarColor(e.key),
+                  trackedAmount: jarInfo.trackedAmount,
+                ),
               ),
+              // Hũ vượt tỷ lệ mô hình là chuyện đáng biết, NHƯNG nó không tạo
+              // cảnh báo tài chính (cảnh báo chỉ sinh từ kế hoạch ngân sách và
+              // mục tiêu tiết kiệm). Không nói ra thì người dùng thấy hũ đỏ rồi
+              // sang tab Cảnh báo tìm mãi không có, tưởng app hỏng.
+              if (jarInfo.rows.any((r) => r.isOverBudget)) ...[
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFDBA74)),
+                  ),
+                  child: Text(
+                    'Vượt tỷ lệ hũ chỉ được báo ở đây, KHÔNG tạo cảnh báo tài '
+                    'chính. Muốn được nhắc khi vượt chi thì đặt hạn mức trong '
+                    '"Kế hoạch ngân sách" cho đúng kỳ đang chi.',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      height: 1.4,
+                      color: const Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
               // Hiện phần chi không gán hũ để tổng khớp với tổng chi tiêu.
               if (jarInfo.unmappedAmount > 0)
                 _jarRow(
@@ -2286,7 +2371,7 @@ class _WalletScreenState extends State<WalletScreen> {
   List<Widget> _surplusAllocationCard(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     if (user?.canManageFinance != true) return const [];
-    final goals = context.watch<FinanceProvider>().activeGoals;
+    final goals = context.watch<FinanceProvider>().contributableGoals;
     if (goals.isEmpty) return const [];
 
     return [
@@ -2455,7 +2540,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final previous = state.period.previous;
     // Không có mục tiêu ACTIVE thì phân bổ đi đâu — vẫn báo số dư nhưng không
     // dựng nút dẫn vào một danh sách rỗng.
-    final goals = context.watch<FinanceProvider>().activeGoals;
+    final goals = context.watch<FinanceProvider>().contributableGoals;
 
     return [
       Container(
@@ -2544,9 +2629,15 @@ class _WalletScreenState extends State<WalletScreen> {
             ] else ...[
               const SizedBox(height: 8),
               Text(
-                'Chưa có mục tiêu tài chính nào đang chạy để nhận số dư này.',
+                // Danh sách rỗng giờ chỉ còn nghĩa: mọi mục tiêu đã hoàn thành
+                // hoặc đã huỷ. Mục tiêu AT_RISK vẫn nhận góp nên không rơi vào
+                // nhánh này nữa.
+                'Chưa có mục tiêu nào nhận được số dư này — mọi mục tiêu đều '
+                'đã hoàn thành hoặc đã huỷ. Tạo mục tiêu mới ở mục "Mục tiêu '
+                'tiết kiệm".',
                 style: GoogleFonts.inter(
                   fontSize: 12,
+                  height: 1.4,
                   color: AppColors.textSecondary,
                 ),
               ),
@@ -2556,6 +2647,97 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       const SizedBox(height: 16),
     ];
+  }
+
+  /// Thẻ "đang có N cảnh báo tài chính" ngay trên màn Ví.
+  ///
+  /// Không có thẻ này thì cảnh báo chỉ tồn tại ở màn Hồ sơ → Cảnh báo tài chính
+  /// — chỗ không ai nghĩ tới lúc đang xem tiền. Chỉ hiện khi thật sự có cảnh
+  /// báo chưa xem, để không thêm nhiễu vào màn vốn đã dày.
+  List<Widget> _financeAlertCard(BuildContext context) {
+    final count = context.watch<FinanceAlertProvider>().newCount;
+    if (count <= 0) return const [];
+    return [
+      InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        onTap: () => context.push('/manager/finance-alerts'),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.dangerLight,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: AppColors.danger.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.notification_important_rounded,
+                size: 20,
+                color: AppColors.danger,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$count cảnh báo tài chính chưa xem',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Vượt ngân sách hoặc mục tiêu có nguy cơ không đạt.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        height: 1.35,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.danger),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
+  /// Không còn mục tiêu nào nhận được số dư → hỏi có tạo mục tiêu mới không.
+  ///
+  /// Thà mở một hộp thoại còn hơn để cú chạm rơi vào hư không: số dư kết chuyển
+  /// là tiền thật đang không có đích đến, im lặng ở đây là bỏ mặc người dùng.
+  void _promptCreateGoalForSurplus(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Chưa có mục tiêu để nhận số dư'),
+        content: const Text(
+          'Mọi mục tiêu tiết kiệm đều đã hoàn thành hoặc đã huỷ, nên số dư này '
+          'chưa có chỗ để chuyển vào.\n\n'
+          'Tạo một mục tiêu mới rồi quay lại đây nhé.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.push('/manager/financial-goals');
+            },
+            child: const Text('Tạo mục tiêu'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Chọn mục tiêu rồi mở màn chi tiết với `surplus=1` — sheet nhập số tiền và
@@ -2683,11 +2865,14 @@ class _WalletScreenState extends State<WalletScreen> {
 
   /// 1 dòng hũ: tên + % , số thực chi trên số kế hoạch, thanh tiến độ. Vượt kế
   /// hoạch thì đổi sang màu cảnh báo để nhìn ra ngay hũ nào đang quá tay.
-  Widget _jarRow(_JarOverviewRow row, Color color) {
+  Widget _jarRow(_JarOverviewRow row, Color color, {double trackedAmount = 0}) {
     final over = row.isOverBudget;
     final ratio = row.target > 0
         ? (row.actual / row.target).clamp(0.0, 1.0)
         : (row.actual > 0 ? 1.0 : 0.0);
+    // Tỷ trọng thực tế của hũ này trong tổng chi — đúng công thức BE:
+    // actualPercentage = actualAmount / trackedAmount.
+    final ratioActual = trackedAmount > 0 ? row.actual / trackedAmount : 0.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -2714,15 +2899,39 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
               ),
-              Text(
-                row.target > 0
-                    ? '${_fmt(row.actual.round())} / ${_fmt(row.target.round())}'
-                    : _fmt(row.actual.round()),
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: over ? AppColors.danger : AppColors.textSecondary,
-                ),
+              // Tỷ lệ thực tế mới là con số đáng so với mô hình. Hai số tiền
+              // cùng tăng mỗi lần chi thêm (vì mẫu số là tổng chi) nên nhìn
+              // vào chúng không kết luận được gì — xem giải thích ở phần đầu
+              // mục "Tỷ trọng chi tiêu theo hũ".
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (row.pct > 0)
+                    Text(
+                      // Hũ tích luỹ vượt mô hình thì tô XANH: tiết kiệm nhiều
+                      // hơn dự định là chuyện tốt, không phải cảnh báo.
+                      '${(ratioActual * 100).round()}% thực tế'
+                      '${row.deltaLabel == null ? '' : ' · ${row.deltaLabel}'}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: over
+                            ? AppColors.danger
+                            : (row.isAboveTarget && row.isSavingLike
+                                  ? AppColors.safe
+                                  : AppColors.textPrimary),
+                      ),
+                    ),
+                  Text(
+                    row.target > 0
+                        ? '${_fmt(row.actual.round())} / ${_fmt(row.target.round())}'
+                        : _fmt(row.actual.round()),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

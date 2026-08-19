@@ -89,7 +89,48 @@ class FamilyCalendarEvent {
     return const [];
   }
 
+  /// Trạng thái phản hồi của **chính người đang đăng nhập**.
+  ///
+  /// BE bổ sung `myResponseStatus` phẳng (`INVITED | ACCEPTED | DECLINED |
+  /// MAYBE | null`) + `myParticipant` từ 19/08 — [responseStatus] đọc sẵn ở
+  /// [fromJson] nên đường nhanh chỉ là trả thẳng nó về.
+  ///
+  /// Vẫn giữ đường quét `participants[]`: đây là bản build dựng trước khi BE
+  /// push, và BE nói rõ member không nằm trong participants thì
+  /// `myResponseStatus = null` — không phân biệt được "chưa deploy" với "không
+  /// được mời" nếu bỏ hẳn nhánh cũ. Quét chỉ chạy khi field phẳng vắng mặt nên
+  /// BE lên là tự tắt.
+  ///
+  /// So khớp bằng cả `familyMember.id` lẫn `user.id` vì BE không nhất quán
+  /// khoá participant theo cái nào.
+  String? myResponseStatus(Set<String> myIdAliases) {
+    if (responseStatus != null) return responseStatus;
+    if (myIdAliases.isEmpty) return null;
+    final participants = raw['participants'];
+    if (participants is! List) return null;
+    for (final entry in participants.whereType<Map>()) {
+      final member = entry['member'];
+      final user = entry['user'];
+      final ids = <String?>[
+        _str(entry['memberId']),
+        _str(entry['familyMemberId']),
+        _str(entry['userId']),
+        member is Map ? _str(member['id']) : null,
+        member is Map && member['user'] is Map
+            ? _str((member['user'] as Map)['id'])
+            : null,
+        user is Map ? _str(user['id']) : null,
+      ];
+      if (ids.whereType<String>().any(myIdAliases.contains)) {
+        return _str(entry['responseStatus']) ?? _str(entry['status']);
+      }
+    }
+    return null;
+  }
+
   factory FamilyCalendarEvent.fromJson(Map<String, dynamic> j) {
+    // `myParticipant` là field BE bổ sung 19/08 cho đúng người đang gọi;
+    // `participant` là tên cũ, giữ lại vì bản build này chạy trước khi BE push.
     final participant = j['myParticipant'] is Map
         ? Map<String, dynamic>.from(j['myParticipant'] as Map)
         : j['participant'] is Map
@@ -113,8 +154,12 @@ class FamilyCalendarEvent {
           j['reminderEnabled'] == true ||
           j['myReminderEnabled'] == true ||
           participant['reminderEnabled'] == true,
+      // `myResponseStatus` là field chính thức của BE từ 19/08 — đọc trước
+      // `responseStatus` (tên cũ, chưa bao giờ được BE trả trên máy thật).
       responseStatus:
-          _str(j['responseStatus']) ?? _str(participant['responseStatus']),
+          _str(j['myResponseStatus']) ??
+          _str(j['responseStatus']) ??
+          _str(participant['responseStatus']),
       participantMemberIds: _memberIds(j),
       raw: j,
     );
@@ -152,6 +197,19 @@ class FamilyCalendarEvent {
   }
 }
 
+/// Quy `INVITED` về null.
+///
+/// BE bổ sung `INVITED` vào enum `myResponseStatus` từ 19/08: đã được mời
+/// nhưng **chưa trả lời** — với người dùng thì không khác gì chưa có phản hồi.
+/// Không quy về null thì chip nhỏ mất nhánh "chưa trả lời" nên hiện chuỗi dài
+/// "Chưa phản hồi" thay vì "Chưa", và nút Tham gia/Có thể/Từ chối lại có thể
+/// hiểu nhầm là đã chọn cái gì đó.
+String? normalizeResponseStatus(String? raw) {
+  final v = raw?.trim();
+  if (v == null || v.isEmpty || v == 'INVITED') return null;
+  return v;
+}
+
 class CalendarProvider extends ChangeNotifier {
   CalendarProvider() {
     ApiClient.addSessionResetListener(resetForNewSession);
@@ -169,6 +227,9 @@ class CalendarProvider extends ChangeNotifier {
     loading = false;
     error = null;
     _lastMonth = null;
+    // Phản hồi là của riêng từng người — không dọn thì người đăng nhập sau
+    // thấy "Tham gia" do người trước bấm.
+    _pendingResponses.clear();
     notifyListeners();
   }
 
@@ -327,12 +388,59 @@ class CalendarProvider extends ChangeNotifier {
     await fetchEvents(month);
   }
 
+  /// Phản hồi vừa gửi thành công, giữ theo eventId.
+  ///
+  /// Không phải mock: chỉ ghi lại kết quả của một request đã trả 2xx. Cần vì
+  /// response danh sách sự kiện không phải lúc nào cũng nói được trạng thái
+  /// của riêng người đang đăng nhập (xem [FamilyCalendarEvent.myResponseStatus])
+  /// — thiếu lớp này thì bấm "Tham gia" xong chip vẫn đứng ở "Chưa". Xoá khi
+  /// người dùng đăng xuất khỏi gia đình hoặc khi BE đã nói rõ trạng thái.
+  final Map<String, String> _pendingResponses = {};
+
+  /// Trạng thái phản hồi hiển thị cho [event]: ưu tiên thứ BE nói, chưa nói
+  /// được thì mới dùng thứ vừa gửi.
+  String? responseStatusOf(
+    FamilyCalendarEvent event,
+    Set<String> myIdAliases,
+  ) => normalizeResponseStatus(
+    event.myResponseStatus(myIdAliases) ?? _pendingResponses[event.id],
+  );
+
   Future<void> respond(String eventId, String responseStatus) async {
-    await ApiClient.instance.post(
+    final data = await ApiClient.instance.post(
       '/families/$_fid/calendar/events/$eventId/respond',
       {'responseStatus': responseStatus},
     );
+    // BE trả sự kiện đã cập nhật ngay ở top-level của `data` (contract 19/08).
+    // Dùng luôn thì chip đổi mà không cần gọi lại danh sách.
+    final updated = _eventFromRespond(data);
+    if (updated != null) {
+      final at = events.indexWhere((e) => e.id == updated.id);
+      if (at >= 0) {
+        events[at] = updated;
+      }
+      // Đã có nguồn thật cho sự kiện này → bỏ bản giữ tạm.
+      _pendingResponses.remove(eventId);
+    } else {
+      // Bản BE cũ không trả event → giữ tạm để chip không đứng ở "Chưa".
+      _pendingResponses[eventId] = responseStatus;
+    }
     notifyListeners();
+  }
+
+  /// Sự kiện trong response của POST respond.
+  ///
+  /// [ApiClient] đã bóc envelope `{success, data}` nên `data` chính là sự
+  /// kiện. Vẫn dò `data.event` / `data.calendarEvent` vì đó là hình dạng cũ mà
+  /// BE vừa bỏ — bản build này chạy trước khi họ push. Không có id thì coi như
+  /// BE chưa trả sự kiện, không dựng object rỗng đè lên dữ liệu đang đúng.
+  static FamilyCalendarEvent? _eventFromRespond(dynamic data) {
+    if (data is! Map) return null;
+    final root = Map<String, dynamic>.from(data);
+    final nested = root['event'] ?? root['calendarEvent'];
+    final map = nested is Map ? Map<String, dynamic>.from(nested) : root;
+    final parsed = FamilyCalendarEvent.fromJson(map);
+    return parsed.id.isEmpty ? null : parsed;
   }
 
   Future<void> updateReminder(

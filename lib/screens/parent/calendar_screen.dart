@@ -144,6 +144,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return map;
   }
 
+  /// `INVITED` (BE bổ sung 19/08) nghĩa là đã được mời nhưng CHƯA trả lời —
+  /// với người dùng thì y hệt null, nên gộp chung nhánh mặc định. Không được
+  /// để lọt ra UI dưới dạng chuỗi thô "INVITED".
   String _responseLabel(String? status) => switch (status) {
     'ACCEPTED' => 'Tham gia',
     'MAYBE' => 'Có thể',
@@ -198,6 +201,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
     );
   }
+
+  /// Id của chính mình, gom cả `familyMember.id` lẫn `user.id` vì BE khoá
+  /// participant theo cái nào là không chắc — xem [FamilyCalendarEvent.myResponseStatus].
+  Set<String> get _myIdAliases {
+    final userId = context.read<AuthProvider>().user?.id;
+    final ids = <String>{if (userId != null && userId.isNotEmpty) userId};
+    for (final m in context.read<FamilyProvider>().members) {
+      if (m.userId == userId || m.id == userId) {
+        if (m.id.isNotEmpty) ids.add(m.id);
+        if (m.userId.isNotEmpty) ids.add(m.userId);
+      }
+    }
+    return ids;
+  }
+
+  String? _responseOf(FamilyCalendarEvent event) =>
+      context.read<CalendarProvider>().responseStatusOf(event, _myIdAliases);
 
   Future<void> _respondToEvent(
     FamilyCalendarEvent event,
@@ -262,7 +282,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           runSpacing: 8,
                           children: [
                             _typeChip(event),
-                            _responseChip(event.responseStatus),
+                            _responseChip(_responseOf(event)),
                           ],
                         ),
                       ],
@@ -369,7 +389,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required FamilyCalendarEvent event,
     required BuildContext sheetContext,
   }) {
-    final selected = event.responseStatus == status;
+    final selected = _responseOf(event) == status;
     final color = _responseColor(status);
     return OutlinedButton.icon(
       onPressed: () async {
@@ -423,8 +443,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final fallbackDay = (_selected ?? DateTime.now().day)
         .clamp(1, DateUtils.getDaysInMonth(_focus.year, _focus.month))
         .toInt();
+    // Tạo mới thì không cho rơi vào quá khứ ngay từ giá trị mặc định: đang xem
+    // tháng cũ rồi bấm "+" thì baseDate cũ sẽ là một ngày đã qua, người dùng
+    // bấm Lưu luôn là tạo nhầm sự kiện quá khứ mà không hề chọn ngày.
+    final today = DateUtils.dateOnly(DateTime.now());
+    final proposed = DateTime(_focus.year, _focus.month, fallbackDay, 9);
     final baseDate =
-        event?.startTime ?? DateTime(_focus.year, _focus.month, fallbackDay, 9);
+        event?.startTime ??
+        (DateUtils.dateOnly(proposed).isBefore(today)
+            ? DateTime(today.year, today.month, today.day, 9)
+            : proposed);
     DateTime start = baseDate;
     DateTime? end = event?.endTime ?? baseDate.add(const Duration(hours: 1));
     bool reminder = event?.reminderEnabled ?? false;
@@ -440,10 +468,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
           Future<void> pickDate() async {
+            // Không cho chọn ngày đã qua khi TẠO MỚI. Khi SỬA thì vẫn phải mở
+            // tới ngày gốc của sự kiện — nếu không, sự kiện cũ sẽ không sửa
+            // nổi tiêu đề chỉ vì ngày của nó nằm trước hôm nay.
+            final earliest = event == null
+                ? today
+                : (DateUtils.dateOnly(event.startTime).isBefore(today)
+                      ? DateUtils.dateOnly(event.startTime)
+                      : today);
             final picked = await showDatePicker(
               context: ctx,
-              initialDate: start,
-              firstDate: DateTime(2020),
+              initialDate: start.isBefore(earliest) ? earliest : start,
+              firstDate: earliest,
               lastDate: DateTime(2035),
             );
             if (picked == null) return;
@@ -494,6 +530,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
             final title = titleCtrl.text.trim();
             if (title.isEmpty) {
               _showMessage('Vui lòng nhập tên sự kiện', isError: true);
+              return;
+            }
+            // Chốt chặn thứ hai, không chỉ dựa vào bộ chọn ngày: giá trị mặc
+            // định cũng có thể rơi vào quá khứ, và bộ chọn có thể đổi trong
+            // tương lai. Chỉ chặn khi TẠO MỚI — sửa sự kiện cũ vẫn phải được.
+            //
+            // So theo NGÀY chứ không theo giờ: chặn tới từng phút thì tạo sự
+            // kiện lúc 9h sáng khi đang là 14h cũng bị chặn, quá khắt khe với
+            // việc ghi lại lịch trong ngày.
+            if (event == null &&
+                DateUtils.dateOnly(
+                  start,
+                ).isBefore(DateUtils.dateOnly(DateTime.now()))) {
+              _showMessage(
+                'Không tạo được sự kiện cho ngày đã qua',
+                isError: true,
+              );
               return;
             }
             try {
@@ -580,15 +633,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       _field(locationCtrl, 'Vị trí hoặc cuộc gọi video'),
                     ]),
                     const SizedBox(height: 18),
+                    // ĐÃ BỎ công tắc "Cả ngày": nó là nút giả — `value: false`
+                    // cứng, `onChanged` rỗng, bấm không có gì xảy ra. Không
+                    // nối được vì BE KHÔNG có field all-day:
+                    // `CreateCalendarEventDto` chỉ nhận title, description,
+                    // location, startTime, endTime, isRecurring,
+                    // recurrenceRule, reminderEnabled (đối chiếu Swagger
+                    // 2026-08-19). Một công tắc trông bấm được mà không làm gì
+                    // tệ hơn là không có. Muốn có thật phải đề xuất BE thêm
+                    // field trước.
                     _formGroup([
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: _sheetLabel('Cả ngày'),
-                        value: false,
-                        onChanged: (_) {},
-                        activeThumbColor: _calendarIosRed,
-                      ),
-                      _groupDivider(),
                       _sheetPickerRow(
                         label: 'Bắt đầu',
                         children: [
@@ -622,7 +676,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         label: 'Lặp lại',
                         mutedValue: provider.canUseRecurring
                             ? 'Không'
-                            : 'Cần gói',
+                            : 'Nâng gói',
+                        onLockedTap: provider.canUseRecurring
+                            ? null
+                            : () => _showUpgradeSheet(
+                                'Lịch lặp lại',
+                                'Tạo sự kiện lặp lại hằng tuần, hằng tháng '
+                                    'thuộc gói trả phí.',
+                              ),
                         children: [
                           Switch(
                             value: recurring,
@@ -681,7 +742,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                         label: 'Cảnh báo',
                         mutedValue: provider.canUseReminders
                             ? 'Không'
-                            : 'Cần gói',
+                            : 'Nâng gói',
+                        onLockedTap: provider.canUseReminders
+                            ? null
+                            : () => _showUpgradeSheet(
+                                'Nhắc lịch',
+                                'Nhận thông báo nhắc trước giờ diễn ra sự kiện '
+                                    'thuộc gói trả phí.',
+                              ),
                         children: [
                           Switch(
                             value: reminder,
@@ -765,39 +833,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            _capsuleButton(
-              icon: Icons.chevron_left_rounded,
-              label: '${_focus.year}',
-              onTap: () => _moveMonth(-1),
-            ),
-            const Spacer(),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: _calendarSurface.withValues(alpha: _dark ? 0.92 : 0.96),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: _calendarBorder),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _modeMenuButton(),
-                  _roundToolbarButton(
-                    tooltip: 'Tìm kiếm',
-                    icon: Icons.search_rounded,
-                    onTap: () => _showMessage('Tìm kiếm lịch sẽ được bổ sung'),
-                  ),
-                  if (_canManage)
-                    _roundToolbarButton(
-                      tooltip: 'Tạo sự kiện',
-                      icon: Icons.add_rounded,
-                      onTap: () => _showEventForm(),
+        // LayoutBuilder chứ không phải Row trần: hàng này có tới 5 thứ (cụm
+        // năm + 4 nút tròn) và Row KHÔNG tự co, nên máy màn hẹp là tràn ngay.
+        // Quan sát thật trên máy ảo: tràn 71px khi đang ở tháng khác tháng
+        // hiện tại (lúc đó có thêm nút "Về hôm nay"). Widget test không bắt
+        // được vì test luôn chạy ở tháng hiện tại — nút đó không hiện.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Đủ chỗ mới cho nút tròn "Về hôm nay" xuất hiện. Hẹp hơn thì vẫn
+            // về được bằng cách chạm vào nhãn năm (xem _yearStepper).
+            final roomForToday = constraints.maxWidth >= 330;
+            return Row(
+              children: [
+                // Trước đây chỗ này chỉ có MỘT nút: mũi tên trái kèm nhãn là
+                // NĂM, nhưng bấm vào lại lùi một THÁNG. Ba vấn đề cùng lúc —
+                // nhãn nói một đằng hành vi một nẻo, không có nút tiến (chỉ
+                // vuốt được mà không có gì gợi ý), và đi xa rồi thì không có
+                // đường về hiện tại.
+                _yearStepper(),
+                const Spacer(),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _calendarSurface.withValues(
+                      alpha: _dark ? 0.92 : 0.96,
                     ),
-                ],
-              ),
-            ),
-          ],
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: _calendarBorder),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _modeMenuButton(),
+                      // "Về hôm nay" chỉ hiện khi đang KHÔNG ở tháng hiện tại — ở
+                      // đúng tháng này thì nút vô nghĩa. Đặt trong thanh công cụ
+                      // chứ không cạnh nhãn năm: để cạnh nhãn thì header tràn trên
+                      // máy màn hẹp (widget test 304px báo tràn 9px).
+                      if (!_isCurrentMonth && roomForToday)
+                        _roundToolbarButton(
+                          tooltip: 'Về hôm nay',
+                          icon: Icons.today_rounded,
+                          onTap: _goToToday,
+                        ),
+                      _roundToolbarButton(
+                        tooltip: 'Tìm kiếm',
+                        icon: Icons.search_rounded,
+                        onTap: () =>
+                            _showMessage('Tìm kiếm lịch sẽ được bổ sung'),
+                      ),
+                      if (_canManage)
+                        _roundToolbarButton(
+                          tooltip: 'Tạo sự kiện',
+                          icon: Icons.add_rounded,
+                          onTap: () => _showEventForm(),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 26),
         GestureDetector(
@@ -1126,7 +1220,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    _responseChip(event.responseStatus, compact: true),
+                    _responseChip(_responseOf(event), compact: true),
                   ],
                 ),
               ),
@@ -1301,26 +1395,144 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Giải thích vì sao công tắc bị khoá, kèm lối đi tiếp.
+  ///
+  /// Trước đây hàng bị khoá chỉ là công tắc xám kèm chữ "Cần gói" — bấm vào
+  /// không có gì xảy ra, không nói vì sao, cũng không chỉ đường nâng gói.
+  /// Người dùng tưởng app hỏng chứ không nghĩ là tính năng trả phí.
+  void _showUpgradeSheet(String featureName, String description) {
+    // `/manager/subscription` là route MANAGER-ONLY (xem _managerOnlyPaths
+    // trong app_router). Deputy/Member bấm vào sẽ bị redirect về home — hiện
+    // nút "Xem các gói" cho họ là dẫn vào ngõ cụt. Cùng cách xử lý với
+    // `_handleError` phía trên, không được làm khác đi.
+    final canUpgrade =
+        context.read<AuthProvider>().user?.canManageSubscription ?? false;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.lock_outline_rounded,
+                    color: AppColors.link,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$featureName thuộc gói trả phí',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                canUpgrade
+                    ? description
+                    : '$description\n\nVui lòng liên hệ Trưởng nhóm để nâng cấp gói.',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 18),
+              if (canUpgrade)
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      context.push('/manager/subscription');
+                    },
+                    child: const Text('Xem các gói'),
+                  ),
+                ),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(
+                    canUpgrade ? 'Để sau' : 'Đã hiểu',
+                    style: GoogleFonts.inter(color: AppColors.textMuted),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sheetPickerRow({
     required String label,
     String? mutedValue,
     required List<Widget> children,
+    VoidCallback? onLockedTap,
   }) {
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          _sheetLabel(label),
-          const Spacer(),
+          if (onLockedTap != null) ...[
+            Icon(Icons.lock_outline_rounded, size: 15, color: _calendarMuted),
+            const SizedBox(width: 6),
+          ],
+          // Expanded chứ không phải label + Spacer: Spacer giữ nhãn ở kích
+          // thước tự nhiên nên hàng vỡ khi máy hẹp — quan sát thật trong
+          // widget test ở bề rộng 280px, hàng "Bắt đầu" (nhãn + nút ngày +
+          // nút giờ) tràn ra ngoài. Expanded cho nhãn co lại trước.
+          Expanded(child: _sheetLabel(label)),
           if (mutedValue != null)
             Text(
               mutedValue,
               style: GoogleFonts.inter(fontSize: 15, color: _calendarMuted),
             ),
           const SizedBox(width: 8),
-          ...children,
+          // Wrap chứ không rải thẳng vào Row: hàng "Bắt đầu" có hai nút (ngày
+          // + giờ) và ở máy hẹp chúng không đủ chỗ nằm cùng dòng với nhãn —
+          // đo được tràn 1.4px ở bề rộng 280px. Cho phép xuống dòng thì hàng
+          // cao thêm một chút thay vì vỡ.
+          Flexible(
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              // Công tắc bị khoá không nhận chạm (onChanged: null) nên bọc
+              // IgnorePointer để cú chạm rơi xuống InkWell bên dưới — không
+              // thì bấm trúng công tắc là không có gì xảy ra, người dùng
+              // tưởng app đơ.
+              children: children
+                  .map((c) => onLockedTap == null ? c : IgnorePointer(child: c))
+                  .toList(),
+            ),
+          ),
         ],
       ),
+    );
+    if (onLockedTap == null) return row;
+    return InkWell(
+      onTap: onLockedTap,
+      borderRadius: BorderRadius.circular(8),
+      child: row,
     );
   }
 
@@ -1383,36 +1595,83 @@ class _CalendarScreenState extends State<CalendarScreen> {
     border: Border.all(color: _calendarBorder),
   );
 
-  Widget _capsuleButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
+  /// Đang đứng ở đúng tháng của hôm nay hay không.
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _focus.year == now.year && _focus.month == now.month;
+  }
+
+  /// Về thẳng tháng hiện tại và chọn lại đúng ngày hôm nay.
+  Future<void> _goToToday() async {
+    final now = DateTime.now();
+    if (_isCurrentMonth) {
+      setState(() => _selected = now.day);
+      return;
+    }
+    setState(() {
+      _focus = DateTime(now.year, now.month);
+      _selected = now.day;
+    });
+    await _reload();
+  }
+
+  /// Cụm `‹ 2025 ›` — lùi/tiến MỘT THÁNG, nhãn giữa là năm đang xem.
+  ///
+  /// Thay cho nút cũ chỉ có mũi tên trái: hai mũi tên hai bên cho thấy ngay là
+  /// đi được cả hai chiều. Nhãn vẫn là năm (giữ đúng thiết kế cũ) vì tên tháng
+  /// đã hiện cỡ lớn ngay bên dưới.
+  Widget _yearStepper() {
+    Widget arrow(IconData icon, VoidCallback onTap, String tooltip) => InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 10, 16, 10),
-        decoration: BoxDecoration(
-          color: _calendarSurface,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: _calendarBorder),
+      child: Tooltip(
+        message: tooltip,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 10),
+          child: Icon(icon, color: _calendarText, size: 24),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: _calendarText, size: 24),
-            const SizedBox(width: 2),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                color: _calendarText,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
+      ),
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _calendarSurface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _calendarBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          arrow(
+            Icons.chevron_left_rounded,
+            () => _moveMonth(-1),
+            'Tháng trước',
+          ),
+          // Nhãn năm cũng là đường về hôm nay. Cần cái này vì nút tròn "Về
+          // hôm nay" ở thanh công cụ bị ẩn trên màn hẹp (xem _header) — không
+          // có nó thì máy màn nhỏ lại rơi lại đúng bug ban đầu: lùi vài tháng
+          // rồi không có cách nào quay lại. Đổi màu khi đang lạc khỏi tháng
+          // hiện tại để thấy là bấm được.
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: _goToToday,
+            child: Tooltip(
+              message: _isCurrentMonth ? 'Tháng hiện tại' : 'Về hôm nay',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  '${_focus.year}',
+                  style: GoogleFonts.inter(
+                    color: _isCurrentMonth ? _calendarText : _calendarIosRed,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+          arrow(Icons.chevron_right_rounded, () => _moveMonth(1), 'Tháng sau'),
+        ],
       ),
     );
   }

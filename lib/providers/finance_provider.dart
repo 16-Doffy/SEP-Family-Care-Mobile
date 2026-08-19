@@ -299,6 +299,11 @@ class FinanceCategoryJarMapping {
 class JarTargetActualItem {
   final String jarId;
   final String jarName;
+
+  /// Mã hũ (`SAVING`, `NEC`, `EDU`…). Dùng để đoán hũ nào là hũ **tích luỹ** —
+  /// xem [isSavingLike]. BE chưa có field phân loại hũ chính thức.
+  final String jarCode;
+
   final double targetPercentage;
   final double actualPercentage;
   final double? targetAmount;
@@ -308,6 +313,7 @@ class JarTargetActualItem {
   const JarTargetActualItem({
     required this.jarId,
     required this.jarName,
+    this.jarCode = '',
     required this.targetPercentage,
     required this.actualPercentage,
     this.targetAmount,
@@ -315,12 +321,48 @@ class JarTargetActualItem {
     required this.status,
   });
 
+  /// Hũ mà **vượt tỷ lệ là chuyện tốt** — tiết kiệm / đầu tư / cho đi nhiều
+  /// hơn dự định thì không có gì phải báo động.
+  ///
+  /// ⚠️ Đây là **đoán theo tên**, không phải dữ liệu thật: BE chưa có field
+  /// phân loại hũ (`FinanceJar` chỉ có id/name/jarCode/allocationPercentage).
+  /// Gia đình đặt tên hũ kiểu khác là đoán trượt — đã đề xuất BE thêm
+  /// `jarType`. Đoán trượt chỉ làm sai màu sắc, không sai số liệu.
+  static bool looksLikeSaving(String code, String name) {
+    final text = '$code $name'.toLowerCase();
+    const keys = [
+      'sav', // SAVING, savings, tiết kiệm (mã)
+      'tiết kiệm',
+      'tich luy',
+      'tích luỹ',
+      'tích lũy',
+      'invest',
+      'đầu tư',
+      'dau tu',
+      'ltss', // Long Term Saving for Spending (mô hình 6 hũ)
+      'ffa', // Financial Freedom Account
+      'give',
+      'cho đi',
+      'từ thiện',
+      'edu', // học tập cũng là đầu tư dài hạn
+      'giáo dục',
+    ];
+    return keys.any(text.contains);
+  }
+
+  bool get isSavingLike => looksLikeSaving(jarCode, jarName);
+
   factory JarTargetActualItem.fromJson(Map<String, dynamic> j) {
     final jar = j['jar'] is Map
         ? Map<String, dynamic>.from(j['jar'] as Map)
         : const <String, dynamic>{};
     return JarTargetActualItem(
       jarId: j['jarId']?.toString() ?? jar['id']?.toString() ?? '',
+      jarCode:
+          j['jarCode']?.toString() ??
+          jar['jarCode']?.toString() ??
+          jar['code']?.toString() ??
+          '',
       jarName:
           j['jarName']?.toString() ??
           j['name']?.toString() ??
@@ -344,11 +386,20 @@ class JarTargetActualItem {
 class JarTargetActualReport {
   final List<JarTargetActualItem> items;
   final double? unmappedAmount;
+
+  /// Mẫu số của cả báo cáo — **tổng chi đã theo dõi trong kỳ**, không phải thu
+  /// nhập. Swagger nói rõ: `targetAmount = trackedAmount * targetPercentage /
+  /// 100` và `actualPercentage = actualAmount / trackedAmount * 100`. Phải nêu
+  /// rõ con số này ra UI, nếu không người dùng thấy "hạn mức" tự tăng mỗi lần
+  /// chi thêm và tưởng app tính sai.
+  final double? trackedAmount;
+
   final Map<String, dynamic> raw;
 
   const JarTargetActualReport({
     required this.items,
     required this.unmappedAmount,
+    this.trackedAmount,
     required this.raw,
   });
 
@@ -376,6 +427,9 @@ class JarTargetActualReport {
       unmappedAmount: _moneyNull(
         j['unmappedAmount'] ??
             (j['unmapped'] is Map ? (j['unmapped'] as Map)['amount'] : null),
+      ),
+      trackedAmount: _moneyNull(
+        j['trackedAmount'] ?? j['totalTracked'] ?? j['totalAmount'],
       ),
       raw: j,
     );
@@ -427,6 +481,69 @@ class BudgetPlan {
     'CANCELED' => 'Đã hủy',
     _ => 'Bản nháp',
   };
+
+  DateTime? get periodStartDate => DateTime.tryParse(periodStart);
+  DateTime? get periodEndDate => DateTime.tryParse(periodEnd);
+
+  /// Kỳ của kế hoạch có bao gồm ngày [d] không.
+  ///
+  /// `null` = không đọc được mốc thời gian → coi như có, để không tự dựng cảnh
+  /// báo dựa trên dữ liệu mình không chắc.
+  bool coversDate(DateTime d) {
+    final day = DateTime(d.year, d.month, d.day);
+    final start = periodStartDate;
+    final end = periodEndDate;
+    if (start != null &&
+        day.isBefore(DateTime(start.year, start.month, start.day))) {
+      return false;
+    }
+    if (end != null && day.isAfter(DateTime(end.year, end.month, end.day))) {
+      return false;
+    }
+    return true;
+  }
+
+  /// Trạng thái ACTIVE nhưng kỳ **chưa tới** hoặc **đã qua**.
+  ///
+  /// Gặp thật 19/08: người dùng tạo kế hoạch cho tháng 9, dòng ngân sách 5 triệu,
+  /// rồi ghi khoản chi 8 triệu vào **tháng 8** và chờ cảnh báo vượt ngân sách.
+  /// Không có cảnh báo nào — đúng, vì khoản chi nằm ngoài kỳ của kế hoạch.
+  /// Nhưng thẻ chỉ ghi "Đang áp dụng" nên trông như kế hoạch đang có hiệu lực
+  /// ngay bây giờ.
+  bool get isFuturePeriod {
+    final start = periodStartDate;
+    if (status != 'ACTIVE' || start == null) return false;
+    final today = DateTime.now();
+    return DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).isBefore(DateTime(start.year, start.month, start.day));
+  }
+
+  bool get isExpiredPeriod {
+    final end = periodEndDate;
+    if (status != 'ACTIVE' || end == null) return false;
+    final today = DateTime.now();
+    return DateTime(
+      today.year,
+      today.month,
+      today.day,
+    ).isAfter(DateTime(end.year, end.month, end.day));
+  }
+
+  /// Câu giải thích khi kế hoạch ACTIVE nhưng chưa/không còn hiệu lực hôm nay.
+  String? get periodWarning {
+    if (isFuturePeriod) {
+      return 'Kỳ của kế hoạch này chưa bắt đầu — các khoản chi hôm nay KHÔNG '
+          'được tính vào đây và sẽ không sinh cảnh báo vượt ngân sách.';
+    }
+    if (isExpiredPeriod) {
+      return 'Kỳ của kế hoạch này đã kết thúc — các khoản chi hôm nay không '
+          'còn được tính vào đây.';
+    }
+    return null;
+  }
 }
 
 // 1 dòng ngân sách thuộc BudgetPlan — chỉ có khi lấy chi tiết 1 plan
@@ -1170,8 +1287,15 @@ class FinanceProvider extends ChangeNotifier {
   List<BudgetPlan> get activeBudgetPlans =>
       budgetPlans.where((p) => p.status == 'ACTIVE').toList();
 
-  List<FinancialGoal> get activeGoals =>
-      goals.where((g) => g.status == 'ACTIVE').toList();
+  /// Mục tiêu còn nhận được tiền góp.
+  ///
+  /// **Không** lọc `status == 'ACTIVE'`: `AT_RISK` là cảnh báo tiến độ, không
+  /// phải trạng thái đóng mục tiêu (xem [FinancialGoal.canContribute]). Lọc
+  /// theo ACTIVE làm mục tiêu đang có nguy cơ trượt bị loại khỏi danh sách nhận
+  /// số dư kết chuyển — đúng cái mục tiêu cần tiền nhất lại bị giấu đi, và card
+  /// kết chuyển báo "chưa có mục tiêu nào đang chạy" dù rõ ràng đang có.
+  List<FinancialGoal> get contributableGoals =>
+      goals.where((g) => g.canContribute).toList();
 
   String get _fid {
     final fid = ApiClient.instance.familyId;

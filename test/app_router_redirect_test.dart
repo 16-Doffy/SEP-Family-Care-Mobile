@@ -3,6 +3,7 @@ import 'package:family_care/models/user.dart';
 import 'package:family_care/navigation/app_router.dart';
 
 void main() {
+  _financeAlertsAccessTests();
   group('computeRedirect', () {
     test('while restoring, stays on /splash regardless of target', () {
       expect(
@@ -491,6 +492,46 @@ void main() {
           loc: '/member/home',
         ),
         '/manager/home',
+      );
+    });
+  });
+}
+
+/// Member nhận notification `BUDGET_ALERT` nên phải vào được màn cảnh báo tài
+/// chính. Trước 19/08 route này nằm ngoài `_memberSharedPaths` nên Member bị
+/// đá về home, và NotificationRouter trả null → bấm thông báo không đi đâu cả.
+void _financeAlertsAccessTests() {
+  group('/manager/finance-alerts — mọi role đều đọc được', () {
+    String? redirect(UserRole role) => computeRedirect(
+      restoring: false,
+      loggedIn: true,
+      hasFamily: true,
+      role: role,
+      loc: '/manager/finance-alerts',
+    );
+
+    test('Member không bị đá về home', () {
+      expect(redirect(UserRole.member), isNull);
+    });
+
+    test('Deputy vào được', () {
+      expect(redirect(UserRole.deputy), isNull);
+    });
+
+    test('Manager vào được', () {
+      expect(redirect(UserRole.manager), isNull);
+    });
+
+    test('route manager-only vẫn chặn Member như cũ', () {
+      expect(
+        computeRedirect(
+          restoring: false,
+          loggedIn: true,
+          hasFamily: true,
+          role: UserRole.member,
+          loc: '/manager/subscription',
+        ),
+        isNotNull,
       );
     });
   });

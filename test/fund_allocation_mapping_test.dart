@@ -3,6 +3,9 @@ import 'package:family_care/providers/finance_provider.dart';
 import 'package:family_care/providers/wallet_provider.dart';
 
 void main() {
+  _savingJarHeuristicTests();
+  _budgetPlanPeriodTests();
+  _contributableGoalsTests();
   test('parses category to jar mapping with nested payload', () {
     final mapping = FinanceCategoryJarMapping.fromJson({
       'id': 'mapping-1',
@@ -258,5 +261,166 @@ void main() {
     });
 
     expect(page.items.map((item) => item.sourceId), ['new', 'old', 'unknown']);
+  });
+}
+
+/// Bug máy thật 19/08: card "Kết chuyển tháng trước" báo "chưa có mục tiêu nào
+/// đang chạy" trong khi mục tiêu "mua xe yaz" đang thiếu tiền — vì bộ lọc dùng
+/// `status == 'ACTIVE'` nên loại luôn mục tiêu AT_RISK. Đúng cái mục tiêu cần
+/// tiền nhất lại bị giấu khỏi danh sách nhận số dư.
+void _contributableGoalsTests() {
+  FinancialGoal goal(String status) => FinancialGoal.fromJson({
+    'id': 'g-$status',
+    'goalName': 'mua xe yaz',
+    'targetAmount': 500000000,
+    'status': status,
+  });
+
+  group('canContribute — mục tiêu nào còn nhận góp', () {
+    test(
+      'AT_RISK vẫn nhận góp (cảnh báo tiến độ, không phải đóng mục tiêu)',
+      () {
+        expect(goal('AT_RISK').canContribute, isTrue);
+      },
+    );
+
+    test('ACTIVE nhận góp', () {
+      expect(goal('ACTIVE').canContribute, isTrue);
+    });
+
+    test('ACHIEVED và CANCELED thì không', () {
+      expect(goal('ACHIEVED').canContribute, isFalse);
+      expect(goal('CANCELED').canContribute, isFalse);
+    });
+  });
+}
+
+/// Gặp thật 19/08: người dùng tạo kế hoạch ngân sách cho **tháng 9**, dòng
+/// ngân sách 5 triệu, rồi ghi khoản chi 8 triệu vào **tháng 8** và chờ cảnh báo
+/// vượt ngân sách. Không có cảnh báo — đúng, vì khoản chi nằm ngoài kỳ. Nhưng
+/// thẻ chỉ ghi "Đang áp dụng" nên trông như kế hoạch có hiệu lực ngay bây giờ.
+void _budgetPlanPeriodTests() {
+  BudgetPlan plan(String start, String end, {String status = 'ACTIVE'}) =>
+      BudgetPlan.fromJson({
+        'id': 'p1',
+        'planName': 'Kế hoạch ngân sách tháng 9',
+        'periodStart': start,
+        'periodEnd': end,
+        'status': status,
+      });
+
+  final today = DateTime.now();
+  String iso(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  group('BudgetPlan — kỳ có bao gồm hôm nay không', () {
+    test('kỳ nằm hoàn toàn ở tương lai → cảnh báo chưa tới kỳ', () {
+      final p = plan(
+        iso(today.add(const Duration(days: 10))),
+        iso(today.add(const Duration(days: 40))),
+      );
+      expect(p.isFuturePeriod, isTrue);
+      expect(p.isExpiredPeriod, isFalse);
+      expect(p.periodWarning, contains('chưa bắt đầu'));
+      expect(p.coversDate(today), isFalse);
+    });
+
+    test('kỳ đã qua → cảnh báo hết kỳ', () {
+      final p = plan(
+        iso(today.subtract(const Duration(days: 40))),
+        iso(today.subtract(const Duration(days: 10))),
+      );
+      expect(p.isExpiredPeriod, isTrue);
+      expect(p.periodWarning, contains('đã kết thúc'));
+      expect(p.coversDate(today), isFalse);
+    });
+
+    test('kỳ đang bao hôm nay → không cảnh báo gì', () {
+      final p = plan(
+        iso(today.subtract(const Duration(days: 5))),
+        iso(today.add(const Duration(days: 5))),
+      );
+      expect(p.isFuturePeriod, isFalse);
+      expect(p.isExpiredPeriod, isFalse);
+      expect(p.periodWarning, isNull);
+      expect(p.coversDate(today), isTrue);
+    });
+
+    test('kế hoạch chưa kích hoạt thì không cảnh báo kỳ', () {
+      final p = plan(
+        iso(today.add(const Duration(days: 10))),
+        iso(today.add(const Duration(days: 40))),
+        status: 'DRAFT',
+      );
+      expect(p.isFuturePeriod, isFalse);
+      expect(p.periodWarning, isNull);
+    });
+
+    test('BE không trả mốc thời gian thì coi như có, không đoán bừa', () {
+      final p = plan('', '');
+      expect(p.coversDate(today), isTrue);
+      expect(p.periodWarning, isNull);
+    });
+  });
+}
+
+/// Hũ tích luỹ vượt tỷ lệ mô hình là chuyện TỐT, không được tô đỏ như tiêu quá
+/// tay. BE chưa có field phân loại hũ nên FE đoán theo jarCode/tên — đoán trượt
+/// chỉ sai màu, không sai số liệu.
+void _savingJarHeuristicTests() {
+  group('JarTargetActualItem.looksLikeSaving', () {
+    test('nhận ra hũ tiết kiệm qua mã', () {
+      for (final code in ['SAVING', 'SAVINGS', 'sav', 'LTSS', 'FFA', 'EDU']) {
+        expect(
+          JarTargetActualItem.looksLikeSaving(code, 'Hũ'),
+          isTrue,
+          reason: code,
+        );
+      }
+    });
+
+    test('nhận ra qua tên tiếng Việt có dấu lẫn không dấu', () {
+      for (final name in [
+        'Tiết kiệm',
+        'Tích luỹ',
+        'Tích lũy',
+        'Đầu tư',
+        'Dau tu',
+        'Giáo dục',
+        'Cho đi',
+        'Từ thiện',
+      ]) {
+        expect(
+          JarTargetActualItem.looksLikeSaving('', name),
+          isTrue,
+          reason: name,
+        );
+      }
+    });
+
+    test('hũ chi tiêu KHÔNG bị nhận nhầm', () {
+      for (final name in ['Spending', 'Chi tiêu', 'Thiết yếu', 'Hưởng thụ']) {
+        expect(
+          JarTargetActualItem.looksLikeSaving('NEC', name),
+          isFalse,
+          reason: name,
+        );
+      }
+    });
+
+    test('đọc jarCode từ nhiều biến thể BE có thể trả', () {
+      final a = JarTargetActualItem.fromJson({
+        'jarId': 'j1',
+        'jarCode': 'SAVING',
+        'jarName': 'Hũ A',
+      });
+      final b = JarTargetActualItem.fromJson({
+        'jar': {'id': 'j2', 'jarCode': 'SAVING', 'name': 'Hũ B'},
+      });
+      expect(a.isSavingLike, isTrue);
+      expect(b.isSavingLike, isTrue);
+    });
   });
 }

@@ -2,8 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:family_care/models/album_media.dart';
 import 'package:family_care/providers/album_face_provider.dart';
+import 'package:family_care/screens/shared/album_face_section.dart';
 
 void main() {
+  _tagContract19082026Tests();
+  _emptySuggestionsMessageTests();
   test('FaceSuggestion reads member name from nested backend payload', () {
     final suggestion = FaceSuggestion.fromJson({
       'id': 's1',
@@ -233,5 +236,90 @@ void main() {
     expect(tag.id, 'tag-1');
     expect(tag.taggedMemberId, 'member-1');
     expect(tag.taggedMemberName, 'Zap MEM 2');
+  });
+}
+
+/// Ba nguyên nhân "danh sách gợi ý rỗng" phải ra ba câu khác nhau. Trước đây
+/// gộp chung nên xác nhận gợi ý thành công xong vẫn bị in lý do thất bại ngay
+/// cạnh cái thẻ vừa tạo (gặp trên máy thật 19/08).
+void _emptySuggestionsMessageTests() {
+  group('emptySuggestionsMessage', () {
+    test('vừa xác nhận gợi ý xong thì báo đã xử lý xong, không đổ lỗi', () {
+      final msg = emptySuggestionsMessage(
+        resolvedSomeSuggestion: true,
+        hasAnyTag: true,
+      );
+      expect(msg, contains('Đã xử lý xong'));
+      expect(msg, isNot(contains('quá nhỏ')));
+      expect(msg, isNot(contains('gỡ thẻ')));
+    });
+
+    test('vừa xử lý xong được ưu tiên hơn cả khi ảnh chưa kịp có thẻ', () {
+      // Bỏ qua gợi ý (reject) không tạo thẻ nào, nhưng vẫn không phải lỗi quét.
+      final msg = emptySuggestionsMessage(
+        resolvedSomeSuggestion: true,
+        hasAnyTag: false,
+      );
+      expect(msg, contains('Đã xử lý xong'));
+      expect(msg, isNot(contains('chưa ai đăng ký')));
+    });
+
+    test('ảnh đã có thẻ thì giải thích vì sao không gợi ý lại', () {
+      final msg = emptySuggestionsMessage(
+        resolvedSomeSuggestion: false,
+        hasAnyTag: true,
+      );
+      expect(msg, contains('gỡ thẻ'));
+      expect(msg, isNot(contains('quá nhỏ')));
+    });
+
+    test(
+      'chưa có thẻ và chưa xử lý gì thì mới liệt kê nguyên nhân quét hụt',
+      () {
+        final msg = emptySuggestionsMessage(
+          resolvedSomeSuggestion: false,
+          hasAnyTag: false,
+        );
+        expect(msg, contains('quá nhỏ'));
+        expect(msg, contains('Hồ sơ khuôn mặt'));
+      },
+    );
+  });
+}
+
+/// Contract BE 19/08: tag trong media detail/list và endpoint /tags trả trực
+/// tiếp `taggedMemberId` + `taggedByMemberId`. Trước đó response đo trên máy
+/// thật chỉ có tên, không có id nào — nên vẫn giữ test cho nhánh lưới đỡ.
+void _tagContract19082026Tests() {
+  group('contract BE 19/08 — tag có id trực tiếp', () {
+    test('đọc taggedMemberId và taggedByMemberId trực tiếp', () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-1',
+        'taggedMemberId': 'mem-1',
+        'taggedByMemberId': 'mem-2',
+        'taggedMemberName': 'Vu Quan',
+      });
+      expect(tag.taggedMemberId, 'mem-1');
+      expect(tag.taggedByMemberId, 'mem-2');
+      expect(tag.taggedMemberName, 'Vu Quan');
+    });
+
+    test('field trực tiếp thắng id lồng trong taggedMember', () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-1',
+        'taggedMemberId': 'mem-dung',
+        'taggedMember': {'id': 'mem-sai', 'displayName': 'Vu Quan'},
+      });
+      expect(tag.taggedMemberId, 'mem-dung');
+    });
+
+    test('BE chưa push thì taggedByMemberId rỗng, không nổ', () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-1',
+        'taggedMemberName': 'Vu Quan',
+      });
+      expect(tag.taggedByMemberId, isEmpty);
+      expect(tag.taggedMemberId, isEmpty);
+    });
   });
 }

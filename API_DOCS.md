@@ -1101,3 +1101,63 @@ Schema chính thức trong OpenAPI: `DetectedFaceSuggestionResponseDto` (`faceId
 - **Response format**: BE wrap `{ success, data, message? }` — FE auto-unwrap.
 - **Pagination**: `?page=&limit=` (finance/task list) — cursor-based chưa dùng.
 - **Verify gate**: chưa verify email → `POST /families` trả 403. Luồng đăng ký cần chèn OTP verify.
+
+---
+
+## Contract cập nhật 19/08/2026 (BE thông báo, **chưa push** lúc FE dựng sẵn)
+
+FE đã dựng theo lối **nhận cả hai**: ưu tiên field mới, giữ đường cũ làm lưới đỡ
+để bản build hiện tại chạy được cả trước lẫn sau khi BE deploy. Khi đã verify
+live trên bản BE mới thì bỏ dần các nhánh lưới đỡ được đánh dấu bên dưới.
+
+### Calendar — trạng thái phản hồi của chính người gọi
+
+- `GET .../calendar/events` và `GET .../calendar/events/{eventId}` trả thêm:
+  - `myResponseStatus`: `INVITED | ACCEPTED | DECLINED | MAYBE | null`
+  - `myParticipant`: `CalendarEventParticipant | null`
+- Member không nằm trong `participants` ⇒ cả hai field đều `null`.
+- `participants[]` giữ nguyên, không breaking.
+- `POST .../calendar/events/{eventId}/respond` trả **event đã cập nhật ở
+  top-level của `data`** (không còn bọc trong `data.event`).
+
+FE (`calendar_provider.dart`): `FamilyCalendarEvent.fromJson` đọc
+`myResponseStatus` → `responseStatus` (tên cũ) → `myParticipant.responseStatus`.
+`respond()` parse event trong response và thay thẳng vào `events`.
+
+> ⚠️ **`INVITED` không phải "đã phản hồi"** — nghĩa là đã được mời nhưng chưa
+> trả lời. `normalizeResponseStatus()` quy về `null`; để lọt ra UI thì chip nhỏ
+> hiện "Chưa phản hồi" thay vì "Chưa" và nút phản hồi trông như đã chọn.
+
+> 🪜 *Lưới đỡ còn giữ*: quét `participants[]` tìm phần tử của chính mình, và bản
+> giữ tạm phản hồi trong `_pendingResponses`. Cả hai chỉ chạy khi field phẳng
+> vắng mặt nên tự tắt khi BE lên.
+
+### Task — nộp bài quá hạn
+
+```json
+{ "statusCode": 400, "code": "SUBMISSION_OVERDUE",
+  "errorCode": "SUBMISSION_OVERDUE",
+  "message": "Assignment is overdue and cannot accept submissions" }
+```
+
+FE bắt theo **mã** (`submitProofErrorMessage` trong `task_provider.dart`), không
+dò chuỗi message vì message gốc là tiếng Anh. `ApiClient` đã gom `code` và
+`errorCode` về cùng một chỗ.
+
+FE **không tự chặn** nộp trễ — chỉ cảnh báo trong sheet và để BE trả 400 quyết
+định. Xem `DE_XUAT_BE_TASK_QUA_HAN_2026-08-19.md`.
+
+### Album — tag có id trực tiếp
+
+- Media detail/list trả `tags: []`; mỗi tag có `taggedMemberId` và
+  `taggedByMemberId` trực tiếp. Endpoint `/tags` cũng trả 2 field này.
+- Swagger đã bổ sung schema cho tag, media response và face-scan
+  request/retry/status.
+
+FE: `AlbumTag.fromJson` đọc thẳng 2 field. `hasAnyTag` ở `AlbumFaceSection` vẫn
+đếm `tags.length` chứ không suy từ id — đúng ngữ nghĩa hơn và không phụ thuộc
+BE trả id hay không.
+
+> 🪜 *Lưới đỡ còn giữ*: chuỗi `memberId / userId / taggedMember.id / user.id`
+> trong `AlbumTag.fromJson`, vì response đo trên máy thật 19/08 sáng KHÔNG có id
+> nào cả.

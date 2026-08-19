@@ -1,6 +1,78 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
+/// Phân công đã quá hạn chưa.
+///
+/// Quá hạn KHÔNG phải một trạng thái của BE (enum không có `OVERDUE`) — chỉ là
+/// so `dueAt` với hiện tại. Các trạng thái đã kết thúc thì không tính: việc đã
+/// duyệt/từ chối/huỷ thì hạn không còn ý nghĩa.
+///
+/// Hàm thuần, nhận [now] để test được mà không phụ thuộc đồng hồ máy.
+bool isAssignmentOverdue(TaskAssignment a, {DateTime? now}) {
+  // BE bổ sung `isOverdue` 19/08 — đây mới là nguồn quyết định có chặn nộp bài
+  // (400 SUBMISSION_OVERDUE) hay không, nên tin BE trước. FE tự tính có thể
+  // lệch múi giờ hoặc lệch vài giây so với server.
+  final fromServer = a.isOverdueFromServer;
+  if (fromServer != null) return fromServer;
+
+  if (a.status == 'APPROVED' ||
+      a.status == 'CANCELED' ||
+      a.status == 'REJECTED') {
+    return false;
+  }
+  final due = a.dueAt ?? a.task?.dueAt;
+  return due != null && due.isBefore(now ?? DateTime.now());
+}
+
+/// Chọn bài nộp nào để hiển thị / đưa ra duyệt.
+///
+/// Bug gặp trên máy thật 19/08: code cũ lấy `list.last` — **phần tử cuối mảng**,
+/// không phải bài mới nhất. BE không hứa thứ tự nào cả; trả mới-nhất-trước là
+/// rất thường, khi đó `.last` chính là bài **cũ nhất**, thường đã APPROVED /
+/// REJECTED từ lâu. Người duyệt mở sheet thấy nút Duyệt/Từ chối trên một bài đã
+/// xử lý xong, bấm vào thì BE trả "Chỉ có thể duyệt minh chứng đang chờ xem
+/// xét" — ngõ cụt, không có cách nào duyệt được bài thật.
+///
+/// Thứ tự ưu tiên:
+/// 1. Bài đang chờ duyệt, mới nhất — đây mới là bài người duyệt cần xử lý.
+/// 2. Không còn bài nào chờ duyệt thì lấy bài mới nhất để **xem lại**.
+///
+/// "Mới nhất" xét theo `submittedAt`; bài không có mốc thời gian bị coi là cũ
+/// hơn mọi bài có mốc, và giữ nguyên thứ tự BE trả về giữa chúng với nhau —
+/// không đảo bừa khi không có căn cứ.
+TaskSubmission? pickSubmissionToShow(List<TaskSubmission> submissions) {
+  if (submissions.isEmpty) return null;
+  final waiting = submissions.where((s) => s.isWaitingReview).toList();
+  return _newest(waiting.isNotEmpty ? waiting : submissions);
+}
+
+TaskSubmission _newest(List<TaskSubmission> list) {
+  var best = list.first;
+  for (final s in list.skip(1)) {
+    final a = s.submittedAt;
+    final b = best.submittedAt;
+    if (a == null) continue;
+    if (b == null || a.isAfter(b)) best = s;
+  }
+  return best;
+}
+
+/// Thông điệp hiển thị khi nộp minh chứng thất bại.
+///
+/// BE chốt contract 19/08: quá hạn thì trả 400 kèm
+/// `code: "SUBMISSION_OVERDUE"` (message gốc là tiếng Anh — "Assignment is
+/// overdue and cannot accept submissions"). Bắt theo **mã**, không dò chuỗi
+/// message, để BE đổi câu chữ hay đổi ngôn ngữ cũng không gãy.
+///
+/// [ApiClient] đọc cả `code` lẫn `errorCode` nên chỉ cần so một chỗ.
+String submitProofErrorMessage(Object error) {
+  if (error is ApiException && error.code == 'SUBMISSION_OVERDUE') {
+    return 'Nhiệm vụ đã quá hạn nên không nhận bài nộp nữa. Nhờ người quản lý '
+        'gia hạn hoặc giao lại việc này.';
+  }
+  return error.toString().replaceFirst('Exception: ', '');
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // Models — khớp với BE Task API (35 endpoints):
 //   Task ─┬─ TaskCategory
@@ -214,6 +286,13 @@ class TaskAssignment {
   final String?
   latestSubmissionId; // cần để gọi review — lấy từ embedded submission nếu BE trả về
 
+  /// Quá hạn theo **BE** (`TaskAssignmentResponseDto.isOverdue`, bổ sung 19/08).
+  ///
+  /// `null` = bản BE cũ chưa trả field này → rơi về [isAssignmentOverdue] tự
+  /// tính từ `dueAt`. Ưu tiên BE vì đó mới là nguồn quyết định có chặn nộp bài
+  /// hay không; FE tự tính có thể lệch múi giờ hoặc lệch vài giây.
+  final bool? isOverdueFromServer;
+
   const TaskAssignment({
     required this.id,
     required this.taskId,
@@ -228,6 +307,7 @@ class TaskAssignment {
     this.rewardSetting,
     this.task,
     this.latestSubmissionId,
+    this.isOverdueFromServer,
   });
 
   factory TaskAssignment.fromJson(Map<String, dynamic> j) {
@@ -292,6 +372,9 @@ class TaskAssignment {
           : null,
       task: taskMap != null ? FamilyTask.fromJson(taskMap) : null,
       latestSubmissionId: submissionId,
+      isOverdueFromServer: j["isOverdue"] is bool
+          ? j["isOverdue"] as bool
+          : null,
     );
   }
 
@@ -305,7 +388,11 @@ class TaskAssignment {
     _ => const Color(0xFF6B7280),
   };
 
-  String get statusLabel => switch (status) {
+  String get statusLabel => labelOf(status);
+
+  /// Nhãn tiếng Việt của một status rời, dùng khi chỉ có chuỗi status trong tay
+  /// chứ chưa có cả object assignment (vd sheet giao việc cảnh báo giao trùng).
+  static String labelOf(String status) => switch (status) {
     'PENDING' => 'Chờ kích hoạt',
     'ASSIGNED' => 'Chờ làm',
     'IN_PROGRESS' => 'Đang làm',
@@ -349,20 +436,41 @@ class TaskProof {
 }
 
 class TaskSubmission {
+  /// Đang chờ duyệt. Đây là tên BE dùng thật (Swagger 19/08:
+  /// `TaskSubmissionListItemResponseDto.status`) — **không phải `PENDING`** như
+  /// FE ghi trước đây, nên mọi phép so với `PENDING` đều trượt.
+  static const waitingReview = 'WAITING_REVIEW';
+
   final String id;
   final String assignmentId;
   final String? submissionNote;
   final List<TaskProof> proofs;
-  final String status; // PENDING | APPROVED | REJECTED
+
+  /// WAITING_REVIEW | APPROVED | REJECTED
+  final String status;
   final String? reviewNote;
+
+  /// Nộp sau hạn — BE bổ sung 19/08 theo đúng đề xuất của FE.
+  final bool isLate;
+
+  /// Mốc nộp, dùng để chọn ra bài **mới nhất**. Thiếu mốc này thì chỉ còn cách
+  /// tin vào thứ tự mảng BE trả về — chính là gốc của bug duyệt nhầm bài cũ.
+  final DateTime? submittedAt;
+
   const TaskSubmission({
     required this.id,
     required this.assignmentId,
     this.submissionNote,
     this.proofs = const [],
-    this.status = 'PENDING',
+    this.status = waitingReview,
     this.reviewNote,
+    this.isLate = false,
+    this.submittedAt,
   });
+
+  /// Còn chờ duyệt thì mới gọi được `PATCH .../review`; BE trả lỗi "Chỉ có thể
+  /// duyệt minh chứng đang chờ xem xét" nếu bài đã xử lý xong.
+  bool get isWaitingReview => status == waitingReview;
 
   factory TaskSubmission.fromJson(Map<String, dynamic> j) => TaskSubmission(
     id: _str(j['id']) ?? '',
@@ -372,9 +480,16 @@ class TaskSubmission {
         .whereType<Map>()
         .map((e) => TaskProof.fromJson(Map<String, dynamic>.from(e)))
         .toList(),
-    status: _str(j['status']) ?? 'PENDING',
+    status: _str(j['status']) ?? waitingReview,
     reviewNote: _str(j['reviewNote']),
+    isLate: j['isLate'] == true,
+    submittedAt: _dateOrNull(j['submittedAt'] ?? j['createdAt']),
   );
+}
+
+DateTime? _dateOrNull(dynamic value) {
+  if (value == null) return null;
+  return DateTime.tryParse(value.toString())?.toLocal();
 }
 
 class RewardSettlement {
@@ -860,6 +975,23 @@ class TaskProvider extends ChangeNotifier {
     await fetchMyAssignments();
   }
 
+  // PATCH .../tasks/assignments/{assignmentId} — "Gia hạn hoặc cập nhật thời
+  // gian phân công công việc" (BE bổ sung 19/08 theo đề xuất của FE).
+  //
+  // Đây là đường DUY NHẤT cứu một phân công quá hạn mà KHÔNG phải đổi người:
+  // BE chặn nộp bài quá hạn, còn `reassign` thì bắt buộc giao sang người khác.
+  Future<void> updateAssignmentSchedule(
+    String assignmentId, {
+    DateTime? startAt,
+    DateTime? dueAt,
+  }) async {
+    await ApiClient.instance
+        .patch('/families/$_fid/tasks/assignments/$assignmentId', {
+          if (startAt != null) 'startAt': startAt.toIso8601String(),
+          if (dueAt != null) 'dueAt': dueAt.toIso8601String(),
+        });
+  }
+
   Future<void> reassignAssignment(
     String assignmentId, {
     required String assignedToMemberId,
@@ -928,9 +1060,11 @@ class TaskProvider extends ChangeNotifier {
           .map((e) => TaskSubmission.fromJson(Map<String, dynamic>.from(e)))
           .toList();
       if (list.isEmpty) return null;
-      final latest = list.last;
-      // List submissions chỉ trả proofCount, KHÔNG kèm mảng proofs (verified
-      // live) — phải gọi thêm detail để manager thấy ảnh/ghi chú minh chứng.
+      final latest = pickSubmissionToShow(list);
+      if (latest == null) return null;
+      // Endpoint list đã kèm `proofs` từ 19/08 (Swagger:
+      // TaskSubmissionListItemResponseDto.proofs), nhưng vẫn gọi detail vì
+      // trước đó chỉ có `proofCount` — bản BE cũ chưa deploy sẽ thiếu ảnh.
       try {
         final detail = await ApiClient.instance.get(
           '/families/$_fid/tasks/submissions/${latest.id}',

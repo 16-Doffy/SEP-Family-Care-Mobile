@@ -66,6 +66,8 @@ Future<void> _pump(WidgetTester tester, UserRole role) async {
 }
 
 void main() {
+  _pastDateGuardTests();
+  _headerOverflowTests();
   // Lỗ hổng đã vá: BE tự tạo participants khi Manager tạo event và gửi
   // notification CALENDAR cho họ, nhưng trước đây Member không có màn nào để
   // phản hồi. Nay Member xem được và bấm Tham gia/Có thể/Từ chối, nhưng KHÔNG
@@ -119,5 +121,104 @@ void main() {
 
     // Form sửa là bottom sheet có tiêu đề 'Cập nhật sự kiện'.
     expect(find.text('Cập nhật sự kiện'), findsNothing);
+  });
+}
+
+/// Header màn Lịch từng TRÀN 71px trên máy thật khi đang xem tháng khác tháng
+/// hiện tại — lúc đó thanh công cụ có thêm nút "Về hôm nay" (4 nút thay vì 3).
+///
+/// Các test cũ không bắt được vì chúng luôn dừng ở THÁNG HIỆN TẠI, nút đó
+/// không hiện. Nhóm test này lùi tháng trước rồi mới kiểm, đúng trạng thái đã
+/// vỡ ngoài thực tế.
+void _headerOverflowTests() {
+  group('Header màn Lịch không tràn', () {
+    Future<void> expectNoOverflow(WidgetTester tester) async {
+      final ex = tester.takeException();
+      expect(ex, isNull, reason: 'Header tràn layout: $ex');
+    }
+
+    testWidgets('không tràn ở tháng hiện tại', (tester) async {
+      await _pump(tester, UserRole.manager);
+      await expectNoOverflow(tester);
+    });
+
+    testWidgets('không tràn sau khi lùi về tháng trước', (tester) async {
+      await _pump(tester, UserRole.manager);
+      await tester.tap(find.byTooltip('Tháng trước').first);
+      await tester.pumpAndSettle();
+      await expectNoOverflow(tester);
+    });
+
+    testWidgets('có nút tiến tháng — trước đây chỉ lùi được', (tester) async {
+      await _pump(tester, UserRole.manager);
+      expect(find.byTooltip('Tháng sau'), findsAtLeastNWidgets(1));
+      expect(find.byTooltip('Tháng trước'), findsAtLeastNWidgets(1));
+    });
+
+    testWidgets('lạc khỏi tháng hiện tại thì luôn có đường quay về', (
+      tester,
+    ) async {
+      await _pump(tester, UserRole.manager);
+      // Ở đúng tháng này thì nhãn năm mang tooltip "Tháng hiện tại".
+      expect(find.byTooltip('Tháng hiện tại'), findsAtLeastNWidgets(1));
+
+      await tester.tap(find.byTooltip('Tháng trước').first);
+      await tester.pumpAndSettle();
+
+      // Lạc đi rồi thì phải có ít nhất một lối về — nhãn năm luôn có, nút
+      // tròn chỉ thêm khi đủ chỗ. Đây chính là thứ bug gốc thiếu.
+      expect(find.byTooltip('Về hôm nay'), findsAtLeastNWidgets(1));
+
+      await tester.tap(find.byTooltip('Về hôm nay').first);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Tháng hiện tại'), findsAtLeastNWidgets(1));
+      await expectNoOverflow(tester);
+    });
+  });
+}
+
+/// Không cho TẠO sự kiện cho ngày đã qua, nhưng vẫn phải SỬA được sự kiện cũ.
+///
+/// Bug user báo 19/08: bộ chọn ngày để `firstDate: DateTime(2020)` nên lùi
+/// tới 2020 được, và hàm lưu chỉ kiểm tên chứ không kiểm ngày. Tệ hơn: đang
+/// xem tháng cũ rồi bấm "+" thì ngày mặc định ĐÃ nằm trong quá khứ, bấm Lưu
+/// luôn là tạo nhầm mà không hề chọn ngày.
+void _pastDateGuardTests() {
+  group('Chặn tạo sự kiện ngày đã qua', () {
+    testWidgets('mở form từ tháng CŨ thì ngày mặc định không rơi vào quá khứ', (
+      tester,
+    ) async {
+      await _pump(tester, UserRole.manager);
+      // Lùi 2 tháng rồi mới mở form tạo.
+      await tester.tap(find.byTooltip('Tháng trước').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Tháng trước').first);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Tạo sự kiện').first);
+      await tester.pumpAndSettle();
+
+      // Ngày hiện trên nút chọn phải là HÔM NAY, không phải ngày của tháng cũ.
+      final now = DateTime.now();
+      expect(
+        find.text('${now.day}/${now.month}/${now.year}'),
+        findsAtLeastNWidgets(1),
+        reason: 'Ngày mặc định phải bị kéo về hôm nay khi mở từ tháng cũ',
+      );
+    });
+
+    testWidgets('mở form ở tháng hiện tại thì giữ nguyên ngày đang chọn', (
+      tester,
+    ) async {
+      await _pump(tester, UserRole.manager);
+      await tester.tap(find.byTooltip('Tạo sự kiện').first);
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      expect(
+        find.text('${now.day}/${now.month}/${now.year}'),
+        findsAtLeastNWidgets(1),
+      );
+    });
   });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/finance_alert_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -25,6 +26,10 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<FinanceAlertProvider>();
+    // Member đọc được cảnh báo nhưng không tính lại / không xử lý được — BE
+    // trả 403. Ẩn thay vì để bấm rồi ăn lỗi.
+    final canManage =
+        context.watch<AuthProvider>().user?.canManageFinance ?? false;
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -96,33 +101,34 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
               ),
             ),
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: SizedBox(
-                width: double.infinity,
-                height: 42,
-                child: OutlinedButton.icon(
-                  onPressed: provider.loading
-                      ? null
-                      : () => _recompute(context, provider),
-                  icon: const Icon(Icons.autorenew_rounded, size: 18),
-                  label: Text(
-                    'Tính lại cảnh báo từ dữ liệu hiện tại',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+            if (canManage)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 42,
+                  child: OutlinedButton.icon(
+                    onPressed: provider.loading
+                        ? null
+                        : () => _recompute(context, provider),
+                    icon: const Icon(Icons.autorenew_rounded, size: 18),
+                    label: Text(
+                      'Tính lại cảnh báo từ dữ liệu hiện tại',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.link,
-                    side: const BorderSide(color: AppColors.link),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.link,
+                      side: const BorderSide(color: AppColors.link),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
 
             Expanded(
               child: provider.loading
@@ -193,6 +199,25 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
           'Tài chính gia đình đang ổn định',
           style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
         ),
+        const SizedBox(height: 16),
+        // Nguồn hiểu nhầm thường gặp: chi vượt tỷ lệ hũ của mô hình 80/20
+        // nhưng ở đây vẫn trống. Cảnh báo chỉ sinh từ **kế hoạch ngân sách** và
+        // **mục tiêu tiết kiệm** (Swagger: "Tính lại cảnh báo ngân sách và mục
+        // tiêu tài chính"), mô hình hũ không phải nguồn cảnh báo.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            'Cảnh báo chỉ sinh ra từ kế hoạch ngân sách và mục tiêu tiết kiệm. '
+            'Chi vượt tỷ lệ hũ của mô hình tài chính không tạo cảnh báo — muốn '
+            'được nhắc khi vượt chi, hãy tạo kế hoạch ngân sách cho kỳ này.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              height: 1.4,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ),
       ],
     ),
   );
@@ -236,6 +261,8 @@ class _AlertCard extends StatelessWidget {
     final color = _severityColor(alert.severity);
     final icon = _typeIcon(alert.alertType);
     final isNew = alert.isNew;
+    final canManage =
+        context.watch<AuthProvider>().user?.canManageFinance ?? false;
 
     return GestureDetector(
       onTap: () => _showDetail(context),
@@ -315,7 +342,10 @@ class _AlertCard extends StatelessWidget {
               ),
             ),
 
-            if (isNew) ...[
+            // Member vào được màn này để ĐỌC cảnh báo (route mở cho họ từ
+            // 19/08), nhưng acknowledge/resolve là thao tác quản lý — BE sẽ
+            // trả 403. Ẩn nút thay vì để bấm rồi ăn lỗi.
+            if (isNew && canManage) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -366,7 +396,7 @@ class _AlertCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ] else if (alert.status == 'ACKNOWLEDGED') ...[
+            ] else if (alert.status == 'ACKNOWLEDGED' && canManage) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
