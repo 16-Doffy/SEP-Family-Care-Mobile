@@ -1,6 +1,157 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (18/08/2026 tối)
+## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (19/08/2026 tối)
+
+Nhánh: **`NDuy`** = `dc14a77`. `main` = `7cf8f30` (merge fast-forward lúc 19:40,
+sau đó `NDuy` chạy thêm 6 commit **chưa merge lên main** theo yêu cầu user vì
+Giáp đang push song song).
+
+`flutter analyze --no-fatal-infos` → **0 error, 0 warning** (24 info nền có sẵn).
+`flutter test` → **601/601 pass**.
+
+### Phiên này làm gì
+
+1. **Đồng bộ contract BE chốt 19/08** — calendar `myResponseStatus`,
+   `SUBMISSION_OVERDUE`, tag `taggedMemberId`, `PATCH assignments` (gia hạn),
+   `isOverdue`, `isLate`, `startAt`/`dueAt` cho task định kỳ.
+2. **Rà toàn bộ luồng Nhiệm vụ + Tài chính**, sửa lỗi UX/UI.
+3. **Test thật trên máy Oppo CPH2159 qua USB** với 3 tài khoản Manager /
+   Deputy / Member do user cung cấp — lần đầu các luồng này được verify runtime
+   chứ không chỉ analyze/test.
+
+### ⚠️ Quy ước làm việc user chốt trong phiên này
+
+- **Chỉ push nhánh `NDuy`**, KHÔNG tự merge lên `main` (Giáp đang push song
+  song). Muốn merge phải hỏi user trước.
+- **Không đụng SOS** — Giáp đang làm; `origin/giap` có 4 commit chưa vào `main`
+  (Wear heart rate, logout revoke token, mở cài đặt SOS cho mọi thành viên,
+  route người ứng cứu).
+- User **đã cho phép điều khiển máy thật qua adb**, nhưng phải **báo trước** mỗi
+  lần bắt đầu thao tác.
+
+### Công cụ test runtime đã dựng (dùng lại được)
+
+Thư mục `D:/Temp/fc/` (ngoài repo, không commit):
+
+- `fc.sh` — hàm `dump / shot / taptext / tapxy / back / scroll / list`.
+- `ui.js` — parse cây `uiautomator`, mode `list | taps | edits | find | tapcoord`.
+
+**Hai rào an toàn bắt buộc giữ:**
+
+1. `dump()` xoá file cũ trước khi dump; pull hỏng thì **dừng hẳn**. Thiếu bước
+   này script bấm theo toạ độ của **màn hình trước** — chính là cách đã bấm nhầm
+   nút SOS ở phiên trước.
+2. `tapcoord` **từ chối** node trong vùng nút SOS (`y > 2050 && 520 < x < 740`)
+   hoặc có chữ "SOS". Bấm nhầm là gửi cảnh báo thật cho cả gia đình.
+
+Nguyên tắc: **không bao giờ đoán toạ độ** — luôn tìm node theo chữ/class rồi bấm
+vào tâm node đó.
+
+### Các lỗi đã sửa trong phiên
+
+**Nhiệm vụ**
+
+| Commit | Lỗi & nguyên nhân gốc |
+|---|---|
+| `1f02021` | Duyệt bài bốc trúng bài CŨ đã xử lý — `fetchLatestSubmission` lấy `list.last` (phần tử cuối mảng) chứ không phải bài mới nhất. Đổi sang `pickSubmissionToShow()`. Enum status thật là `WAITING_REVIEW`, **không phải `PENDING`** như model cũ ghi. |
+| `41b6228` | Quá hạn = ngõ cụt (BE chặn nộp, không có đường gia hạn). Vá tạm bằng "Giao lại + hạn mới". |
+| `5829bed` | Nộp bài rỗng (nút Nộp bật khi không ảnh không ghi chú, mà `proofs` là field bắt buộc); upload ảnh hỏng thì im lặng; phân công định kỳ không hiện mốc thời gian. |
+| `967da29` | Task định kỳ có **2 nút cùng một hành động**; ô "Hạn (tuỳ chọn)" bị ellipsis cắt mất giờ; sheet lịch lặp không có nút đóng. |
+| `7cf8f30` | Nối `PATCH .../assignments/{id}` → nút **"Gia hạn"** giữ nguyên người làm. Ưu tiên `isOverdue` của BE hơn phép tự tính. |
+| `e6e83fa` | 🔴 Nút "Gia hạn" **bấm không có gì xảy ra** — `showDatePicker` assert `initialDate >= firstDate`, mà gia hạn thì `dueAt` đúng nghĩa đã trôi qua. Rà nốt 3 `showDatePicker` khác, vá thêm 2 chỗ cùng rủi ro. |
+| `156e7bc` | Duyệt xong hàng phân công vẫn "Chờ duyệt" — `reviewSubmission()` chỉ gọi `fetchTasks()`, không nạp lại `_assignmentsByTask`. |
+| `e7c73c5` | Deputy vẫn thấy nút quản lý trên task giao cho chính mình. BE trả 403 nhưng **không có mã lỗi** nên FE không dịch được → ẩn nút. |
+| `bdcc8c0` | Commit trên siết quá tay: ẩn nút cả với Manager, trong khi BE **chỉ cấm Deputy**. |
+
+**Tài chính**
+
+| Commit | Lỗi & nguyên nhân gốc |
+|---|---|
+| `82e5a78` | Nhãn "Hạn mức theo tỷ lệ thu nhập" **nói sai công thức BE** (`targetAmount = trackedAmount × pct`, mẫu số là TỔNG CHI, không phải thu nhập). Đổi tên thành "Tỷ trọng chi tiêu theo hũ", đưa % thực tế lên làm số chính. |
+| `c2d94c1` | Mục tiêu `AT_RISK` bị loại khỏi danh sách nhận số dư kết chuyển vì lọc `status == 'ACTIVE'` — đúng mục tiêu cần tiền nhất lại bị giấu. |
+| `8c2571e` | Dòng "Kết chuyển số dư" bấm không phản hồi (`return` trắng); cảnh báo tài chính không nổi lên đâu cả; Member bấm thông báo `BUDGET_ALERT` không đi đâu. |
+| `95277a3` | Kế hoạch ngân sách ACTIVE nhưng kỳ chưa tới vẫn ghi "Đang áp dụng" → user tạo kế hoạch tháng 9 rồi chi tháng 8, chờ cảnh báo mãi không thấy. |
+| `cad9ede` | Thẻ waffle ghi "Kế hoạch tính trên thu nhập X" nhưng vẽ `target` (= tổng chi × pct). |
+| `b65bd29` | Hũ tích luỹ màu **cam rồi đỏ** như cảnh báo — màu lấy theo `palette[index]`. Nay hũ tích luỹ luôn xanh. |
+
+**Lịch / chung**
+
+| Commit | Lỗi & nguyên nhân gốc |
+|---|---|
+| `1ca84cc` | Phản hồi Tham gia/Từ chối xong chip vẫn "Chưa" — parser duyệt `participants[]` chỉ để moi id, bỏ qua `responseStatus`. |
+| `b081355` | Thông báo chat về trước tin nhắn (socket vs REST poll 5s); báo trùng khi đang mở đúng hội thoại. |
+| `156e7bc` | Mọi hộp thoại ngày/giờ ra **tiếng Anh** — app không khai báo `locale`. Thêm `flutter_localizations`, locale `vi`. |
+| `dc14a77` | Ô sự kiện lưới tháng gắn cứng `Icons.remove_circle_outline` (dấu ⊖ = "bị loại") trên MỌI sự kiện. Nay hiện đúng icon phản hồi. |
+
+### 3 lỗi trong số đó do CHÍNH phiên này tạo ra
+
+Nút Gia hạn (`e6e83fa`), ẩn nút quá tay (`bdcc8c0`), thẻ waffle sót (`cad9ede`).
+Cả ba đều là **sửa một chỗ rồi tái lập ở chỗ khác** — khi sửa một pattern phải
+`grep` toàn repo tìm chỗ tương tự trước khi coi là xong.
+
+### Contract BE 19/08 — ĐÃ VERIFY LIVE, không phải sửa gì thêm
+
+Swagger live tại `https://api.familycare-digital.com/api/docs-json`; dump trong
+repo (`family-care-api.json`) đã cập nhật theo bản này.
+
+- `TaskAssignmentResponseDto`: `startAt`, `dueAt`, `isOverdue`. Status enum
+  `ASSIGNED|IN_PROGRESS|SUBMITTED|APPROVED|REJECTED|CANCELED` — **không có
+  `COMPLETED`**, đừng map nhầm.
+- `PATCH .../tasks/assignments/{id}` body `{startAt?, dueAt?}` — gia hạn.
+- `TaskSubmissionListItemResponseDto`: `isLate`, `submittedAt`, `proofs[]`.
+- `SUBMISSION_OVERDUE` — 400 có `code`/`errorCode`.
+- `CalendarEventResponseDto`: `myResponseStatus`
+  (`INVITED|ACCEPTED|DECLINED|MAYBE`), `myParticipant`. `POST respond` trả event
+  đã cập nhật **ở top-level của `data`**.
+- `AlbumTagResponseDto`: `taggedMemberId`, `taggedByMemberId` trực tiếp.
+- **Deputy self-benefit đã bị BE chặn** — verify bằng tài khoản thật, cả 5 hành
+  vi (gia hạn / đặt thưởng / huỷ phân công / giao lại / huỷ task) đều 403.
+  Manager **không** bị chặn.
+
+### Còn chưa test runtime
+
+- **Album / nhận diện khuôn mặt** — BE báo đã sửa job treo, chưa ai verify lại.
+  Xem `BAO_CAO_BE_FACE_SCAN_JOB_TREO_2026-08-19.md`.
+- **Nhắn tin** — bản vá `b081355` chưa kiểm trên máy.
+- **SOS** — cố ý không đụng.
+- Vai **Deputy/Member trên giao diện** — mới verify bằng API, chưa đăng nhập
+  thật (máy ảo tắt giữa chừng).
+
+### Việc còn treo, chưa làm
+
+1. 🟡 **Giờ mặc định của ô chọn hạn = đúng phút hiện tại**, mà app bắt hạn phải ở
+   tương lai → mở ra bấm OK/OK là bị từ chối. Đề xuất mặc định +1 tiếng. Chạm 4
+   chỗ dùng chung nên chưa tự làm.
+2. 🟡 **Nhận diện hũ tích luỹ đang đoán theo tên** (`SAVING`/`LTSS`/`FFA`/`EDU`,
+   "tiết kiệm", "tích luỹ", "đầu tư"…). Cần xin BE thêm `jarType`.
+3. 🟡 `trackedAmount` — FE đang **cộng bù** vì chưa rõ BE có trả top-level không.
+4. Từ handoff cũ, chưa đụng: `sos_screen.dart` `dispose()` huỷ
+   `_locationStreamTimer` vô điều kiện; 21 chỗ gọi `sosResponderLog()` tạm.
+
+### Tài liệu sinh ra trong phiên
+
+- `KICH_BAN_TEST_NHIEM_VU_TAI_CHINH_2026-08-19.md` — 8 kịch bản test có cột
+  "Thật thấy" để điền; đánh dấu 🆕 chỗ vừa sửa và ⛔ chỗ hỏng do BE.
+- `BAO_CAO_BE_FLOW_TASK_TONG_HOP_2026-08-19.md` — 9 mục gửi BE (phần lớn BE đã
+  xử lý xong trong ngày).
+- `BAO_CAO_BE_FLOW_TAI_CHINH_2026-08-19.md`,
+  `DE_XUAT_BE_TASK_QUA_HAN_VA_THUONG_2026-08-19.md`,
+  `BAO_CAO_BE_XAC_NHAN_CONTRACT_2026-08-19.md`,
+  `BAO_CAO_BE_FACE_SCAN_JOB_TREO_2026-08-19.md`.
+- `docs/KICH_BAN_DEMO_HOI_DONG_5_SCENARIO_2026-08-18.md` (của Giáp) **cần cập
+  nhật**: thêm beat "quá hạn → gia hạn"; soát lại ký hiệu ✅/⚠️/🛑 cho Scenario 4
+  (SOS, Giáp vừa sửa) và Scenario 5 (face-scan, chưa verify lại).
+
+### Dữ liệu test còn sót trên tài khoản thật
+
+Gia đình **NDuy** (`b0cc7942-2a29-42f0-a63b-713bc98295f1`) còn 3 task tên
+`ZZ_TEST ...` và một sự kiện lịch đã bị đổi phản hồi sang "Tham gia". Kế hoạch
+ngân sách `ZZ_TEST ky chua toi` đã huỷ. **Dọn trước khi demo.**
+
+---
+
+
+## ⚪ Snapshot cũ 18/08/2026 (lịch sử — mục mới nhất ở trên cùng)
 
 ### Phiên này làm gì
 
