@@ -305,7 +305,11 @@ class TaskAssignment {
     _ => const Color(0xFF6B7280),
   };
 
-  String get statusLabel => switch (status) {
+  String get statusLabel => labelOf(status);
+
+  /// Nhãn tiếng Việt của một status rời, dùng khi chỉ có chuỗi status trong tay
+  /// chứ chưa có cả object assignment (vd sheet giao việc cảnh báo giao trùng).
+  static String labelOf(String status) => switch (status) {
     'PENDING' => 'Chờ kích hoạt',
     'ASSIGNED' => 'Chờ làm',
     'IN_PROGRESS' => 'Đang làm',
