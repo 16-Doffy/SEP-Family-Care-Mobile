@@ -952,6 +952,9 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                 TextField(
                   controller: noteCtrl,
                   maxLines: 3,
+                  // Nút Nộp bật/tắt theo việc đã có gì để nộp chưa → phải dựng
+                  // lại sheet mỗi lần gõ.
+                  onChanged: (_) => setSheet(() {}),
                   decoration: InputDecoration(
                     hintText: 'Thêm ghi chú cho Ba/Mẹ...',
                     hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
@@ -1046,7 +1049,13 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: submitting
+                    // `proofs` là field BẮT BUỘC của CreateTaskSubmissionDto —
+                    // không ảnh, không ghi chú thì gửi đi chắc chắn hỏng. Khoá
+                    // nút thay vì để bấm rồi ăn lỗi BE khó hiểu.
+                    onPressed:
+                        submitting ||
+                            (pickedImagePath == null &&
+                                noteCtrl.text.trim().isEmpty)
                         ? null
                         : () async {
                             setSheet(() => submitting = true);
@@ -1061,7 +1070,16 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                                   'IMAGE',
                                 );
                                 setSheet(() => uploading = false);
-                                if (proof != null) proofs.add(proof);
+                                // Upload hỏng mà im lặng bỏ qua thì người dùng
+                                // tưởng đã đính kèm ảnh, còn bài nộp thì không
+                                // có gì. Dừng hẳn để họ thử lại.
+                                if (proof == null) {
+                                  throw Exception(
+                                    'Không tải được ảnh lên. Kiểm tra mạng rồi '
+                                    'chọn lại ảnh giúp mình nhé.',
+                                  );
+                                }
+                                proofs.add(proof);
                               }
                               if (noteCtrl.text.trim().isNotEmpty &&
                                   proofs.isEmpty) {
