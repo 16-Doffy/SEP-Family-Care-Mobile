@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +8,7 @@ import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
+import '../shared/task_submission_recap.dart';
 
 class ChildTasksScreen extends StatefulWidget {
   const ChildTasksScreen({super.key});
@@ -14,6 +17,11 @@ class ChildTasksScreen extends StatefulWidget {
 }
 
 class _ChildTasksScreenState extends State<ChildTasksScreen> {
+  /// "Quá hạn" tính từ DateTime.now() lúc build. Mở màn hình rồi để đó thì
+  /// không có gì bắt build lại, nhãn quá hạn không bao giờ bật lên dù đã trễ.
+  /// Nhịp 1 phút đủ mịn cho hạn tính theo phút mà không tốn gì.
+  Timer? _overdueTicker;
+
   String _filter = 'Tất cả';
   final _filters = ['Tất cả', 'Chờ làm', 'Đã nộp', 'Hoàn thành'];
 
@@ -28,6 +36,17 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
       final family = context.read<FamilyProvider>();
       if (family.members.isEmpty) family.fetchMembers();
     });
+    // Xem giải thích ở [_overdueTicker].
+    _overdueTicker = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => setState(() {}),
+    );
+  }
+
+  @override
+  void dispose() {
+    _overdueTicker?.cancel();
+    super.dispose();
   }
 
   List<TaskAssignment> _filtered(List<TaskAssignment> list) {
@@ -483,10 +502,15 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                               ),
                             if (effectiveDueAt != null)
                               Text(
-                                'Hạn: ${_fmtDate(effectiveDueAt)}',
+                                // Có giờ phút mới nói được "đã trễ hay chưa":
+                                // hạn 13:35 mà chỉ hiện "Hạn: 19/8" thì người
+                                // làm không hiểu vì sao đang bị tính quá hạn.
+                                'Hạn: ${_fmtDateTime(effectiveDueAt)}',
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
-                                  color: AppColors.textMuted,
+                                  color: isOverdue
+                                      ? AppColors.danger
+                                      : AppColors.textMuted,
                                 ),
                               ),
                           ],
@@ -681,6 +705,20 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               ),
             ),
 
+          // Người nộp phải xem lại được minh chứng đã gửi và nhận xét của
+          // người duyệt. Trước đây chỉ màn quản lý gọi fetchLatestSubmission
+          // nên member chỉ thấy mỗi chip trạng thái.
+          if (a.status == 'SUBMITTED' ||
+              a.status == 'APPROVED' ||
+              a.status == 'REJECTED')
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: TaskSubmissionRecap(
+                assignmentId: a.id,
+                assignmentStatus: a.status,
+              ),
+            ),
+
           if (a.status == 'REJECTED')
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
@@ -700,7 +738,10 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Ba/Mẹ đã từ chối. Hãy thực hiện lại và nộp mới.',
+                        // Lý do thật nằm trong reviewNote, do khối bên trên
+                        // hiển thị. Câu này chỉ còn nhiệm vụ chỉ bước tiếp
+                        // theo, không giả vờ là đã giải thích xong.
+                        'Bị từ chối. Đọc nhận xét ở trên rồi làm lại và nộp mới.',
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           color: const Color(0xFF991B1B),
@@ -732,6 +773,11 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   }
 
   String _fmtDate(DateTime d) => '${d.day}/${d.month}';
+
+  static String _fmtDateTime(DateTime d) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${d.day}/${d.month} ${two(d.hour)}:${two(d.minute)}';
+  }
 
   bool _isOverdue(TaskAssignment a, DateTime? dueAt) {
     if (dueAt == null) return false;
@@ -818,6 +864,43 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                // Nộp trễ thì cảnh báo, KHÔNG chặn: BE không có trạng thái
+                // OVERDUE và vẫn nhận bài nộp quá hạn. Tự chặn ở FE là đặt ra
+                // luật thay BE, và người trễ 5 phút sẽ mắc kẹt vĩnh viễn vì
+                // không còn đường nào đưa phân công về APPROVED.
+                if (_isOverdue(a, a.dueAt ?? a.task?.dueAt)) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFFDBA74)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.schedule_rounded,
+                          size: 16,
+                          color: Color(0xFF92400E),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Bài nộp này đã quá hạn. Bạn vẫn nộp được, nhưng '
+                            'người quản lý sẽ thấy là nộp trễ.',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              height: 1.35,
+                              color: const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 TextField(
                   controller: noteCtrl,
