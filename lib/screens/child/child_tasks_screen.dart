@@ -603,7 +603,15 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
             ),
           ),
 
-          if (a.status == 'ASSIGNED')
+          // Ba nút hành động bên dưới đều dẫn tới nộp bài, mà BE chặn nộp khi
+          // quá hạn → ẩn hết, thay bằng một câu nói rõ phải làm gì.
+          if (isOverdue &&
+              (a.status == 'ASSIGNED' ||
+                  a.status == 'IN_PROGRESS' ||
+                  a.status == 'REJECTED'))
+            _overdueBlockedNote(a),
+
+          if (a.status == 'ASSIGNED' && !isOverdue)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: SizedBox(
@@ -643,7 +651,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               ),
             ),
 
-          if (a.status == 'IN_PROGRESS')
+          if (a.status == 'IN_PROGRESS' && !isOverdue)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: Row(
@@ -719,7 +727,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               ),
             ),
 
-          if (a.status == 'REJECTED')
+          if (a.status == 'REJECTED' && !isOverdue)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: Container(
@@ -786,6 +794,45 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
         a.status != 'CANCELED' &&
         a.status != 'REJECTED';
   }
+
+  /// Quá hạn thì BE chặn nộp bài (400 `SUBMISSION_OVERDUE`) và **không có
+  /// endpoint nào** để người quản lý dời hạn của phân công — đường thoát duy
+  /// nhất là họ giao lại kèm hạn mới.
+  ///
+  /// Để nút "Nộp nhiệm vụ" bấm được rồi mới ăn lỗi là dồn người làm vào ngõ cụt
+  /// mà không nói phải làm gì. Khoá nút và nói thẳng.
+  Widget _overdueBlockedNote(TaskAssignment a) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFDBA74)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.lock_clock_rounded,
+            size: 16,
+            color: Color(0xFF92400E),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Đã quá hạn nên không nộp bài được nữa. Nhắn người quản lý giao '
+              'lại việc này kèm hạn mới nhé.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.35,
+                color: const Color(0xFF92400E),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   /// Dòng "Người giao" cho thành viên biết ai giao việc này.
   ///

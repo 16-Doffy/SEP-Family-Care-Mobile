@@ -5,6 +5,7 @@ import 'package:family_care/services/api_client.dart';
 import 'package:family_care/screens/shared/task_submission_recap.dart';
 
 void main() {
+  _overdueAssignmentTests();
   _pickSubmissionTests();
   _overdueContractTests();
   group('TaskAssignment.labelOf', () {
@@ -176,6 +177,60 @@ void _pickSubmissionTests() {
     test('BE chưa trả isLate thì mặc định false, không nổ', () {
       expect(TaskSubmission.fromJson({'id': 's1'}).isLate, isFalse);
       expect(TaskSubmission.fromJson({'id': 's1'}).submittedAt, isNull);
+    });
+  });
+}
+
+TaskAssignment _asg(String status, String? due) => TaskAssignment(
+  id: 'a1',
+  taskId: 't1',
+  assignedToMemberId: 'm1',
+  status: status,
+  dueAt: due == null ? null : DateTime.parse(due),
+);
+
+/// Quá hạn quyết định: member có nộp được không, và manager có thấy nút
+/// "Giao lại + hạn mới" không. Sai chỗ này là phân công chết cứng.
+void _overdueAssignmentTests() {
+  final now = DateTime.parse('2026-08-19T15:00:00Z');
+
+  group('isAssignmentOverdue', () {
+    test('hạn đã qua và việc còn sống thì tính là quá hạn', () {
+      for (final s in ['ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', 'PENDING']) {
+        expect(
+          isAssignmentOverdue(_asg(s, '2026-08-19T14:58:00Z'), now: now),
+          isTrue,
+          reason: s,
+        );
+      }
+    });
+
+    test('việc đã kết thúc thì hạn hết ý nghĩa', () {
+      for (final s in ['APPROVED', 'CANCELED', 'REJECTED']) {
+        expect(
+          isAssignmentOverdue(_asg(s, '2026-08-18T00:00:00Z'), now: now),
+          isFalse,
+          reason: s,
+        );
+      }
+    });
+
+    test('chưa tới hạn thì không phải quá hạn', () {
+      expect(
+        isAssignmentOverdue(_asg('ASSIGNED', '2026-08-19T15:50:00Z'), now: now),
+        isFalse,
+      );
+    });
+
+    test('không có hạn thì không bao giờ quá hạn', () {
+      expect(isAssignmentOverdue(_asg('ASSIGNED', null), now: now), isFalse);
+    });
+
+    test('đúng mốc hạn chưa tính là trễ', () {
+      expect(
+        isAssignmentOverdue(_asg('ASSIGNED', '2026-08-19T15:00:00Z'), now: now),
+        isFalse,
+      );
     });
   });
 }
