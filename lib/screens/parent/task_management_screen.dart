@@ -10,6 +10,7 @@ import '../../providers/task_provider.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
+import '../../models/user.dart';
 import '../../widgets/avatar_widget.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -654,7 +655,15 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
             // công / giao lại / huỷ task). Nhưng 403 đó KHÔNG có mã lỗi, chỉ có
             // message tiếng Anh nên FE không dịch được → ẩn nút ngay từ đầu.
             final me = _myMemberId(context);
+            // CHỈ chặn Deputy. Verify live 19/08: Manager đặt thưởng và huỷ
+            // task giao cho chính mình đều 201/200 — BE chỉ cấm
+            // "Deputy member ... a task assigned to themselves". Ẩn nút với cả
+            // Manager là siết chặt hơn BE, làm Trưởng nhóm mất chức năng mà
+            // server vẫn cho phép.
+            final isManager =
+                context.read<AuthProvider>().user?.role == UserRole.manager;
             final assignedToMe =
+                !isManager &&
                 me != null &&
                 assignments.any(
                   (a) => a.status != 'CANCELED' && a.assignedToMemberId == me,
