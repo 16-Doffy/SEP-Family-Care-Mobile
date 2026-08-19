@@ -102,6 +102,16 @@ dependencies {
     // Maven Central (không cần .aar thủ công), xem
     // https://developer.garmin.com/connect-iq/core-topics/mobile-sdk-for-android/
     implementation("com.garmin.connectiq:ciq-companion-app-sdk:2.4.0@aar")
+    // WearHeartRateBridge: đọc nhịp tim thật qua Wear Health Services API —
+    // chỉ hoạt động trên đồng hồ Wear OS thật có cảm biến PPG.
+    implementation("androidx.health:health-services-client:1.1.0-alpha03")
+    // health-services-client trả `ListenableFuture` (Guava) ở vài API
+    // (`unregisterMeasureCallbackAsync`...) — không khai thẳng dependency này
+    // thì classpath chỉ thấy bản stub rỗng `com.google.guava:listenablefuture`
+    // qua transitive, biên dịch báo "Cannot access class ListenableFuture"
+    // (đã verify lỗi thật khi build thử 2026-08-19). Dùng bản `-android` vì
+    // app chạy trên Android, không cần bản `-jre` đầy đủ hơn.
+    implementation("com.google.guava:guava:33.3.1-android")
 }
 
 flutter {

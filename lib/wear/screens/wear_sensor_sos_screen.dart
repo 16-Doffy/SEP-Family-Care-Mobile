@@ -7,7 +7,9 @@ import 'package:provider/provider.dart';
 import '../../providers/sos_provider.dart';
 import '../../providers/wearable_provider.dart';
 import '../../services/fall_detector_service.dart';
+import '../../services/heart_rate_detector.dart';
 import '../../services/sos_location.dart';
+import '../../services/wear_heart_rate_bridge.dart';
 import '../wear_fall_alert_view.dart';
 import '../wear_sos_location_stream_guard.dart';
 import '../wear_widgets.dart';
@@ -149,7 +151,12 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
   static const _locationStreamPeriod = Duration(seconds: 30);
 
   bool _sensorOn = false;
+  bool _heartSensorOn = false;
+  final _heartRateDetector = HeartRateDetector();
+  Stopwatch? _heartRateStopwatch;
   _Trigger? _pending;
+  Map<String, dynamic>? _pendingRawValue;
+  String? _pendingReadingText;
   int _countdown = 0;
   Timer? _timer;
 
@@ -184,6 +191,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     _signalTimer?.cancel();
     _stopLocationStreaming();
     FallDetectorService.instance.stop();
+    WearHeartRateBridge.stop();
     super.dispose();
   }
 
@@ -197,11 +205,77 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     }
   }
 
-  void _raise(_Trigger trigger) {
+  /// Bật/tắt đọc nhịp tim thật qua Wear Health Services — chỉ có dữ liệu
+  /// thật trên đồng hồ Wear OS thật có cảm biến PPG (xem
+  /// `wear_heart_rate_bridge.dart`). Mỗi mẫu bpm đi qua [HeartRateDetector]
+  /// (đã có sẵn, dùng ngưỡng đúng số đã gửi BE: `thresholdHigh: 130`,
+  /// `thresholdLow: 50`, phải duy trì bất thường ≥10s) — chỉ khi detector tự
+  /// kết luận mới mở cảnh báo, không phải mỗi mẫu lệch ngưỡng là báo ngay.
+  Future<void> _toggleHeartSensor(bool on) async {
+    HapticFeedback.mediumImpact();
+    if (!on) {
+      await WearHeartRateBridge.stop();
+      if (mounted) setState(() => _heartSensorOn = false);
+      return;
+    }
+    final granted =
+        await WearHeartRateBridge.hasPermission() ||
+        await WearHeartRateBridge.requestPermission();
+    if (!granted) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'Chưa cấp quyền đọc cảm biến nhịp tim — vào Cài đặt > Ứng dụng '
+              '> Family Care > Quyền để cấp.',
+        );
+      }
+      return;
+    }
+    _heartRateDetector.reset();
+    _heartRateStopwatch = Stopwatch()..start();
+    try {
+      await WearHeartRateBridge.start(onReading: _onHeartRateSample);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      }
+      return;
+    }
+    if (mounted) setState(() => _heartSensorOn = true);
+  }
+
+  void _onHeartRateSample(int bpm) {
+    if (!mounted || _heartRateStopwatch == null) return;
+    final reading = _heartRateDetector.addSample(
+      bpm,
+      _heartRateStopwatch!.elapsed,
+    );
+    if (!reading.detected) return;
+    final result = _heartRateDetector.lastResult;
+    if (result == null) return;
+    _raise(
+      result.high ? _Trigger.heartHigh : _Trigger.heartLow,
+      realRawValue: {
+        'heartRate': result.heartRate,
+        if (result.high) 'thresholdHigh': 130 else 'thresholdLow': 50,
+        'durationSeconds': result.abnormalSeconds,
+        'source': 'wear_health_services',
+      },
+      realReadingText: '${result.heartRate} bpm',
+    );
+  }
+
+  void _raise(
+    _Trigger trigger, {
+    Map<String, dynamic>? realRawValue,
+    String? realReadingText,
+  }) {
     if (!mounted || _pending != null || _sending || _sent) return;
     HapticFeedback.heavyImpact();
     setState(() {
       _pending = trigger;
+      _pendingRawValue = realRawValue;
+      _pendingReadingText = realReadingText;
       _countdown = _countdownSeconds;
       _error = null;
       _locationNotice = null;
@@ -224,6 +298,8 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
     _timer?.cancel();
     setState(() {
       _pending = null;
+      _pendingRawValue = null;
+      _pendingReadingText = null;
       _countdown = 0;
     });
   }
@@ -350,7 +426,9 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
         device.id,
         eventType: trigger.eventType,
         severity: trigger.severity,
-        rawValue: trigger.rawValue,
+        // Nếu cảm biến thật vừa kích hoạt (nhịp tim qua Health Services) thì
+        // gửi đúng số đo được, không phải hằng số demo — xem _onHeartRateSample.
+        rawValue: _pendingRawValue ?? trigger.rawValue,
       );
       if (!mounted) return;
       setState(() {
@@ -560,6 +638,29 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
               color: _sensorOn ? WearPalette.green : WearPalette.faint,
             ),
           ),
+          const SizedBox(height: 6),
+          // Chỉ có dữ liệu thật trên đồng hồ Wear OS thật có cảm biến PPG —
+          // xem WearHeartRateBridge. Bật lên trên emulator/điện thoại thường
+          // sẽ không nhận được mẫu nào (Health Services không có gì để đọc).
+          WearTile(
+            icon: _heartSensorOn
+                ? Icons.monitor_heart_rounded
+                : Icons.monitor_heart_outlined,
+            title: 'Nhịp tim',
+            subtitle: _heartSensorOn
+                ? 'Đang đọc cảm biến thật'
+                : 'Chạm để bật (cần đồng hồ Wear OS thật)',
+            color: _heartSensorOn ? WearPalette.green : WearPalette.faint,
+            filled: _heartSensorOn,
+            onTap: paired ? () => _toggleHeartSensor(!_heartSensorOn) : null,
+            trailing: Icon(
+              _heartSensorOn
+                  ? Icons.toggle_on_rounded
+                  : Icons.toggle_off_rounded,
+              size: 24,
+              color: _heartSensorOn ? WearPalette.green : WearPalette.faint,
+            ),
+          ),
           const SizedBox(height: 10),
           // Máy ảo không có gia tốc kế thật để thử, nên phải có nút giả lập.
           const WearSectionLabel('Giả lập (demo)'),
@@ -613,7 +714,7 @@ class _WearSensorSosScreenState extends State<WearSensorSosScreen> {
       child: WearFallAlertView(
         icon: t.icon,
         title: t.title,
-        reading: t.reading,
+        reading: _pendingReadingText ?? t.reading,
         question: t.question,
         countdown: _countdown,
         dismissLabel: t.dismissLabel,

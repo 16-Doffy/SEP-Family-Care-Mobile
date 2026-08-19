@@ -485,6 +485,54 @@ File đề xuất BE (`DE_XUAT_BE_SOS_WEARABLE_EVENT_TRACEABILITY_2026-08-19.md`
 
 Track B (detector đầy đủ) — **chính thức để sau mùa bảo vệ**, không còn trong code hiện tại.
 
+### Cập nhật 2026-08-19 (cuối ngày) — đã code nhịp tim THẬT qua Wear Health Services
+
+Theo yêu cầu trực tiếp của bạn, đã triển khai đường đọc nhịp tim thật (ngoài phạm vi Track A/B đã
+chốt — đây là việc mới, lớn hơn cả Track B, chấp nhận rủi ro chưa test được vì không có đồng hồ
+Wear OS thật, đã hỏi lại và bạn xác nhận cứ code).
+
+**File mới**:
+- `android/app/src/main/kotlin/.../WearHeartRateBridge.kt` — đọc `DataType.HEART_RATE_BPM` qua
+  `androidx.health.services.client.MeasureClient`. **[CHƯA VERIFY]** chưa chạy thật trên đồng hồ.
+- `lib/services/wear_heart_rate_bridge.dart` — cầu nối Dart (MethodChannel `start`/`stop` +
+  EventChannel stream bpm), xin quyền `BODY_SENSORS` qua `permission_handler` (đã có sẵn trong
+  `pubspec.yaml`, không cần thêm dependency Dart mới).
+
+**File sửa**:
+- `MainActivity.kt` — thêm `EventChannel` (mẫu đầu tiên trong repo, khác các channel khác trước đó
+  chỉ gọi 1 lần trả kết quả qua callback) + `MethodChannel` cho start/stop, chặn `SDK_INT < 30` ngay
+  tại đây (health-services-client khai `minSdk 30` trong AAR).
+- `android/app/build.gradle.kts` — thêm `androidx.health:health-services-client:1.1.0-alpha03` +
+  `com.google.guava:guava:33.3.1-android` (bắt buộc, thiếu thì lỗi compile thật
+  `Cannot access class ListenableFuture` — đã verify khi build thử).
+- `AndroidManifest.xml` — thêm `BODY_SENSORS` + `<uses-sdk tools:overrideLibrary=.../>` (KHÔNG nâng
+  `minSdk` toàn app từ 24 lên 30 — sẽ cắt hỗ trợ điện thoại Android 7-10; an toàn vì Wear OS 3+ nơi
+  Health Services chạy được đã tự yêu cầu API 30, điện thoại API 24-29 không bao giờ chạm code này
+  nhờ chặn `SDK_INT` ở `MainActivity.kt`).
+- `lib/wear/screens/wear_sensor_sos_screen.dart` — thêm tile "Nhịp tim" trong mục "Cảm biến thật"
+  (song song tile "Phát hiện té ngã" đã có); nối `HeartRateDetector` (class đã có sẵn, trước đó mồ
+  côi) — mỗi mẫu bpm thật đi qua `addSample()`, chỉ khi detector tự kết luận bất thường (duy trì
+  ≥10s qua ngưỡng 130/50) mới gọi `_raise()`. Đồng thời tổng quát hoá `_raise()` nhận thêm
+  `realRawValue`/`realReadingText` tuỳ chọn — khi kích hoạt từ cảm biến thật, `rawValue` gửi BE là số
+  đo được thật (`heartRate`, `abnormalSeconds`, `source: wear_health_services`), không phải hằng số
+  demo như 2 nút "Giả lập nhịp tim" (giữ nguyên hành vi demo, không đổi).
+
+**Lưu ý phát sinh, không sửa (ngoài phạm vi yêu cầu)**: nhánh "Cảm biến thật — Phát hiện té ngã" đã
+có từ trước (không phải phần vừa thêm) vẫn gọi `_raise(_Trigger.fall)` không kèm `realRawValue` —
+nghĩa là khi cảm biến gia tốc kế thật phát hiện té ngã, `rawValue` gửi BE vẫn là hằng số demo
+`gForce: 3.2` cố định, không phải giá trị đo thật. Cùng loại vấn đề với nhịp tim trước khi sửa, nhưng
+không đụng vào vì không nằm trong yêu cầu lần này — nêu ra để cân nhắc sửa sau nếu muốn nhất quán.
+
+**Đã verify**: `flutter analyze` (file mới + toàn repo) → 0 lỗi. `./gradlew :app:compileDebugKotlin`
+(build thật, không dùng `--offline`, để resolve dependency mới qua mạng) → **BUILD SUCCESSFUL** sau 2
+vòng sửa lỗi thật gặp khi build (minSdk merger, Guava classpath — cả 2 đều là lỗi build thật, không
+phải suy đoán). `flutter test` toàn repo → **535/535 pass**.
+
+**Chưa làm được, không thể làm nếu không có thiết bị**: test E2E trên đồng hồ Wear OS 3+ thật có cảm
+biến PPG — không có thiết bị này. Rủi ro còn treo: API `androidx.health.services.client` viết đúng
+theo tài liệu chính thức nhưng chưa từng chạy thật, có thể sai chi tiết nhỏ (tên method, behavior của
+`onAvailabilityChanged`, thread thực thi callback) chỉ lộ ra khi chạy trên phần cứng thật.
+
 ### Bổ sung cùng ngày: hiệu ứng "biến động" trên UI (không phải detector thật)
 
 User yêu cầu thêm hiển thị số liệu biến động trên UI khi bấm nút giả lập (thay vì đứng yên 1 số).

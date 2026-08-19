@@ -1,6 +1,19 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- Wear OS companion feature declaration -->
     <uses-feature android:name="android.hardware.type.watch" android:required="false" />
+
+    <!-- androidx.health:health-services-client khai minSdk 30 trong AAR của
+         nó, cao hơn minSdk 24 của app (app chạy chung trên cả điện thoại lẫn
+         Wear OS, không có flavor riêng — xem CLAUDE.md). KHÔNG nâng minSdk
+         toàn app vì sẽ cắt hỗ trợ người dùng điện thoại Android 7-10. Dùng
+         override vì Wear OS 3+ (nơi Health Services thật sự chạy được) đã
+         yêu cầu API 30 theo chuẩn của Google — thiết bị nào cài được app này
+         VÀ có Health Services thì chắc chắn đã ≥ API 30. Điện thoại API 24-29
+         không bao giờ gọi tới WearHeartRateBridge (chỉ dùng trong màn Wear OS),
+         nên không có rủi ro runtime thật dù cảnh báo Gradle có ghi "may lead
+         to runtime failures". -->
+    <uses-sdk tools:overrideLibrary="androidx.health.services.client" />
 
     <!-- GPS permissions for SOS location -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -32,6 +45,11 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Thông báo hệ thống (Android 13+ bắt buộc xin runtime) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Đọc nhịp tim thật qua Wear Health Services (WearHeartRateBridge) —
+         dangerous permission, phải xin runtime qua permission_handler ở Dart
+         trước khi gọi start(). Chỉ có tác dụng trên đồng hồ Wear OS thật có
+         cảm biến PPG. -->
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application

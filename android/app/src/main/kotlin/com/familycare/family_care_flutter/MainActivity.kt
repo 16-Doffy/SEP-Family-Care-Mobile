@@ -12,11 +12,14 @@ import android.provider.Settings
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var garminBridge: GarminBridgeService? = null
     private var garminBound = false
+    private var wearHeartRateBridge: WearHeartRateBridge? = null
+    private var heartRateEventSink: EventChannel.EventSink? = null
 
     /// Yêu cầu Garmin đang chờ service bind xong (bấm "Ghép Garmin" lần đầu —
     /// chưa có [GarminDeviceCache], nên không tự bind sẵn ở [onStart]).
@@ -236,6 +239,64 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // Stream nhịp tim thật (WearHeartRateBridge) — EventChannel vì đây là
+        // dữ liệu liên tục nhiều mẫu, khác các channel khác trong file này chỉ
+        // gọi 1 lần rồi trả kết quả qua callback.
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            WEAR_HEART_RATE_EVENTS_CHANNEL,
+        ).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    heartRateEventSink = events
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    heartRateEventSink = null
+                }
+            },
+        )
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            WEAR_HEART_RATE_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    // health-services-client khai minSdk 30 (Wear OS 3+) —
+                    // app chạy chung điện thoại/Wear OS nên phải tự chặn ở
+                    // đây thay vì để AAR/manifest chặn cả app. Xem
+                    // AndroidManifest.xml (tools:overrideLibrary).
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                        result.error(
+                            "UNSUPPORTED_SDK",
+                            "Cần Wear OS 3 trở lên (Android 11+) để đọc nhịp tim thật",
+                            null,
+                        )
+                    } else {
+                        val bridge = wearHeartRateBridge
+                            ?: WearHeartRateBridge(applicationContext).also { wearHeartRateBridge = it }
+                        // Health Services gọi callback trên main thread theo
+                        // mặc định (không truyền Executor riêng) — an toàn
+                        // gọi thẳng EventSink.success() từ đây, không cần
+                        // post lại Handler.
+                        bridge.start(
+                            onReading = { bpm -> heartRateEventSink?.success(mapOf("bpm" to bpm)) },
+                            onError = { message ->
+                                heartRateEventSink?.error("HEART_RATE_ERROR", message, null)
+                            },
+                        )
+                        result.success(null)
+                    }
+                }
+                "stop" -> {
+                    wearHeartRateBridge?.stop()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun startSosGuard(shakeEnabled: Boolean, fallEnabled: Boolean) {
@@ -288,5 +349,7 @@ class MainActivity : FlutterActivity() {
         private const val CALL_GUARD_CHANNEL = "com.familycare.family_care/call_guard"
         private const val NATIVE_SESSION_CHANNEL = "com.familycare.family_care/native_session"
         private const val GARMIN_CHANNEL = "com.familycare.family_care/garmin"
+        private const val WEAR_HEART_RATE_CHANNEL = "com.familycare.family_care/wear_heart_rate"
+        private const val WEAR_HEART_RATE_EVENTS_CHANNEL = "com.familycare.family_care/wear_heart_rate_stream"
     }
 }
