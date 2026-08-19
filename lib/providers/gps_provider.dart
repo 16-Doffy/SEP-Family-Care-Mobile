@@ -78,6 +78,7 @@ class GpsProvider extends ChangeNotifier {
     _error = null;
     _sharingUnavailable = false;
     _mySharing = false;
+    _lastPushError = null;
     notifyListeners();
   }
 
@@ -94,11 +95,20 @@ class GpsProvider extends ChangeNotifier {
   // đang bật), và cập nhật lạc quan khi bấm toggle.
   bool _mySharing = false;
 
+  /// Lỗi lần đẩy vị trí gần nhất qua [updateLocation] — kể cả lượt `silent`
+  /// (timer nền mỗi 5 giây). Trước đây lỗi này chỉ `debugPrint` rồi biến mất,
+  /// không có cách nào biết "đang chia sẻ vị trí" thật ra có tới server hay
+  /// không — quan sát runtime 2026-08-19: BE từ chối liên tục
+  /// ("Vĩ độ phải là số"/"Độ chính xác phải là số") mỗi chu kỳ mà UI vẫn hiện
+  /// công tắc "đang bật" bình thường, không ai biết vị trí không hề cập nhật.
+  String? _lastPushError;
+
   List<LocationShare> get shares => _shares;
   bool get loading => _loading;
   bool get busy => _busy;
   String? get error => _error;
   bool get mySharing => _mySharing;
+  String? get lastPushError => _lastPushError;
   bool get realtimeConnected => LocationRealtimeService.instance.connected;
   // Giữ làm lưới an toàn: nếu endpoint location 404 (BE rollback/đổi path),
   // UI hiện "đang phát triển" thay vì phơi raw "Cannot GET ...".
@@ -301,6 +311,29 @@ class GpsProvider extends ChangeNotifier {
   }) async {
     final fid = _fid;
     if (fid == null) return;
+    // Chặn trước khi gửi: một số thiết bị (quan sát runtime 2026-08-19 trên
+    // Oppo/ColorOS) có thể trả toạ độ/độ chính xác bất thường lúc GPS vừa
+    // khởi động hoặc tín hiệu yếu (NaN/Infinity, hoặc lệch khoảng hợp lệ
+    // -90..90 / -180..180) — BE validate chặt và từ chối bằng thông báo dạng
+    // "Vĩ độ phải là số"/"Độ chính xác phải là số". Trước đây không có bước
+    // này, mỗi lượt bất thường vẫn cứ gửi rồi bị BE từ chối lặp lại đều đặn.
+    if (!latitude.isFinite ||
+        !longitude.isFinite ||
+        !accuracy.isFinite ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180) {
+      final msg =
+          'Toạ độ GPS không hợp lệ (lat=$latitude, lng=$longitude, '
+          'accuracy=$accuracy) — bỏ qua lượt gửi này';
+      debugPrint('GpsProvider: updateLocation $msg');
+      if (_lastPushError != msg) {
+        _lastPushError = msg;
+        notifyListeners();
+      }
+      return;
+    }
     if (!silent) {
       _busy = true;
       notifyListeners();
@@ -311,9 +344,22 @@ class GpsProvider extends ChangeNotifier {
         'longitude': longitude,
         'accuracy': accuracy,
       });
+      // Không còn nuốt lỗi âm thầm: trước đây lượt `silent` (timer nền) chỉ
+      // debugPrint rồi không ai biết — giờ lưu lại để UI đọc được qua
+      // [lastPushError], chỉ notifyListeners khi TRẠNG THÁI THAY ĐỔI (tránh
+      // rebuild mỗi 5 giây dù không có gì mới, đúng tinh thần "silent" ban đầu).
+      if (_lastPushError != null) {
+        _lastPushError = null;
+        notifyListeners();
+      }
       if (!silent) await fetchFamilyLocations(myUserId: myUserId);
     } catch (e) {
+      final msg = e.toString().replaceFirst('Exception: ', '');
       debugPrint('GpsProvider: updateLocation failed: $e');
+      if (_lastPushError != msg) {
+        _lastPushError = msg;
+        notifyListeners();
+      }
     } finally {
       if (!silent) {
         _busy = false;

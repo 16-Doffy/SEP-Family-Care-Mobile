@@ -900,6 +900,7 @@ class _FamilyMapScreenState extends State<FamilyMapScreen> {
                   sharingUnavailable: gps.sharingUnavailable,
                   sharing: gps.mySharing,
                   busy: gps.busy,
+                  pushError: gps.lastPushError,
                   onToggleSharing: _toggleSharing,
                   onTap: (pin) {
                     _mapCtrl.move(pin.latlng, 16);
@@ -1767,6 +1768,10 @@ class _MemberLegend extends StatelessWidget {
   final bool busy;
   final void Function(bool) onToggleSharing;
   final void Function(_MemberPin) onTap;
+  /// Lỗi lượt đẩy vị trí GẦN NHẤT (kể cả lượt nền mỗi 5 giây) —
+  /// `GpsProvider.lastPushError`. Trước đây lỗi này chỉ `debugPrint` rồi mất,
+  /// công tắc vẫn hiện "đang chia sẻ" dù vị trí không hề tới được server.
+  final String? pushError;
   const _MemberLegend({
     required this.pins,
     required this.loading,
@@ -1776,7 +1781,34 @@ class _MemberLegend extends StatelessWidget {
     required this.busy,
     required this.onToggleSharing,
     required this.onTap,
+    this.pushError,
   });
+
+  /// Chỉ hiện khi ĐANG bật chia sẻ mà lượt đẩy gần nhất lỗi — đúng đúng tình
+  /// huống "tưởng đang chia sẻ nhưng vị trí không cập nhật" đã gặp thật.
+  Widget? _pushErrorNotice() {
+    if (!sharing || pushError == null) return null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            size: 14,
+            color: AppColors.danger,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Chưa gửi được vị trí: $pushError',
+              style: GoogleFonts.inter(fontSize: 11, color: AppColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1859,6 +1891,7 @@ class _MemberLegend extends StatelessWidget {
                 ),
               ],
             ),
+            if (_pushErrorNotice() != null) _pushErrorNotice()!,
           ],
         ),
       );
@@ -1975,6 +2008,7 @@ class _MemberLegend extends StatelessWidget {
               ],
             ),
           ),
+          if (_pushErrorNotice() != null) _pushErrorNotice()!,
           const SizedBox(height: 4),
           ...pins.map(
             (pin) => GestureDetector(
