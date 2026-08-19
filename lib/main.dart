@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
@@ -114,6 +115,17 @@ class _FamilyCareAppState extends State<FamilyCareApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
+      // Không khai báo locale thì mọi hộp thoại Material dựng sẵn đều ra tiếng
+      // Anh — date picker hiện "Select date / Wed, Aug 19 / Cancel / OK",
+      // time picker hiện "Select time", giữa một app toàn tiếng Việt. Đo trên
+      // máy thật 19/08.
+      locale: const Locale('vi'),
+      supportedLocales: const [Locale('vi'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       routerConfig: _router,
       builder: (context, child) {
         final mediaQuery = MediaQuery.maybeOf(context);

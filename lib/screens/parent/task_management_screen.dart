@@ -1515,6 +1515,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                           submission.id,
                                           approved: true,
                                           reviewNote: noteCtrl.text.trim(),
+                                          taskId: a.taskId,
                                         );
                                     if (ctx.mounted) Navigator.pop(ctx);
                                     final setting =
@@ -1603,6 +1604,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                           submission.id,
                                           approved: false,
                                           reviewNote: noteCtrl.text.trim(),
+                                          taskId: a.taskId,
                                         );
                                     if (ctx.mounted) Navigator.pop(ctx);
                                   } catch (e) {
