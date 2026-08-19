@@ -3,6 +3,7 @@ import 'package:family_care/providers/finance_provider.dart';
 import 'package:family_care/providers/wallet_provider.dart';
 
 void main() {
+  _savingJarHeuristicTests();
   _budgetPlanPeriodTests();
   _contributableGoalsTests();
   test('parses category to jar mapping with nested payload', () {
@@ -361,6 +362,65 @@ void _budgetPlanPeriodTests() {
       final p = plan('', '');
       expect(p.coversDate(today), isTrue);
       expect(p.periodWarning, isNull);
+    });
+  });
+}
+
+/// Hũ tích luỹ vượt tỷ lệ mô hình là chuyện TỐT, không được tô đỏ như tiêu quá
+/// tay. BE chưa có field phân loại hũ nên FE đoán theo jarCode/tên — đoán trượt
+/// chỉ sai màu, không sai số liệu.
+void _savingJarHeuristicTests() {
+  group('JarTargetActualItem.looksLikeSaving', () {
+    test('nhận ra hũ tiết kiệm qua mã', () {
+      for (final code in ['SAVING', 'SAVINGS', 'sav', 'LTSS', 'FFA', 'EDU']) {
+        expect(
+          JarTargetActualItem.looksLikeSaving(code, 'Hũ'),
+          isTrue,
+          reason: code,
+        );
+      }
+    });
+
+    test('nhận ra qua tên tiếng Việt có dấu lẫn không dấu', () {
+      for (final name in [
+        'Tiết kiệm',
+        'Tích luỹ',
+        'Tích lũy',
+        'Đầu tư',
+        'Dau tu',
+        'Giáo dục',
+        'Cho đi',
+        'Từ thiện',
+      ]) {
+        expect(
+          JarTargetActualItem.looksLikeSaving('', name),
+          isTrue,
+          reason: name,
+        );
+      }
+    });
+
+    test('hũ chi tiêu KHÔNG bị nhận nhầm', () {
+      for (final name in ['Spending', 'Chi tiêu', 'Thiết yếu', 'Hưởng thụ']) {
+        expect(
+          JarTargetActualItem.looksLikeSaving('NEC', name),
+          isFalse,
+          reason: name,
+        );
+      }
+    });
+
+    test('đọc jarCode từ nhiều biến thể BE có thể trả', () {
+      final a = JarTargetActualItem.fromJson({
+        'jarId': 'j1',
+        'jarCode': 'SAVING',
+        'jarName': 'Hũ A',
+      });
+      final b = JarTargetActualItem.fromJson({
+        'jar': {'id': 'j2', 'jarCode': 'SAVING', 'name': 'Hũ B'},
+      });
+      expect(a.isSavingLike, isTrue);
+      expect(b.isSavingLike, isTrue);
     });
   });
 }

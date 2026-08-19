@@ -820,8 +820,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Đã quá hạn nên không nộp bài được nữa. Nhắn người quản lý giao '
-              'lại việc này kèm hạn mới nhé.',
+              'Đã quá hạn nên không nộp bài được nữa. Nhắn người quản lý bấm '
+              '"Gia hạn" để dời hạn cho bạn nhé.',
               style: GoogleFonts.inter(
                 fontSize: 12,
                 height: 1.35,

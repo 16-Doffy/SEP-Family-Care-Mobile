@@ -299,6 +299,11 @@ class FinanceCategoryJarMapping {
 class JarTargetActualItem {
   final String jarId;
   final String jarName;
+
+  /// Mã hũ (`SAVING`, `NEC`, `EDU`…). Dùng để đoán hũ nào là hũ **tích luỹ** —
+  /// xem [isSavingLike]. BE chưa có field phân loại hũ chính thức.
+  final String jarCode;
+
   final double targetPercentage;
   final double actualPercentage;
   final double? targetAmount;
@@ -308,6 +313,7 @@ class JarTargetActualItem {
   const JarTargetActualItem({
     required this.jarId,
     required this.jarName,
+    this.jarCode = '',
     required this.targetPercentage,
     required this.actualPercentage,
     this.targetAmount,
@@ -315,12 +321,48 @@ class JarTargetActualItem {
     required this.status,
   });
 
+  /// Hũ mà **vượt tỷ lệ là chuyện tốt** — tiết kiệm / đầu tư / cho đi nhiều
+  /// hơn dự định thì không có gì phải báo động.
+  ///
+  /// ⚠️ Đây là **đoán theo tên**, không phải dữ liệu thật: BE chưa có field
+  /// phân loại hũ (`FinanceJar` chỉ có id/name/jarCode/allocationPercentage).
+  /// Gia đình đặt tên hũ kiểu khác là đoán trượt — đã đề xuất BE thêm
+  /// `jarType`. Đoán trượt chỉ làm sai màu sắc, không sai số liệu.
+  static bool looksLikeSaving(String code, String name) {
+    final text = '$code $name'.toLowerCase();
+    const keys = [
+      'sav', // SAVING, savings, tiết kiệm (mã)
+      'tiết kiệm',
+      'tich luy',
+      'tích luỹ',
+      'tích lũy',
+      'invest',
+      'đầu tư',
+      'dau tu',
+      'ltss', // Long Term Saving for Spending (mô hình 6 hũ)
+      'ffa', // Financial Freedom Account
+      'give',
+      'cho đi',
+      'từ thiện',
+      'edu', // học tập cũng là đầu tư dài hạn
+      'giáo dục',
+    ];
+    return keys.any(text.contains);
+  }
+
+  bool get isSavingLike => looksLikeSaving(jarCode, jarName);
+
   factory JarTargetActualItem.fromJson(Map<String, dynamic> j) {
     final jar = j['jar'] is Map
         ? Map<String, dynamic>.from(j['jar'] as Map)
         : const <String, dynamic>{};
     return JarTargetActualItem(
       jarId: j['jarId']?.toString() ?? jar['id']?.toString() ?? '',
+      jarCode:
+          j['jarCode']?.toString() ??
+          jar['jarCode']?.toString() ??
+          jar['code']?.toString() ??
+          '',
       jarName:
           j['jarName']?.toString() ??
           j['name']?.toString() ??

@@ -32,6 +32,7 @@ class _JarOverviewRow {
     required this.target,
     required this.actual,
     required this.status,
+    this.isSavingLike = false,
   });
 
   final String name;
@@ -40,8 +41,22 @@ class _JarOverviewRow {
   final double actual;
   final String status;
 
-  bool get isOverBudget =>
+  /// Hũ tích luỹ — vượt tỷ lệ là chuyện tốt, không tô đỏ.
+  final bool isSavingLike;
+
+  bool get isAboveTarget =>
       status == 'OVER_TARGET' || (target > 0 && actual > target);
+
+  /// Chỉ hũ **chi tiêu** vượt tỷ lệ mới đáng báo động. Tiết kiệm nhiều hơn dự
+  /// định mà tô đỏ như tiêu quá tay là gán sai ý nghĩa cho dữ liệu.
+  bool get isOverBudget => isAboveTarget && !isSavingLike;
+
+  /// Nhãn ngắn cho phần chênh lệch so với mô hình.
+  String? get deltaLabel {
+    if (pct <= 0) return null;
+    if (isAboveTarget) return isSavingLike ? 'trên mức' : 'vượt mức';
+    return null;
+  }
 }
 
 class WalletScreen extends StatefulWidget {
@@ -453,6 +468,7 @@ class _WalletScreenState extends State<WalletScreen> {
             .map(
               (item) => _JarOverviewRow(
                 name: item.jarName,
+                isSavingLike: item.isSavingLike,
                 pct: item.targetPercentage,
                 target:
                     item.targetAmount ??
@@ -2892,11 +2908,18 @@ class _WalletScreenState extends State<WalletScreen> {
                 children: [
                   if (row.pct > 0)
                     Text(
-                      '${(ratioActual * 100).round()}% thực tế',
+                      // Hũ tích luỹ vượt mô hình thì tô XANH: tiết kiệm nhiều
+                      // hơn dự định là chuyện tốt, không phải cảnh báo.
+                      '${(ratioActual * 100).round()}% thực tế'
+                      '${row.deltaLabel == null ? '' : ' · ${row.deltaLabel}'}',
                       style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        color: over ? AppColors.danger : AppColors.textPrimary,
+                        color: over
+                            ? AppColors.danger
+                            : (row.isAboveTarget && row.isSavingLike
+                                  ? AppColors.safe
+                                  : AppColors.textPrimary),
                       ),
                     ),
                   Text(

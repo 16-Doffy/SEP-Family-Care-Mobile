@@ -1078,6 +1078,26 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               // và KHÔNG có endpoint nào sửa dueAt của phân công, nên giao lại
               // kèm hạn mới là đường thoát duy nhất; thiếu nút này thì phân công
               // quá hạn chết cứng: không ai nộp được, không ai duyệt được.
+              // BE bổ sung PATCH .../assignments/{id} { startAt?, dueAt? } ngày
+              // 19/08 → gia hạn được cho CHÍNH người đang giữ việc, không phải
+              // đổi sang người khác như trước.
+              if (_isAssignmentOverdue(a))
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    side: const BorderSide(color: AppColors.urgent),
+                  ),
+                  onPressed: () => _showExtendDeadlineSheet(context, a),
+                  child: Text(
+                    'Gia hạn',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.urgent,
+                    ),
+                  ),
+                ),
               if (a.status == 'UNAVAILABLE' || _isAssignmentOverdue(a))
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
@@ -1924,6 +1944,44 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         ),
       ),
     );
+  }
+
+  /// Gia hạn phân công — giữ nguyên người làm, chỉ dời hạn.
+  ///
+  /// Trước 19/08 việc này **không làm được**: BE chặn nộp bài quá hạn mà không
+  /// có endpoint sửa `dueAt`, còn `reassign` thì bắt buộc đổi sang người khác —
+  /// người đang làm dở bị mất việc chỉ vì trễ vài phút. BE đã bổ sung
+  /// `PATCH .../assignments/{id}` theo đề xuất của FE.
+  Future<void> _showExtendDeadlineSheet(
+    BuildContext context,
+    TaskAssignment a,
+  ) async {
+    // Lấy trước khi await: sau khi picker đóng, context có thể đã không còn
+    // gắn với cây widget nữa.
+    final messenger = ScaffoldMessenger.of(context);
+    final tasks = context.read<TaskProvider>();
+    final picked = await _pickDeadline(context, a.dueAt);
+    if (picked == null) return;
+    try {
+      await tasks.updateAssignmentSchedule(a.id, dueAt: picked);
+      await tasks.fetchTaskAssignments(a.taskId);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Đã gia hạn tới ${_fmtDateTime(picked)} cho '
+            '${a.assignedToName ?? 'thành viên'}',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
   }
 
   // ── Reassign (member báo bận) ─────────────────────────────────────────────
