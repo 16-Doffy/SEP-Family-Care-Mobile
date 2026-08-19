@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -576,6 +578,25 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('AuthProvider: Google/Firebase signOut failed: $e');
     }
+    // Báo server revoke refresh token TRƯỚC khi xoá session khỏi ApiClient.
+    // Swagger xác nhận `/auth/logout` yêu cầu `security: [{bearer: []}]`
+    // (401 "Missing or invalid access token") — gọi SAU `clearSession()`
+    // như bản cũ thì request đi không có Authorization, BE luôn trả 401 và
+    // refresh token KHÔNG BAO GIỜ được revoke phía server (lỗi thật, xác
+    // nhận qua Swagger 2026-08-19). Không `await`: `_headers()` đọc token
+    // ngay khi gọi `post()` (đồng bộ, trước await đầu tiên), nên fire-and-
+    // forget vẫn gửi đúng token — giữ đúng ý định cũ "không đợi server
+    // response" để đăng xuất cục bộ vẫn tức thời.
+    unawaited(
+      ApiClient.instance
+          .post('/auth/logout', {
+            if (refreshToken != null) 'refreshToken': refreshToken,
+          })
+          .catchError((Object e) {
+            debugPrint('AuthProvider: server logout call failed: $e');
+            return <String, dynamic>{};
+          }),
+    );
     // Xóa session ngay lập tức — không đợi server response
     _user = null;
     _workspaces = const [];
@@ -587,16 +608,6 @@ class AuthProvider extends ChangeNotifier {
     ApiClient.instance.clearSession();
     await _clearStoredTokens();
     notifyListeners();
-    // Thông báo server invalidate refresh token (best-effort)
-    if (refreshToken != null) {
-      try {
-        await ApiClient.instance.post('/auth/logout', {
-          'refreshToken': refreshToken,
-        });
-      } catch (e) {
-        debugPrint('AuthProvider: server logout call failed: $e');
-      }
-    }
   }
 
   // Cập nhật familyId sau khi user tạo/join gia đình thành công
