@@ -3,6 +3,7 @@ import 'package:family_care/providers/finance_provider.dart';
 import 'package:family_care/providers/wallet_provider.dart';
 
 void main() {
+  _contributableGoalsTests();
   test('parses category to jar mapping with nested payload', () {
     final mapping = FinanceCategoryJarMapping.fromJson({
       'id': 'mapping-1',
@@ -258,5 +259,36 @@ void main() {
     });
 
     expect(page.items.map((item) => item.sourceId), ['new', 'old', 'unknown']);
+  });
+}
+
+/// Bug máy thật 19/08: card "Kết chuyển tháng trước" báo "chưa có mục tiêu nào
+/// đang chạy" trong khi mục tiêu "mua xe yaz" đang thiếu tiền — vì bộ lọc dùng
+/// `status == 'ACTIVE'` nên loại luôn mục tiêu AT_RISK. Đúng cái mục tiêu cần
+/// tiền nhất lại bị giấu khỏi danh sách nhận số dư.
+void _contributableGoalsTests() {
+  FinancialGoal goal(String status) => FinancialGoal.fromJson({
+    'id': 'g-$status',
+    'goalName': 'mua xe yaz',
+    'targetAmount': 500000000,
+    'status': status,
+  });
+
+  group('canContribute — mục tiêu nào còn nhận góp', () {
+    test(
+      'AT_RISK vẫn nhận góp (cảnh báo tiến độ, không phải đóng mục tiêu)',
+      () {
+        expect(goal('AT_RISK').canContribute, isTrue);
+      },
+    );
+
+    test('ACTIVE nhận góp', () {
+      expect(goal('ACTIVE').canContribute, isTrue);
+    });
+
+    test('ACHIEVED và CANCELED thì không', () {
+      expect(goal('ACHIEVED').canContribute, isFalse);
+      expect(goal('CANCELED').canContribute, isFalse);
+    });
   });
 }
