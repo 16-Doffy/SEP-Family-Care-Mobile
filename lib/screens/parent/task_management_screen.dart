@@ -423,6 +423,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                           'Quá hạn',
                           AppColors.dangerLight,
                           AppColors.danger,
+                          icon: Icons.schedule_rounded,
                         ),
                       if (task.isRecurring)
                         _chip(
@@ -666,31 +667,34 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        // Task LẶP không dùng được POST .../assignments (BE trả
-                        // "Vui lòng sinh phân công ... bằng API lịch lặp") →
-                        // phân nhánh sang _ScheduleSheet (generate-assignments).
-                        onPressed: () => task.isRecurring
-                            ? _showScheduleSheet(context, task)
-                            : _showAssignSheet(context, task),
-                        icon: const Icon(
-                          Icons.person_add_alt_rounded,
-                          size: 16,
-                        ),
-                        label: Text(
-                          'Giao việc',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                    // Task LẶP không dùng được POST .../assignments (BE trả
+                    // "Vui lòng sinh phân công ... bằng API lịch lặp") nên
+                    // trước đây "Giao việc" cũng mở _ScheduleSheet — TRÙNG HỆT
+                    // nút "Lịch lặp & tạo phân công" ngay bên dưới: hai nút,
+                    // hai nhãn, hai icon khác nhau, cùng một hành động. Task
+                    // lặp nay chỉ còn một lối vào.
+                    if (!task.isRecurring) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showAssignSheet(context, task),
+                          icon: const Icon(
+                            Icons.person_add_alt_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            'Giao việc',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
                           ),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(44),
-                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
+                      const SizedBox(width: 8),
+                    ],
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _showRewardSettingSheet(context, task),
@@ -3218,21 +3222,37 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     return '${two(value.day)}/${two(value.month)} ${two(value.hour)}:${two(value.minute)}';
   }
 
-  Widget _chip(String label, Color bg, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: bg,
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Text(
-      label,
-      style: GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        color: color,
-      ),
-    ),
-  );
+  /// [icon] để phân biệt chip **cảnh báo** với chip **trạng thái**.
+  ///
+  /// "Đang chạy" và "Quá hạn" là hai trục khác nhau — trạng thái task của BE vs
+  /// phép so hạn với hiện tại — nhưng vẽ y hệt nhau nên đọc ra như hai trạng
+  /// thái mâu thuẫn ("đang chạy rồi sao còn quá hạn?"). Icon làm rõ cái nào là
+  /// cảnh báo.
+  Widget _chip(String label, Color bg, Color color, {IconData? icon}) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 11, color: color),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      );
 
   // ── Nộp nhiệm vụ kèm proof (ảnh / note) cho chính user ────────────────────
 
@@ -3727,15 +3747,42 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Lịch lặp',
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
+            // Sheet này cao gần hết màn hình nên gần như không còn vùng trống
+            // để chạm ra ngoài mà đóng, và "Lưu lịch"/"Tạo phân công" đều KHÔNG
+            // tự đóng (cố ý — thường phải làm cả hai bước). Không có nút đóng
+            // thì người dùng bị kẹt lại trong sheet sau khi lưu xong.
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.progressTrack,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
             ),
-            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Lịch lặp',
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  color: AppColors.textSecondary,
+                  tooltip: 'Đóng',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             if (_loadingSchedule)
               const Center(
                 child: Padding(
@@ -3954,7 +4001,8 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: _timePickerField(
-                      label: 'Hạn (tuỳ chọn)',
+                      label: 'Hạn',
+                      emptyHint: 'Hạn (tuỳ chọn)',
                       value: _genDueTime,
                       onPick: () async {
                         final picked = await showTimePicker(
@@ -4023,10 +4071,17 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
   String _timeText(TimeOfDay value) =>
       '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
+  /// Ô chọn giờ trong sheet lịch lặp.
+  ///
+  /// [label] phải NGẮN: ô nằm nửa chiều rộng, có icon và nút xoá, nên chuỗi
+  /// "Hạn (tuỳ chọn): 17:30" bị ellipsis cắt đúng phần giờ — người dùng đặt
+  /// giờ xong nhìn vào tưởng chưa đặt được (đo trên máy thật 19/08). Chú thích
+  /// dài để ở [emptyHint], chỉ hiện khi chưa chọn gì.
   Widget _timePickerField({
     required String label,
     required TimeOfDay? value,
     required Future<void> Function() onPick,
+    String? emptyHint,
     VoidCallback? onClear,
   }) => InkWell(
     onTap: onPick,
@@ -4047,7 +4102,9 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
           const SizedBox(width: 6),
           Expanded(
             child: Text(
-              value == null ? label : '$label: ${_timeText(value)}',
+              value == null
+                  ? (emptyHint ?? label)
+                  : '$label: ${_timeText(value)}',
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(
                 fontSize: 11,
