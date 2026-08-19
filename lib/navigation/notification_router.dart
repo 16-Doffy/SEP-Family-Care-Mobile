@@ -71,7 +71,10 @@ class NotificationRouter {
         // thông báo để phản hồi (ACCEPTED|DECLINED|MAYBE).
         return '/$shell/calendar';
       case 'BUDGET_ALERT':
-        return isMgr ? '/manager/finance-alerts' : null;
+        // Mọi role đều có màn đích: member vào chế độ chỉ đọc (xem
+        // _memberSharedPaths). Trước đây trả null nên member bấm thông báo
+        // vượt ngân sách xong không có gì xảy ra.
+        return '/manager/finance-alerts';
       case 'FINANCIAL_GOAL':
         return isMgr
             ? (id.isNotEmpty

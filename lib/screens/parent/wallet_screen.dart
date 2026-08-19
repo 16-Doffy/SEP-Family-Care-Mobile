@@ -6,6 +6,7 @@ import '../../models/finance_period.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
+import '../../providers/finance_alert_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../providers/support_request_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -73,6 +74,10 @@ class _WalletScreenState extends State<WalletScreen> {
       context.read<WalletProvider>().fetchWallets(),
       context.read<SupportRequestProvider>().fetchRequests(),
       context.read<FinanceProvider>().fetchAll(),
+      // Cảnh báo tài chính trước đây CHỈ được nạp bên trong màn cảnh báo, mà
+      // lối vào duy nhất lại nằm sâu trong menu Hồ sơ → vượt ngân sách xong
+      // không ai biết. Nạp ở đây để dựng được thẻ cảnh báo ngay trên màn Ví.
+      context.read<FinanceAlertProvider>().fetchAlerts(),
       if (family.members.isEmpty) family.fetchMembers(),
     ]);
     if (!mounted) return;
@@ -501,10 +506,18 @@ class _WalletScreenState extends State<WalletScreen> {
         carrySurplus: _carrySurplus,
         onAllocateSurplus: () {
           final goals = context.read<FinanceProvider>().contributableGoals;
-          if (goals.isEmpty) return;
+          // `return` trắng ở đây làm dòng checklist "Kết chuyển số dư" bấm vào
+          // KHÔNG CÓ GÌ XẢY RA — người dùng tưởng nút hỏng. Không có mục tiêu
+          // nào nhận được tiền thì phải nói ra và chỉ đường tạo mục tiêu.
+          if (goals.isEmpty) {
+            _promptCreateGoalForSurplus(context);
+            return;
+          }
           _showSurplusGoalPicker(context, goals, period: state.period.previous);
         },
       ),
+
+      ..._financeAlertCard(context),
 
       ..._carryOverCard(context, state),
 
@@ -2592,6 +2605,97 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       const SizedBox(height: 16),
     ];
+  }
+
+  /// Thẻ "đang có N cảnh báo tài chính" ngay trên màn Ví.
+  ///
+  /// Không có thẻ này thì cảnh báo chỉ tồn tại ở màn Hồ sơ → Cảnh báo tài chính
+  /// — chỗ không ai nghĩ tới lúc đang xem tiền. Chỉ hiện khi thật sự có cảnh
+  /// báo chưa xem, để không thêm nhiễu vào màn vốn đã dày.
+  List<Widget> _financeAlertCard(BuildContext context) {
+    final count = context.watch<FinanceAlertProvider>().newCount;
+    if (count <= 0) return const [];
+    return [
+      InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        onTap: () => context.push('/manager/finance-alerts'),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.dangerLight,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: AppColors.danger.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.notification_important_rounded,
+                size: 20,
+                color: AppColors.danger,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$count cảnh báo tài chính chưa xem',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Vượt ngân sách hoặc mục tiêu có nguy cơ không đạt.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        height: 1.35,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.danger),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
+  /// Không còn mục tiêu nào nhận được số dư → hỏi có tạo mục tiêu mới không.
+  ///
+  /// Thà mở một hộp thoại còn hơn để cú chạm rơi vào hư không: số dư kết chuyển
+  /// là tiền thật đang không có đích đến, im lặng ở đây là bỏ mặc người dùng.
+  void _promptCreateGoalForSurplus(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Chưa có mục tiêu để nhận số dư'),
+        content: const Text(
+          'Mọi mục tiêu tiết kiệm đều đã hoàn thành hoặc đã huỷ, nên số dư này '
+          'chưa có chỗ để chuyển vào.\n\n'
+          'Tạo một mục tiêu mới rồi quay lại đây nhé.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.push('/manager/financial-goals');
+            },
+            child: const Text('Tạo mục tiêu'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Chọn mục tiêu rồi mở màn chi tiết với `surplus=1` — sheet nhập số tiền và

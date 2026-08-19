@@ -126,7 +126,15 @@ const _managerOnlyPaths = {
 // canManageMemberRoles/canRemoveMembers/canInviteMembers (đều false với
 // Member). Không đưa Member vào /manager/* nói chung, chỉ mở lối riêng
 // cho đúng path này.
-const _memberSharedPaths = {'/manager/members', '/manager/member/:memberId'};
+const _memberSharedPaths = {
+  '/manager/members',
+  '/manager/member/:memberId',
+  // Member nhận được notification BUDGET_ALERT nhưng trước đây bấm vào KHÔNG
+  // ĐI ĐÂU CẢ (router trả null cho non-manager). Cho vào đọc; màn hình tự ẩn
+  // nút Tính lại / Đã xem / Đánh dấu đã xử lý theo canManageFinance, và BE
+  // cũng chỉ trả "cảnh báo có thể xem" theo quyền.
+  '/manager/finance-alerts',
+};
 
 // Path thuộc shell bottom-nav riêng của từng role — chỉ chính role đó được
 // vào (Deputy/Member không nên đi sâu vào shell của Manager dù route vẫn nằm
