@@ -92,6 +92,11 @@ class AlbumTag {
   final String id;
   final String taggedMemberId;
   final String taggedMemberName;
+
+  /// Người đã gắn thẻ này. BE bổ sung 19/08 cùng với `taggedMemberId` trực
+  /// tiếp (trước đó response chỉ có tên, không có id nào — xem
+  /// BAO_CAO_BE_FACE_SCAN_JOB_TREO_2026-08-19.md). Rỗng khi BE chưa trả.
+  final String taggedByMemberId;
   final String? tagNote;
 
   /// Quyền gỡ tag theo BE. `null` = BE không trả field này (Swagger chưa
@@ -102,6 +107,7 @@ class AlbumTag {
     required this.id,
     required this.taggedMemberId,
     required this.taggedMemberName,
+    this.taggedByMemberId = '',
     this.tagNote,
     this.canRemoveFlag,
   });
@@ -132,12 +138,20 @@ class AlbumTag {
     final nestedUserName = _nameFrom(user);
     return AlbumTag(
       id: _str(json['tagId'] ?? json['id']),
+      // `taggedMemberId` là field chính thức của BE từ 19/08. Bốn tên còn lại
+      // giữ làm lưới đỡ vì bản build này chạy trước khi BE push, và trước đó
+      // response tag đo trên máy thật KHÔNG có id nào cả.
       taggedMemberId: _str(
         json['taggedMemberId'] ??
             json['memberId'] ??
             json['userId'] ??
             member?['id'] ??
             user?['id'],
+      ),
+      taggedByMemberId: _str(
+        json['taggedByMemberId'] ??
+            json['taggedBy'] ??
+            json['createdByMemberId'],
       ),
       taggedMemberName: directName.isNotEmpty
           ? directName

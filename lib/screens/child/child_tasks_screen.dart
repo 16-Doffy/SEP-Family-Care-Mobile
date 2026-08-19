@@ -1044,7 +1044,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                               });
                               messenger.showSnackBar(
                                 SnackBar(
-                                  content: Text(e.toString()),
+                                  content: Text(submitProofErrorMessage(e)),
                                   backgroundColor: AppColors.danger,
                                 ),
                               );

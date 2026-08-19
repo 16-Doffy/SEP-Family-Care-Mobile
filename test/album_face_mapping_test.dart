@@ -5,6 +5,7 @@ import 'package:family_care/providers/album_face_provider.dart';
 import 'package:family_care/screens/shared/album_face_section.dart';
 
 void main() {
+  _tagContract19082026Tests();
   _emptySuggestionsMessageTests();
   test('FaceSuggestion reads member name from nested backend payload', () {
     final suggestion = FaceSuggestion.fromJson({
@@ -283,5 +284,42 @@ void _emptySuggestionsMessageTests() {
         expect(msg, contains('Hồ sơ khuôn mặt'));
       },
     );
+  });
+}
+
+/// Contract BE 19/08: tag trong media detail/list và endpoint /tags trả trực
+/// tiếp `taggedMemberId` + `taggedByMemberId`. Trước đó response đo trên máy
+/// thật chỉ có tên, không có id nào — nên vẫn giữ test cho nhánh lưới đỡ.
+void _tagContract19082026Tests() {
+  group('contract BE 19/08 — tag có id trực tiếp', () {
+    test('đọc taggedMemberId và taggedByMemberId trực tiếp', () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-1',
+        'taggedMemberId': 'mem-1',
+        'taggedByMemberId': 'mem-2',
+        'taggedMemberName': 'Vu Quan',
+      });
+      expect(tag.taggedMemberId, 'mem-1');
+      expect(tag.taggedByMemberId, 'mem-2');
+      expect(tag.taggedMemberName, 'Vu Quan');
+    });
+
+    test('field trực tiếp thắng id lồng trong taggedMember', () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-1',
+        'taggedMemberId': 'mem-dung',
+        'taggedMember': {'id': 'mem-sai', 'displayName': 'Vu Quan'},
+      });
+      expect(tag.taggedMemberId, 'mem-dung');
+    });
+
+    test('BE chưa push thì taggedByMemberId rỗng, không nổ', () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-1',
+        'taggedMemberName': 'Vu Quan',
+      });
+      expect(tag.taggedByMemberId, isEmpty);
+      expect(tag.taggedMemberId, isEmpty);
+    });
   });
 }

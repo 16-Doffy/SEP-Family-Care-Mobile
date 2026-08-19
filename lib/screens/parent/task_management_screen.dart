@@ -3191,7 +3191,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                               });
                               messenger.showSnackBar(
                                 SnackBar(
-                                  content: Text(e.toString()),
+                                  content: Text(submitProofErrorMessage(e)),
                                   backgroundColor: AppColors.danger,
                                 ),
                               );

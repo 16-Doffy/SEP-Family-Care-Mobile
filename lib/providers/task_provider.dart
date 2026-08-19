@@ -1,6 +1,22 @@
 import 'package:flutter/material.dart';
 import '../services/api_client.dart';
 
+/// Thông điệp hiển thị khi nộp minh chứng thất bại.
+///
+/// BE chốt contract 19/08: quá hạn thì trả 400 kèm
+/// `code: "SUBMISSION_OVERDUE"` (message gốc là tiếng Anh — "Assignment is
+/// overdue and cannot accept submissions"). Bắt theo **mã**, không dò chuỗi
+/// message, để BE đổi câu chữ hay đổi ngôn ngữ cũng không gãy.
+///
+/// [ApiClient] đọc cả `code` lẫn `errorCode` nên chỉ cần so một chỗ.
+String submitProofErrorMessage(Object error) {
+  if (error is ApiException && error.code == 'SUBMISSION_OVERDUE') {
+    return 'Nhiệm vụ đã quá hạn nên không nhận bài nộp nữa. Nhờ người quản lý '
+        'gia hạn hoặc giao lại việc này.';
+  }
+  return error.toString().replaceFirst('Exception: ', '');
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // Models — khớp với BE Task API (35 endpoints):
 //   Task ─┬─ TaskCategory
