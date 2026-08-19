@@ -89,6 +89,41 @@ class FamilyCalendarEvent {
     return const [];
   }
 
+  /// Trạng thái phản hồi của **chính người đang đăng nhập**.
+  ///
+  /// [responseStatus] chỉ có giá trị khi BE trả sẵn field phẳng hoặc object
+  /// `myParticipant`. Đo trên máy thật 19/08: sau khi POST respond thành công,
+  /// danh sách sự kiện trả về vẫn để chip là "Chưa" — BE trả `participants`
+  /// dạng mảng object, mỗi phần tử mang `responseStatus` riêng, mà parser
+  /// trước đây chỉ moi id ra khỏi mảng đó chứ không đọc trạng thái.
+  ///
+  /// So khớp bằng cả `familyMember.id` lẫn `user.id` vì BE không nhất quán
+  /// khoá participant theo cái nào (đúng vấn đề đã gặp ở tag album).
+  String? myResponseStatus(Set<String> myIdAliases) {
+    if (responseStatus != null) return responseStatus;
+    if (myIdAliases.isEmpty) return null;
+    final participants = raw['participants'];
+    if (participants is! List) return null;
+    for (final entry in participants.whereType<Map>()) {
+      final member = entry['member'];
+      final user = entry['user'];
+      final ids = <String?>[
+        _str(entry['memberId']),
+        _str(entry['familyMemberId']),
+        _str(entry['userId']),
+        member is Map ? _str(member['id']) : null,
+        member is Map && member['user'] is Map
+            ? _str((member['user'] as Map)['id'])
+            : null,
+        user is Map ? _str(user['id']) : null,
+      ];
+      if (ids.whereType<String>().any(myIdAliases.contains)) {
+        return _str(entry['responseStatus']) ?? _str(entry['status']);
+      }
+    }
+    return null;
+  }
+
   factory FamilyCalendarEvent.fromJson(Map<String, dynamic> j) {
     final participant = j['myParticipant'] is Map
         ? Map<String, dynamic>.from(j['myParticipant'] as Map)
@@ -169,6 +204,9 @@ class CalendarProvider extends ChangeNotifier {
     loading = false;
     error = null;
     _lastMonth = null;
+    // Phản hồi là của riêng từng người — không dọn thì người đăng nhập sau
+    // thấy "Tham gia" do người trước bấm.
+    _pendingResponses.clear();
     notifyListeners();
   }
 
@@ -327,11 +365,28 @@ class CalendarProvider extends ChangeNotifier {
     await fetchEvents(month);
   }
 
+  /// Phản hồi vừa gửi thành công, giữ theo eventId.
+  ///
+  /// Không phải mock: chỉ ghi lại kết quả của một request đã trả 2xx. Cần vì
+  /// response danh sách sự kiện không phải lúc nào cũng nói được trạng thái
+  /// của riêng người đang đăng nhập (xem [FamilyCalendarEvent.myResponseStatus])
+  /// — thiếu lớp này thì bấm "Tham gia" xong chip vẫn đứng ở "Chưa". Xoá khi
+  /// người dùng đăng xuất khỏi gia đình hoặc khi BE đã nói rõ trạng thái.
+  final Map<String, String> _pendingResponses = {};
+
+  /// Trạng thái phản hồi hiển thị cho [event]: ưu tiên thứ BE nói, chưa nói
+  /// được thì mới dùng thứ vừa gửi.
+  String? responseStatusOf(
+    FamilyCalendarEvent event,
+    Set<String> myIdAliases,
+  ) => event.myResponseStatus(myIdAliases) ?? _pendingResponses[event.id];
+
   Future<void> respond(String eventId, String responseStatus) async {
     await ApiClient.instance.post(
       '/families/$_fid/calendar/events/$eventId/respond',
       {'responseStatus': responseStatus},
     );
+    _pendingResponses[eventId] = responseStatus;
     notifyListeners();
   }
 

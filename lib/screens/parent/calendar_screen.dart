@@ -199,6 +199,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
+  /// Id của chính mình, gom cả `familyMember.id` lẫn `user.id` vì BE khoá
+  /// participant theo cái nào là không chắc — xem [FamilyCalendarEvent.myResponseStatus].
+  Set<String> get _myIdAliases {
+    final userId = context.read<AuthProvider>().user?.id;
+    final ids = <String>{if (userId != null && userId.isNotEmpty) userId};
+    for (final m in context.read<FamilyProvider>().members) {
+      if (m.userId == userId || m.id == userId) {
+        if (m.id.isNotEmpty) ids.add(m.id);
+        if (m.userId.isNotEmpty) ids.add(m.userId);
+      }
+    }
+    return ids;
+  }
+
+  String? _responseOf(FamilyCalendarEvent event) =>
+      context.read<CalendarProvider>().responseStatusOf(event, _myIdAliases);
+
   Future<void> _respondToEvent(
     FamilyCalendarEvent event,
     String responseStatus,
@@ -262,7 +279,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           runSpacing: 8,
                           children: [
                             _typeChip(event),
-                            _responseChip(event.responseStatus),
+                            _responseChip(_responseOf(event)),
                           ],
                         ),
                       ],
@@ -369,7 +386,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     required FamilyCalendarEvent event,
     required BuildContext sheetContext,
   }) {
-    final selected = event.responseStatus == status;
+    final selected = _responseOf(event) == status;
     final color = _responseColor(status);
     return OutlinedButton.icon(
       onPressed: () async {
@@ -1200,7 +1217,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    _responseChip(event.responseStatus, compact: true),
+                    _responseChip(_responseOf(event), compact: true),
                   ],
                 ),
               ),
