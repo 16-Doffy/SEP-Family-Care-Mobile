@@ -780,49 +780,65 @@ class _CalendarScreenState extends State<CalendarScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            // Trước đây chỗ này chỉ có MỘT nút: mũi tên trái kèm nhãn là NĂM,
-            // nhưng bấm vào lại lùi một THÁNG. Ba vấn đề cùng lúc — nhãn nói
-            // một đằng hành vi một nẻo, không có nút tiến (chỉ vuốt được mà
-            // không có gì gợi ý), và đi xa rồi thì không có đường về hiện tại.
-            _yearStepper(),
-            const Spacer(),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: _calendarSurface.withValues(alpha: _dark ? 0.92 : 0.96),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: _calendarBorder),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _modeMenuButton(),
-                  // "Về hôm nay" chỉ hiện khi đang KHÔNG ở tháng hiện tại — ở
-                  // đúng tháng này thì nút vô nghĩa. Đặt trong thanh công cụ
-                  // chứ không cạnh nhãn năm: để cạnh nhãn thì header tràn trên
-                  // máy màn hẹp (widget test 304px báo tràn 9px).
-                  if (!_isCurrentMonth)
-                    _roundToolbarButton(
-                      tooltip: 'Về hôm nay',
-                      icon: Icons.today_rounded,
-                      onTap: _goToToday,
+        // LayoutBuilder chứ không phải Row trần: hàng này có tới 5 thứ (cụm
+        // năm + 4 nút tròn) và Row KHÔNG tự co, nên máy màn hẹp là tràn ngay.
+        // Quan sát thật trên máy ảo: tràn 71px khi đang ở tháng khác tháng
+        // hiện tại (lúc đó có thêm nút "Về hôm nay"). Widget test không bắt
+        // được vì test luôn chạy ở tháng hiện tại — nút đó không hiện.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Đủ chỗ mới cho nút tròn "Về hôm nay" xuất hiện. Hẹp hơn thì vẫn
+            // về được bằng cách chạm vào nhãn năm (xem _yearStepper).
+            final roomForToday = constraints.maxWidth >= 330;
+            return Row(
+              children: [
+                // Trước đây chỗ này chỉ có MỘT nút: mũi tên trái kèm nhãn là
+                // NĂM, nhưng bấm vào lại lùi một THÁNG. Ba vấn đề cùng lúc —
+                // nhãn nói một đằng hành vi một nẻo, không có nút tiến (chỉ
+                // vuốt được mà không có gì gợi ý), và đi xa rồi thì không có
+                // đường về hiện tại.
+                _yearStepper(),
+                const Spacer(),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _calendarSurface.withValues(
+                      alpha: _dark ? 0.92 : 0.96,
                     ),
-                  _roundToolbarButton(
-                    tooltip: 'Tìm kiếm',
-                    icon: Icons.search_rounded,
-                    onTap: () => _showMessage('Tìm kiếm lịch sẽ được bổ sung'),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: _calendarBorder),
                   ),
-                  if (_canManage)
-                    _roundToolbarButton(
-                      tooltip: 'Tạo sự kiện',
-                      icon: Icons.add_rounded,
-                      onTap: () => _showEventForm(),
-                    ),
-                ],
-              ),
-            ),
-          ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _modeMenuButton(),
+                      // "Về hôm nay" chỉ hiện khi đang KHÔNG ở tháng hiện tại — ở
+                      // đúng tháng này thì nút vô nghĩa. Đặt trong thanh công cụ
+                      // chứ không cạnh nhãn năm: để cạnh nhãn thì header tràn trên
+                      // máy màn hẹp (widget test 304px báo tràn 9px).
+                      if (!_isCurrentMonth && roomForToday)
+                        _roundToolbarButton(
+                          tooltip: 'Về hôm nay',
+                          icon: Icons.today_rounded,
+                          onTap: _goToToday,
+                        ),
+                      _roundToolbarButton(
+                        tooltip: 'Tìm kiếm',
+                        icon: Icons.search_rounded,
+                        onTap: () =>
+                            _showMessage('Tìm kiếm lịch sẽ được bổ sung'),
+                      ),
+                      if (_canManage)
+                        _roundToolbarButton(
+                          tooltip: 'Tạo sự kiện',
+                          icon: Icons.add_rounded,
+                          onTap: () => _showEventForm(),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 26),
         GestureDetector(
@@ -1562,12 +1578,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
             () => _moveMonth(-1),
             'Tháng trước',
           ),
-          Text(
-            '${_focus.year}',
-            style: GoogleFonts.inter(
-              color: _calendarText,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
+          // Nhãn năm cũng là đường về hôm nay. Cần cái này vì nút tròn "Về
+          // hôm nay" ở thanh công cụ bị ẩn trên màn hẹp (xem _header) — không
+          // có nó thì máy màn nhỏ lại rơi lại đúng bug ban đầu: lùi vài tháng
+          // rồi không có cách nào quay lại. Đổi màu khi đang lạc khỏi tháng
+          // hiện tại để thấy là bấm được.
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: _goToToday,
+            child: Tooltip(
+              message: _isCurrentMonth ? 'Tháng hiện tại' : 'Về hôm nay',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  '${_focus.year}',
+                  style: GoogleFonts.inter(
+                    color: _isCurrentMonth ? _calendarText : _calendarIosRed,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
             ),
           ),
           arrow(Icons.chevron_right_rounded, () => _moveMonth(1), 'Tháng sau'),
