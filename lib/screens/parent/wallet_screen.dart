@@ -799,6 +799,10 @@ class _WalletScreenState extends State<WalletScreen> {
             : Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Thẻ này vẽ CHI THỰC TẾ, đúng như phụ đề của nó. Trước đây
+                  // lại lấy `target` (= tổng chi × tỷ lệ mô hình) rồi chú thích
+                  // "Kế hoạch tính trên thu nhập …" — sai cả hai đầu: số không
+                  // phải kế hoạch, mà mẫu số cũng không phải thu nhập.
                   WaffleChart(
                     segments: jarInfo.rows
                         .asMap()
@@ -806,9 +810,9 @@ class _WalletScreenState extends State<WalletScreen> {
                         .map(
                           (e) => WaffleSegment(
                             color: _jarColor(e.key),
-                            pct: e.value.pct.round().clamp(0, 100),
+                            pct: _actualPct(e.value, jarInfo.trackedAmount),
                             label: e.value.name,
-                            amount: e.value.target.round(),
+                            amount: e.value.actual.round(),
                           ),
                         )
                         .toList(),
@@ -831,13 +835,15 @@ class _WalletScreenState extends State<WalletScreen> {
                           _waffleLegend(
                             e.value.name,
                             _jarColor(e.key),
-                            _fmt(e.value.target.round()),
-                            '${e.value.pct.round()}%',
+                            _fmt(e.value.actual.round()),
+                            '${_actualPct(e.value, jarInfo.trackedAmount)}%',
                           ),
                           const SizedBox(height: 10),
                         ],
                         Text(
-                          'Kế hoạch tính trên thu nhập ${_fmt(income.round())}',
+                          'Mô hình đặt mục tiêu '
+                          '${jarInfo.rows.map((r) => '${r.name} ${r.pct.round()}%').join(' · ')}. '
+                          'Tổng chi trong kỳ ${_fmt(jarInfo.trackedAmount.round())}.',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             color: AppColors.textMuted,
@@ -2865,6 +2871,11 @@ class _WalletScreenState extends State<WalletScreen> {
 
   /// 1 dòng hũ: tên + % , số thực chi trên số kế hoạch, thanh tiến độ. Vượt kế
   /// hoạch thì đổi sang màu cảnh báo để nhìn ra ngay hũ nào đang quá tay.
+  /// Tỷ trọng THỰC TẾ của một hũ trong tổng chi, đúng công thức BE
+  /// (`actualPercentage = actualAmount / trackedAmount * 100`).
+  int _actualPct(_JarOverviewRow row, double trackedAmount) =>
+      trackedAmount > 0 ? (row.actual / trackedAmount * 100).round() : 0;
+
   Widget _jarRow(_JarOverviewRow row, Color color, {double trackedAmount = 0}) {
     final over = row.isOverBudget;
     final ratio = row.target > 0
