@@ -463,6 +463,31 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   bool _isAssignmentOverdue(TaskAssignment a) => isAssignmentOverdue(a);
 
+  /// Dòng "khoảng thời gian" của một phân công, `null` khi BE không trả mốc nào
+  /// (đừng chiếm chỗ bằng dòng trống).
+  Widget? _assignmentPeriodLine(TaskAssignment a) {
+    final start = a.startAt;
+    final due = a.dueAt;
+    if (start == null && due == null) return null;
+    final label = start != null && due != null
+        ? '${_fmtDateTime(start)} → ${_fmtDateTime(due)}'
+        : (start != null
+              ? 'Bắt đầu ${_fmtDateTime(start)}'
+              : 'Hạn ${_fmtDateTime(due!)}');
+    final overdue = _isAssignmentOverdue(a);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        overdue ? '$label · quá hạn' : label,
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: overdue ? FontWeight.w700 : FontWeight.w400,
+          color: overdue ? AppColors.danger : AppColors.textMuted,
+        ),
+      ),
+    );
+  }
+
   /// Cảnh báo "đã duyệt, có thưởng, nhưng thành viên chưa nhận được gì".
   ///
   /// `autoCreateSettlement` của BE chỉ chạy **đúng lúc duyệt bài** (mô tả trong
@@ -985,6 +1010,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    // Task định kỳ sinh ra mỗi ngày một phân công: 30 ngày là
+                    // 30 dòng. Không hiện mốc thời gian thì tất cả trông y hệt
+                    // nhau, không biết dòng nào của ngày nào.
+                    ?_assignmentPeriodLine(a),
                   ],
                 ),
               ),
@@ -3251,6 +3280,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 TextField(
                   controller: noteCtrl,
                   maxLines: 3,
+                  // Xem ghi chú cùng chỗ ở child_tasks_screen.
+                  onChanged: (_) => setSheet(() {}),
                   decoration: InputDecoration(
                     hintText: 'Thêm ghi chú...',
                     hintStyle: GoogleFonts.inter(color: AppColors.textMuted),
@@ -3343,7 +3374,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: submitting
+                    // Xem ghi chú cùng chỗ ở child_tasks_screen: `proofs` là
+                    // field bắt buộc, nộp rỗng chắc chắn hỏng.
+                    onPressed:
+                        submitting ||
+                            (pickedImagePath == null &&
+                                noteCtrl.text.trim().isEmpty)
                         ? null
                         : () async {
                             setSheet(() => submitting = true);
@@ -3358,7 +3394,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                   'IMAGE',
                                 );
                                 setSheet(() => uploading = false);
-                                if (proof != null) proofs.add(proof);
+                                if (proof == null) {
+                                  throw Exception(
+                                    'Không tải được ảnh lên. Kiểm tra mạng rồi '
+                                    'chọn lại ảnh giúp mình nhé.',
+                                  );
+                                }
+                                proofs.add(proof);
                               }
                               if (noteCtrl.text.trim().isNotEmpty &&
                                   proofs.isEmpty) {
