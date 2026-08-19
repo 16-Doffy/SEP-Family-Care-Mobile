@@ -464,6 +464,49 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   bool _isAssignmentOverdue(TaskAssignment a) => isAssignmentOverdue(a);
 
+  /// `familyMember.id` của người đang đăng nhập.
+  String? _myMemberId(BuildContext context) {
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null) return null;
+    return context
+        .read<FamilyProvider>()
+        .members
+        .where((m) => m.userId == userId || m.id == userId)
+        .firstOrNull
+        ?.id;
+  }
+
+  /// Dải giải thích vì sao các nút quản lý bị ẩn.
+  Widget _selfAssignedNote() => Container(
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: AppColors.neutralBg,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Row(
+      children: [
+        const Icon(
+          Icons.info_outline_rounded,
+          size: 15,
+          color: AppColors.textMuted,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Bạn đang là người làm nhiệm vụ này nên không tự sửa, tự đặt '
+            'thưởng hay tự huỷ được. Nhờ Trưởng nhóm xử lý giúp.',
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              height: 1.35,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
   /// Dòng "khoảng thời gian" của một phân công, `null` khi BE không trả mốc nào
   /// (đừng chiếm chỗ bằng dòng trống).
   Widget? _assignmentPeriodLine(TaskAssignment a) {
@@ -606,6 +649,16 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         builder: (_, scrollCtrl) => Consumer<TaskProvider>(
           builder: (_, taskState, _) {
             final assignments = taskState.assignmentsFor(task.id);
+            // BE chặn Deputy tự tư lợi trên task giao cho chính mình — verify live
+            // 19/08, cả 5 hành vi đều trả 403 (gia hạn / đặt thưởng / huỷ phân
+            // công / giao lại / huỷ task). Nhưng 403 đó KHÔNG có mã lỗi, chỉ có
+            // message tiếng Anh nên FE không dịch được → ẩn nút ngay từ đầu.
+            final me = _myMemberId(context);
+            final assignedToMe =
+                me != null &&
+                assignments.any(
+                  (a) => a.status != 'CANCELED' && a.assignedToMemberId == me,
+                );
             return ListView(
               controller: scrollCtrl,
               padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
@@ -650,7 +703,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         ],
                       ),
                     ),
-                    if (task.status != 'CANCELED' && task.status != 'COMPLETED')
+                    if (!assignedToMe &&
+                        task.status != 'CANCELED' &&
+                        task.status != 'COMPLETED')
                       GestureDetector(
                         onTap: () => _showEditTaskSheet(context, task),
                         child: const Padding(
@@ -695,22 +750,29 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _showRewardSettingSheet(context, task),
-                        icon: const Icon(Icons.card_giftcard_rounded, size: 16),
-                        label: Text(
-                          'Đặt thưởng',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                    // Tự đặt thưởng cho việc của chính mình là ca nguy hiểm
+                    // nhất — BE trả 403 nhưng không có mã lỗi để FE dịch.
+                    if (!assignedToMe)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () =>
+                              _showRewardSettingSheet(context, task),
+                          icon: const Icon(
+                            Icons.card_giftcard_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            'Đặt thưởng',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
                           ),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(44),
-                        ),
                       ),
-                    ),
                   ],
                 ),
                 if (task.isRecurring) ...[
@@ -731,7 +793,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   ),
                 ],
                 const SizedBox(height: 8),
-                if (task.status != 'CANCELED' && task.status != 'COMPLETED')
+                if (assignedToMe) _selfAssignedNote(),
+                if (!assignedToMe &&
+                    task.status != 'CANCELED' &&
+                    task.status != 'COMPLETED')
                   TextButton(
                     onPressed: () async {
                       await context.read<TaskProvider>().cancelTask(task.id);
@@ -1081,7 +1146,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               // BE bổ sung PATCH .../assignments/{id} { startAt?, dueAt? } ngày
               // 19/08 → gia hạn được cho CHÍNH người đang giữ việc, không phải
               // đổi sang người khác như trước.
-              if (_isAssignmentOverdue(a))
+              if (!isOwnAssignment && _isAssignmentOverdue(a))
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 32),
@@ -1098,7 +1163,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     ),
                   ),
                 ),
-              if (a.status == 'UNAVAILABLE' || _isAssignmentOverdue(a))
+              if (!isOwnAssignment &&
+                  (a.status == 'UNAVAILABLE' || _isAssignmentOverdue(a)))
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.urgent,
@@ -1117,7 +1183,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     ),
                   ),
                 ),
-              if (a.status == 'PENDING' || a.status == 'IN_PROGRESS')
+              // Tự huỷ phân công của mình = né việc → BE 403. Ẩn nút.
+              if (!isOwnAssignment &&
+                  (a.status == 'PENDING' || a.status == 'IN_PROGRESS'))
                 GestureDetector(
                   onTap: () async {
                     final tp = context.read<TaskProvider>();
