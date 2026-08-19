@@ -1182,8 +1182,15 @@ class FinanceProvider extends ChangeNotifier {
   List<BudgetPlan> get activeBudgetPlans =>
       budgetPlans.where((p) => p.status == 'ACTIVE').toList();
 
-  List<FinancialGoal> get activeGoals =>
-      goals.where((g) => g.status == 'ACTIVE').toList();
+  /// Mục tiêu còn nhận được tiền góp.
+  ///
+  /// **Không** lọc `status == 'ACTIVE'`: `AT_RISK` là cảnh báo tiến độ, không
+  /// phải trạng thái đóng mục tiêu (xem [FinancialGoal.canContribute]). Lọc
+  /// theo ACTIVE làm mục tiêu đang có nguy cơ trượt bị loại khỏi danh sách nhận
+  /// số dư kết chuyển — đúng cái mục tiêu cần tiền nhất lại bị giấu đi, và card
+  /// kết chuyển báo "chưa có mục tiêu nào đang chạy" dù rõ ràng đang có.
+  List<FinancialGoal> get contributableGoals =>
+      goals.where((g) => g.canContribute).toList();
 
   String get _fid {
     final fid = ApiClient.instance.familyId;

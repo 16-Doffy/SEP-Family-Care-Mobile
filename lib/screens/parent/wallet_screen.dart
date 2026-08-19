@@ -500,7 +500,7 @@ class _WalletScreenState extends State<WalletScreen> {
             context.watch<AuthProvider>().user?.canManageFinance == true,
         carrySurplus: _carrySurplus,
         onAllocateSurplus: () {
-          final goals = context.read<FinanceProvider>().activeGoals;
+          final goals = context.read<FinanceProvider>().contributableGoals;
           if (goals.isEmpty) return;
           _showSurplusGoalPicker(context, goals, period: state.period.previous);
         },
@@ -2316,7 +2316,7 @@ class _WalletScreenState extends State<WalletScreen> {
   List<Widget> _surplusAllocationCard(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     if (user?.canManageFinance != true) return const [];
-    final goals = context.watch<FinanceProvider>().activeGoals;
+    final goals = context.watch<FinanceProvider>().contributableGoals;
     if (goals.isEmpty) return const [];
 
     return [
@@ -2485,7 +2485,7 @@ class _WalletScreenState extends State<WalletScreen> {
     final previous = state.period.previous;
     // Không có mục tiêu ACTIVE thì phân bổ đi đâu — vẫn báo số dư nhưng không
     // dựng nút dẫn vào một danh sách rỗng.
-    final goals = context.watch<FinanceProvider>().activeGoals;
+    final goals = context.watch<FinanceProvider>().contributableGoals;
 
     return [
       Container(
@@ -2574,9 +2574,15 @@ class _WalletScreenState extends State<WalletScreen> {
             ] else ...[
               const SizedBox(height: 8),
               Text(
-                'Chưa có mục tiêu tài chính nào đang chạy để nhận số dư này.',
+                // Danh sách rỗng giờ chỉ còn nghĩa: mọi mục tiêu đã hoàn thành
+                // hoặc đã huỷ. Mục tiêu AT_RISK vẫn nhận góp nên không rơi vào
+                // nhánh này nữa.
+                'Chưa có mục tiêu nào nhận được số dư này — mọi mục tiêu đều '
+                'đã hoàn thành hoặc đã huỷ. Tạo mục tiêu mới ở mục "Mục tiêu '
+                'tiết kiệm".',
                 style: GoogleFonts.inter(
                   fontSize: 12,
+                  height: 1.4,
                   color: AppColors.textSecondary,
                 ),
               ),
