@@ -423,8 +423,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final fallbackDay = (_selected ?? DateTime.now().day)
         .clamp(1, DateUtils.getDaysInMonth(_focus.year, _focus.month))
         .toInt();
+    // Tạo mới thì không cho rơi vào quá khứ ngay từ giá trị mặc định: đang xem
+    // tháng cũ rồi bấm "+" thì baseDate cũ sẽ là một ngày đã qua, người dùng
+    // bấm Lưu luôn là tạo nhầm sự kiện quá khứ mà không hề chọn ngày.
+    final today = DateUtils.dateOnly(DateTime.now());
+    final proposed = DateTime(_focus.year, _focus.month, fallbackDay, 9);
     final baseDate =
-        event?.startTime ?? DateTime(_focus.year, _focus.month, fallbackDay, 9);
+        event?.startTime ??
+        (DateUtils.dateOnly(proposed).isBefore(today)
+            ? DateTime(today.year, today.month, today.day, 9)
+            : proposed);
     DateTime start = baseDate;
     DateTime? end = event?.endTime ?? baseDate.add(const Duration(hours: 1));
     bool reminder = event?.reminderEnabled ?? false;
@@ -440,10 +448,18 @@ class _CalendarScreenState extends State<CalendarScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
           Future<void> pickDate() async {
+            // Không cho chọn ngày đã qua khi TẠO MỚI. Khi SỬA thì vẫn phải mở
+            // tới ngày gốc của sự kiện — nếu không, sự kiện cũ sẽ không sửa
+            // nổi tiêu đề chỉ vì ngày của nó nằm trước hôm nay.
+            final earliest = event == null
+                ? today
+                : (DateUtils.dateOnly(event.startTime).isBefore(today)
+                      ? DateUtils.dateOnly(event.startTime)
+                      : today);
             final picked = await showDatePicker(
               context: ctx,
-              initialDate: start,
-              firstDate: DateTime(2020),
+              initialDate: start.isBefore(earliest) ? earliest : start,
+              firstDate: earliest,
               lastDate: DateTime(2035),
             );
             if (picked == null) return;
@@ -494,6 +510,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
             final title = titleCtrl.text.trim();
             if (title.isEmpty) {
               _showMessage('Vui lòng nhập tên sự kiện', isError: true);
+              return;
+            }
+            // Chốt chặn thứ hai, không chỉ dựa vào bộ chọn ngày: giá trị mặc
+            // định cũng có thể rơi vào quá khứ, và bộ chọn có thể đổi trong
+            // tương lai. Chỉ chặn khi TẠO MỚI — sửa sự kiện cũ vẫn phải được.
+            //
+            // So theo NGÀY chứ không theo giờ: chặn tới từng phút thì tạo sự
+            // kiện lúc 9h sáng khi đang là 14h cũng bị chặn, quá khắt khe với
+            // việc ghi lại lịch trong ngày.
+            if (event == null &&
+                DateUtils.dateOnly(
+                  start,
+                ).isBefore(DateUtils.dateOnly(DateTime.now()))) {
+              _showMessage(
+                'Không tạo được sự kiện cho ngày đã qua',
+                isError: true,
+              );
               return;
             }
             try {
@@ -1442,19 +1475,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
             Icon(Icons.lock_outline_rounded, size: 15, color: _calendarMuted),
             const SizedBox(width: 6),
           ],
-          _sheetLabel(label),
-          const Spacer(),
+          // Expanded chứ không phải label + Spacer: Spacer giữ nhãn ở kích
+          // thước tự nhiên nên hàng vỡ khi máy hẹp — quan sát thật trong
+          // widget test ở bề rộng 280px, hàng "Bắt đầu" (nhãn + nút ngày +
+          // nút giờ) tràn ra ngoài. Expanded cho nhãn co lại trước.
+          Expanded(child: _sheetLabel(label)),
           if (mutedValue != null)
             Text(
               mutedValue,
               style: GoogleFonts.inter(fontSize: 15, color: _calendarMuted),
             ),
           const SizedBox(width: 8),
-          // Công tắc bị khoá không nhận chạm (onChanged: null) nên bọc
-          // IgnorePointer để cú chạm rơi xuống InkWell bên dưới — không thì
-          // bấm trúng công tắc là không có gì xảy ra, người dùng tưởng app đơ.
-          ...children.map(
-            (c) => onLockedTap == null ? c : IgnorePointer(child: c),
+          // Wrap chứ không rải thẳng vào Row: hàng "Bắt đầu" có hai nút (ngày
+          // + giờ) và ở máy hẹp chúng không đủ chỗ nằm cùng dòng với nhãn —
+          // đo được tràn 1.4px ở bề rộng 280px. Cho phép xuống dòng thì hàng
+          // cao thêm một chút thay vì vỡ.
+          Flexible(
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              // Công tắc bị khoá không nhận chạm (onChanged: null) nên bọc
+              // IgnorePointer để cú chạm rơi xuống InkWell bên dưới — không
+              // thì bấm trúng công tắc là không có gì xảy ra, người dùng
+              // tưởng app đơ.
+              children: children
+                  .map((c) => onLockedTap == null ? c : IgnorePointer(child: c))
+                  .toList(),
+            ),
           ),
         ],
       ),
