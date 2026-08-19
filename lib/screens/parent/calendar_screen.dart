@@ -1115,8 +1115,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ),
         child: Row(
           children: [
+            // Trước đây là `remove_circle_outline` cố định — một dấu ⊖ gắn trên
+            // MỌI sự kiện, bất kể trạng thái. Dấu trừ trong vòng tròn đọc ra là
+            // "bị loại/bị chặn", vừa sai nghĩa vừa phí chỗ. Dùng đúng icon
+            // phản hồi để nhìn lịch tháng là biết ngay mình đã nhận lời sự kiện
+            // nào.
             Icon(
-              Icons.remove_circle_outline_rounded,
+              _responseIcon(_responseOf(event)),
               size: 10,
               color: event.color,
             ),
