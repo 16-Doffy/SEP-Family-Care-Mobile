@@ -132,8 +132,13 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         scan == FaceScanState.notScanned;
   }
 
+  /// Số nhịp liên tiếp thấy `scanned` mà gợi ý vẫn rỗng — xem giải thích trong
+  /// vòng lặp bên dưới. Đặt lại mỗi lần bắt đầu một lượt poll mới.
+  int _emptyScannedStreak = 0;
+
   Future<({FaceScanStatusInfo info, List<FaceSuggestion> suggestions})>
   _pollScanStatus({bool waitBeforeFirstCheck = false}) async {
+    _emptyScannedStreak = 0;
     var info = const FaceScanStatusInfo(state: FaceScanState.processing);
     var suggestions = const <FaceSuggestion>[];
 
@@ -162,10 +167,27 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         );
       }
       final scan = info.state;
-      if (scan == FaceScanState.scanned ||
-          scan == FaceScanState.noFace ||
-          scan == FaceScanState.failed) {
+      // `noFace`/`failed` là kết luận cuối, dừng ngay được.
+      if (scan == FaceScanState.noFace || scan == FaceScanState.failed) {
         return (info: info, suggestions: suggestions);
+      }
+      // `scanned` KHÔNG được coi là kết luận cuối khi gợi ý còn rỗng.
+      //
+      // BE đánh dấu job xong và ghi bảng gợi ý là hai bước riêng. Lệch nhau
+      // vài trăm mili-giây là đủ để FE thấy "scanned + 0 gợi ý", thoát vòng
+      // lặp, rồi KHÔNG BAO GIỜ đọc lại — người dùng thấy "Đã quét · Chưa có
+      // gợi ý nào" dù BE có kết quả ngay sau đó. Bỏ lỡ vĩnh viễn vì không có
+      // cơ chế tự đọc lại.
+      //
+      // Đọc thêm 2 nhịp (~3 giây) rồi mới kết luận là rỗng thật.
+      if (scan == FaceScanState.scanned) {
+        if (suggestions.isNotEmpty) {
+          return (info: info, suggestions: suggestions);
+        }
+        _emptyScannedStreak++;
+        if (_emptyScannedStreak >= 3) {
+          return (info: info, suggestions: suggestions);
+        }
       }
     }
 
@@ -429,7 +451,17 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
                 _effectiveScan == FaceScanState.noFace) ...[
               const SizedBox(height: 8),
               Text(
-                'Chưa có gợi ý nào. Bạn vẫn có thể gắn thẻ thủ công.',
+                // Nói rõ lý do thay vì để người dùng tưởng tính năng hỏng.
+                // Ca hay gặp nhất: ảnh ĐÃ có thẻ của đúng người đó nên không
+                // còn gì để gợi ý nữa — trước đây câu chữ không hề nhắc tới,
+                // người dùng bấm "Quét lại" mãi mà không hiểu vì sao im.
+                widget.taggedMemberIds.isNotEmpty
+                    ? 'Chưa có gợi ý mới. Những người đã được gắn thẻ trong '
+                          'ảnh này sẽ không được gợi ý lại — gỡ thẻ rồi quét '
+                          'lại nếu muốn AI nhận diện từ đầu.'
+                    : 'Chưa có gợi ý nào. Thường do khuôn mặt trong ảnh quá '
+                          'nhỏ, bị che hoặc chưa ai đăng ký Hồ sơ khuôn mặt. '
+                          'Bạn vẫn có thể gắn thẻ thủ công.',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: context.colors.textMuted,
