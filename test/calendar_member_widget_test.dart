@@ -66,6 +66,7 @@ Future<void> _pump(WidgetTester tester, UserRole role) async {
 }
 
 void main() {
+  _pastDateGuardTests();
   _headerOverflowTests();
   // Lỗ hổng đã vá: BE tự tạo participants khi Manager tạo event và gửi
   // notification CALENDAR cho họ, nhưng trước đây Member không có màn nào để
@@ -172,6 +173,52 @@ void _headerOverflowTests() {
       await tester.pumpAndSettle();
       expect(find.byTooltip('Tháng hiện tại'), findsAtLeastNWidgets(1));
       await expectNoOverflow(tester);
+    });
+  });
+}
+
+/// Không cho TẠO sự kiện cho ngày đã qua, nhưng vẫn phải SỬA được sự kiện cũ.
+///
+/// Bug user báo 19/08: bộ chọn ngày để `firstDate: DateTime(2020)` nên lùi
+/// tới 2020 được, và hàm lưu chỉ kiểm tên chứ không kiểm ngày. Tệ hơn: đang
+/// xem tháng cũ rồi bấm "+" thì ngày mặc định ĐÃ nằm trong quá khứ, bấm Lưu
+/// luôn là tạo nhầm mà không hề chọn ngày.
+void _pastDateGuardTests() {
+  group('Chặn tạo sự kiện ngày đã qua', () {
+    testWidgets('mở form từ tháng CŨ thì ngày mặc định không rơi vào quá khứ', (
+      tester,
+    ) async {
+      await _pump(tester, UserRole.manager);
+      // Lùi 2 tháng rồi mới mở form tạo.
+      await tester.tap(find.byTooltip('Tháng trước').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Tháng trước').first);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Tạo sự kiện').first);
+      await tester.pumpAndSettle();
+
+      // Ngày hiện trên nút chọn phải là HÔM NAY, không phải ngày của tháng cũ.
+      final now = DateTime.now();
+      expect(
+        find.text('${now.day}/${now.month}/${now.year}'),
+        findsAtLeastNWidgets(1),
+        reason: 'Ngày mặc định phải bị kéo về hôm nay khi mở từ tháng cũ',
+      );
+    });
+
+    testWidgets('mở form ở tháng hiện tại thì giữ nguyên ngày đang chọn', (
+      tester,
+    ) async {
+      await _pump(tester, UserRole.manager);
+      await tester.tap(find.byTooltip('Tạo sự kiện').first);
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      expect(
+        find.text('${now.day}/${now.month}/${now.year}'),
+        findsAtLeastNWidgets(1),
+      );
     });
   });
 }
