@@ -144,6 +144,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return map;
   }
 
+  /// `INVITED` (BE bổ sung 19/08) nghĩa là đã được mời nhưng CHƯA trả lời —
+  /// với người dùng thì y hệt null, nên gộp chung nhánh mặc định. Không được
+  /// để lọt ra UI dưới dạng chuỗi thô "INVITED".
   String _responseLabel(String? status) => switch (status) {
     'ACCEPTED' => 'Tham gia',
     'MAYBE' => 'Có thể',
