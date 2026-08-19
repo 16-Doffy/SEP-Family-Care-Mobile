@@ -1287,10 +1287,16 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
                 const SizedBox(height: 6),
                 GestureDetector(
                   onTap: () async {
+                    // showDatePicker assert initialDate >= firstDate: hạn cũ
+                    // nằm trước ngày 1 của kỳ đang xem là dialog không mở
+                    // được, nút thành nút chết mà không báo gì.
+                    final firstDate = DateTime(_year, _month, 1);
                     final picked = await showDatePicker(
                       context: ctx,
-                      initialDate: dueDate,
-                      firstDate: DateTime(_year, _month, 1),
+                      initialDate: dueDate.isBefore(firstDate)
+                          ? firstDate
+                          : dueDate,
+                      firstDate: firstDate,
                       lastDate: DateTime(_year, _month + 2, 0),
                     );
                     if (picked != null) setSheet(() => dueDate = picked);
