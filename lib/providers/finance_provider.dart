@@ -344,11 +344,20 @@ class JarTargetActualItem {
 class JarTargetActualReport {
   final List<JarTargetActualItem> items;
   final double? unmappedAmount;
+
+  /// Mẫu số của cả báo cáo — **tổng chi đã theo dõi trong kỳ**, không phải thu
+  /// nhập. Swagger nói rõ: `targetAmount = trackedAmount * targetPercentage /
+  /// 100` và `actualPercentage = actualAmount / trackedAmount * 100`. Phải nêu
+  /// rõ con số này ra UI, nếu không người dùng thấy "hạn mức" tự tăng mỗi lần
+  /// chi thêm và tưởng app tính sai.
+  final double? trackedAmount;
+
   final Map<String, dynamic> raw;
 
   const JarTargetActualReport({
     required this.items,
     required this.unmappedAmount,
+    this.trackedAmount,
     required this.raw,
   });
 
@@ -376,6 +385,9 @@ class JarTargetActualReport {
       unmappedAmount: _moneyNull(
         j['unmappedAmount'] ??
             (j['unmapped'] is Map ? (j['unmapped'] as Map)['amount'] : null),
+      ),
+      trackedAmount: _moneyNull(
+        j['trackedAmount'] ?? j['totalTracked'] ?? j['totalAmount'],
       ),
       raw: j,
     );

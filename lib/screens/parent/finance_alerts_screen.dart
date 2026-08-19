@@ -193,6 +193,25 @@ class _FinanceAlertsScreenState extends State<FinanceAlertsScreen> {
           'Tài chính gia đình đang ổn định',
           style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
         ),
+        const SizedBox(height: 16),
+        // Nguồn hiểu nhầm thường gặp: chi vượt tỷ lệ hũ của mô hình 80/20
+        // nhưng ở đây vẫn trống. Cảnh báo chỉ sinh từ **kế hoạch ngân sách** và
+        // **mục tiêu tiết kiệm** (Swagger: "Tính lại cảnh báo ngân sách và mục
+        // tiêu tài chính"), mô hình hũ không phải nguồn cảnh báo.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            'Cảnh báo chỉ sinh ra từ kế hoạch ngân sách và mục tiêu tiết kiệm. '
+            'Chi vượt tỷ lệ hũ của mô hình tài chính không tạo cảnh báo — muốn '
+            'được nhắc khi vượt chi, hãy tạo kế hoạch ngân sách cho kỳ này.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              height: 1.4,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ),
       ],
     ),
   );
