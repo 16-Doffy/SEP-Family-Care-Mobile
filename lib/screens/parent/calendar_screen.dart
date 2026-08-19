@@ -782,11 +782,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
       children: [
         Row(
           children: [
-            _capsuleButton(
-              icon: Icons.chevron_left_rounded,
-              label: '${_focus.year}',
-              onTap: () => _moveMonth(-1),
-            ),
+            // Trước đây chỗ này chỉ có MỘT nút: mũi tên trái kèm nhãn là NĂM,
+            // nhưng bấm vào lại lùi một THÁNG. Ba vấn đề cùng lúc — nhãn nói
+            // một đằng hành vi một nẻo, không có nút tiến (chỉ vuốt được mà
+            // không có gì gợi ý), và đi xa rồi thì không có đường về hiện tại.
+            _yearStepper(),
             const Spacer(),
             DecoratedBox(
               decoration: BoxDecoration(
@@ -798,6 +798,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _modeMenuButton(),
+                  // "Về hôm nay" chỉ hiện khi đang KHÔNG ở tháng hiện tại — ở
+                  // đúng tháng này thì nút vô nghĩa. Đặt trong thanh công cụ
+                  // chứ không cạnh nhãn năm: để cạnh nhãn thì header tràn trên
+                  // máy màn hẹp (widget test 304px báo tràn 9px).
+                  if (!_isCurrentMonth)
+                    _roundToolbarButton(
+                      tooltip: 'Về hôm nay',
+                      icon: Icons.today_rounded,
+                      onTap: _goToToday,
+                    ),
                   _roundToolbarButton(
                     tooltip: 'Tìm kiếm',
                     icon: Icons.search_rounded,
@@ -1500,36 +1510,68 @@ class _CalendarScreenState extends State<CalendarScreen> {
     border: Border.all(color: _calendarBorder),
   );
 
-  Widget _capsuleButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
+  /// Đang đứng ở đúng tháng của hôm nay hay không.
+  bool get _isCurrentMonth {
+    final now = DateTime.now();
+    return _focus.year == now.year && _focus.month == now.month;
+  }
+
+  /// Về thẳng tháng hiện tại và chọn lại đúng ngày hôm nay.
+  Future<void> _goToToday() async {
+    final now = DateTime.now();
+    if (_isCurrentMonth) {
+      setState(() => _selected = now.day);
+      return;
+    }
+    setState(() {
+      _focus = DateTime(now.year, now.month);
+      _selected = now.day;
+    });
+    await _reload();
+  }
+
+  /// Cụm `‹ 2025 ›` — lùi/tiến MỘT THÁNG, nhãn giữa là năm đang xem.
+  ///
+  /// Thay cho nút cũ chỉ có mũi tên trái: hai mũi tên hai bên cho thấy ngay là
+  /// đi được cả hai chiều. Nhãn vẫn là năm (giữ đúng thiết kế cũ) vì tên tháng
+  /// đã hiện cỡ lớn ngay bên dưới.
+  Widget _yearStepper() {
+    Widget arrow(IconData icon, VoidCallback onTap, String tooltip) => InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 10, 16, 10),
-        decoration: BoxDecoration(
-          color: _calendarSurface,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: _calendarBorder),
+      child: Tooltip(
+        message: tooltip,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 10),
+          child: Icon(icon, color: _calendarText, size: 24),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: _calendarText, size: 24),
-            const SizedBox(width: 2),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                color: _calendarText,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-              ),
+      ),
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _calendarSurface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _calendarBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          arrow(
+            Icons.chevron_left_rounded,
+            () => _moveMonth(-1),
+            'Tháng trước',
+          ),
+          Text(
+            '${_focus.year}',
+            style: GoogleFonts.inter(
+              color: _calendarText,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
             ),
-          ],
-        ),
+          ),
+          arrow(Icons.chevron_right_rounded, () => _moveMonth(1), 'Tháng sau'),
+        ],
       ),
     );
   }
