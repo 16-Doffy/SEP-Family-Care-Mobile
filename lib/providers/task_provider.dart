@@ -9,6 +9,12 @@ import '../services/api_client.dart';
 ///
 /// Hàm thuần, nhận [now] để test được mà không phụ thuộc đồng hồ máy.
 bool isAssignmentOverdue(TaskAssignment a, {DateTime? now}) {
+  // BE bổ sung `isOverdue` 19/08 — đây mới là nguồn quyết định có chặn nộp bài
+  // (400 SUBMISSION_OVERDUE) hay không, nên tin BE trước. FE tự tính có thể
+  // lệch múi giờ hoặc lệch vài giây so với server.
+  final fromServer = a.isOverdueFromServer;
+  if (fromServer != null) return fromServer;
+
   if (a.status == 'APPROVED' ||
       a.status == 'CANCELED' ||
       a.status == 'REJECTED') {
@@ -280,6 +286,13 @@ class TaskAssignment {
   final String?
   latestSubmissionId; // cần để gọi review — lấy từ embedded submission nếu BE trả về
 
+  /// Quá hạn theo **BE** (`TaskAssignmentResponseDto.isOverdue`, bổ sung 19/08).
+  ///
+  /// `null` = bản BE cũ chưa trả field này → rơi về [isAssignmentOverdue] tự
+  /// tính từ `dueAt`. Ưu tiên BE vì đó mới là nguồn quyết định có chặn nộp bài
+  /// hay không; FE tự tính có thể lệch múi giờ hoặc lệch vài giây.
+  final bool? isOverdueFromServer;
+
   const TaskAssignment({
     required this.id,
     required this.taskId,
@@ -294,6 +307,7 @@ class TaskAssignment {
     this.rewardSetting,
     this.task,
     this.latestSubmissionId,
+    this.isOverdueFromServer,
   });
 
   factory TaskAssignment.fromJson(Map<String, dynamic> j) {
@@ -358,6 +372,9 @@ class TaskAssignment {
           : null,
       task: taskMap != null ? FamilyTask.fromJson(taskMap) : null,
       latestSubmissionId: submissionId,
+      isOverdueFromServer: j["isOverdue"] is bool
+          ? j["isOverdue"] as bool
+          : null,
     );
   }
 
@@ -956,6 +973,23 @@ class TaskProvider extends ChangeNotifier {
       {},
     );
     await fetchMyAssignments();
+  }
+
+  // PATCH .../tasks/assignments/{assignmentId} — "Gia hạn hoặc cập nhật thời
+  // gian phân công công việc" (BE bổ sung 19/08 theo đề xuất của FE).
+  //
+  // Đây là đường DUY NHẤT cứu một phân công quá hạn mà KHÔNG phải đổi người:
+  // BE chặn nộp bài quá hạn, còn `reassign` thì bắt buộc giao sang người khác.
+  Future<void> updateAssignmentSchedule(
+    String assignmentId, {
+    DateTime? startAt,
+    DateTime? dueAt,
+  }) async {
+    await ApiClient.instance
+        .patch('/families/$_fid/tasks/assignments/$assignmentId', {
+          if (startAt != null) 'startAt': startAt.toIso8601String(),
+          if (dueAt != null) 'dueAt': dueAt.toIso8601String(),
+        });
   }
 
   Future<void> reassignAssignment(

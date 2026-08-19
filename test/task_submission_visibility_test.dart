@@ -5,6 +5,7 @@ import 'package:family_care/services/api_client.dart';
 import 'package:family_care/screens/shared/task_submission_recap.dart';
 
 void main() {
+  _isOverdueFromServerTests();
   _overdueAssignmentTests();
   _pickSubmissionTests();
   _overdueContractTests();
@@ -229,6 +230,51 @@ void _overdueAssignmentTests() {
     test('đúng mốc hạn chưa tính là trễ', () {
       expect(
         isAssignmentOverdue(_asg('ASSIGNED', '2026-08-19T15:00:00Z'), now: now),
+        isFalse,
+      );
+    });
+  });
+}
+
+/// BE bổ sung `isOverdue` vào TaskAssignmentResponseDto (19/08). Đây mới là
+/// nguồn quyết định có chặn nộp bài hay không, nên phải thắng phép tự tính.
+void _isOverdueFromServerTests() {
+  final now = DateTime.parse('2026-08-19T15:00:00Z');
+
+  TaskAssignment fromBe({required bool? isOverdue, String? due}) =>
+      TaskAssignment.fromJson({
+        'id': 'a1',
+        'taskId': 't1',
+        'assignedToMemberId': 'm1',
+        'status': 'ASSIGNED',
+        'isOverdue': ?isOverdue,
+        'dueAt': ?due,
+      });
+
+  group('isAssignmentOverdue — ưu tiên isOverdue của BE', () {
+    test('BE nói quá hạn thì tin BE dù hạn còn ở tương lai', () {
+      final a = fromBe(isOverdue: true, due: '2026-08-20T00:00:00Z');
+      expect(isAssignmentOverdue(a, now: now), isTrue);
+    });
+
+    test('BE nói chưa quá hạn thì tin BE dù hạn đã qua', () {
+      final a = fromBe(isOverdue: false, due: '2026-08-18T00:00:00Z');
+      expect(isAssignmentOverdue(a, now: now), isFalse);
+    });
+
+    test('BE cũ không trả field thì tự tính từ dueAt như trước', () {
+      expect(
+        isAssignmentOverdue(
+          fromBe(isOverdue: null, due: '2026-08-18T00:00:00Z'),
+          now: now,
+        ),
+        isTrue,
+      );
+      expect(
+        isAssignmentOverdue(
+          fromBe(isOverdue: null, due: '2026-08-20T00:00:00Z'),
+          now: now,
+        ),
         isFalse,
       );
     });
