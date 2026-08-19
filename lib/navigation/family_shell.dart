@@ -34,6 +34,32 @@ import 'notification_router.dart';
 // Thanh nav luôn 6 ô, thứ tự cố định và người dùng KHÔNG đổi được:
 //   0 Trang chủ │ 1 tùy chọn │ 2 tùy chọn │ 3 SOS │ 4 tùy chọn │ 5 Tôi
 // Ba ô tùy chọn ánh xạ sang branch nào là do TabConfigProvider quyết định.
+/// Có nên nuốt thông báo tin nhắn vì người dùng đang nhìn đúng khung chat đó
+/// không. Hàm thuần, tách khỏi BuildContext để unit test được (cùng lối với
+/// `computeRedirect` trong app_router).
+///
+/// Không suy ra chỉ từ [openConversationId]: chat là một branch của
+/// `StatefulShellRoute.indexedStack` nên màn hình vẫn sống và vẫn giữ hội thoại
+/// đang mở kể cả khi người dùng đã sang tab khác — phải xét thêm branch nào
+/// đang hiện.
+///
+/// Chỉ nuốt khi khớp **đúng** conversationId. Thông báo không kèm id thì coi
+/// như không biết là hội thoại nào → vẫn báo, thà thừa còn hơn nuốt mất tin của
+/// một hội thoại khác.
+bool shouldSuppressChatNotification({
+  required String? referenceType,
+  required String? referenceId,
+  required bool appInForeground,
+  required int currentBranchIndex,
+  required String? openConversationId,
+}) {
+  if (referenceType != 'CONVERSATION' || !appInForeground) return false;
+  if (currentBranchIndex != TabOption.chat.branchIndex) return false;
+  final id = referenceId?.trim() ?? '';
+  if (id.isEmpty) return false;
+  return id == openConversationId;
+}
+
 class FamilyShell extends StatefulWidget {
   final StatefulNavigationShell navigationShell;
   const FamilyShell({super.key, required this.navigationShell});
@@ -212,6 +238,26 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
   // điều hướng theo NotificationRouter (role-aware).
   void _showTransientNotif(AppNotification n) {
     if (!mounted) return;
+
+    // Chat chạy bằng REST poll 5 giây (BE chưa có socket cho chat) trong khi
+    // notification về qua socket ngay lập tức → người dùng nghe báo trước, rồi
+    // vài giây sau tin mới hiện trong khung chat đang mở. Kéo tin về ngay để
+    // hai thứ không lệch nhau nữa.
+    if (n.referenceType == 'CONVERSATION') {
+      unawaited(context.read<ChatProvider>().fetchMessages());
+    }
+
+    // Đang đứng ngay trong khung chat đó thì báo là thừa: tin nhắn tự hiện
+    // trong luồng. Bỏ cả toast lẫn thông báo khay hệ thống.
+    if (shouldSuppressChatNotification(
+      referenceType: n.referenceType,
+      referenceId: n.referenceId,
+      appInForeground: _appInForeground,
+      currentBranchIndex: widget.navigationShell.currentIndex,
+      openConversationId: context.read<ChatProvider>().conversationId,
+    )) {
+      return;
+    }
     // Bắn ra khay hệ thống (kêu + heads-up kể cả khi user đang ở app khác,
     // miễn tiến trình còn sống).
     LocalNotificationService.instance.show(
@@ -570,13 +616,18 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         icon: const Icon(Icons.lock_outline_rounded, color: AppColors.link),
         title: Text(
-          label != null ? '$label chưa nằm trong gói hiện tại' : 'Tính năng chưa nằm trong gói hiện tại',
+          label != null
+              ? '$label chưa nằm trong gói hiện tại'
+              : 'Tính năng chưa nằm trong gói hiện tại',
           style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16),
           textAlign: TextAlign.center,
         ),
         content: Text(
           message,
-          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: AppColors.textSecondary,
+          ),
           textAlign: TextAlign.center,
         ),
         actionsAlignment: MainAxisAlignment.center,
@@ -595,7 +646,10 @@ class _FamilyShellState extends State<FamilyShell> with WidgetsBindingObserver {
             },
             child: Text(
               'Xem các gói',
-              style: GoogleFonts.inter(color: AppColors.link, fontWeight: FontWeight.w700),
+              style: GoogleFonts.inter(
+                color: AppColors.link,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
