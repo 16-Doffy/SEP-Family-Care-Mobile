@@ -2887,11 +2887,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     DateTime? current,
   ) async {
     final now = DateTime.now();
-    final initial = current ?? now;
+    final today = DateTime(now.year, now.month, now.day);
+    final raw = current ?? now;
+    // showDatePicker assert `initialDate >= firstDate`. Gia hạn một phân công
+    // QUÁ HẠN thì `current` chính là mốc đã trôi qua → assert nổ, dialog không
+    // mở, người dùng bấm nút mà không có gì xảy ra (đo trên máy thật 19/08).
+    // Kẹp lại về hôm nay thay vì để nó nổ.
+    final initial = DateTime(raw.year, raw.month, raw.day);
     final date = await showDatePicker(
       context: context,
-      initialDate: DateTime(initial.year, initial.month, initial.day),
-      firstDate: DateTime(now.year, now.month, now.day),
+      initialDate: initial.isBefore(today) ? today : initial,
+      firstDate: today,
       lastDate: DateTime(now.year + 2),
     );
     if (date == null || !context.mounted) return null;

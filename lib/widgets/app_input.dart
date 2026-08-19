@@ -44,9 +44,14 @@ class AppTextField extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Text(label,
-              style: GoogleFonts.inter(
-                  fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
         ),
         TextFormField(
           controller: controller,
@@ -56,7 +61,9 @@ class AppTextField extends StatelessWidget {
           keyboardType: money ? TextInputType.number : keyboardType,
           textInputAction: textInputAction,
           autofillHints: autofillHints,
-          inputFormatters: money ? const [ThousandsSeparatorInputFormatter()] : null,
+          inputFormatters: money
+              ? const [ThousandsSeparatorInputFormatter()]
+              : null,
           autovalidateMode: AutovalidateMode.onUserInteraction,
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
           decoration: InputDecoration(
@@ -88,6 +95,7 @@ class AppDateField extends StatefulWidget {
   });
 
   final String label;
+
   /// Nhận giá trị ISO yyyy-MM-dd mỗi khi chọn ngày
   final ValueChanged<String> onChanged;
   final String? initialIso;
@@ -125,14 +133,23 @@ class _AppDateFieldState extends State<AppDateField> {
 
   Future<void> _pick() async {
     final now = DateTime.now();
+    final firstDate = widget.firstDate ?? DateTime(now.year - 1);
+    final lastDate = widget.lastDate ?? DateTime(now.year + 20);
+    var initial = DateTime.tryParse(_iso) ?? now;
+    // showDatePicker assert initialDate nằm trong [firstDate, lastDate]. Giá
+    // trị đang lưu ngoài khoảng đó thì dialog KHÔNG mở và không báo gì —
+    // người dùng bấm vào ô ngày mà tưởng ô bị hỏng.
+    if (initial.isBefore(firstDate)) initial = firstDate;
+    if (initial.isAfter(lastDate)) initial = lastDate;
     final picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.tryParse(_iso) ?? now,
-      firstDate: widget.firstDate ?? DateTime(now.year - 1),
-      lastDate: widget.lastDate ?? DateTime(now.year + 20),
+      initialDate: initial,
+      firstDate: firstDate,
+      lastDate: lastDate,
     );
     if (picked == null) return;
-    _iso = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    _iso =
+        '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
     setState(() => _ctrl.text = _display(_iso));
     widget.onChanged(_iso);
   }
@@ -144,20 +161,31 @@ class _AppDateFieldState extends State<AppDateField> {
       children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 6),
-          child: Text(widget.label,
-              style: GoogleFonts.inter(
-                  fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+          child: Text(
+            widget.label,
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
         ),
         TextFormField(
           controller: _ctrl,
           readOnly: true,
           onTap: _pick,
-          validator: widget.validator == null ? null : (_) => widget.validator!(_iso),
+          validator: widget.validator == null
+              ? null
+              : (_) => widget.validator!(_iso),
           autovalidateMode: AutovalidateMode.onUserInteraction,
           style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: widget.hint,
-            suffixIcon: const Icon(Icons.calendar_month_rounded, size: 20, color: AppColors.textMuted),
+            suffixIcon: const Icon(
+              Icons.calendar_month_rounded,
+              size: 20,
+              color: AppColors.textMuted,
+            ),
           ),
         ),
         const SizedBox(height: 14),
@@ -191,24 +219,40 @@ class PrimaryButton extends StatelessWidget {
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
           backgroundColor: color ?? AppColors.primary500,
-          disabledBackgroundColor: (color ?? AppColors.primary500).withValues(alpha: 0.45),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          disabledBackgroundColor: (color ?? AppColors.primary500).withValues(
+            alpha: 0.45,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           elevation: 0,
         ),
         onPressed: loading ? null : onPressed,
         child: loading
             ? const SizedBox.square(
                 dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : Row(mainAxisSize: MainAxisSize.min, children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 18, color: Colors.white),
-                  const SizedBox(width: 8),
-                ],
-                Text(label,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(icon, size: 18, color: Colors.white),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    label,
                     style: GoogleFonts.inter(
-                        fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white)),
-              ]),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }
