@@ -686,7 +686,7 @@ class _WalletScreenState extends State<WalletScreen> {
               ...jarInfo.rows.asMap().entries.map(
                 (e) => _jarRow(
                   e.value,
-                  _jarColor(e.key),
+                  _jarColor(e.key, row: e.value),
                   trackedAmount: jarInfo.trackedAmount,
                 ),
               ),
@@ -809,7 +809,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         .entries
                         .map(
                           (e) => WaffleSegment(
-                            color: _jarColor(e.key),
+                            color: _jarColor(e.key, row: e.value),
                             pct: _actualPct(e.value, jarInfo.trackedAmount),
                             label: e.value.name,
                             amount: e.value.actual.round(),
@@ -834,7 +834,7 @@ class _WalletScreenState extends State<WalletScreen> {
                         for (final e in jarInfo.rows.asMap().entries) ...[
                           _waffleLegend(
                             e.value.name,
-                            _jarColor(e.key),
+                            _jarColor(e.key, row: e.value),
                             _fmt(e.value.actual.round()),
                             '${_actualPct(e.value, jarInfo.trackedAmount)}%',
                           ),
@@ -2857,14 +2857,21 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   /// Màu cho hũ thứ [index] — xoay vòng nên số hũ bất kỳ vẫn có màu.
-  Color _jarColor(int index) {
+  /// Màu của một hũ.
+  ///
+  /// Hũ tích luỹ luôn **xanh lá**, bất kể thứ tự trong danh sách. Trước đây
+  /// màu lấy theo index nên hũ Tiết kiệm rơi vào cam, rồi vượt mức lại thành
+  /// đỏ — đọc ra y hệt cảnh báo tiêu quá tay, trong khi tiết kiệm nhiều hơn dự
+  /// định là chuyện đáng mừng.
+  Color _jarColor(int index, {_JarOverviewRow? row}) {
+    if (row != null && row.isSavingLike) return AppColors.safe;
     const palette = [
       AppColors.shared,
       AppColors.income,
       AppColors.link,
       AppColors.accent500,
-      AppColors.safe,
       AppColors.heroPurple,
+      AppColors.accent500,
     ];
     return palette[index % palette.length];
   }
