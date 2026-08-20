@@ -358,9 +358,17 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     );
   }
 
-  /// Tổng số tiền cả nhà dự định góp mỗi tháng theo gợi ý hiện tại.
-  double get _plannedMonthlyTotal =>
-      _suggestions.fold<double>(0, (sum, s) => sum + s.suggestedAmount);
+  /// Tổng số tiền cả nhà dự định góp mỗi tháng.
+  ///
+  /// Ưu tiên kế hoạch ĐÃ CHỐT (`_plans`, `plannedAmount` từng thành viên) —
+  /// đây mới là con số thật đang áp dụng. Trước đây luôn cộng gợi ý AI
+  /// (`_suggestions`) kể cả khi đã có kế hoạch khác hẳn, nên sau khi xác nhận
+  /// kế hoạch 10.800.000 ₫/tháng, thẻ cảnh báo vẫn đứng nguyên số gợi ý AI
+  /// 5.000.001 ₫ — ba con số, hai câu chuyện trên cùng một màn (verify
+  /// runtime 2026-08-19). Chỉ rơi về gợi ý AI khi thật sự chưa có kế hoạch.
+  double get _plannedMonthlyTotal => _plans.isNotEmpty
+      ? _plans.fold<double>(0, (sum, p) => sum + p.plannedAmount)
+      : _suggestions.fold<double>(0, (sum, s) => sum + s.suggestedAmount);
 
   /// Cảnh báo mức góp không đủ đạt mục tiêu đúng hạn, `null` nếu không cần.
   ContributionShortfall? get _shortfall => evaluateContributionShortfall(
@@ -1114,8 +1122,15 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
         suggestionByMember[member.id] = s.suggestedAmount;
       }
     }
-    // Mặc định theo AI cho nhanh, nhưng người dùng đổi sang tự nhập được.
-    bool useAiSuggestion = suggestionByMember.isNotEmpty;
+    // Mặc định theo AI cho nhanh, nhưng CHỈ khi chưa có kế hoạch nào được
+    // chốt trước đó — nếu không, mở sheet "Chỉnh sửa" lên là số cũ (đã nạp
+    // đúng vào `amountCtrls` phía trên) bị ghi đè ngay bằng gợi ý AI, kể cả
+    // với người đã nộp đủ theo kế hoạch cũ (verify runtime 2026-08-19: mở
+    // sheet sửa kế hoạch tháng đã chốt 5.000.000 ₫ thì tự đổi thành gợi ý AI
+    // 3.067.485 ₫, bấm Xác nhận là mất số cũ). Người dùng vẫn đổi qua lại
+    // được bằng nút "Theo AI gợi ý" / "Tự nhập".
+    bool useAiSuggestion =
+        existingByMember.isEmpty && suggestionByMember.isNotEmpty;
     if (useAiSuggestion) {
       suggestionByMember.forEach((memberId, amount) {
         amountCtrls[memberId]!.text =
@@ -1138,297 +1153,323 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            24,
-            24,
-            MediaQuery.of(ctx).viewInsets.bottom + 32,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Xác nhận kế hoạch tháng $_month/$_year',
-                  style: GoogleFonts.inter(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Nhắc lại ngay trước nút lưu — người dùng có thể cuộn thẳng
-                // xuống bấm "Xác nhận" mà chưa đọc cảnh báo ở màn ngoài.
-                if (_shortfall != null) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.dangerLight,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      'Mức này chỉ đạt ${_shortfall!.coveragePercent}% mục tiêu '
-                      'đúng hạn. Cần ${_fmt(_shortfall!.recommended)}/tháng mới kịp.',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        color: AppColors.danger,
-                        fontWeight: FontWeight.w600,
-                      ),
+        builder: (ctx, setSheet) {
+          // Tổng số tiền đang gõ TRONG SHEET này ngay lúc build — tính lại
+          // mỗi lần setSheet() chạy nên luôn khớp với những gì người dùng
+          // vừa gõ, không phải số lúc mở sheet.
+          final liveTotal = amountCtrls.values.fold<double>(
+            0,
+            (sum, ctrl) => sum + parseMoneyInput(ctrl.text),
+          );
+          final liveShortfall = evaluateContributionShortfall(
+            planned: liveTotal,
+            recommended: _result.recommendedMonthlyContribution,
+            remaining: _result.remainingAmount,
+          );
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              MediaQuery.of(ctx).viewInsets.bottom + 32,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Xác nhận kế hoạch tháng $_month/$_year',
+                    style: GoogleFonts.inter(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 12),
-                ],
-                // Chọn nguồn số tiền. "Tự nhập" KHÔNG ghi đè ô nhập bằng gợi ý
-                // của AI — người dùng gõ tay rồi bấm nhầm sang lại là mất hết
-                // công, nên chỉ chiều "Theo AI gợi ý" mới nạp lại số.
-                if (suggestionByMember.isNotEmpty) ...[
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(
-                        value: true,
-                        icon: Icon(Icons.auto_awesome_rounded, size: 16),
-                        label: Text('Theo AI gợi ý'),
+                  // Nhắc lại ngay trước nút lưu — người dùng có thể cuộn thẳng
+                  // xuống bấm "Xác nhận" mà chưa đọc cảnh báo ở màn ngoài.
+                  // Tính lại TỪ SỐ ĐANG GÕ trong sheet (`amountCtrls`), không
+                  // dùng `_shortfall` ngoài — trước đây banner này đứng yên
+                  // theo `_plannedMonthlyTotal` cũ dù người dùng đã gõ đủ
+                  // 100% trong các ô bên dưới (verify runtime 2026-08-19: gõ
+                  // đủ 10.800.000 ₫ mà banner vẫn báo "chỉ đạt 46%").
+                  if (liveShortfall != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.dangerLight,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      ButtonSegment(
-                        value: false,
-                        icon: Icon(Icons.edit_outlined, size: 16),
-                        label: Text('Tự nhập'),
+                      child: Text(
+                        'Mức đang nhập ${_fmt(liveShortfall.planned)} chỉ đạt '
+                        '${liveShortfall.coveragePercent}% mục tiêu đúng hạn. '
+                        'Cần ${_fmt(liveShortfall.recommended)}/tháng mới kịp.',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          color: AppColors.danger,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ],
-                    selected: {useAiSuggestion},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (sel) {
-                      final next = sel.first;
-                      setSheet(() {
-                        useAiSuggestion = next;
-                        if (!next) return;
-                        // Quay lại chế độ AI thì nạp lại số đề xuất.
-                        suggestionByMember.forEach((memberId, amount) {
-                          final ctrl = amountCtrls[memberId];
-                          if (ctrl == null || amount <= 0) return;
-                          ctrl.text =
-                              ThousandsSeparatorInputFormatter.formatThousands(
-                                amount.round().toString(),
-                              );
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  // Chọn nguồn số tiền. "Tự nhập" KHÔNG ghi đè ô nhập bằng gợi ý
+                  // của AI — người dùng gõ tay rồi bấm nhầm sang lại là mất hết
+                  // công, nên chỉ chiều "Theo AI gợi ý" mới nạp lại số.
+                  if (suggestionByMember.isNotEmpty) ...[
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: true,
+                          icon: Icon(Icons.auto_awesome_rounded, size: 16),
+                          label: Text('Theo AI gợi ý'),
+                        ),
+                        ButtonSegment(
+                          value: false,
+                          icon: Icon(Icons.edit_outlined, size: 16),
+                          label: Text('Tự nhập'),
+                        ),
+                      ],
+                      selected: {useAiSuggestion},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (sel) {
+                        final next = sel.first;
+                        setSheet(() {
+                          useAiSuggestion = next;
+                          if (!next) return;
+                          // Quay lại chế độ AI thì nạp lại số đề xuất.
+                          suggestionByMember.forEach((memberId, amount) {
+                            final ctrl = amountCtrls[memberId];
+                            if (ctrl == null || amount <= 0) return;
+                            ctrl.text =
+                                ThousandsSeparatorInputFormatter.formatThousands(
+                                  amount.round().toString(),
+                                );
+                          });
                         });
-                      });
-                    },
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      useAiSuggestion
+                          ? 'Đang dùng số AI gợi ý. Bạn vẫn sửa được từng ô bên dưới.'
+                          : 'Bạn đang tự nhập. AI sẽ không ghi đè số bạn gõ.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  if (members.isEmpty)
+                    Text(
+                      'Không có thành viên nào',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.textMuted,
+                      ),
+                    )
+                  else
+                    ...members.map(
+                      (m) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    m.name,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                                if ((suggestionByMember[m.id] ?? 0) > 0)
+                                  Text(
+                                    'AI đề xuất ${_fmt(suggestionByMember[m.id]!)}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: AppColors.link,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            _inputBox(
+                              amountCtrls[m.id]!,
+                              'Số tiền xác nhận (₫)',
+                              keyboardType: TextInputType.number,
+                              // Gõ tay là tính lại banner % ngay — không cần
+                              // đóng mở lại sheet mới thấy đúng.
+                              onChanged: (_) => setSheet(() {}),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  Text(
+                    'Hạn đóng góp',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    useAiSuggestion
-                        ? 'Đang dùng số AI gợi ý. Bạn vẫn sửa được từng ô bên dưới.'
-                        : 'Bạn đang tự nhập. AI sẽ không ghi đè số bạn gõ.',
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-                if (members.isEmpty)
-                  Text(
-                    'Không có thành viên nào',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      color: AppColors.textMuted,
-                    ),
-                  )
-                else
-                  ...members.map(
-                    (m) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  GestureDetector(
+                    onTap: () async {
+                      // showDatePicker assert initialDate >= firstDate: hạn cũ
+                      // nằm trước ngày 1 của kỳ đang xem là dialog không mở
+                      // được, nút thành nút chết mà không báo gì.
+                      final firstDate = DateTime(_year, _month, 1);
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: dueDate.isBefore(firstDate)
+                            ? firstDate
+                            : dueDate,
+                        firstDate: firstDate,
+                        lastDate: DateTime(_year, _month + 2, 0),
+                      );
+                      if (picked != null) setSheet(() => dueDate = picked);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: const Color(0xFFE5E7EB),
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  m.name,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                              if ((suggestionByMember[m.id] ?? 0) > 0)
-                                Text(
-                                  'AI đề xuất ${_fmt(suggestionByMember[m.id]!)}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    color: AppColors.link,
-                                  ),
-                                ),
-                            ],
+                          const Icon(
+                            Icons.calendar_today_rounded,
+                            size: 16,
+                            color: AppColors.textMuted,
                           ),
-                          const SizedBox(height: 6),
-                          _inputBox(
-                            amountCtrls[m.id]!,
-                            'Số tiền xác nhận (₫)',
-                            keyboardType: TextInputType.number,
+                          const SizedBox(width: 10),
+                          Text(
+                            '${dueDate.day}/${dueDate.month}/${dueDate.year}',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: AppColors.textPrimary,
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                Text(
-                  'Hạn đóng góp',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                GestureDetector(
-                  onTap: () async {
-                    // showDatePicker assert initialDate >= firstDate: hạn cũ
-                    // nằm trước ngày 1 của kỳ đang xem là dialog không mở
-                    // được, nút thành nút chết mà không báo gì.
-                    final firstDate = DateTime(_year, _month, 1);
-                    final picked = await showDatePicker(
-                      context: ctx,
-                      initialDate: dueDate.isBefore(firstDate)
-                          ? firstDate
-                          : dueDate,
-                      firstDate: firstDate,
-                      lastDate: DateTime(_year, _month + 2, 0),
-                    );
-                    if (picked != null) setSheet(() => dueDate = picked);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: const Color(0xFFE5E7EB),
-                        width: 1.5,
+                  if (sheetError != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.calendar_today_rounded,
-                          size: 16,
-                          color: AppColors.textMuted,
+                      child: Text(
+                        sheetError!,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppColors.danger,
                         ),
-                        const SizedBox(width: 10),
-                        Text(
-                          '${dueDate.day}/${dueDate.month}/${dueDate.year}',
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (sheetError != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEE2E2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      sheetError!,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.danger,
                       ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.link,
+                        minimumSize: const Size.fromHeight(54),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: submitting || members.isEmpty
+                          ? null
+                          : () async {
+                              final entries =
+                                  <({String memberId, double plannedAmount})>[];
+                              for (final m in members) {
+                                final amt = parseMoneyInput(
+                                  amountCtrls[m.id]!.text,
+                                );
+                                entries.add((
+                                  memberId: m.id,
+                                  plannedAmount: amt,
+                                ));
+                              }
+                              if (!entries.any(
+                                (entry) => entry.plannedAmount > 0,
+                              )) {
+                                setSheet(
+                                  () => sheetError =
+                                      'Nhập ít nhất 1 số tiền kế hoạch lớn hơn 0',
+                                );
+                                return;
+                              }
+                              setSheet(() {
+                                submitting = true;
+                                sheetError = null;
+                              });
+                              try {
+                                await context
+                                    .read<FinanceProvider>()
+                                    .confirmContributionPlan(
+                                      widget.goalId,
+                                      periodMonth: _month,
+                                      periodYear: _year,
+                                      dueDate: dueDate,
+                                      members: entries,
+                                    );
+                                if (ctx.mounted) Navigator.pop(ctx);
+                                await _load();
+                              } catch (e) {
+                                setSheet(() {
+                                  submitting = false;
+                                  sheetError = e.toString().replaceFirst(
+                                    'Exception: ',
+                                    '',
+                                  );
+                                });
+                              }
+                            },
+                      child: submitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              'Xác nhận kế hoạch',
+                              style: GoogleFonts.inter(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
                     ),
                   ),
                 ],
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.link,
-                      minimumSize: const Size.fromHeight(54),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: submitting || members.isEmpty
-                        ? null
-                        : () async {
-                            final entries =
-                                <({String memberId, double plannedAmount})>[];
-                            for (final m in members) {
-                              final amt = parseMoneyInput(
-                                amountCtrls[m.id]!.text,
-                              );
-                              entries.add((memberId: m.id, plannedAmount: amt));
-                            }
-                            if (!entries.any(
-                              (entry) => entry.plannedAmount > 0,
-                            )) {
-                              setSheet(
-                                () => sheetError =
-                                    'Nhập ít nhất 1 số tiền kế hoạch lớn hơn 0',
-                              );
-                              return;
-                            }
-                            setSheet(() {
-                              submitting = true;
-                              sheetError = null;
-                            });
-                            try {
-                              await context
-                                  .read<FinanceProvider>()
-                                  .confirmContributionPlan(
-                                    widget.goalId,
-                                    periodMonth: _month,
-                                    periodYear: _year,
-                                    dueDate: dueDate,
-                                    members: entries,
-                                  );
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              await _load();
-                            } catch (e) {
-                              setSheet(() {
-                                submitting = false;
-                                sheetError = e.toString().replaceFirst(
-                                  'Exception: ',
-                                  '',
-                                );
-                              });
-                            }
-                          },
-                    child: submitting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            'Xác nhận kế hoạch',
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -1437,6 +1478,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     TextEditingController ctrl,
     String hint, {
     TextInputType? keyboardType,
+    ValueChanged<String>? onChanged,
   }) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 14),
     decoration: BoxDecoration(
@@ -1449,6 +1491,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
       inputFormatters: keyboardType == TextInputType.number
           ? const [ThousandsSeparatorInputFormatter()]
           : null,
+      onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
         border: InputBorder.none,

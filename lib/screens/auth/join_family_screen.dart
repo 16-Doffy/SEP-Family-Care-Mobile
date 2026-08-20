@@ -41,7 +41,22 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     super.initState();
     if (widget.initialCode != null) {
       _codeCtrl.text = widget.initialCode!.trim().toUpperCase();
-      WidgetsBinding.instance.addPostFrameCallback((_) => _previewCode());
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _previewCode();
+        if (!mounted) return;
+        // Chỉ tự gửi khi: (1) preview thành công — mã còn hợp lệ, gia đình
+        // còn tồn tại; (2) đã đăng nhập — vừa quay lại từ /login; (3) cờ
+        // one-shot xác nhận CHÍNH người dùng này đã bấm gửi trước khi bị
+        // bắt đăng nhập. Không tự gửi ở mọi trường hợp khác (mở /join lần
+        // đầu lúc đã đăng nhập, quét QR trong lúc đã đăng nhập...) — những
+        // lượt đó chưa có xác nhận ý định nào từ người dùng.
+        final auth = context.read<AuthProvider>();
+        if (_preview != null &&
+            auth.isLoggedIn &&
+            auth.consumePendingInviteAutoSubmit()) {
+          await _submit();
+        }
+      });
     }
   }
 
@@ -124,6 +139,9 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     final code = _codeCtrl.text.trim().toUpperCase();
     if (!auth.isLoggedIn) {
       await auth.savePendingInviteToken(code);
+      // Ghi lại: người dùng vừa chủ động bấm gửi — đăng nhập xong tự gửi
+      // tiếp, không bắt bấm lại lần 2 cho cùng một ý định.
+      auth.markInviteAutoSubmitAfterLogin();
       if (mounted) context.go('/login');
       return;
     }
@@ -132,10 +150,9 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
       _error = null;
     });
     try {
-      final request = await context.read<InvitationProvider>().requestJoinByCode(
-        code,
-        message: _messageCtrl.text,
-      );
+      final request = await context
+          .read<InvitationProvider>()
+          .requestJoinByCode(code, message: _messageCtrl.text);
       _submittedRequestId = request.id;
       if (mounted) {
         setState(() => _showMyRequests = true);
@@ -198,6 +215,33 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
     }
   }
 
+  /// Thoát màn này. Ưu tiên `pop()` nếu còn gì để pop (vào từ link "Có mã
+  /// mời?" ở Login/Register thì có); không thì đi tới đúng nơi hợp lệ theo
+  /// trạng thái hiện tại — về thẳng home nếu đã có gia đình (không rơi lại
+  /// `/join`), về `/family-setup` nếu đã đăng nhập nhưng chưa có gia đình
+  /// (còn có lối "Tạo gia đình mới" và nút Đăng xuất ở đó), về `/login` nếu
+  /// chưa đăng nhập.
+  void _leave(BuildContext context) {
+    if (Navigator.of(context).canPop()) {
+      context.pop();
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      context.go('/login');
+      return;
+    }
+    if (!auth.hasFamily) {
+      context.go('/family-setup');
+      return;
+    }
+    context.go(switch (auth.user?.role) {
+      UserRole.manager => '/manager/home',
+      UserRole.deputy => '/deputy/home',
+      _ => '/member/home',
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -211,6 +255,19 @@ class _JoinFamilyScreenState extends State<JoinFamilyScreen> {
         backgroundColor: AppColors.background,
         appBar: AppBar(
           backgroundColor: AppColors.white,
+          // Màn này gần như luôn được điều hướng tới bằng `context.go()`
+          // (thay hẳn stack — vd router tự đá về sau khi đăng nhập, hoặc
+          // "Tạo gia đình mới / Tham gia" ở FamilySetupScreen), không phải
+          // `push()`, nên `Navigator.canPop()` thường false và Flutter
+          // KHÔNG tự vẽ nút back. Lúc đang chờ duyệt (`_showMyRequests`)
+          // màn này thành ngõ cụt thật sự — không nút nào thoát ra được,
+          // phải tắt hẳn app (verify UX 2026-08-19). Tự vẽ nút back, pop
+          // nếu có gì để pop, không thì điều hướng về đúng nơi hợp lệ theo
+          // trạng thái đăng nhập/gia đình hiện tại.
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            onPressed: () => _leave(context),
+          ),
           title: Text(
             'Tham gia gia đình',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700),

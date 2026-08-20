@@ -532,7 +532,39 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 
 ⚠️ **`summary.spending.byJar` vẫn `Reserved` và luôn trả `[]` — đừng dùng.** Báo cáo theo hũ thật nằm ở `GET /finance/reports/jar-target-actual` (FE đã dùng ở `finance_reports_screen.dart` và `wallet_screen.dart`). BE cho biết không ưu tiên điền `byJar` vì đã có report riêng; FE **không** chờ field này.
 
-### Invitations — **[FLOW ĐỔI HẲN — claim → approve]**
+### Invitations
+
+> ⚠️ **[CẬP NHẬT 2026-08-19] Mục dưới đây đã LỖI THỜI — FE hiện KHÔNG gọi endpoint nào
+> trong nhóm `/invitations/{token}/*` (grep toàn `lib/`, 0 kết quả, kể cả `claim`/`decline`
+> nhắc tới trong ghi chú cũ). Luồng thật đang chạy là **mã mời 8 ký tự dùng lại nhiều lần**
+> (không phải token 1-lần), nằm ở nhóm endpoint khác hẳn — xem ngay bên dưới. Giữ nguyên
+> phần cũ để tham khảo lịch sử (có thể BE vẫn còn endpoint này cho một tính năng mời qua
+> email riêng, chưa xác nhận), nhưng **đừng dựa vào nó khi đọc `join_family_screen.dart`
+> hay `invite_member_screen.dart`.**
+>
+> **Luồng thật (mã mời 8 ký tự) — `InvitationProvider`, verify code 2026-08-19:**
+> - `GET /families/{familyId}/invite-code` — lấy mã hiện tại của gia đình (Manager).
+> - `POST /families/{familyId}/invite-code/regenerate` — tạo mã lần đầu hoặc đổi mã mới
+>   (mã cũ mất hiệu lực). Trả `{ inviteCode }`. `invite_member_screen.dart`.
+> - `GET /invite-codes/{code}` — tra cứu công khai theo mã, **không cần đăng nhập** — trả
+>   thông tin gia đình để preview trước khi gửi yêu cầu. `previewInviteCode()`.
+> - `POST /invite-codes/{code}/join-requests` — gửi yêu cầu tham gia. Body `{ message? }`.
+>   **Cần đăng nhập nhưng KHÔNG cần xác thực email** (khác tạo gia đình mới — POST
+>   `/families` đòi verify). `requestJoinByCode()`.
+> - `GET /me/join-requests` — danh sách yêu cầu CỦA TÔI đã gửi (mọi gia đình).
+>   `fetchMyJoinRequests()`, poll mỗi 12s ở `join_family_screen.dart` trong lúc chờ duyệt.
+> - `POST /me/join-requests/{id}/cancel` — tự hủy yêu cầu đang chờ.
+> - `GET /families/{familyId}/join-requests?status=` — Manager xem yêu cầu chờ duyệt của
+>   gia đình (`status` mặc định `PENDING`).
+> - `POST /families/{familyId}/join-requests/{id}/approve` — Body
+>   `{ familyRole?, relationship? }` — duyệt, tạo `FamilyMember`.
+> - `POST /families/{familyId}/join-requests/{id}/reject` — từ chối.
+>
+> 📋 **Cần báo BE**: xác nhận `/invitations/{token}/*` (claim/approve/reject) có còn tồn
+> tại/được dùng cho tính năng nào khác không, hay đã bị thay hẳn bởi `/invite-codes/*` +
+> `/join-requests/*` — nếu đã thay hẳn thì nên xóa mục cũ khỏi Swagger cho đỡ nhầm.
+
+### Invitations (lịch sử — xem cảnh báo phía trên) — **[FLOW ĐỔI HẲN — claim → approve]**
 - `POST /api/v1/families/{familyId}/invitations` — Mời member (FAMILY_MANAGER only). Body `CreateInvitationDto { email, invitedPhone?, familyRole?, relationship? }`.
   - `familyRole`: `FAMILY_MANAGER | DEPUTY_MEMBER | FAMILY_MEMBER` (default `FAMILY_MEMBER`).
 - `GET /api/v1/families/{familyId}/invitations` — **[MỚI]** Danh sách lời mời của family (FAMILY_MANAGER only). Query `status`.

@@ -160,6 +160,53 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
     );
   }
 
+  Future<void> _confirmCancelGoal(
+    BuildContext context,
+    FinancialGoal goal,
+  ) async {
+    // Trước đây bấm "Hủy" (nằm ngay sát nút "Góp tiền") là hủy thẳng, không
+    // hỏi lại, cũng không báo lỗi nếu BE từ chối (verify runtime 2026-08-19).
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          'Hủy mục tiêu "${goal.goalName}"?',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Mục tiêu sẽ ngừng theo dõi tiến độ. Không hoàn tác được.',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Quay lại'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Hủy mục tiêu'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<FinanceProvider>().cancelGoal(goal.id);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+    }
+  }
+
   Widget _goalCard(BuildContext context, FinancialGoal goal) {
     final pct = ((goal.progressPercent ?? 0) / 100).clamp(0.0, 1.0);
     return GestureDetector(
@@ -273,8 +320,7 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: AppColors.danger),
                         ),
-                        onPressed: () =>
-                            context.read<FinanceProvider>().cancelGoal(goal.id),
+                        onPressed: () => _confirmCancelGoal(context, goal),
                         child: Text(
                           'Hủy',
                           style: GoogleFonts.inter(

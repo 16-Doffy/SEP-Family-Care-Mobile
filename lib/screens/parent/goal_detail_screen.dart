@@ -474,6 +474,14 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             row('Hạn hoàn thành', _formatDate(goal.deadline!)),
           if (days != null) row('Số ngày còn lại', '$days ngày'),
           if (months != null) row('Số tháng còn lại', '$months tháng'),
+          // Số người dùng TỰ KHAI lúc tạo/sửa — trước đây chỉ thấy số BE
+          // khuyên bên dưới, không thấy lại số mình đã đặt để so sánh
+          // (verify runtime 2026-08-19).
+          if ((goal.monthlyContributionTarget ?? 0) > 0)
+            row(
+              'Mục tiêu góp mỗi tháng (đã khai)',
+              _fmt(goal.monthlyContributionTarget!),
+            ),
           if (!goal.isAchieved && recommended > 0)
             row(
               'Nên góp mỗi tháng',
@@ -733,7 +741,8 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
     FinancialGoal goal, {
     FinancePeriod? initialPeriod,
   }) {
-    var period = initialPeriod ?? widget.surplusPeriod ?? FinancePeriod.current();
+    var period =
+        initialPeriod ?? widget.surplusPeriod ?? FinancePeriod.current();
     SurplusAvailability? surplusData;
     bool loadingSurplus = true;
     String? surplusError;
@@ -917,6 +926,33 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                             ),
                           ],
                         ),
+                        // "Còn 0 ₫ khả dụng" mà "Tổng số dư quỹ" lại khác 0
+                        // nhìn như app hỏng nếu không thấy tiền đã đi đâu —
+                        // `allocatedSurplus` đã parse sẵn trong provider,
+                        // trước đây không hiển thị (verify runtime
+                        // 2026-08-19).
+                        if (surplusData!.allocatedSurplus > 0) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Đã phân bổ cho mục tiêu khác:',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                              Text(
+                                _fmt(surplusData!.allocatedSurplus),
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 4),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1087,7 +1123,11 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                   ),
                 if (a.createdAt != null)
                   Text(
-                    a.createdAt!,
+                    // Chuỗi ISO thô chưa từng được format ở đây — BE hiện
+                    // chưa trả field này (xem báo cáo test 2026-08-19, mục
+                    // B4) nên nhánh này chưa lộ ra thật, nhưng để sẵn đúng
+                    // khi BE bổ sung thay vì lại in "2026-08-19T15:03:00Z".
+                    _formatDate(a.createdAt!),
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: AppColors.textMuted,
@@ -1120,6 +1160,37 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
   }
 
   Future<void> _deleteAllocation(BuildContext context, GoalAllocation a) async {
+    // Xóa xong là tiến độ mục tiêu tụt ngay, không hoàn tác — trước đây bấm
+    // icon thùng rác là mất khoản góp ngay lập tức (verify runtime
+    // 2026-08-19).
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          'Xóa khoản góp ${_fmt(a.amount)} này?',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'Tiến độ mục tiêu sẽ giảm ngay theo số tiền này. Không hoàn tác được.',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Quay lại'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       await context.read<FinanceProvider>().deleteGoalAllocation(a.id);
@@ -1267,8 +1338,21 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
         goal.targetAmount.round().toString(),
       ),
     );
+    final monthlyCtrl = TextEditingController(
+      text: (goal.monthlyContributionTarget ?? 0) <= 0
+          ? ''
+          : ThousandsSeparatorInputFormatter.formatThousands(
+              goal.monthlyContributionTarget!.round().toString(),
+            ),
+    );
     bool submitting = false;
     String? sheetError;
+    // UpdateFinancialGoalDto có nhận deadline/monthlyContributionTarget từ
+    // trước, nhưng sheet này chưa cho sửa — lỡ đặt sai hạn hoặc muốn giãn
+    // hạn (đúng lời khuyên chính app đưa ra ở thẻ "chưa đủ đạt mục tiêu")
+    // thì phải hủy mục tiêu rồi tạo lại (đã ghi nhận trong báo cáo test
+    // 19/08). `null` = không đặt hạn.
+    DateTime? deadline = DateTime.tryParse(goal.deadline ?? '');
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1303,6 +1387,65 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                 targetCtrl,
                 'Số tiền mục tiêu (₫)',
                 keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              _inputBox(
+                monthlyCtrl,
+                'Góp hàng tháng dự kiến (₫, tùy chọn)',
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Hạn hoàn thành',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              GestureDetector(
+                // Không có nút "xóa hạn": `updateGoal` dùng cú pháp
+                // `?key: value` để lược field null khỏi payload PATCH (đúng
+                // ý "không đụng field này" — cùng quy ước với
+                // `thresholdAmount` ở dòng ngân sách), nên gửi
+                // `deadline: null` sẽ KHÔNG xóa được hạn trên BE, chỉ đơn
+                // giản là bỏ qua. Muốn xóa hẳn hạn cần BE hỗ trợ phân biệt
+                // "không gửi" vs "gửi null tường minh" — chưa xác nhận, nên
+                // sheet chỉ cho đặt/đổi hạn, không cho xóa để tránh nút giả.
+                onTap: () async {
+                  final now = DateTime.now();
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: (deadline == null || deadline!.isBefore(now))
+                        ? now
+                        : deadline!,
+                    firstDate: now,
+                    lastDate: DateTime(now.year + 15),
+                  );
+                  if (picked != null) setSheet(() => deadline = picked);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    deadline == null
+                        ? 'Chưa đặt hạn — chạm để chọn'
+                        : '${deadline!.day}/${deadline!.month}/${deadline!.year}',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: deadline == null
+                          ? AppColors.textMuted
+                          : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
               ),
               if (sheetError != null) ...[
                 const SizedBox(height: 10),
@@ -1351,6 +1494,11 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                               widget.goalId,
                               goalName: nameCtrl.text.trim(),
                               targetAmount: target,
+                              deadline: deadline,
+                              monthlyContributionTarget:
+                                  monthlyCtrl.text.trim().isEmpty
+                                  ? null
+                                  : parseMoneyInput(monthlyCtrl.text),
                             );
                             if (ctx.mounted) Navigator.pop(ctx);
                             await _load();

@@ -422,6 +422,9 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
   }
 
   void _showCreateSheet(BuildContext context) {
+    // Lấy trước — `ctx` (context của sheet) mất theo sheet ngay sau
+    // Navigator.pop, không dùng lại được để báo hint sau khi tạo xong.
+    final messenger = ScaffoldMessenger.of(context);
     final nameCtrl = TextEditingController();
     final incomeCtrl = TextEditingController();
     final expenseCtrl = TextEditingController();
@@ -795,6 +798,23 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                                 ],
                               );
                               if (ctx.mounted) Navigator.pop(ctx);
+                              // Danh mục Chi vừa tạo trong sheet này chưa
+                              // được gán vào hũ nào — khoản chi sau này sẽ
+                              // rơi vào "Chưa gán hũ" cho đến khi vào Mô
+                              // hình tài chính gán tay (verify runtime
+                              // 2026-08-19).
+                              if (creatingCategory) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Đã tạo danh mục "${newCategoryCtrl.text.trim()}". '
+                                      'Nhớ vào Mô hình tài chính → "Gán danh mục vào hũ" — '
+                                      'chưa gán thì khoản chi sẽ nằm ở "Chưa gán hũ".',
+                                    ),
+                                    duration: const Duration(seconds: 5),
+                                  ),
+                                );
+                              }
                             } catch (e) {
                               debugPrint('Budget plan create failed: $e');
                               setSheet(() {
@@ -937,6 +957,46 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
     BudgetPlan plan,
     String action,
   ) async {
+    // "close"/"cancel" không quay lại được (đóng thì không kích hoạt lại
+    // được, hủy thì mất hẳn) nhưng trước đây bấm là chạy ngay, không hỏi
+    // (verify runtime 2026-08-19). "activate" vẫn chạy thẳng — không phá gì,
+    // sai kỳ thì BE tự chặn bằng 409.
+    if (action == 'close' || action == 'cancel') {
+      final actionLabel = action == 'close' ? 'đóng' : 'hủy';
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            'Bạn chắc chắn muốn $actionLabel kế hoạch này?',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            action == 'close'
+                ? '"${plan.planName}" sẽ ngừng áp dụng. Không kích hoạt lại được — '
+                      'phải tạo kế hoạch mới nếu cần dùng lại.'
+                : '"${plan.planName}" sẽ bị hủy, không hoàn tác được.',
+            style: GoogleFonts.inter(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Quay lại'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.danger,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(action == 'close' ? 'Đóng' : 'Hủy'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+    }
     final messenger = ScaffoldMessenger.of(context);
     try {
       await context.read<FinanceProvider>().budgetPlanAction(plan.id, action);

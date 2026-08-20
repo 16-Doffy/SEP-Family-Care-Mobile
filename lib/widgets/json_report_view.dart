@@ -79,9 +79,18 @@ class JsonReportView extends StatelessWidget {
     'thresholdAmount': 'Mốc cảnh báo',
     'thresholdPercent': 'Tỷ lệ cảnh báo',
     'actualAmount': 'Đã chi',
-    'varianceAmount': 'Còn lại so với ngân sách',
+    // `varianceAmount = actualAmount − plannedAmount` (BE) — âm nghĩa là còn
+    // dư, dương nghĩa là đã vượt. Nhãn cũ "Còn lại so với ngân sách" đọc số
+    // dương thành "còn thừa" trong khi thực ra đang vượt — xem báo cáo test
+    // 2026-08-19. Đổi sang cách nói trung lập, đúng cả hai chiều dấu.
+    'varianceAmount': 'Chênh lệch so với ngân sách',
     'thresholdLimit': 'Mốc cảnh báo áp dụng',
-    'isOverBudget': 'Đã vượt ngân sách',
+    // BE đang set field này theo MỐC CẢNH BÁO (thresholdLimit), không phải
+    // theo plannedAmount — verify runtime 2026-08-19 (đã chi 5tr, ngân sách
+    // 6tr, mốc 4,5tr ⇒ isOverBudget=true dù chưa vượt ngân sách). Nhãn cũ
+    // "Đã vượt ngân sách" nói sai ý; xem B1 trong báo cáo test để BE xác nhận
+    // lại ngữ nghĩa field này.
+    'isOverBudget': 'Đã vượt mốc cảnh báo',
     'deadline': 'Hạn hoàn thành',
     'monthsRemaining': 'Số tháng còn lại',
     'recommendedMonthlyContribution': 'Nên góp mỗi tháng',
@@ -118,6 +127,11 @@ class JsonReportView extends StatelessWidget {
     'jar': 'Hũ',
     'jarName': 'Tên hũ',
     'jars': 'Các hũ',
+    'relatedJar': 'Hũ liên quan',
+    'currency': 'Đơn vị tiền tệ',
+    // Nhãn nhóm khi báo cáo lồng object từng dòng ngân sách — key số ít
+    // "budgetLine" khác `lines` (danh sách) đã có nhãn "Danh mục ngân sách".
+    'budgetLine': 'Dòng ngân sách',
     'categoryName': 'Tên danh mục',
     'family': 'Gia đình',
     'scope': 'Phạm vi',
@@ -163,6 +177,7 @@ class JsonReportView extends StatelessWidget {
     'user',
     'avatarUrl',
     'budgetPlanId',
+    'budgetLineId',
     'categoryId',
     'jarId',
     'financeLedgerId',
@@ -361,22 +376,35 @@ class JsonReportView extends StatelessWidget {
     }
     final raw = value.toString();
     final lowerKey = key.toLowerCase();
+    // Field CHỈ NGÀY (không giờ) như deadline/periodStart/periodEnd vẫn có
+    // thể mang giá trị ISO đầy đủ giờ ("2026-12-31T00:00:00.000Z") — phải
+    // loại các key này khỏi nhánh nhận diện "có giờ" bên dưới trước, nếu
+    // không `_looksLikeIsoDateTime` bắt trước và in nguyên chuỗi ISO ra màn
+    // hình (verify runtime 2026-08-19, `goal_contribution_screen` gặp cùng
+    // lỗi hình thái). `contains('date')` bắt luôn các key khác kiểu
+    // "dueDate"/"birthDate" chưa được liệt tên riêng.
+    final isDateOnlyKey =
+        lowerKey == 'deadline' ||
+        lowerKey == 'periodstart' ||
+        lowerKey == 'periodend' ||
+        lowerKey.contains('date');
     final display = lowerKey.contains('percent') || lowerKey.contains('ratio')
-        ? '$raw%'
+        // BE trả số thực chưa làm tròn ("45.1190524") — verify runtime
+        // 2026-08-19 ở tiến độ mục tiêu trong báo cáo. Làm tròn 1 chữ số
+        // thập phân, giữ nguyên chuỗi gốc nếu không phải số hợp lệ.
+        ? '${num.tryParse(raw)?.toStringAsFixed(1) ?? raw}%'
         : value is num && _looksLikeMoney(key)
         ? _fmtMoney(value)
-        : lowerKey.contains('time') ||
-              (value is String && _looksLikeIsoDateTime(raw))
+        : !isDateOnlyKey &&
+              (lowerKey.contains('time') ||
+                  (value is String && _looksLikeIsoDateTime(raw)))
         ? _fmtDateTime(raw)
-        : lowerKey.endsWith('at') ||
-              lowerKey.contains('date') ||
-              lowerKey == 'deadline' ||
-              lowerKey == 'periodstart' ||
-              lowerKey == 'periodend'
+        : lowerKey.endsWith('at') || isDateOnlyKey
         ? _fmtDate(raw)
         : value is bool
         ? (value ? 'Có' : 'Không')
         : lowerKey == 'status' ||
+              lowerKey == 'type' ||
               lowerKey == 'periodtype' ||
               lowerKey == 'categorytype' ||
               lowerKey == 'essentialtype' ||

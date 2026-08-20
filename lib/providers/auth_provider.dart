@@ -25,11 +25,7 @@ class FamilyWorkspace {
   final String name;
   final String? role;
 
-  const FamilyWorkspace({
-    required this.id,
-    required this.name,
-    this.role,
-  });
+  const FamilyWorkspace({required this.id, required this.name, this.role});
 }
 
 class AuthProvider extends ChangeNotifier {
@@ -51,6 +47,16 @@ class AuthProvider extends ChangeNotifier {
   // người dùng mở link mà chưa đăng nhập, để không mất token sau khi
   // login/register xong (sống sót qua cả cold-start nhờ secure storage).
   String? _pendingInviteToken;
+
+  // Người dùng đã chủ động bấm "Đăng nhập để gửi yêu cầu" ở `/join` TRƯỚC
+  // khi bị bắt qua `/login` — nhớ lại ý định này để sau khi đăng nhập xong,
+  // `JoinFamilyScreen` tự gửi yêu cầu tiếp luôn thay vì bắt bấm lại lần 2
+  // cho cùng một hành động (verify UX 2026-08-19: nhập mã → bấm gửi → login
+  // → phải bấm "Gửi yêu cầu tham gia" thêm lần nữa). Chỉ sống trong bộ nhớ —
+  // không cần qua secure storage vì chỉ cần sống sót qua đúng 1 lượt điều
+  // hướng /join → /login → /join trong cùng phiên app đang chạy, không cần
+  // qua cold-start như `_pendingInviteToken`.
+  bool _pendingInviteAutoSubmit = false;
 
   // true ngay sau register() (tài khoản mới luôn chưa verify) hoặc khi
   // POST /families trả 403 "Account not verified" (tài khoản cũ đăng nhập
@@ -88,6 +94,22 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('AuthProvider: clear pending invite token failed: $e');
     }
+  }
+
+  /// Đánh dấu ý định "đã bấm gửi yêu cầu tham gia" trước khi bị bắt đăng
+  /// nhập. Gọi ĐÚNG một chỗ: `JoinFamilyScreen._submit()` khi chưa đăng
+  /// nhập, ngay trước khi điều hướng sang `/login`.
+  void markInviteAutoSubmitAfterLogin() {
+    _pendingInviteAutoSubmit = true;
+  }
+
+  /// Đọc kèm xoá cờ ngay (one-shot) — chỉ tự gửi đúng một lần cho đúng lượt
+  /// đăng nhập vừa rồi; mở lại `/join` sau đó (vd bấm nhầm rồi quay lại) sẽ
+  /// KHÔNG tự gửi nữa, người dùng phải tự bấm như bình thường.
+  bool consumePendingInviteAutoSubmit() {
+    final value = _pendingInviteAutoSubmit;
+    _pendingInviteAutoSubmit = false;
+    return value;
   }
 
   // Chỉ dùng trong test — set state trực tiếp, không gọi API.
@@ -204,11 +226,7 @@ class AuthProvider extends ChangeNotifier {
     // Authorization is evaluated from :familyId on each request. Select the
     // newly created workspace locally; do not rely on JWT family claims.
     await _activateFamilyContext(
-      _FamilyContext(
-        id: fid,
-        name: name.trim(),
-        role: 'FAMILY_MANAGER',
-      ),
+      _FamilyContext(id: fid, name: name.trim(), role: 'FAMILY_MANAGER'),
       persist: true,
     );
     notifyListeners();
@@ -368,8 +386,8 @@ class AuthProvider extends ChangeNotifier {
         return const _FamilyContext();
       }
 
-      final storedId = preferredFamilyId ??
-          await _storage.read(key: _kCurrentFamilyIdKey);
+      final storedId =
+          preferredFamilyId ?? await _storage.read(key: _kCurrentFamilyIdKey);
       FamilyWorkspace? selected;
       for (final workspace in _workspaces) {
         if (workspace.id == storedId) {
@@ -408,7 +426,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   String? _roleFromFamily(Map<String, dynamic> family) {
-    final direct = family['currentMemberRole']?.toString() ??
+    final direct =
+        family['currentMemberRole']?.toString() ??
         family['myRole']?.toString() ??
         family['userRole']?.toString() ??
         family['role']?.toString();
@@ -431,7 +450,8 @@ class AuthProvider extends ChangeNotifier {
     try {
       final result = await ApiClient.instance.get('/families/${workspace.id}');
       if (result is Map) {
-        final members = (result['members'] as List? ?? const []).whereType<Map>();
+        final members = (result['members'] as List? ?? const [])
+            .whereType<Map>();
         final me = members.firstWhere(
           (member) =>
               member['userId']?.toString() == myId ||

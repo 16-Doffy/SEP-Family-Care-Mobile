@@ -420,6 +420,37 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
   }
 
   Future<void> _deleteLine(BuildContext context, BudgetLine line) async {
+    // Xóa xong không hoàn tác được — trước đây bấm icon thùng rác là mất
+    // dòng ngay lập tức, không hỏi lại (verify runtime 2026-08-19).
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          'Xóa dòng ngân sách này?',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          '"${line.categoryName ?? 'Danh mục'}" (kế hoạch ${_fmt(line.plannedAmount)}) '
+          'sẽ bị xóa khỏi kế hoạch. Không hoàn tác được.',
+          style: GoogleFonts.inter(
+            fontSize: 14,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Quay lại'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
       await context.read<FinanceProvider>().deleteBudgetLine(line.id);
@@ -594,6 +625,27 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                             );
                             return;
                           }
+                          // Sheet tạo kế hoạch đã chặn "dòng đầu > chi dự
+                          // kiến", nhưng Thêm dòng thì không — trước đây
+                          // thêm 1 dòng 50.000.000 ₫ vào kế hoạch chi dự
+                          // kiến 20.000.000 ₫ vẫn lưu được (verify runtime
+                          // 2026-08-19). Chặn nhất quán ở đây luôn.
+                          final expected = _plan?.expectedSharedExpense;
+                          if (expected != null && expected > 0) {
+                            final currentTotal = _lines.fold<double>(
+                              0,
+                              (sum, l) => sum + l.plannedAmount,
+                            );
+                            if (currentTotal + amt > expected) {
+                              setSheet(
+                                () => sheetError =
+                                    'Tổng các dòng (${_fmt(currentTotal + amt)}) sẽ vượt '
+                                    'Chi tiêu dự kiến (${_fmt(expected)}). Giảm số tiền hoặc '
+                                    'sửa lại Chi tiêu dự kiến ở nút bút chì trên đầu màn.',
+                              );
+                              return;
+                            }
+                          }
                           setSheet(() {
                             submitting = true;
                             sheetError = null;
@@ -760,6 +812,29 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                             setSheet(() => sheetError = 'Nhập số tiền hợp lệ');
                             return;
                           }
+                          // Cùng lỗi với sheet Thêm dòng: trước đây sửa 1
+                          // dòng lên 50.000.000 ₫ trong kế hoạch chi dự
+                          // kiến 20.000.000 ₫ vẫn lưu được (verify runtime
+                          // 2026-08-19). Trừ đi số CŨ của chính dòng này
+                          // trước khi cộng số MỚI vào tổng.
+                          final expected = _plan?.expectedSharedExpense;
+                          if (expected != null && expected > 0) {
+                            final otherLinesTotal = _lines
+                                .where((l) => l.id != line.id)
+                                .fold<double>(
+                                  0,
+                                  (sum, l) => sum + l.plannedAmount,
+                                );
+                            if (otherLinesTotal + amt > expected) {
+                              setSheet(
+                                () => sheetError =
+                                    'Tổng các dòng (${_fmt(otherLinesTotal + amt)}) sẽ vượt '
+                                    'Chi tiêu dự kiến (${_fmt(expected)}). Giảm số tiền hoặc '
+                                    'sửa lại Chi tiêu dự kiến ở nút bút chì trên đầu màn.',
+                              );
+                              return;
+                            }
+                          }
                           setSheet(() {
                             submitting = true;
                             sheetError = null;
@@ -835,6 +910,14 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
     );
     bool submitting = false;
     String? sheetError;
+    // Cho sửa lại kỳ ngay tại đây — trước đây lỡ chọn sai kỳ lúc tạo (bẫy đã
+    // ghi trong kịch bản test 19/08: kế hoạch ACTIVE nhưng kỳ chưa/đã qua)
+    // thì không có cách nào sửa trong app, phải hủy tạo lại. BE
+    // (`UpdateBudgetPlanDto`) đã nhận `periodStart`/`periodEnd` từ trước,
+    // chỉ là màn này chưa có UI cho sửa.
+    DateTime periodStart =
+        DateTime.tryParse(plan.periodStart) ?? DateTime.now();
+    DateTime periodEnd = DateTime.tryParse(plan.periodEnd) ?? periodStart;
 
     showModalBottomSheet(
       context: context,
@@ -875,6 +958,84 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                 ),
                 const SizedBox(height: 6),
                 _inputBox(nameCtrl, 'Tên kế hoạch'),
+                const SizedBox(height: 12),
+                Text(
+                  'Kỳ áp dụng',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate: periodStart,
+                            firstDate: DateTime(periodStart.year - 3),
+                            lastDate: DateTime(periodStart.year + 3),
+                          );
+                          if (picked != null) {
+                            setSheet(() => periodStart = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${periodStart.day}/${periodStart.month}/${periodStart.year}',
+                            style: GoogleFonts.inter(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Text('→'),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate: periodEnd.isBefore(periodStart)
+                                ? periodStart
+                                : periodEnd,
+                            firstDate: periodStart,
+                            lastDate: DateTime(periodStart.year + 3),
+                          );
+                          if (picked != null) {
+                            setSheet(() => periodEnd = picked);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${periodEnd.day}/${periodEnd.month}/${periodEnd.year}',
+                            style: GoogleFonts.inter(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 Text(
                   'Thu nhập dự kiến (₫)',
@@ -938,6 +1099,34 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                             setSheet(() => sheetError = 'Nhập tên kế hoạch');
                             return;
                           }
+                          if (periodEnd.isBefore(periodStart)) {
+                            setSheet(
+                              () => sheetError =
+                                  'Ngày kết thúc phải sau ngày bắt đầu.',
+                            );
+                            return;
+                          }
+                          final newExpense = expenseCtrl.text.trim().isEmpty
+                              ? null
+                              : parseMoneyInput(expenseCtrl.text);
+                          // Cùng lỗi với 2 sheet dòng ngân sách: hạ Chi tiêu
+                          // dự kiến xuống dưới tổng các dòng đã có vẫn lưu
+                          // được trước đây (verify runtime 2026-08-19).
+                          if (newExpense != null) {
+                            final linesTotal = _lines.fold<double>(
+                              0,
+                              (sum, l) => sum + l.plannedAmount,
+                            );
+                            if (newExpense < linesTotal) {
+                              setSheet(
+                                () => sheetError =
+                                    'Chi tiêu dự kiến (${_fmt(newExpense)}) đang thấp hơn '
+                                    'tổng các dòng ngân sách hiện có (${_fmt(linesTotal)}). '
+                                    'Tăng số này lên hoặc xóa bớt dòng trước.',
+                              );
+                              return;
+                            }
+                          }
                           setSheet(() {
                             submitting = true;
                             sheetError = null;
@@ -948,14 +1137,13 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                                 .updateBudgetPlan(
                                   widget.planId,
                                   planName: nameCtrl.text.trim(),
+                                  periodStart: periodStart,
+                                  periodEnd: periodEnd,
                                   expectedSharedIncome:
                                       incomeCtrl.text.trim().isEmpty
                                       ? null
                                       : parseMoneyInput(incomeCtrl.text),
-                                  expectedSharedExpense:
-                                      expenseCtrl.text.trim().isEmpty
-                                      ? null
-                                      : parseMoneyInput(expenseCtrl.text),
+                                  expectedSharedExpense: newExpense,
                                 );
                             if (ctx.mounted) Navigator.pop(ctx);
                             await _load();

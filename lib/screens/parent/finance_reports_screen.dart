@@ -771,6 +771,20 @@ String _label(String key) => switch (key) {
   'currentAmount' => 'Đã góp',
   'remainingAmount' => 'Còn thiếu',
   'monthlyContributionTarget' => 'Mục tiêu góp mỗi tháng',
+  // Bổ sung 2026-08-19 — thiếu các key này nên biểu đồ "Trực quan hoá" từng
+  // in thẳng nhãn tiếng Anh tách camelCase ("actual Amount", "projected
+  // Amount By Deadline", "actual Value"). Cùng nghĩa với các nhãn tương ứng
+  // trong `JsonReportView._labels`, giữ nhất quán giữa hai nơi.
+  'actualAmount' => 'Đã chi',
+  'varianceAmount' => 'Chênh lệch so với ngân sách',
+  'projectedAmountByDeadline' => 'Dự kiến có khi đến hạn',
+  'actualValue' => 'Giá trị thực tế',
+  'plannedAmount' => 'Ngân sách',
+  'thresholdAmount' => 'Mốc cảnh báo',
+  'thresholdValue' => 'Mốc cảnh báo',
+  'totalPlannedAmount' => 'Tổng đã lên kế hoạch',
+  'totalActualAmount' => 'Tổng thực tế',
+  'totalShortageAmount' => 'Tổng còn thiếu',
   _ =>
     key
         .replaceAllMapped(

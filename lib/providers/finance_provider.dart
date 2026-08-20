@@ -603,6 +603,13 @@ class FinancialGoal {
   final double? currentAmount;
   final double? remainingAmount;
 
+  /// Mức góp/tháng người dùng TỰ KHAI khi tạo/sửa mục tiêu
+  /// (`CreateFinancialGoalDto.monthlyContributionTarget`) — khác
+  /// `recommendedMonthlyContribution` mà BE tự tính ở endpoint progress.
+  /// Trước đây model không lưu field này nên sau khi tạo xong không màn nào
+  /// hiện lại số đã khai, chỉ thấy số BE khuyên (verify runtime 2026-08-19).
+  final double? monthlyContributionTarget;
+
   const FinancialGoal({
     required this.id,
     required this.goalName,
@@ -612,6 +619,7 @@ class FinancialGoal {
     this.progressPercent,
     this.currentAmount,
     this.remainingAmount,
+    this.monthlyContributionTarget,
   });
 
   // Với includeProgress=true BE bọc item thành {goal: {...}, progress: {...}}
@@ -643,6 +651,9 @@ class FinancialGoal {
         progress?['remainingAmount'] ??
             goal['remainingAmount'] ??
             j['remainingAmount'],
+      ),
+      monthlyContributionTarget: _moneyNull(
+        goal['monthlyContributionTarget'] ?? j['monthlyContributionTarget'],
       ),
     );
   }

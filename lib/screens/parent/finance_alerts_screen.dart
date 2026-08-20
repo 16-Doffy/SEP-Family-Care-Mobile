@@ -504,8 +504,12 @@ class _AlertCard extends StatelessWidget {
     _ => const Color(0xFF6B7280),
   };
 
+  // Khớp với cách dịch HIGH/MEDIUM/LOW dùng chung toàn app (nhiệm vụ,
+  // wearables, `JsonReportView._fmtStatus`) — trước đây thẻ cảnh báo ghi
+  // "Nghiêm trọng" trong khi sheet chi tiết (dùng JsonReportView) ghi "Cao"
+  // cho CÙNG một giá trị `HIGH`, verify runtime 2026-08-19.
   static String _severityLabel(String s) => switch (s) {
-    'HIGH' => 'Nghiêm trọng',
+    'HIGH' => 'Cao',
     'MEDIUM' => 'Trung bình',
     _ => 'Thấp',
   };

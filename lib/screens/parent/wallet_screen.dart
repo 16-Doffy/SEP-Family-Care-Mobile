@@ -454,12 +454,41 @@ class _WalletScreenState extends State<WalletScreen> {
         ? _jarTargetReport
         : null;
     if (report == null || report.items.isEmpty) {
+      // BE ch\u01b0a c\u00f3 giao d\u1ecbch kh\u1edbp k\u1ef3 n\u00e0y th\u00ec `items` r\u1ed7ng, nh\u01b0ng m\u00f4 h\u00ecnh
+      // (5 l\u1ecd / 80-20 / tu\u1ef3 ch\u1ec9nh) v\u1eabn \u0111ang \u00e1p d\u1ee5ng \u2014 tr\u01b0\u1edbc 2026-07-28 ph\u1ea7n
+      // n\u00e0y t\u1ef1 t\u00ednh \u1edf FE n\u00ean lu\u00f4n hi\u1ec7n \u0111\u01b0\u1ee3c d\u00f9 ch\u01b0a c\u00f3 giao d\u1ecbch; sau khi
+      // chuy\u1ec3n h\u1eb3n sang ch\u1edd report c\u1ee7a BE, ng\u01b0\u1eddi d\u00f9ng kh\u00f4ng c\u00f2n c\u00e1ch n\u00e0o
+      // th\u1ea5y l\u1ea1i % m\u1ee5c ti\u00eau (verify runtime 2026-08-19). Model \u0111\u00e3 c\u00f3 s\u1eb5n
+      // trong `FinanceProvider`, kh\u00f4ng c\u1ea7n g\u1ecdi th\u00eam API \u2014 d\u1ef1ng t\u1ea1m c\u00e1c d\u00f2ng
+      // ch\u1ec9 c\u00f3 % m\u1ee5c ti\u00eau, actual \u0111\u1ec3 0, \u0111\u1ec3 kh\u00f4ng b\u1ecf tr\u1eafng h\u1eb3n.
+      final fallbackRows =
+          model.jars.isEmpty
+                ? empty
+                : model.jars
+                      .map(
+                        (jar) => _JarOverviewRow(
+                          name: jar.name,
+                          isSavingLike: JarTargetActualItem.looksLikeSaving(
+                            jar.jarCode,
+                            jar.name,
+                          ),
+                          pct: jar.allocationPercentage,
+                          target: 0,
+                          actual: 0,
+                          status: '',
+                        ),
+                      )
+                      .toList()
+            ..sort((a, b) => b.pct.compareTo(a.pct));
       return (
-        rows: empty,
+        rows: fallbackRows,
         unmappedAmount: report?.unmappedAmount ?? 0,
         trackedAmount: 0,
-        note:
-            'Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u target/actual theo h\u0169 cho k\u1ef3 n\u00e0y.',
+        note: fallbackRows.isEmpty
+            ? 'Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u target/actual theo h\u0169 cho k\u1ef3 n\u00e0y.'
+            : 'Ch\u01b0a c\u00f3 giao d\u1ecbch n\u00e0o kh\u1edbp k\u1ef3 n\u00e0y \u2014 '
+                  'ch\u1ec9 hi\u1ec7n % m\u1ee5c ti\u00eau c\u1ee7a m\u00f4 h\u00ecnh, '
+                  'ph\u1ea7n th\u1ef1c t\u1ebf \u0111ang \u0111\u1ec3 0.',
       );
     }
 
@@ -669,10 +698,15 @@ class _WalletScreenState extends State<WalletScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'So sánh tiền đã chi ở mỗi hũ với tỷ lệ của mô hình, tính '
-                      'trên TỔNG CHI trong kỳ (${_fmt(jarInfo.trackedAmount.round())}) '
-                      '— không phải hạn mức lấy từ thu nhập. Chi càng nhiều thì '
-                      'cả hai số đều tăng; điều đáng nhìn là tỷ lệ phần trăm.',
+                      // `note` khác null nghĩa là đang ở trạng thái dựng tạm
+                      // từ % mục tiêu của mô hình (chưa có giao dịch khớp kỳ)
+                      // — nói rõ điều đó thay vì áp dụng nguyên văn giải
+                      // thích cho trường hợp có dữ liệu thật.
+                      jarInfo.note ??
+                          'So sánh tiền đã chi ở mỗi hũ với tỷ lệ của mô hình, tính '
+                              'trên TỔNG CHI trong kỳ (${_fmt(jarInfo.trackedAmount.round())}) '
+                              '— không phải hạn mức lấy từ thu nhập. Chi càng nhiều thì '
+                              'cả hai số đều tăng; điều đáng nhìn là tỷ lệ phần trăm.',
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         height: 1.35,
@@ -1709,6 +1743,9 @@ class _WalletScreenState extends State<WalletScreen> {
   void _showCreateCategoryDialog(BuildContext context) {
     final nameCtrl = TextEditingController();
     var categoryType = 'EXPENSE';
+    // Lấy trước messenger của màn ngoài — `dialogContext` mất theo dialog
+    // ngay sau khi Navigator.pop, không dùng lại để báo hint được.
+    final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -1751,6 +1788,24 @@ class _WalletScreenState extends State<WalletScreen> {
                   );
                   if (dialogContext.mounted) {
                     Navigator.pop(dialogContext);
+                  }
+                  // Danh mục Chi mới tạo chưa gán vào hũ nào — mọi khoản chi
+                  // sau này rơi vào "Chưa gán hũ" cho đến khi vào Mô hình
+                  // tài chính gán tay (verify runtime 2026-08-19: chi
+                  // 5.000.000 ₫ vào danh mục vừa tạo, số tiền không tính vào
+                  // Spending/Savings). Chỉ nhắc với danh mục Chi — danh mục
+                  // Thu không nằm trong mô hình hũ.
+                  if (categoryType == 'EXPENSE') {
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'Đã tạo "$name". Nhớ vào Mô hình tài chính → '
+                          '"Gán danh mục vào hũ" — chưa gán thì khoản chi sẽ '
+                          'nằm ở "Chưa gán hũ", không tính vào hũ nào.',
+                        ),
+                        duration: const Duration(seconds: 5),
+                      ),
+                    );
                   }
                 } catch (e) {
                   if (dialogContext.mounted) {
