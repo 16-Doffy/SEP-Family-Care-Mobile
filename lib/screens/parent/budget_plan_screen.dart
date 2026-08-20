@@ -599,6 +599,9 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                   if (expenseCategories.isNotEmpty) ...[
                     DropdownButtonFormField<String>(
                       initialValue: firstLineCategoryId,
+                      // Cùng lỗi tràn chữ với dropdown chọn kế hoạch ở Báo
+                      // cáo tài chính (verify runtime 2026-08-20).
+                      isExpanded: true,
                       decoration: InputDecoration(
                         labelText: 'Danh mục chi',
                         border: OutlineInputBorder(
@@ -609,7 +612,10 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                         ...expenseCategories.map(
                           (category) => DropdownMenuItem(
                             value: category.id,
-                            child: Text(category.name),
+                            child: Text(
+                              category.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                         const DropdownMenuItem(

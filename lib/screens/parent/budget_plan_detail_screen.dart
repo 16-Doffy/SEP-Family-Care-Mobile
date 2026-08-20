@@ -528,6 +528,10 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
                   initialValue: categoryId,
+                  // Cùng lỗi tràn chữ với dropdown chọn kế hoạch ở Báo cáo
+                  // tài chính — tên danh mục dài không có chỗ mà cắt nếu
+                  // thiếu isExpanded.
+                  isExpanded: true,
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -539,8 +543,10 @@ class _BudgetPlanDetailScreenState extends State<BudgetPlanDetailScreen> {
                   ),
                   items: categories
                       .map(
-                        (c) =>
-                            DropdownMenuItem(value: c.id, child: Text(c.name)),
+                        (c) => DropdownMenuItem(
+                          value: c.id,
+                          child: Text(c.name, overflow: TextOverflow.ellipsis),
+                        ),
                       )
                       .toList(),
                   onChanged: (v) => setSheet(() => categoryId = v),

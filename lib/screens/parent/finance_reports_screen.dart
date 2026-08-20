@@ -877,6 +877,13 @@ class _BudgetPlanReportTabState extends State<_BudgetPlanReportTab> {
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: _selectedPlanId,
+                // `overflow: ellipsis` trên Text bên dưới không tự hoạt
+                // động — DropdownButton mặc định co theo nội dung dài
+                // nhất, không cấp bề rộng cố định để Text còn gì mà cắt.
+                // Thiếu `isExpanded` là tên kế hoạch dài (vd
+                // "Ngan sach thang 8-2026 · Đang áp dụng") tràn hẳn ra
+                // ngoài khung, verify runtime 2026-08-20.
+                isExpanded: true,
                 decoration: InputDecoration(
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
