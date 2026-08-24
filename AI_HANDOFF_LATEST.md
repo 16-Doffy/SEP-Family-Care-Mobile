@@ -2,18 +2,33 @@
 
 ## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (24/08/2026 tối)
 
-Nhánh: code sửa trực tiếp trên working tree đang checkout `main` (HEAD
-`78fba0a`). **Phát hiện lúc commit: `NDuy` đang tụt sau `main` 47 commit**
-(handoff cũ ghi "đã khớp nhau" — đúng tại thời điểm đó, nhưng từ đó `main` đã
-đi tiếp qua nhiều lần merge/commit trực tiếp mà `NDuy` không được fast-forward
-theo). Verify bằng `git merge-base --is-ancestor NDuy main` → **có**, `NDuy`
-là tổ tiên sạch của `main` (không phân nhánh) nên fast-forward `NDuy` lên
-ngang `main` là an toàn tuyệt đối, không mất commit nào của ai. Đã làm: commit
-phiên này trên `main`, `git branch -f NDuy HEAD`, `git push origin NDuy:NDuy`
-— **origin/main giữ nguyên không đổi** (đúng quy ước KHÔNG tự merge `main`
-cho tới khi user tự test tay xác nhận OK). Lần sau nhớ `git fetch` + so
-`main`/`NDuy` bằng `rev-list --left-right --count` trước khi giả định 2 nhánh
-đang khớp nhau — đừng tin lời ghi cũ trong handoff nếu không tự verify lại.
+Nhánh cuối cùng: **`NDuy`** = `8069d79` (đang checkout nhánh này). `main` local
+và remote đều **giữ nguyên** `78fba0a`, không đổi.
+
+**Chuyện đã xảy ra lúc commit (đọc kỹ, dễ lặp lại nếu không cẩn thận):** code
+phiên này sửa trên working tree đang checkout `main`. Local `NDuy` (chưa
+fetch) tưởng đang khớp `main` theo lời ghi cũ trong handoff — kiểm tra bằng
+`git merge-base --is-ancestor NDuy main` ra **có** (tổ tiên sạch), tưởng chỉ
+cần fast-forward đơn giản. Nhưng khi `git push origin NDuy:NDuy` thì **bị từ
+chối (non-fast-forward)** — hoá ra `origin/NDuy` (remote) đã có sẵn **8 commit
+thật từ phiên 19/08 trước** (`e6e83fa`, `156e7bc`, `e7c73c5`, `bdcc8c0`,
+`cad9ede`, `b65bd29`, `dc14a77`, `1c6b697`) mà **`main` không hề có** — local
+`NDuy` trước đó bị stale vì chưa `fetch`. Đã `git merge origin/NDuy` thật
+(không force-push, không ghi đè) — ra 3 conflict: `AI_HANDOFF_LATEST.md` (chỉ
+khác tiêu đề, dễ), `goal_contribution_screen.dart` (không đụng phiên này —
+xác nhận bằng diff rằng bản `main` đã có sẵn logic mới hơn hẳn origin/NDuy,
+giữ nguyên bản `main`), `task_management_screen.dart` (2 chỗ, chính là 2 bug
+mình vừa fix phiên này đụng đúng code cũ chưa fix ở origin/NDuy — giữ bản
+fix mới). `flutter analyze` sạch + `flutter test` 605/605 pass **sau khi
+merge xong** mới commit. Rồi mới `git branch -f NDuy HEAD` +
+`git push origin NDuy:NDuy` (lần này fast-forward thật, không bị từ chối) +
+reset local `main` về khớp `origin/main` cho sạch.
+
+**Bài học:** đừng tin trạng thái nhánh trong handoff cũ hay trong local branch
+ref chưa fetch — luôn `git fetch --all` rồi `git rev-list --left-right --count
+main...origin/NDuy` để biết chắc quan hệ thật giữa 2 nhánh trước khi
+push/fast-forward, đặc biệt khi nhiều phiên/nhiều người có thể đã push song
+song mà local chưa biết.
 
 `flutter analyze` → sạch (chỉ info nền cũ, không có info mới). `flutter test`
 → **605/605 pass**. Build APK debug **BẮT BUỘC** set
