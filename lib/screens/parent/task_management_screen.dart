@@ -61,6 +61,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       context.read<FamilyProvider>().fetchMembers();
       // Cho badge thanh toán: đếm settlement chờ trả/tranh chấp trên icon AppBar.
       tasks.fetchRewardSettlements();
+      // Để sheet "Phân công" biết assignment nào đang có báo bận CHƯA xử lý
+      // (assignment.status không đổi thành UNAVAILABLE khi báo bận — verify
+      // bằng data thật 24/08 — nên phải tra riêng theo TaskUnavailability).
+      tasks.fetchUnavailabilities();
       await tasks.fetchTasks(hydrateRewardSettings: true);
       if (!mounted) return;
       // GET /tasks không trả kèm assignment → nạp thêm để item hiện người làm
@@ -1047,6 +1051,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         ?.id;
     final isOwnAssignment =
         currentMemberId != null && a.assignedToMemberId == currentMemberId;
+    // assignment.status KHÔNG đổi thành 'UNAVAILABLE' khi member báo bận (verify
+    // response thật 24/08: sau report vẫn ASSIGNED) — báo bận chỉ tồn tại ở
+    // TaskUnavailability riêng, tra theo assignmentId + còn REPORTED (isOpen).
+    final hasOpenUnavailability = context
+        .watch<TaskProvider>()
+        .unavailabilities
+        .any((u) => u.assignmentId == a.id && u.isOpen);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -1155,7 +1166,16 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               // BE bổ sung PATCH .../assignments/{id} { startAt?, dueAt? } ngày
               // 19/08 → gia hạn được cho CHÍNH người đang giữ việc, không phải
               // đổi sang người khác như trước.
-              if (!isOwnAssignment && _isAssignmentOverdue(a))
+              //
+              // Bug tìm thấy 2026-08-24: điều kiện cũ có `!isOwnAssignment` nên
+              // Manager tự giao việc cho chính mình (danh sách chọn người nhận ở
+              // `_showAssignSheet` không loại trừ bản thân) mà để quá hạn thì
+              // KHÔNG thấy nút này — trong khi member-side (`child_tasks_screen`)
+              // lại bảo "nhắn quản lý bấm Gia hạn". Quản lý chính là người đọc câu
+              // đó nhưng không có nút để bấm → phân công chết cứng. Hàm gọi xuống
+              // (`updateAssignmentSchedule`) không phân biệt ai đang xem nên bỏ
+              // hẳn điều kiện `isOwnAssignment` ở đây là an toàn.
+              if (_isAssignmentOverdue(a))
                 OutlinedButton(
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 32),
@@ -1173,7 +1193,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   ),
                 ),
               if (!isOwnAssignment &&
-                  (a.status == 'UNAVAILABLE' || _isAssignmentOverdue(a)))
+                  (hasOpenUnavailability || _isAssignmentOverdue(a)))
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.urgent,
@@ -1182,7 +1202,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   ),
                   onPressed: () => _showReassignSheet(context, a),
                   child: Text(
-                    a.status == 'UNAVAILABLE'
+                    hasOpenUnavailability
                         ? 'Phân công lại'
                         : 'Giao lại + hạn mới',
                     style: GoogleFonts.inter(
@@ -1245,15 +1265,32 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                             ),
                           ),
                           onPressed: () async {
+                            final tp = context.read<TaskProvider>();
                             try {
-                              await context
-                                  .read<TaskProvider>()
-                                  .startAssignment(a.id);
+                              await tp.startAssignment(a.id);
+                              // startAssignment() chỉ tự refresh myAssignments
+                              // (dùng ở màn Member), sheet "Phân công" này đọc
+                              // theo _assignmentsByTask[taskId] riêng — không
+                              // refetch thì dòng vừa bấm vẫn hiện "Chờ làm" dù
+                              // đã IN_PROGRESS, bấm lại lần 2 ăn ngay lỗi "Bad
+                              // state" (đo trên máy thật 24/08).
+                              if (context.mounted) {
+                                await tp.fetchTaskAssignments(a.taskId);
+                              }
                             } catch (e) {
+                              // Trạng thái lệch (vd đã bắt đầu ở phiên khác) —
+                              // làm mới danh sách để dòng cập nhật đúng, tránh
+                              // người dùng bấm lại và ăn lỗi y hệt lần nữa.
+                              await tp.fetchTaskAssignments(a.taskId);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text(e.toString()),
+                                    content: Text(
+                                      e.toString().replaceFirst(
+                                        'Exception: ',
+                                        '',
+                                      ),
+                                    ),
                                     backgroundColor: AppColors.danger,
                                   ),
                                 );
@@ -1846,11 +1883,33 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     // Chỉ member ACTIVE — tránh gán nhầm thành viên đã REMOVED (BE /families/my
     // từng lẫn REMOVED) → khỏi bị "thành viên không hợp lệ". Nhất quán với
     // picker định kỳ (_GenerateAssignments) vốn đã lọc isActive.
-    final members = context
-        .read<FamilyProvider>()
-        .members
-        .where((m) => m.isActive)
-        .toList();
+    //
+    // Luật phân quyền giao việc (xác nhận với product 24/08, BE hiện KHÔNG
+    // enforce — verify bằng curl thật: Deputy giao được cho Manager, Manager
+    // giao AD_HOC cho Deputy đều trả 201): Deputy chỉ được giao cho Member
+    // (không lên Manager); Manager chỉ giao được task ĐỊNH KỲ cho Deputy. Tự
+    // giao cho chính mình vẫn cho phép (chỉ chặn ở bước tự duyệt, không chặn
+    // ở đây) — đã hỏi lại BE có block tự giao của Deputy (403 lúc tạo
+    // assignment) là chủ đích hay cần sửa thành chỉ chặn tự duyệt.
+    final familyProvider = context.read<FamilyProvider>();
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    final myRole = familyProvider.members
+        .where((m) => m.userId == currentUserId || m.id == currentUserId)
+        .firstOrNull;
+    final members = familyProvider.members.where((m) {
+      if (!m.isActive) return false;
+      final isSelf = m.userId == currentUserId || m.id == currentUserId;
+      if (myRole?.isDeputy == true && !isSelf && m.isManager) {
+        return false; // Deputy không giao lên Manager (tự giao vẫn cho phép).
+      }
+      if (myRole?.isManager == true &&
+          !isSelf &&
+          m.isDeputy &&
+          task.taskType != 'RECURRING') {
+        return false; // Manager chỉ giao task định kỳ cho Deputy.
+      }
+      return true;
+    }).toList();
     // Ai đang giữ task này rồi — để cảnh báo giao trùng. Không loại khỏi danh
     // sách: Swagger không nói BE có cấm giao 2 lần cho cùng một người hay
     // không, tự ẩn đi là FE quyết thay BE. Chỉ ghi nhãn để manager tự cân nhắc.
@@ -2066,13 +2125,33 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   // ── Reassign (member báo bận) ─────────────────────────────────────────────
 
   void _showReassignSheet(BuildContext context, TaskAssignment a) {
+    // Xem comment ở _assignmentCard: assignment.status không đổi thành
+    // 'UNAVAILABLE' khi báo bận, phải tra TaskUnavailability riêng.
+    final hasOpenUnavailability = context
+        .read<TaskProvider>()
+        .unavailabilities
+        .any((u) => u.assignmentId == a.id && u.isOpen);
     // a.assignedToMemberId là familyMember.id — lọc đúng theo m.id, và chỉ
-    // member ACTIVE (khỏi reassign nhầm sang thành viên đã REMOVED).
-    final members = context
-        .read<FamilyProvider>()
-        .members
-        .where((m) => m.isActive && m.id != a.assignedToMemberId)
-        .toList();
+    // member ACTIVE (khỏi reassign nhầm sang thành viên đã REMOVED). Cùng
+    // luật phân quyền giao việc như `_showAssignSheet` (xem comment ở đó).
+    final familyProvider = context.read<FamilyProvider>();
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    final myRole = familyProvider.members
+        .where((m) => m.userId == currentUserId || m.id == currentUserId)
+        .firstOrNull;
+    final isRecurring = a.task?.isRecurring ?? false;
+    final members = familyProvider.members.where((m) {
+      if (!m.isActive || m.id == a.assignedToMemberId) return false;
+      final isSelf = m.userId == currentUserId || m.id == currentUserId;
+      if (myRole?.isDeputy == true && !isSelf && m.isManager) return false;
+      if (myRole?.isManager == true &&
+          !isSelf &&
+          m.isDeputy &&
+          !isRecurring) {
+        return false;
+      }
+      return true;
+    }).toList();
     String? selectedId;
     bool submitting = false;
     String? sheetError;
@@ -2111,7 +2190,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 ),
               ),
               Text(
-                a.status == 'UNAVAILABLE'
+                hasOpenUnavailability
                     ? '${a.assignedToName} đã báo không thể thực hiện.'
                     : 'Việc của ${a.assignedToName} đã quá hạn '
                           '${oldDue == null ? '' : _fmtDateTime(oldDue)}.',
@@ -3579,6 +3658,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                 submissionNote: noteCtrl.text.trim(),
                                 proofs: proofs,
                               );
+                              // submitProof() chỉ tự refresh myAssignments —
+                              // sheet "Phân công" đọc theo _assignmentsByTask
+                              // riêng, không refetch thì dòng vừa nộp vẫn hiện
+                              // trạng thái cũ (cùng lỗi stale như nút Bắt đầu
+                              // làm ở trên).
+                              await provider.fetchTaskAssignments(a.taskId);
                               if (ctx.mounted) Navigator.pop(ctx);
                               messenger.showSnackBar(
                                 const SnackBar(

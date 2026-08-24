@@ -1,6 +1,216 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (19/08/2026 tối)
+## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (24/08/2026 tối)
+
+Nhánh: code sửa trực tiếp trên working tree đang checkout `main` (HEAD
+`78fba0a`). **Phát hiện lúc commit: `NDuy` đang tụt sau `main` 47 commit**
+(handoff cũ ghi "đã khớp nhau" — đúng tại thời điểm đó, nhưng từ đó `main` đã
+đi tiếp qua nhiều lần merge/commit trực tiếp mà `NDuy` không được fast-forward
+theo). Verify bằng `git merge-base --is-ancestor NDuy main` → **có**, `NDuy`
+là tổ tiên sạch của `main` (không phân nhánh) nên fast-forward `NDuy` lên
+ngang `main` là an toàn tuyệt đối, không mất commit nào của ai. Đã làm: commit
+phiên này trên `main`, `git branch -f NDuy HEAD`, `git push origin NDuy:NDuy`
+— **origin/main giữ nguyên không đổi** (đúng quy ước KHÔNG tự merge `main`
+cho tới khi user tự test tay xác nhận OK). Lần sau nhớ `git fetch` + so
+`main`/`NDuy` bằng `rev-list --left-right --count` trước khi giả định 2 nhánh
+đang khớp nhau — đừng tin lời ghi cũ trong handoff nếu không tự verify lại.
+
+`flutter analyze` → sạch (chỉ info nền cũ, không có info mới). `flutter test`
+→ **605/605 pass**. Build APK debug **BẮT BUỘC** set
+`GRADLE_USER_HOME=D:/gradle_home_temp` (xem "Sự cố môi trường" bên dưới) —
+thiếu biến này build sẽ fail liên tục với lỗi cache Gradle, nhìn giống lỗi
+code nhưng không phải.
+
+### Phiên này làm gì
+
+Rà và fix nặng 2 mảng: **Album — nhận diện khuôn mặt** (khung + tên đè lên
+ảnh lúc đang duyệt gợi ý AI) và **Task — toàn bộ luồng giao việc/duyệt/thưởng/
+tranh chấp/báo bận**, test bằng tài khoản thật cả 3 vai trò Manager/Deputy/
+Member (qua API trực tiếp + 1 phần qua UI thật trên máy Oppo CPH2159).
+
+### Đã sửa trong phiên (chưa commit — xem `git diff --stat` ở trên)
+
+**Album face box:**
+1. `FaceSuggestion` bỏ qua hoàn toàn field `boundingBox` dù BE gửi đủ —
+   thêm class `FaceBoundingBox` + parse đúng, vẽ khung vàng + tên đè lên ảnh
+   lúc đang duyệt gợi ý (`_FaceOverlay`/`_FaceBox` mới trong `album_screen.dart`,
+   dùng chung 1 `ImageProvider` với ảnh hiển thị để không lệch cache).
+   **Verify bằng log thật trên máy** (file log tạm ghi ra
+   `/data/data/<pkg>/files/`, đọc bằng `adb shell run-as <pkg> cat ...` —
+   xem mục môi trường) rồi mới tìm ra nguyên nhân thật sự khiến khung không
+   hiện suốt nhiều lần build là do **build APK bị lỗi âm thầm** (xem sự cố
+   Gradle bên dưới), không phải bug code — code đúng ngay từ khá sớm.
+2. **[ĐÃ VERIFY, chưa làm được]** Tag đã confirm (`POST .../face-suggestions/
+   {id}/confirm`) **mất hẳn `boundingBox`** — verify bằng `GET .../albums/media`
+   thật, tag xong không còn toạ độ. Nên khung chỉ hiện được lúc đang duyệt,
+   **không giữ lại vĩnh viễn sau khi confirm** được — cần BE lưu lại. Đã gửi
+   đề xuất `DE_XUAT_BE_ALBUM_TAG_BOUNDING_BOX_2026-08-24.md`.
+
+**Task — luật phân quyền giao việc (chặn ở FE, BE CHƯA enforce):**
+3. `_showAssignSheet` + `_showReassignSheet` (`task_management_screen.dart`):
+   lọc theo vai trò — Deputy không giao được lên Manager (trừ tự chọn chính
+   mình); Manager chỉ giao được task **RECURRING** cho Deputy, task AD_HOC thì
+   Deputy biến mất khỏi danh sách chọn. **Verify bằng API thật**: cả 2 chiều
+   này BE đều cho qua (201) nếu gọi thẳng, không qua app — đã hỏi BE.
+4. **[ĐÃ VERIFY]** BE chặn Deputy **tự giao việc cho chính mình** ngay ở bước
+   tạo assignment (403 "Deputy member cannot perform this action for their
+   own assignment"), trong khi Manager tự giao được bình thường (201) — lệch
+   với đề xuất "chỉ chặn tự duyệt, không chặn tự giao" đã bàn với user. Đã hỏi
+   BE có phải chủ đích không.
+
+**Task — bug FE thật (đã sửa xong, verify bằng API và/hoặc UI thật):**
+5. `FamilyTask.fromJson` đọc category từ key `taskCategory` — BE trả thật ở
+   key `category` (verify `GET /tasks` thật) → tên danh mục luôn rỗng.
+6. Nút "Gia hạn" cho việc quá hạn bị ẩn khi `isOwnAssignment` — Manager tự
+   giao việc cho mình rồi quá hạn thì kẹt cứng, không ai gia hạn được (member-
+   side bảo "nhắn quản lý bấm Gia hạn" nhưng quản lý chính là người đọc câu
+   đó). Bỏ điều kiện loại trừ.
+7. **[VERIFY BẰNG DATA THẬT]** Sheet "Phân công" bị stale sau khi bấm "Bắt đầu
+   làm"/"Nộp nhiệm vụ" — `startAssignment()`/`submitProof()` chỉ tự refresh
+   `myAssignments` (màn Member), không refresh `_assignmentsByTask[taskId]`
+   mà sheet này đọc → dòng vừa bấm vẫn hiện trạng thái cũ, bấm lại lần 2 ăn
+   lỗi **"Bad state: Công việc không còn ở trạng thái được giao."** Thêm
+   `fetchTaskAssignments(a.taskId)` sau mỗi thao tác thành công/lỗi.
+8. **[VERIFY BẰNG DATA THẬT]** `assignment.status` **không đổi thành
+   'UNAVAILABLE'** khi member báo bận (vẫn `ASSIGNED`) — code check
+   `a.status == 'UNAVAILABLE'` để hiện nút "Phân công lại" trong sheet Phân
+   công là code chết, không bao giờ chạy (màn "Báo bận" riêng trong Quản lý
+   thưởng vẫn hoạt động đúng vì đọc `TaskUnavailability` riêng). Sửa lại tra
+   đúng `TaskProvider.unavailabilities` theo `assignmentId`.
+9. **[VERIFY BẰNG DATA THẬT + UI THẬT]** `_RewardConfirmBar` (banner thưởng
+   phía Member) so `s.submissionId == widget.assignment.latestSubmissionId`
+   — nhưng `assignment` lấy từ `fetchMyAssignments()` **không kèm
+   submission** (verify response thật) nên `latestSubmissionId` luôn rỗng,
+   so sánh luôn trượt → Member **không bao giờ** thấy trạng thái thưởng (chờ
+   xác nhận/đã hủy/tranh chấp), dù task đã APPROVED. Sửa: gọi thêm
+   `fetchLatestSubmission(assignmentId)` lấy đúng submissionId thật trước khi
+   tra settlement.
+10. **[VERIFY BẰNG UI THẬT — chụp màn hình xác nhận]** `createDispute()` và
+    `resolveDispute()` chỉ tự refresh `rewardDisputes`, quên refresh
+    `rewardSettlements` — bấm "Chưa nhận" gửi tranh chấp thành công (BE ghi
+    nhận `status: DISPUTED`) nhưng banner Member **không tự cập nhật**, vẫn
+    hiện chữ cũ "Đã trả, chờ xác nhận". Thêm `fetchRewardSettlements()` song
+    song. **Đã chụp ảnh xác nhận fix đúng**: banner đổi thành "Phần thưởng
+    25.000 đ — Tranh chấp" ngay sau khi cài bản mới, không cần khởi động lại
+    app.
+
+### E2E đã verify đúng qua API thật (không phải bug, không cần sửa)
+
+Luồng đầy đủ: Manager tạo task + đặt thưởng → giao Member → Member bắt đầu +
+nộp → Manager duyệt kèm góp ý → settlement tự tạo `PENDING_SETTLEMENT` →
+Manager đánh dấu đã trả `WAITING_CONFIRMATION` → Member "Chưa nhận" tạo dispute
+`DISPUTED` → Manager "Chấp nhận" tranh chấp → settlement về lại
+`PENDING_SETTLEMENT` → trả lại → Member "Đã nhận" → `SETTLED`. Riêng nhánh
+**Manager "Chấp nhận"/"Từ chối" tranh chấp phía UI thật (màn Quản lý thưởng
+tab Tranh chấp) CHƯA verify** — dừng lại vì sự cố an toàn (xem dưới), user tự
+kiểm tra nốt phần này. Ngoài ra đã verify: nộp bị REJECTED → nộp lại (không
+cần bắt đầu lại) chạy đúng; báo bận → Manager "Phân công lại" → assignment cũ
+CANCELED, assignment mới tạo tự động cho người được chọn.
+
+### 🔴 Sự cố an toàn trong phiên — ĐỌC KỸ trước khi tự động hoá UI lần sau
+
+Dùng `adb shell input tap/text` mù theo toạ độ (không đọc `uiautomator dump`
+như quy ước cũ ở dưới có ghi — **đáng lẽ phải làm vậy, phiên này đã bỏ qua
+bước này, là lỗi quy trình**) gây ra 3 sự cố:
+1. Lỡ tay chạm trúng "Xóa mềm" hoặc nút camera trong Album → xoá nhầm 1 ảnh
+   thật (**đã tự khôi phục được** bằng `POST .../albums/media/{id}/restore`,
+   không mất dữ liệu) và tạo dư 1 ảnh trùng do upload nhầm lần 2.
+2. 1 lần bị văng sang màn hình đa nhiệm (Recents) do tap trúng vùng nút điều
+   hướng hệ thống ở đáy màn hình.
+3. **Nghiêm trọng nhất:** lúc đăng xuất để đổi tài khoản test, 1 tap lệch toạ
+   độ mở nhầm sang **Zalo cá nhân của user**, vào đúng 1 đoạn chat riêng tư
+   (thấy tên người chat + vài tin nhắn, có cả thông tin tài khoản/mật khẩu 1
+   dịch vụ do người khác gửi). Thoát ra ngay bằng nút Home, không đọc/lưu/
+   dùng thông tin đó. **Đã dừng hẳn tự động hoá UI cho phần còn lại của
+   phiên**, chuyển hẳn sang nhờ user tự bấm tay.
+
+**Bài học bắt buộc đọc trước khi tự động hoá UI lần sau:** luôn `uiautomator
+dump` + tìm node theo chữ/class rồi tính tâm node để tap, **không bao giờ**
+tap theo toạ độ ước lượng từ ảnh chụp màn hình đơn thuần — đúng y nguyên
+nguyên tắc đã ghi ở mục "Công cụ test runtime đã dựng" phía dưới từ phiên
+19/08, nhưng phiên này không dùng lại công cụ đó (thư mục `D:/Temp/fc/` có
+thể đã mất do máy khác/dọn máy) nên đã tái lập đúng loại lỗi mà quy tắc đó
+được viết ra để tránh.
+
+### 🛠 Sự cố môi trường — Gradle cache hỏng, gây hiểu lầm hàng giờ
+
+Build `flutter build apk --debug` liên tục **fail âm thầm** với lỗi
+`The contents of the immutable workspace '...9.1.0\transforms\...' have been
+modified` — nghi do 1 Gradle daemon bị treo/xung đột giữa nhiều lần build
+chồng nhau. Xoá cache (`~/.gradle/caches/9.1.0/transforms`), `gradlew --stop`
+đều **không hết** dù xoá sạch. Cách duy nhất hết hẳn: **build với
+`GRADLE_USER_HOME` trỏ sang thư mục hoàn toàn mới** (`D:/gradle_home_temp`,
+lần đầu build lại từ đầu mất ~8 phút vì tải lại dependency, các lần sau bình
+thường). Hậu quả trong lúc chưa tìm ra: **hàng giờ đồng hồ cài đi cài lại
+đúng 1 bản APK cũ** (build fail nhưng vẫn có file `.apk` cũ từ lần build
+trước còn sót trong `build/app/outputs/...`, dễ tưởng nhầm là bản mới) —
+**luôn kiểm tra timestamp file APK** (`ls -la`) khớp với thời điểm build vừa
+chạy trước khi kết luận code không có tác dụng.
+
+### Ghi chú môi trường khác
+
+- Logcat trên máy Oppo CPH2159 bị **rate-limit** — chỉ ghi được vài dòng lúc
+  mở app rồi im hẳn, không phụ thuộc PID/buffer size. Muốn debug bằng log
+  phải ghi thẳng ra file: `File('/data/data/<pkg>/files/x.txt')`
+  (**không phải** `/storage/emulated/0/Android/data/<pkg>/...` — Android 11+
+  ẩn thư mục external riêng của app khác khỏi `adb pull`/`ls` thường), đọc
+  bằng `adb shell run-as <pkg> cat <path>` (đọc external thì cần path đúng và
+  app phải tự tạo thư mục cha trước bằng `.createSync(recursive: true)`,
+  external app-specific dir không tự có sẵn).
+- `adb shell`/`adb pull`/`adb push` với path Unix tuyệt đối
+  (`/sdcard/...`, `/data/...`) qua Git Bash bị MSYS tự dịch path sai — luôn
+  set `export MSYS_NO_PATHCONV=1` trước khi gọi.
+- Tài khoản test 3 vai trò (mật khẩu **không ghi vào đây**, hỏi user):
+  Manager `ngophamnhutduy050302@gmail.com`, Deputy
+  `duynpnse161783@fpt.edu.vn`, Member `nhatdeptrai281003@gmail.com` — cùng
+  gia đình **NDuy** (`b0cc7942-2a29-42f0-a63b-713bc98295f1`), server chung
+  `https://103.110.84.66` (**không phải** `api.familycare-digital.com` như
+  handoff cũ ghi — domain BE đã đổi từ phiên nào đó giữa 19/08 và 24/08,
+  chưa rõ chính xác lúc nào, verify lại domain trước khi copy URL cũ).
+
+### File sinh ra trong phiên (chưa track git)
+
+- `DE_XUAT_BE_ALBUM_TAG_BOUNDING_BOX_2026-08-24.md` — đề xuất BE lưu
+  `boundingBox` khi confirm tag.
+- `scripts/test_task_role_flow.ps1` — checklist tay test luồng Task 3 vai
+  trò, thay cho `D:/Temp/fc/` (đã mất) làm công cụ test lần sau.
+
+### List đã gửi BE trong phiên (8 mục, tổng hợp từ nhiều lượt hỏi)
+
+1. `boundingBox` mất sau khi confirm tag khuôn mặt — cần lưu lại.
+2. Deputy tự giao việc bị chặn 403 ngay bước tạo — có chủ đích không, hay nên
+   chỉ chặn ở bước tự duyệt (đối xứng với Manager)?
+3. Deputy giao được task lên Manager — theo luật chỉ nên giao được cho Member.
+4. Manager giao AD_HOC cho Deputy vẫn được — theo luật chỉ nên giao được
+   RECURRING.
+5. Không có push/socket notification khi settlement đổi trạng thái (hủy/đánh
+   dấu đã trả) — Member chỉ biết khi tự mở lại task (khác với "task được
+   nghiệm thu" — sự kiện NÀY có in-app notification, verify thấy trên máy
+   thật, nên hạ tầng notification có sẵn, chỉ thiếu wiring cho sự kiện reward).
+6. `confirmRewardReceived` không tạo giao dịch trong sổ thu chi (wallet) —
+   2 hệ thống tách rời hoàn toàn.
+7. (từ trước, chưa có câu trả lời final) Contract 403 `FEATURE_LOCKED` —
+   thuộc phạm vi web `d:\Desktop\sep`, không phải mobile, ghi chú lại đây cho
+   đủ danh sách vì cùng 1 phiên hỏi.
+8. Field response GET task/assignment/submission không document trong
+   Swagger — buộc FE parse phòng thủ nhiều biến thể key, dễ lệch âm thầm như
+   bug #5 ở trên (`category` vs `taskCategory`).
+
+### Còn treo, chưa làm — ưu tiên phiên sau
+
+1. Verify UI thật màn Quản lý thưởng tab Tranh chấp phía Manager (dừng giữa
+   chừng do sự cố an toàn) — settlement `c87abc10-3c46-4f77-9ba5-148d3b142790`
+   (gia đình NDuy) đang ở trạng thái DISPUTED, sẵn sàng để test nút "Giải
+   quyết" → "Chấp nhận"/"Từ chối".
+2. Dữ liệu test rác còn sót lại trong gia đình NDuy: nhiều task tên "E2E
+   test...", "Don dep phong khach", "Tuoi cay", "Test role rule" — dọn trước
+   khi demo, tương tự khoản mục "ZZ_TEST" đã ghi ở phiên 19/08.
+3. Commit + push code đã liệt kê ở trên lên nhánh `NDuy` (chưa làm tại thời
+   điểm ghi mục này — xem đầu mục để biết đã làm chưa nếu đọc lại sau).
+
+---
+
+## ⚪ Snapshot cũ 19/08/2026 (tối) — lịch sử, mục mới nhất ở trên cùng
 
 Nhánh: **`NDuy`** = `dc14a77`. `main` = `7cf8f30` (merge fast-forward lúc 19:40,
 sau đó `NDuy` chạy thêm 6 commit **chưa merge lên main** theo yêu cầu user vì
@@ -3145,3 +3355,59 @@ Test phủ: router redirect (verify mandatory), auth/role capabilities (+2 test 
 4. Khi BE ship location: đổi path `GpsProvider` (parse đã sẵn) → mở marker nhiều thành viên + family cards có vị trí.
 5. TODO nhỏ: nhãn hiển thị cho status **`FALSE_ALARM`** (detail sheet + alert card đang rơi về raw).
 6. `[VERIFY]` tồn đọng: checkout field Stripe, chat WebSocket.
+# Snapshot hiện tại — 21/08/2026
+
+> Ưu tiên snapshot này khi tiếp tục công việc. Lịch sử bên dưới chỉ dùng để tham chiếu, không dùng để suy ra branch, commit hoặc trạng thái worktree hiện tại.
+
+## Git và phạm vi FE
+
+- Nhánh làm việc: `NDuy`.
+- Commit mốc mới nhất được bàn giao: `44b1149` — `fix(tasks): improve deadline workflow and task-list UX`.
+- Worktree FE vẫn có thay đổi chưa commit. Trước mọi thao tác commit, push, merge hoặc chạy CI phải kiểm tra `git status --short` và `git diff`, đồng thời phân biệt thay đổi mã FE với tệp báo cáo/diagram.
+- Cập nhật này chỉ ghi nhận trạng thái; chưa tạo commit, push hoặc merge.
+
+## Hạng mục FE đang theo dõi
+
+### AI chatbox và Calendar
+
+- Khi có `pendingAction` hoặc `pendingActions` ở trạng thái `PENDING`, FE phải hiển thị nội dung chuẩn theo `actionType`, không dùng fallback text của model.
+- Calendar: các cụm “cho cả nhà”, “cả gia đình” hoặc “mọi người” phải lấy toàn bộ thành viên `ACTIVE`; nếu không nêu người tham gia thì thêm người tạo lịch; participant ID do AI trả về phải được kiểm tra thuộc thành viên `ACTIVE`.
+- Cần regression trên bản app mới cho luồng tạo lịch một lượt và multi-turn: kiểm tra proposal card, xác nhận, thông báo, lịch dạng danh sách và lịch tháng.
+
+### Nhiệm vụ, deadline và UX
+
+- Mốc đã bàn giao: deadline workflow và danh sách task được cải thiện tại `44b1149`.
+- Cần xác nhận khi chạy bản mới: task vừa tạo xuất hiện ở vị trí dễ thấy, thứ tự mặc định nhất quán, task quá hạn hiển thị rõ, và task định kỳ/one-off đều có deadline do người dùng chọn.
+- Luồng nghiệp vụ cần giữ: tạo task → giao hoặc giao lại → đặt/sửa/xóa thưởng → người nhận bắt đầu/hoàn thành → manager hoặc deputy duyệt. Không mô tả reward như thanh toán tự động nếu UI/API chưa xác nhận.
+
+### Multi-family context
+
+- Một tài khoản có thể thuộc nhiều family. Cần giữ workspace hiện tại nhất quán sau login, join/invite, refresh và đổi family.
+- Sự cố đã ghi nhận: `refreshFamilyContext()` có thể chọn sai family, dẫn đến danh sách task/member không thuộc workspace đang xem. Cần regression theo từng workspace trước khi kết luận FE đã hết lỗi.
+
+### Finance
+
+- Đã quan sát cần kiểm chứng: allocation 80/20 và history có thể đúng nhưng báo cáo actual theo jar có lúc không phản ánh expense đã map category → jar.
+- FE chỉ hiển thị đúng dữ liệu API cùng empty/error state; BE cần xác nhận query mapping, active financial model và khoảng kỳ. Không tự suy ra lại số thực tế ở FE.
+
+## Báo cáo và use-case
+
+- Report 6 là phần User Manual của mobile app và web admin. Tiếp tục dùng các tài liệu report hiện có, chèn ảnh chụp đúng chức năng và không xóa nội dung mẫu/trước đó khi chưa đối chiếu.
+- Use-case diagram đang được rút gọn từ sơ đồ chi tiết: giữ bốn actor chính `Guest`, `Family Member`, `Family Manager`, `System Admin`; `Family Manager` kế thừa `Family Member`; Deputy không là actor riêng.
+- Sơ đồ tóm tắt vẫn phải bao phủ onboarding, workspace/member, finance/fund, task/reward, calendar/reminder, chat/album, location/SOS, AI proposal và vận hành admin. Các use case chi tiết dùng làm phụ lục/nguồn tham chiếu.
+
+## Cần BE xác nhận hoặc regression
+
+- Quy tắc phân quyền cuối cùng của create/update calendar, task, fund allocation và reward approval.
+- Tính nhất quán current-family/workspace trong API responses và sau refresh token/login.
+- Jar target/actual reporting theo category mapping, active financial model và khoảng kỳ.
+- Schema/error payload mới của AI pending action để FE mapping chính xác.
+- Không ghi tài khoản, mật khẩu, token, URL private hoặc secret vào handoff.
+
+## Tệp ngoài repo cần tránh add/commit nhầm
+
+- Report: `D:\\Desktop\\BÁO-CÁO-NEW\\Report6_Software User Guides (1).docx`, `D:\\Desktop\\file__lam_chung.docx`, `D:\\Desktop\\BÁO-CÁO-NEW\\FinalReport_Template.docx`.
+- Use-case/tool artifacts: `D:\\Downloads\\usecase-diagram.drawio` và các bản sao `usecase-diagram (...).drawio`.
+- Ảnh chụp, file xuất từ draw.io, APK/debug output và công cụ Word/Google Docs chỉ là artifact cục bộ nếu chưa có chỉ đạo đưa vào repo.
+
+---

@@ -225,9 +225,12 @@ class FamilyTask {
   );
 
   factory FamilyTask.fromJson(Map<String, dynamic> j) {
-    final cat = j['taskCategory'] is Map
-        ? j['taskCategory'] as Map
-        : <String, dynamic>{};
+    // BE trả key `category` (verify response thật 24/08), không phải
+    // `taskCategory` như đọc trước đây — taskCategoryName luôn null dù BE có
+    // gửi dữ liệu. Giữ cả 2 key phòng BE đổi lại.
+    final cat = j['category'] is Map
+        ? j['category'] as Map
+        : (j['taskCategory'] is Map ? j['taskCategory'] as Map : <String, dynamic>{});
     final creator = j['createdByMember'] is Map
         ? j['createdByMember'] as Map
         : (j['createdBy'] is Map
@@ -1220,7 +1223,11 @@ class TaskProvider extends ChangeNotifier {
       '/families/$_fid/tasks/reward-settlements/$settlementId/disputes',
       {'reason': reason},
     );
-    await fetchRewardDisputes();
+    // Tạo tranh chấp đổi luôn status của settlement (WAITING_CONFIRMATION ->
+    // DISPUTED, verify response thật 24/08) — không refetch thì banner
+    // thưởng phía member vẫn hiện chữ "Đã trả, chờ xác nhận" cũ dù BE đã ghi
+    // nhận tranh chấp thành công.
+    await Future.wait([fetchRewardDisputes(), fetchRewardSettlements()]);
   }
 
   Future<void> fetchRewardDisputes() async {
@@ -1243,7 +1250,9 @@ class TaskProvider extends ChangeNotifier {
       '/families/$_fid/tasks/reward-disputes/$disputeId/resolve',
       {'action': action},
     );
-    await fetchRewardDisputes();
+    // ACCEPT_DISPUTE đổi settlement về PENDING_SETTLEMENT (verify response
+    // thật 24/08) — cùng lý do refetch như createDispute ở trên.
+    await Future.wait([fetchRewardDisputes(), fetchRewardSettlements()]);
   }
 
   // GET .../reward-disputes/{id} — chi tiết 1 tranh chấp.

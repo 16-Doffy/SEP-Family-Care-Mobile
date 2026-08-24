@@ -1357,12 +1357,27 @@ class _RewardConfirmBarState extends State<_RewardConfirmBar> {
 
   Future<void> _load() async {
     final provider = context.read<TaskProvider>();
+    // `assignment.latestSubmissionId` gần như luôn rỗng ở đây: widget này
+    // dùng thẳng assignment lấy từ `fetchMyAssignments()` (danh sách), mà
+    // GET .../my-assignments không embed submission (xác nhận response thật
+    // 24/08 — object chỉ có status, không có submission/latestSubmission).
+    // So `s.submissionId == null` với mọi settlement thật luôn trượt, nên
+    // banner phần thưởng phía member (kể cả khi đã bị huỷ/tranh chấp) im
+    // lặng vĩnh viễn dù task đã APPROVED — gọi thêm endpoint theo assignment
+    // để lấy đúng submissionId thật.
     await provider.fetchRewardSettlements();
+    final submission = await provider.fetchLatestSubmission(
+      widget.assignment.id,
+    );
+    final submissionId =
+        submission?.id ?? widget.assignment.latestSubmissionId ?? '';
     if (!mounted) return;
     setState(() {
-      _settlement = provider.rewardSettlements
-          .where((s) => s.submissionId == widget.assignment.latestSubmissionId)
-          .firstOrNull;
+      _settlement = submissionId.isEmpty
+          ? null
+          : provider.rewardSettlements
+                .where((s) => s.submissionId == submissionId)
+                .firstOrNull;
       _loading = false;
     });
   }

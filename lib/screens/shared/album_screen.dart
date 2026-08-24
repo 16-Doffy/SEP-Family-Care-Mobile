@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -2657,6 +2658,11 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
   late int _index;
   bool _chromeVisible = true;
 
+  /// Khung mặt đang chờ duyệt của ảnh hiện tại, do [AlbumFaceSection] báo lên
+  /// qua `onSuggestionsChanged` — vẽ overlay đè lên đúng vị trí trên ảnh
+  /// (`_AlbumDetailMediaPage`), tách biệt khỏi cây widget của info panel.
+  List<FaceOverlayItem> _currentOverlay = const [];
+
   @override
   void initState() {
     super.initState();
@@ -2738,11 +2744,19 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
             controller: _pageController,
             itemCount: _items.length,
             onPageChanged: (next) {
-              setState(() => _index = next);
+              // Đổi ảnh thì khung của ảnh cũ không còn đúng nữa — AlbumFaceSection
+              // của ảnh mới sẽ tự báo lại khung riêng sau khi nạp xong.
+              setState(() {
+                _index = next;
+                _currentOverlay = const [];
+              });
               _loadAround(next);
             },
-            itemBuilder: (_, i) =>
-                _AlbumDetailMediaPage(media: _mediaAt(i), onTap: _toggleChrome),
+            itemBuilder: (_, i) => _AlbumDetailMediaPage(
+              media: _mediaAt(i),
+              onTap: _toggleChrome,
+              overlay: i == _index ? _currentOverlay : const [],
+            ),
           ),
           if (_chromeVisible) _topBar(),
           if (_chromeVisible) _infoPanel(),
@@ -2872,6 +2886,9 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                   // thì set trên rỗng, không dùng để kết luận "chưa có thẻ".
                   hasAnyTag: media.tags.isNotEmpty,
                   onChanged: _refreshCurrent,
+                  onSuggestionsChanged: (items) {
+                    if (mounted) setState(() => _currentOverlay = items);
+                  },
                 ),
                 const SizedBox(height: 12),
                 widget.actionListBuilder(context, media, _refreshCurrent),
@@ -3014,10 +3031,18 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
 }
 
 class _AlbumDetailMediaPage extends StatefulWidget {
-  const _AlbumDetailMediaPage({required this.media, required this.onTap});
+  const _AlbumDetailMediaPage({
+    required this.media,
+    required this.onTap,
+    this.overlay = const [],
+  });
 
   final AlbumMedia media;
   final VoidCallback onTap;
+
+  /// Khung mặt của gợi ý AI đang chờ duyệt, vẽ đè lên ảnh — rỗng khi ảnh
+  /// không phải trang đang mở hoặc chưa có gợi ý nào có toạ độ.
+  final List<FaceOverlayItem> overlay;
 
   @override
   State<_AlbumDetailMediaPage> createState() => _AlbumDetailMediaPageState();
@@ -3095,6 +3120,12 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
   }
 
   Widget _media(String url) {
+    // Dùng CHUNG 1 instance ImageProvider cho cả Image hiển thị lẫn
+    // _FaceOverlay (lấy kích thước gốc) — trước đây _FaceOverlay tự tạo
+    // NetworkImage(url) riêng, về lý thuyết trùng cache key với NetworkImage
+    // ở dưới nên vẫn nên hoạt động, nhưng tách hẳn thành cùng 1 object loại
+    // bỏ triệt để khả năng lệch cache/instance là nguồn gây khung không hiện.
+    final provider = NetworkImage(url);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
@@ -3111,11 +3142,21 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
             // đúng nghĩa. filterQuality medium để ảnh nhỏ phóng lên đỡ rỗ
             // (ảnh gốc quá nhỏ thì vẫn mờ — giới hạn của dữ liệu, không phải UI).
             child: SizedBox.expand(
-              child: Image.network(
-                url,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.medium,
-                errorBuilder: (_, _, _) => _empty(),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image(
+                    image: provider,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                    errorBuilder: (_, _, _) => _empty(),
+                  ),
+                  // Nằm trong cùng InteractiveViewer nên phóng/kéo ảnh thì
+                  // khung mặt di chuyển/scale theo đúng ảnh, không cần tự
+                  // đồng bộ transform.
+                  if (widget.overlay.isNotEmpty)
+                    _FaceOverlay(imageProvider: provider, items: widget.overlay),
+                ],
               ),
             ),
           ),
@@ -3143,6 +3184,153 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
           size: 52,
         ),
       ),
+    );
+  }
+}
+
+/// Vẽ khung + tên đè lên ảnh tại đúng vị trí khuôn mặt.
+///
+/// [FaceBoundingBox] là toạ độ tỉ lệ 0..1 theo ẢNH GỐC, còn ảnh trên màn hình
+/// hiển thị bằng `BoxFit.contain` nên có viền đen 2 bên (ảnh không cùng tỉ lệ
+/// khung chứa). Phải tự tính lại đúng vùng ảnh thật sự chiếm (letterbox rect)
+/// từ kích thước gốc của ảnh — không thể lấy thẳng kích thước Positioned theo
+/// cả khung chứa, sẽ lệch khi ảnh không vuông.
+class _FaceOverlay extends StatefulWidget {
+  const _FaceOverlay({required this.imageProvider, required this.items});
+
+  /// Instance CHUNG với `Image` hiển thị ảnh chính (xem `_media()`) — đảm bảo
+  /// cùng cache key tuyệt đối, không phụ thuộc so sánh URL/ImageConfiguration.
+  final ImageProvider imageProvider;
+  final List<FaceOverlayItem> items;
+
+  @override
+  State<_FaceOverlay> createState() => _FaceOverlayState();
+}
+
+class _FaceOverlayState extends State<_FaceOverlay> {
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+  Size? _naturalSize;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveNaturalSize();
+  }
+
+  @override
+  void didUpdateWidget(_FaceOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageProvider != widget.imageProvider) {
+      _naturalSize = null;
+      _resolveNaturalSize();
+    }
+  }
+
+  void _resolveNaturalSize() {
+    final stream = widget.imageProvider.resolve(const ImageConfiguration());
+    final listener = ImageStreamListener(
+      (info, _) {
+        if (!mounted) return;
+        setState(() {
+          _naturalSize = Size(
+            info.image.width.toDouble(),
+            info.image.height.toDouble(),
+          );
+        });
+      },
+      onError: (error, stack) {
+        debugPrint('FaceOverlay: resolve failed — $error');
+      },
+    );
+    _stream?.removeListener(_listener!);
+    _stream = stream..addListener(listener);
+    _listener = listener;
+  }
+
+  @override
+  void dispose() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final natural = _naturalSize;
+    if (natural == null || widget.items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return LayoutBuilder(
+      builder: (_, constraints) {
+        final container = constraints.biggest;
+        final scale = math.min(
+          container.width / natural.width,
+          container.height / natural.height,
+        );
+        final fittedW = natural.width * scale;
+        final fittedH = natural.height * scale;
+        final offsetX = (container.width - fittedW) / 2;
+        final offsetY = (container.height - fittedH) / 2;
+        return Stack(
+          children: widget.items.map((item) {
+            final box = item.box;
+            return Positioned(
+              left: offsetX + box.x * fittedW,
+              top: offsetY + box.y * fittedH,
+              width: box.width * fittedW,
+              height: box.height * fittedH,
+              child: _FaceBox(name: item.memberName),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _FaceBox extends StatelessWidget {
+  const _FaceBox({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xFFFACC15), width: 2.5),
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+        ),
+        if (name.isNotEmpty)
+          Positioned(
+            left: 0,
+            bottom: -24,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

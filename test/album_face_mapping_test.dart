@@ -224,6 +224,84 @@ void main() {
     });
   });
 
+  test(
+    'parseFaceSuggestions giữ boundingBox từ response thật của BE '
+    '(verify 2026-08-24: curl trực tiếp, media a3378891, item PENDING)',
+    () {
+      final raw = {
+        "faces": [
+          {
+            "faceId": "49332b4f-8a2a-43a2-8336-aeece8d968ae",
+            "detectionId": "49332b4f-8a2a-43a2-8336-aeece8d968ae",
+            "faceIndex": 5,
+            "boundingBox": {
+              "x": 0.4994769467105815,
+              "y": 0.3454243695294416,
+              "width": 0.09405317127544822,
+              "height": 0.1359692891438802,
+            },
+            "detectionScore": 0.7036,
+            "qualityScore": 0.7036,
+            "status": "MATCHED",
+            "candidates": [
+              {
+                "suggestionId": "2d1ae46e-fcfd-489e-abe0-0ee53bc52773",
+                "memberId": "7b1ba8e5-dc73-48bb-9b82-f57da17d8909",
+                "displayName": "lê anh sĩ",
+                "avatarUrl": null,
+                "score": 0.7338,
+                "secondBestScore": -0.0393,
+                "scoreMargin": 0.7731,
+                "status": "PENDING",
+                "permissions": {"canConfirm": true, "canReject": true},
+              },
+            ],
+          },
+        ],
+        "items": [
+          {
+            "suggestionId": "2d1ae46e-fcfd-489e-abe0-0ee53bc52773",
+            "detectionId": "49332b4f-8a2a-43a2-8336-aeece8d968ae",
+            "faceId": "49332b4f-8a2a-43a2-8336-aeece8d968ae",
+            "faceIndex": 5,
+            "boundingBox": {
+              "x": 0.4994769467105815,
+              "y": 0.3454243695294416,
+              "width": 0.09405317127544822,
+              "height": 0.1359692891438802,
+            },
+            "similarityScore": 0.7338,
+            "secondBestScore": -0.0393,
+            "scoreMargin": 0.7731,
+            "status": "PENDING",
+            "suggestedMember": {
+              "memberId": "7b1ba8e5-dc73-48bb-9b82-f57da17d8909",
+              "displayName": "lê anh sĩ",
+              "avatarUrl": null,
+              "familyRole": "DEPUTY_MEMBER",
+              "memberStatus": "ACTIVE",
+            },
+            "permissions": {"canConfirm": true, "canReject": true},
+          },
+        ],
+        "total": 1,
+      };
+
+      final suggestions = parseFaceSuggestions(raw);
+
+      expect(suggestions, hasLength(1));
+      expect(
+        suggestions.single.boundingBox,
+        isNotNull,
+        reason:
+            'response thật của BE có boundingBox cả ở "faces" lẫn "items" — '
+            'nếu null ở đây thì lỗi nằm ở parseFaceSuggestions/FaceSuggestion.fromJson',
+      );
+      expect(suggestions.single.boundingBox!.x, closeTo(0.4994, 0.001));
+      expect(suggestions.single.memberName, 'lê anh sĩ');
+    },
+  );
+
   test('AlbumTag reads tagged member name from nested backend payload', () {
     final tag = AlbumTag.fromJson({
       'id': 'tag-1',

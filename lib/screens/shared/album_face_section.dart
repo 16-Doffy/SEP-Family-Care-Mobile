@@ -11,6 +11,19 @@ import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 
+/// Một khung mặt sẵn sàng để vẽ overlay lên ảnh: đã resolve tên (không còn
+/// phụ thuộc FamilyProvider ở nơi vẽ) và bỏ qua item thiếu toạ độ.
+class FaceOverlayItem {
+  final String suggestionId;
+  final String memberName;
+  final FaceBoundingBox box;
+  const FaceOverlayItem({
+    required this.suggestionId,
+    required this.memberName,
+    required this.box,
+  });
+}
+
 /// Câu giải thích khi danh sách gợi ý rỗng.
 ///
 /// Rỗng có ba nguyên nhân khác hẳn nhau, trước đây gộp chung một câu nên báo
@@ -52,6 +65,7 @@ class AlbumFaceSection extends StatefulWidget {
     required this.taggedMemberIds,
     required this.hasAnyTag,
     this.onChanged,
+    this.onSuggestionsChanged,
   });
 
   final String mediaId;
@@ -72,6 +86,12 @@ class AlbumFaceSection extends StatefulWidget {
   final bool hasAnyTag;
 
   final VoidCallback? onChanged;
+
+  /// Báo lên màn ảnh chi tiết (ảnh chính hiện ở page riêng, không cùng cây
+  /// widget với section này) danh sách khung mặt hiện đang chờ duyệt, để vẽ
+  /// overlay khung + tên đè lên đúng vị trí trên ảnh. Gọi lại mỗi khi danh
+  /// sách hiển thị đổi (quét xong, xác nhận/từ chối một gợi ý).
+  final ValueChanged<List<FaceOverlayItem>>? onSuggestionsChanged;
 
   @override
   State<AlbumFaceSection> createState() => _AlbumFaceSectionState();
@@ -118,7 +138,31 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
   @override
   void dispose() {
     _cooldownTimer?.cancel();
+    // Rời ảnh này thì khung overlay của nó không còn ý nghĩa — báo rỗng để
+    // màn ảnh chính không giữ khung cũ đè lên ảnh kế tiếp trong lúc chờ ảnh
+    // mới tải xong gợi ý của nó.
+    widget.onSuggestionsChanged?.call(const []);
     super.dispose();
+  }
+
+  /// Báo lên [AlbumFaceSection.onSuggestionsChanged] danh sách khung mặt hiện
+  /// tại (chỉ item có [FaceSuggestion.boundingBox]) để màn ảnh chính vẽ
+  /// overlay. Gọi sau mọi lần [_suggestions]/[_visibleSuggestions] đổi.
+  void _reportOverlay() {
+    final withBox = _visibleSuggestions.where((s) => s.boundingBox != null);
+    final cb = widget.onSuggestionsChanged;
+    if (cb == null) return;
+    cb(
+      withBox
+          .map(
+            (s) => FaceOverlayItem(
+              suggestionId: s.id,
+              memberName: _memberName(s),
+              box: s.boundingBox!,
+            ),
+          )
+          .toList(),
+    );
   }
 
   Future<void> _load() async {
@@ -163,6 +207,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         _maxProcessingSeconds = info.maxProcessingSeconds;
         _loading = false;
       });
+      _reportOverlay();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -270,6 +315,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         _retryAllowed = result.info.retryAllowed;
         _maxProcessingSeconds = result.info.maxProcessingSeconds;
       });
+      _reportOverlay();
     } catch (e) {
       _handleScanError(e);
     } finally {
@@ -326,6 +372,7 @@ class _AlbumFaceSectionState extends State<AlbumFaceSection> {
         _suggestions = _suggestions.where((e) => e.id != s.id).toList();
         _resolvedSomeSuggestion = true;
       });
+      _reportOverlay();
       _snack(confirm ? 'Đã xác nhận và gắn thẻ' : 'Đã bỏ qua gợi ý', ok: true);
       if (confirm) widget.onChanged?.call();
     } catch (e) {
