@@ -315,6 +315,37 @@ void main() {
     expect(tag.taggedMemberId, 'member-1');
     expect(tag.taggedMemberName, 'Zap MEM 2');
   });
+
+  test(
+    'AlbumTag đọc boundingBox khi tag confirm từ AI (contract BE 2026-08-25)',
+    () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-2',
+        'taggedMemberId': 'member-2',
+        'taggedMemberName': 'Vu Quan',
+        'boundingBox': {'x': 0.12, 'y': 0.18, 'width': 0.27, 'height': 0.31},
+      });
+
+      expect(tag.boundingBox, isNotNull);
+      expect(tag.boundingBox!.x, 0.12);
+      expect(tag.boundingBox!.y, 0.18);
+      expect(tag.boundingBox!.width, 0.27);
+      expect(tag.boundingBox!.height, 0.31);
+    },
+  );
+
+  test(
+    'AlbumTag boundingBox null cho tag thủ công/tag cũ, không suy đoán vị trí',
+    () {
+      final tag = AlbumTag.fromJson({
+        'id': 'tag-3',
+        'taggedMemberId': 'member-3',
+        'taggedMemberName': 'Minh Nhut',
+      });
+
+      expect(tag.boundingBox, isNull);
+    },
+  );
 }
 
 /// Ba nguyên nhân "danh sách gợi ý rỗng" phải ra ba câu khác nhau. Trước đây

@@ -88,10 +88,44 @@ String albumModerationToApi(AlbumModerationStatus value) {
   };
 }
 
+/// Khung mặt theo BE (`FaceBoundingBoxResponseDto`) — toạ độ **tỉ lệ 0..1**
+/// theo kích thước ảnh gốc (đã xử lý theo EXIF orientation), không phải pixel,
+/// nên vẽ overlay không cần biết ảnh hiển thị to nhỏ ra sao, chỉ cần nhân với
+/// kích thước khung chứa lúc vẽ. Dùng chung cho cả gợi ý AI (`FaceSuggestion`
+/// ở `AlbumFaceProvider`) lẫn tag đã confirm (`AlbumTag` bên dưới).
+class FaceBoundingBox {
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  const FaceBoundingBox({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  static FaceBoundingBox? fromJson(dynamic value) {
+    if (value is! Map) return null;
+    final x = _numOrNull(value['x']);
+    final y = _numOrNull(value['y']);
+    final w = _numOrNull(value['width']);
+    final h = _numOrNull(value['height']);
+    if (x == null || y == null || w == null || h == null) return null;
+    return FaceBoundingBox(x: x, y: y, width: w, height: h);
+  }
+}
+
 class AlbumTag {
   final String id;
   final String taggedMemberId;
   final String taggedMemberName;
+
+  /// `null` khi tag gắn thủ công (không qua AI) hoặc tag cũ trước khi BE có
+  /// field này. Xác nhận từ gợi ý AI thì BE tự copy toạ độ từ face detection
+  /// sang tag — FE không tự gửi lên lúc confirm. Xem API_DOCS.md mục
+  /// "Tag đã confirm nay có boundingBox".
+  final FaceBoundingBox? boundingBox;
 
   /// Người đã gắn thẻ này. BE bổ sung 19/08 cùng với `taggedMemberId` trực
   /// tiếp (trước đó response chỉ có tên, không có id nào — xem
@@ -110,6 +144,7 @@ class AlbumTag {
     this.taggedByMemberId = '',
     this.tagNote,
     this.canRemoveFlag,
+    this.boundingBox,
   });
 
   /// Fail-open như `AlbumFaceProvider.canUseFaceSuggestions`: chưa biết quyền
@@ -159,6 +194,7 @@ class AlbumTag {
                 ? nestedMemberName
                 : (nestedUserName.isNotEmpty ? nestedUserName : 'Thành viên')),
       tagNote: json['tagNote']?.toString(),
+      boundingBox: FaceBoundingBox.fromJson(json['boundingBox']),
       canRemoveFlag: switch (json['permissions'] is Map
           ? (json['permissions'] as Map)['canRemove']
           : json['canRemove']) {

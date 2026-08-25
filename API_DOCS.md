@@ -1046,6 +1046,15 @@ Schema chính thức trong OpenAPI: `DetectedFaceSuggestionResponseDto` (`faceId
 - **`status` của khuôn mặt bị `status` của candidate đè.** Hai DTO **trùng tên field `status`** nhưng enum khác nhau; bước làm phẳng `{...face, ...candidate}` spread candidate sau nên mất trạng thái khuôn mặt → khuôn mặt `SUPERSEDED` (đã bị lần force rescan mới thay thế) vẫn hiện như gợi ý còn hiệu lực. Nay tách sang key riêng `detectionStatus` trước khi ghép và lọc bằng `isSupersededDetection`.
 - 3 lệch trên từng được vá ở commit `e580b97` rồi **bị commit đồng bộ main `f947469` ghi đè mất** (kèm cả test). Đã khôi phục + khoá lại bằng 5 test trong `test/album_face_mapping_test.dart` để lần merge sau không im lặng mất nữa.
 
+### [MỚI 2026-08-25] Tag đã confirm nay có `boundingBox` — BE chốt qua Slack
+BE xác nhận contract (chưa deploy tại thời điểm ghi chú này — FE code đã sẵn sàng đọc field, chờ BE trả thật để verify):
+
+- `GET /families/{id}/albums/media` và `GET /families/{id}/albums/media/{mediaId}/tags` nay trả thêm `boundingBox` cho **mỗi tag** (không chỉ suggestion): `{ x, y, width, height } | null`, toạ độ chuẩn hoá **0..1** theo ảnh đã xử lý theo EXIF orientation (cùng khuôn `FaceBoundingBoxResponseDto` đã dùng ở face-suggestions).
+- **Xác nhận từ gợi ý AI** (`POST .../face-suggestions/{suggestionId}/confirm`): FE **không gửi** `boundingBox` trong body (giữ nguyên như trước) — BE tự copy toạ độ từ face detection đúng `mediaId`/`family`/suggestion sang tag vừa tạo. Nếu tag đã tồn tại nhưng thiếu box (tạo trước khi BE có field), lần confirm suggestion đó sẽ bổ sung box cho tag.
+- **Tag thủ công** (`POST .../albums/media/{mediaId}/tags`) và **tag cũ** (tạo trước khi BE có field): `boundingBox: null` — không backfill.
+- FE (`AlbumTag.boundingBox`, `lib/models/album_media.dart`) đã parse field này bằng `FaceBoundingBox.fromJson`, tái dùng đúng class đang dùng cho `FaceSuggestion.boundingBox`; `null`/thiếu 1 trong 4 giá trị → không vẽ khung (không suy đoán vị trí). Overlay khung mặt ở màn chi tiết ảnh (`album_screen.dart`) nay vẽ cả box của tag đã confirm (viền xanh lá `0xFF22C55E`) lẫn gợi ý AI còn chờ duyệt (viền vàng `0xFFFACC15`, như cũ) — tái dùng đúng phép tính letterbox `BoxFit.contain` đã có, không viết lại.
+- ⚠️ Chưa verify trên response BE thật (chỉ mới chốt hướng qua Slack) — cần curl lại `GET .../tags` sau khi BE deploy để xác nhận đúng tên field/khuôn dữ liệu như đã chốt trước khi coi mục này là hết `[VERIFY]`.
+
 ### [MỚI 2026-07-29] Face AI chấm điểm từng khuôn mặt
 - BE nay **kiểm tra từng face trong ảnh** rồi lấy face có điểm cao nhất để gắn thẻ (ví dụ BE đưa: face1 `0.88`, face2 `0.5` → chọn face1).
 - Swagger live đã có `FaceSuggestionsApiResponseDto` và example nhiều khuôn mặt. Confidence example dùng thang `0..1`, khớp `normalizedConfidence`; parser vẫn chấp nhận `0..100` để tương thích dữ liệu cũ.

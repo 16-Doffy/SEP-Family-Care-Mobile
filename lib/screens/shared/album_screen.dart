@@ -2720,6 +2720,24 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
     _loadDetail(_index, force: true);
   }
 
+  /// Khung mặt của các tag **đã confirm** có toạ độ (`AlbumTag.boundingBox`
+  /// khác `null`) — tag thủ công/tag cũ không có toạ độ thì không vẽ được,
+  /// bỏ qua thay vì đoán vị trí. Ghép cùng [_currentOverlay] (gợi ý AI còn
+  /// chờ duyệt) để overlay hiện đủ cả hai loại, phân biệt bằng màu viền.
+  List<FaceOverlayItem> _confirmedOverlayFor(AlbumMedia media) {
+    return media.tags
+        .where((t) => t.boundingBox != null)
+        .map(
+          (t) => FaceOverlayItem(
+            suggestionId: t.id,
+            memberName: t.taggedMemberName,
+            box: t.boundingBox!,
+            confirmed: true,
+          ),
+        )
+        .toList();
+  }
+
   void _toggleChrome() {
     setState(() => _chromeVisible = !_chromeVisible);
   }
@@ -2752,11 +2770,16 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
               });
               _loadAround(next);
             },
-            itemBuilder: (_, i) => _AlbumDetailMediaPage(
-              media: _mediaAt(i),
-              onTap: _toggleChrome,
-              overlay: i == _index ? _currentOverlay : const [],
-            ),
+            itemBuilder: (_, i) {
+              final media = _mediaAt(i);
+              return _AlbumDetailMediaPage(
+                media: media,
+                onTap: _toggleChrome,
+                overlay: i == _index
+                    ? [..._confirmedOverlayFor(media), ..._currentOverlay]
+                    : const [],
+              );
+            },
           ),
           if (_chromeVisible) _topBar(),
           if (_chromeVisible) _infoPanel(),
@@ -3281,7 +3304,7 @@ class _FaceOverlayState extends State<_FaceOverlay> {
               top: offsetY + box.y * fittedH,
               width: box.width * fittedW,
               height: box.height * fittedH,
-              child: _FaceBox(name: item.memberName),
+              child: _FaceBox(name: item.memberName, confirmed: item.confirmed),
             );
           }).toList(),
         );
@@ -3291,19 +3314,26 @@ class _FaceOverlayState extends State<_FaceOverlay> {
 }
 
 class _FaceBox extends StatelessWidget {
-  const _FaceBox({required this.name});
+  const _FaceBox({required this.name, this.confirmed = false});
 
   final String name;
 
+  /// Tag đã confirm dùng viền xanh lá; gợi ý AI còn chờ duyệt giữ viền vàng
+  /// như trước — tránh người xem tưởng nhầm ai cũng đang "chờ xác nhận".
+  final bool confirmed;
+
   @override
   Widget build(BuildContext context) {
+    final borderColor = confirmed
+        ? const Color(0xFF22C55E)
+        : const Color(0xFFFACC15);
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              border: Border.all(color: const Color(0xFFFACC15), width: 2.5),
+              border: Border.all(color: borderColor, width: 2.5),
               borderRadius: BorderRadius.circular(6),
             ),
           ),

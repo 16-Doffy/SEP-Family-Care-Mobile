@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../models/album_media.dart' show FaceBoundingBox;
 import '../services/api_client.dart';
 
 String _str(dynamic v) => v?.toString() ?? '';
@@ -107,32 +108,6 @@ FaceScanState _scanStateFrom(String raw) {
     return FaceScanState.scanned;
   }
   return FaceScanState.notScanned;
-}
-
-/// Khung mặt theo BE (`FaceBoundingBoxResponseDto`) — toạ độ **tỉ lệ 0..1**
-/// theo kích thước ảnh gốc, không phải pixel, nên vẽ overlay không cần biết
-/// ảnh hiển thị to nhỏ ra sao, chỉ cần nhân với kích thước khung chứa lúc vẽ.
-class FaceBoundingBox {
-  final double x;
-  final double y;
-  final double width;
-  final double height;
-  const FaceBoundingBox({
-    required this.x,
-    required this.y,
-    required this.width,
-    required this.height,
-  });
-
-  static FaceBoundingBox? fromJson(dynamic value) {
-    if (value is! Map) return null;
-    final x = _num(value['x']);
-    final y = _num(value['y']);
-    final w = _num(value['width']);
-    final h = _num(value['height']);
-    if (x == null || y == null || w == null || h == null) return null;
-    return FaceBoundingBox(x: x, y: y, width: w, height: h);
-  }
 }
 
 /// Một đề xuất tag từ face scan. Chỉ giữ field tối thiểu; tên thành viên resolve

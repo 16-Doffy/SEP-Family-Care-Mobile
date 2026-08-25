@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/album_media.dart' show FaceBoundingBox;
 import '../../providers/album_face_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/subscription_provider.dart';
@@ -17,10 +18,15 @@ class FaceOverlayItem {
   final String suggestionId;
   final String memberName;
   final FaceBoundingBox box;
+
+  /// `true` khi khung là tag **đã confirm** (đổi màu viền để phân biệt với
+  /// gợi ý AI còn chờ duyệt) — xem `_FaceBox`.
+  final bool confirmed;
   const FaceOverlayItem({
     required this.suggestionId,
     required this.memberName,
     required this.box,
+    this.confirmed = false,
   });
 }
 
