@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_jar_label.dart';
 import '../../models/finance_period.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/support_request_provider.dart';
@@ -908,7 +909,9 @@ class _LedgerCard extends StatelessWidget {
               children: [
                 Text(
                   entry.description.isNotEmpty
-                      ? entry.description
+                      // BE ghép sẵn tên hũ tiếng Anh trong mô tả — dịch lúc
+                      // hiển thị, xem finance_jar_label.dart.
+                      ? localizeJarNamesInText(entry.description)
                       : (entry.categoryName ?? 'Giao dịch'),
                   style: GoogleFonts.inter(
                     fontSize: 14,

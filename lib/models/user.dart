@@ -55,7 +55,7 @@ class AppUser {
 
     final name = json['fullName'] as String? ??
         json['displayName'] as String? ??
-        'User';
+        'Người dùng';
 
     // familyName: ưu tiên từ tham số truyền vào (sau khi gọi /families/my)
     final fName = familyName ??

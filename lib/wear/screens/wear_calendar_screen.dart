@@ -40,7 +40,7 @@ class _WearCalendarScreenState extends State<WearCalendarScreen> {
         children: [
           WearHeader(
             icon: Icons.calendar_month_rounded,
-            label: 'Calendar',
+            label: 'Lịch',
             color: WearPalette.violet,
             trailing: calendar.loading
                 ? const SizedBox.square(
@@ -116,7 +116,7 @@ class _WearCalendarScreenState extends State<WearCalendarScreen> {
 
   Color _eventColor(FamilyCalendarEvent event) {
     return switch (event.typeLabel) {
-      'Task' => WearPalette.amber,
+      'Nhiệm vụ' => WearPalette.amber,
       'Sức khỏe' => WearPalette.sosSoft,
       'Du lịch' => WearPalette.blue,
       'Sinh nhật' => WearPalette.green,

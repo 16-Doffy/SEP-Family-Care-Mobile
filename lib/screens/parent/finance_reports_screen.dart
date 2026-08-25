@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_jar_label.dart';
 import '../../models/finance_period.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
@@ -284,7 +285,7 @@ class _JarTargetActualReportTabState extends State<_JarTargetActualReportTab> {
                       children: [
                         Expanded(
                           child: Text(
-                            item.jarName,
+                            jarDisplayName(item.jarCode, item.jarName),
                             style: GoogleFonts.inter(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,

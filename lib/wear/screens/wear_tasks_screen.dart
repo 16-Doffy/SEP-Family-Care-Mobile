@@ -38,7 +38,7 @@ class _WearTasksScreenState extends State<WearTasksScreen> {
         children: [
           WearHeader(
             icon: Icons.checklist_rounded,
-            label: 'Task',
+            label: 'Nhiệm vụ',
             color: WearPalette.amber,
             trailing: Text(
               '${todo.length}',

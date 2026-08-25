@@ -1046,6 +1046,14 @@ Schema chính thức trong OpenAPI: `DetectedFaceSuggestionResponseDto` (`faceId
 - **`status` của khuôn mặt bị `status` của candidate đè.** Hai DTO **trùng tên field `status`** nhưng enum khác nhau; bước làm phẳng `{...face, ...candidate}` spread candidate sau nên mất trạng thái khuôn mặt → khuôn mặt `SUPERSEDED` (đã bị lần force rescan mới thay thế) vẫn hiện như gợi ý còn hiệu lực. Nay tách sang key riêng `detectionStatus` trước khi ghép và lọc bằng `isSupersededDetection`.
 - 3 lệch trên từng được vá ở commit `e580b97` rồi **bị commit đồng bộ main `f947469` ghi đè mất** (kèm cả test). Đã khôi phục + khoá lại bằng 5 test trong `test/album_face_mapping_test.dart` để lần merge sau không im lặng mất nữa.
 
+### [CẦN BÁO BE 2026-08-25] Tên hũ mặc định và mô tả giao dịch đang là tiếng Anh
+Toàn bộ app dùng tiếng Việt, nhưng dữ liệu hũ tài chính do BE sinh ra lại tiếng Anh:
+
+- Khi FE tạo model `FIVE_JARS` / `EIGHTY_TWENTY`, **BE tự tạo sẵn các hũ** với `name` tiếng Anh: `Necessities`, `Savings`, `Education`, `Enjoyment`, `Giving`, `Spending`. FE lúc áp mô hình chỉ `PATCH allocationPercentage`, **không đụng `name`** → tên tiếng Anh nằm luôn trong DB.
+- `description` của ledger entry do **BE ghép sẵn cả câu** kèm tên hũ đó: đo thật trên máy → `"Chia quỹ vào hũ Giving"`, `"Chia quỹ vào hũ Savings"` (nửa Việt nửa Anh).
+- **Đề xuất (Nên có)**: BE đặt tên hũ mặc định bằng tiếng Việt, hoặc trả thêm `jarCode` ở mọi response có tên hũ để FE tự dựng nhãn. Với `description`, tốt nhất BE trả kèm `jarId`/`jarCode` để FE tự ghép câu thay vì nhận chuỗi đã ghép cứng.
+- **FE đã vá tạm phía hiển thị** (`lib/models/finance_jar_label.dart`): `jarDisplayName(jarCode, name)` dịch theo `jarCode` trước rồi tới tên tiếng Anh mặc định; `localizeJarNamesInText()` thay tên hũ nằm trong câu BE ghép sẵn (khớp trọn từ). **Tên hũ do gia đình tự đặt được giữ nguyên**, không dịch bừa. Đây là vá hiển thị, không sửa dữ liệu BE → nếu BE đổi tên mặc định thì gỡ vá này đi.
+
 ### [MỚI 2026-08-25] Tag đã confirm nay có `boundingBox` — BE chốt qua Slack
 BE xác nhận contract (chưa deploy tại thời điểm ghi chú này — FE code đã sẵn sàng đọc field, chờ BE trả thật để verify):
 

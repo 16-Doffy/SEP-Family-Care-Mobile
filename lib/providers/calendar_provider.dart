@@ -192,7 +192,7 @@ class FamilyCalendarEvent {
     if (c == AppColors.accent500) return 'Sinh nhật';
     if (c == AppColors.sos) return 'Sức khỏe';
     if (c == AppColors.calTravel) return 'Du lịch';
-    if (c == AppColors.primary500) return 'Task';
+    if (c == AppColors.primary500) return 'Nhiệm vụ';
     return 'Sự kiện';
   }
 }

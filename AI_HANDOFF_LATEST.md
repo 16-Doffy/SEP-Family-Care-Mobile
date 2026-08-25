@@ -1,6 +1,94 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (24/08/2026 tối)
+## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (25/08/2026 chiều)
+
+Nhánh: **`NDuy`** = `5f2356f`, **đã push lên `origin/NDuy`** (fast-forward sạch,
+không đè gì của ai). `main` local + remote vẫn `acef8d1`, chưa merge.
+`origin/giap` = `d05f299` — có commit mới của Giáp, **chưa** merge vào `main`.
+
+### Việc đã xong phiên này
+
+**Fix: tag đã confirm mất khung mặt trên ảnh (commit `5f2356f`).**
+`AlbumTag` (`lib/models/album_media.dart`) **không hề có field `boundingBox`** —
+chỉ `FaceSuggestion` (gợi ý AI chưa duyệt) mới có. Nên vừa bấm Xác nhận xong là
+khung mặt biến mất khỏi ảnh, chỉ còn tên trong chip bên dưới. Đã sửa theo contract
+BE mới chốt qua Slack 25/08:
+
+- `FaceBoundingBox` **chuyển từ `album_face_provider.dart` sang
+  `lib/models/album_media.dart`** (model dùng chéo provider + model phải nằm ở
+  `lib/models/` theo CLAUDE.md); provider import lại, không còn định nghĩa trùng.
+- `AlbumTag` thêm `boundingBox` nullable + parse `json['boundingBox']`.
+- `FaceOverlayItem` (`album_face_section.dart`) thêm cờ `confirmed`.
+- Màn chi tiết ảnh (`album_screen.dart`) vẽ **cả 2 loại khung**: tag đã confirm
+  (viền xanh lá `0xFF22C55E`) + gợi ý AI chờ duyệt (viền vàng `0xFFFACC15`, như
+  cũ) — tái dùng đúng phép tính letterbox `BoxFit.contain` đã có, KHÔNG viết lại
+  logic toạ độ.
+- 2 test mới trong `test/album_face_mapping_test.dart` (có box → đọc đúng 4 giá
+  trị; thiếu/manual tag → `null`, không đoán vị trí).
+- `API_DOCS.md`: ghi contract mới ở mục "[MỚI 2026-08-25] Tag đã confirm nay có
+  `boundingBox`".
+
+`flutter analyze --no-fatal-infos` → **0 error** (25 info nền cũ).
+`flutter test` → **607/607 pass**.
+
+### ✅ Máy thật đã có code mới (làm xong cuối phiên)
+
+Build debug + `adb install -r` xong lúc **25/08 15:38:54** (commit fix tạo lúc
+`14:56:42`) → máy Oppo CPH2159 **đang chạy đúng bản có fix**. Cách kiểm tra lại
+sau này: `adb shell dumpsys package com.company.familycare | grep lastUpdateTime`
+rồi so với `git log -1 --format=%cd`. **Đừng nhìn `versionName`** — `pubspec.yaml`
+đứng yên ở `1.0.0+1` từ đầu nên luôn hiện `1.0.0`, vô dụng để phân biệt build.
+
+### ⚠️ Việc còn dở — LÀM TIẾP TỪ ĐÂY
+
+1. **CHƯA verify fix trên máy thật.** Mở Album → ảnh có tag **đã confirm** → xem
+   khung **xanh lá** có hiện đúng vị trí khuôn mặt không (khung vàng = gợi ý AI
+   chưa duyệt). Lưu ý: nếu BE chưa deploy `boundingBox` cho tag thì khung xanh sẽ
+   **không hiện** — đó là hành vi đúng (null → không vẽ), không phải lỗi FE.
+2. **`boundingBox` phía BE mới chỉ chốt hướng qua Slack, CHƯA deploy.** Phải curl
+   lại `GET /families/{id}/albums/media/{mediaId}/tags` sau khi BE lên thật để xác
+   nhận đúng tên field/khuôn dữ liệu (`{x,y,width,height}` chuẩn hoá 0..1 theo ảnh
+   đã xử lý EXIF) trước khi gỡ dấu `[VERIFY]` trong `API_DOCS.md`.
+3. **Ảnh chụp cho Report7 mục 3.1.2 còn thiếu ~6/32 màn** (Reward Settlement List,
+   SOS Alert, SOS History, Private Chat…). Ảnh đã chụp nằm ở
+   `D:\Temp\fc\report7_screens\`, file đặt tên `S01_...` → `S32_...` là bản dùng
+   được, còn lại là ảnh nháp lúc dò toạ độ. 4 màn Admin Web user tự chụp.
+4. **Dữ liệu gia đình bị đổi ngoài ý muốn lúc chụp ảnh** (do tap lệch toạ độ):
+   "Vu Quan" **bị xoá khỏi gia đình**, "minh nghia" **bị nâng lên Phó nhóm**. User
+   đã xác nhận chấp nhận (tài khoản test), nhưng nhớ là dữ liệu hiện tại khác lúc
+   trước — đừng tưởng BE lỗi.
+
+**Bài học thao tác adb:** ảnh `screencap` gốc 1080x2400 nhưng khi hiển thị bị thu
+còn 900x2000 → **toạ độ đọc từ ảnh phải nhân 1.2** mới tap đúng. Cách an toàn hơn
+là luôn `uiautomator dump` rồi lấy `bounds` thật thay vì ước lượng từ ảnh — vụ xoá
+nhầm thành viên ở trên chính là do tap theo toạ độ ước lượng.
+
+### Sự cố môi trường phiên này (đã gặp lại, ghi để khỏi mất giờ)
+
+- **`flutter build apk --release` build xong nhưng KHÔNG cài được:**
+  `INSTALL_PARSE_FAILED_NO_CERTIFICATES`. Máy dev không có `android/key.properties`
+  lẫn keystore nào (kể cả `~/.android/debug.keystore`) → `build.gradle.kts` để
+  `signingConfig = null`. Đây là chủ đích (chỉ CI ký, xem `docs/RELEASE_ANDROID.md`).
+  Muốn cài lên máy thật để test thì **phải build `--debug`**.
+- **Cache Gradle hỏng lại** (`~/.gradle/caches/9.1.0/transforms/...` — "immutable
+  workspace have been modified"). Xoá không được vì có **Gradle daemon cũ còn sót**
+  giữ lock (PID chạy bằng `D:\Andrroid\jbr\bin\java.exe` — **không phải Android
+  Studio đang mở**, chỉ là Flutter mượn JDK đi kèm Android Studio; đừng bảo user
+  đóng IDE oan như phiên này đã trót nói). Workaround đúng vẫn là
+  `GRADLE_USER_HOME=D:/gradle_home_temp` (thư mục này còn sẵn 6.3GB cache → build
+  nhanh; đừng tạo gradle home mới, sẽ phải tải lại dependency từ đầu rất lâu).
+
+### Cách test đã chốt với user (25/08)
+
+Kết hợp: **hot reload** (`flutter run` giữ chạy, sửa Dart xong bấm `r` ~1 giây)
+lúc đang sửa lặt vặt; **build APK đầy đủ** khi chốt một đợt để test lần cuối.
+Hot reload không ăn thay đổi native/pubspec/icon/quyền — mấy thứ đó vẫn phải build
+lại. User trước đây từng báo "lỗi vẫn còn" trong khi thật ra máy đang cài APK cũ
+hơn commit fix — luôn xác nhận `lastUpdateTime` trước khi kết luận.
+
+---
+
+## Trạng thái phiên trước (24/08/2026 tối)
 
 Nhánh cuối cùng: **`NDuy`** = `8069d79` (đang checkout nhánh này). `main` local
 và remote đều **giữ nguyên** `78fba0a`, không đổi.

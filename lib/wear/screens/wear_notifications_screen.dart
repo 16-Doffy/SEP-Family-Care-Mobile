@@ -40,7 +40,7 @@ class _WearNotificationsScreenState extends State<WearNotificationsScreen> {
         children: [
           WearHeader(
             icon: Icons.notifications_rounded,
-            label: 'Notify',
+            label: 'Thông báo',
             color: WearPalette.sosSoft,
             trailing: provider.loading
                 ? const SizedBox.square(

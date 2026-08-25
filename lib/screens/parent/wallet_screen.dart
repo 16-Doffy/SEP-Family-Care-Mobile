@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_jar_label.dart';
 import '../../models/finance_period.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
@@ -467,7 +468,7 @@ class _WalletScreenState extends State<WalletScreen> {
                 : model.jars
                       .map(
                         (jar) => _JarOverviewRow(
-                          name: jar.name,
+                          name: jarDisplayName(jar.jarCode, jar.name),
                           isSavingLike: JarTargetActualItem.looksLikeSaving(
                             jar.jarCode,
                             jar.name,
@@ -496,7 +497,7 @@ class _WalletScreenState extends State<WalletScreen> {
         report.items
             .map(
               (item) => _JarOverviewRow(
-                name: item.jarName,
+                name: jarDisplayName(item.jarCode, item.jarName),
                 isSavingLike: item.isSavingLike,
                 pct: item.targetPercentage,
                 target:
@@ -991,7 +992,7 @@ class _WalletScreenState extends State<WalletScreen> {
               const SizedBox(width: 8),
               Expanded(child: _miniMetric('Ra', expense, AppColors.danger)),
               const SizedBox(width: 8),
-              Expanded(child: _miniMetric('Net', net, AppColors.link)),
+              Expanded(child: _miniMetric('Còn lại', net, AppColors.link)),
             ],
           ),
           const SizedBox(height: 12),
@@ -1156,7 +1157,10 @@ class _WalletScreenState extends State<WalletScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              tx.description,
+                              // BE ghép sẵn cả câu kèm tên hũ tiếng Anh
+                              // ("Chia quỹ vào hũ Giving") — dịch phần tên hũ
+                              // lúc hiển thị, xem finance_jar_label.dart.
+                              localizeJarNamesInText(tx.description),
                               style: GoogleFonts.inter(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
@@ -1265,7 +1269,9 @@ class _WalletScreenState extends State<WalletScreen> {
                   _ledgerDetailRow('Thời gian', detail.displayEntryDate),
                   _ledgerDetailRow(
                     'Mô tả',
-                    detail.description.isEmpty ? '—' : detail.description,
+                    detail.description.isEmpty
+                        ? '—'
+                        : localizeJarNamesInText(detail.description),
                   ),
                   if ((detail.note ?? '').isNotEmpty)
                     _ledgerDetailRow('Ghi chú', detail.note!),

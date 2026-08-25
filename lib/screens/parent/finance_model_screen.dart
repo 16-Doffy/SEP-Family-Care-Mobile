@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../models/finance_jar_label.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/finance_provider.dart' as fp;
 import '../../providers/wallet_provider.dart';
@@ -1124,7 +1125,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            item.jarName.isEmpty ? item.jarCode : item.jarName,
+                            jarDisplayName(item.jarCode, item.jarName),
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -1589,7 +1590,7 @@ class _CategoryJarMappingSheetState extends State<_CategoryJarMappingSheet> {
                                     (jar) => DropdownMenuItem(
                                       value: jar.id,
                                       child: Text(
-                                        '${jar.name} · ${jar.allocationPercentage.toStringAsFixed(0)}%',
+                                        '${jarDisplayName(jar.jarCode, jar.name)} · ${jar.allocationPercentage.toStringAsFixed(0)}%',
                                       ),
                                     ),
                                   ),
@@ -2019,15 +2020,12 @@ class _TemplatesInfoSheetState extends State<_TemplatesInfoSheet> {
     _ => 'Mẫu phân bổ thu nhập.',
   };
 
-  static String _jarLabel(String code, String? fallback) => switch (code) {
-    'NECESSITIES' => 'Nhu cầu thiết yếu',
-    'SAVINGS' => 'Tiết kiệm',
-    'EDUCATION' => 'Giáo dục',
-    'ENJOYMENT' => 'Vui chơi',
-    'GIVING' => 'Cho đi / Biếu tặng',
-    'SPENDING' => 'Chi tiêu',
-    _ => fallback ?? code,
-  };
+  /// Giữ tên hàm cũ cho các nơi đang gọi; bảng dịch thật nằm ở
+  /// `lib/models/finance_jar_label.dart` để mọi màn dùng chung một nguồn —
+  /// trước đây bảng này chỉ nằm riêng trong file này nên các màn khác hiện tên
+  /// hũ tiếng Anh thô của BE.
+  static String _jarLabel(String code, String? fallback) =>
+      jarDisplayName(code, fallback);
 
   static String _jarDescription(String code) => switch (code) {
     'NECESSITIES' => 'Chi phí sinh hoạt và nhu cầu bắt buộc.',

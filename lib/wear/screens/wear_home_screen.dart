@@ -132,7 +132,7 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
           const SizedBox(height: 6),
           WearTile(
             icon: Icons.checklist_rounded,
-            title: 'Task',
+            title: 'Nhiệm vụ',
             subtitle: tasks == 0 ? 'Không còn việc' : '$tasks việc cần làm',
             color: WearPalette.amber,
             onTap: () => _open(const WearTasksScreen()),
@@ -140,7 +140,7 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
           const SizedBox(height: 6),
           WearTile(
             icon: Icons.calendar_month_rounded,
-            title: 'Calendar',
+            title: 'Lịch',
             subtitle: events == 0 ? 'Không có lịch tới' : '$events sự kiện',
             color: WearPalette.violet,
             onTap: () => _open(const WearCalendarScreen()),
@@ -148,7 +148,7 @@ class _WearHomeScreenState extends State<WearHomeScreen> {
           const SizedBox(height: 6),
           WearTile(
             icon: Icons.notifications_rounded,
-            title: 'Notify',
+            title: 'Thông báo',
             subtitle: unread == 0 ? 'Đã đọc hết' : '$unread chưa đọc',
             color: WearPalette.sosSoft,
             onTap: () => _open(const WearNotificationsScreen()),
