@@ -2663,6 +2663,13 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
   /// (`_AlbumDetailMediaPage`), tách biệt khỏi cây widget của info panel.
   List<FaceOverlayItem> _currentOverlay = const [];
 
+  /// Cho ẩn khung mặt để xem trọn tấm ảnh.
+  ///
+  /// **Chỉ ảnh hưởng việc VẼ**, không đụng gì tới luồng nhận diện: gợi ý AI
+  /// vẫn nạp, vẫn xác nhận/từ chối được ở phần "Người trong ảnh" bên dưới, tag
+  /// đã confirm vẫn nguyên. Tắt đi chỉ là không vẽ khung lên ảnh.
+  bool _showFaceBoxes = true;
+
   @override
   void initState() {
     super.initState();
@@ -2775,7 +2782,7 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
               return _AlbumDetailMediaPage(
                 media: media,
                 onTap: _toggleChrome,
-                overlay: i == _index
+                overlay: (i == _index && _showFaceBoxes)
                     ? [..._confirmedOverlayFor(media), ..._currentOverlay]
                     : const [],
               );
@@ -2818,6 +2825,24 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
                   ),
                 ),
               ),
+              // Chỉ hiện khi ảnh này thật sự có khung để bật/tắt — không bày
+              // nút chết trên ảnh chưa quét mặt hoặc trên video.
+              if (!media.isVideo && _hasAnyFaceBox(media))
+                IconButton(
+                  tooltip: _showFaceBoxes
+                      ? 'Ẩn khung mặt để xem trọn ảnh'
+                      : 'Hiện khung mặt',
+                  onPressed: () =>
+                      setState(() => _showFaceBoxes = !_showFaceBoxes),
+                  icon: Icon(
+                    _showFaceBoxes
+                        ? Icons.face_retouching_natural_rounded
+                        : Icons.face_retouching_off_rounded,
+                  ),
+                  color: _showFaceBoxes
+                      ? context.colors.textPrimary
+                      : context.colors.textMuted,
+                ),
               if (media.isVideo)
                 Icon(
                   Icons.play_circle_fill_rounded,
@@ -2830,6 +2855,11 @@ class _AlbumDetailViewerState extends State<_AlbumDetailViewer> {
       ),
     );
   }
+
+  /// Ảnh có khung nào để bật/tắt không — tính cả tag đã confirm lẫn gợi ý AI
+  /// đang chờ duyệt. Dùng để ẩn hẳn nút toggle khi không có gì để ẩn.
+  bool _hasAnyFaceBox(AlbumMedia media) =>
+      _currentOverlay.isNotEmpty || _confirmedOverlayFor(media).isNotEmpty;
 
   Widget _infoPanel() {
     return DraggableScrollableSheet(
