@@ -186,8 +186,8 @@ class FaceValidationResponse {
     if (canEnroll) {
       return message ??
           (validationUnavailable
-              ? 'Chưa kiểm tra được ảnh. Vẫn có thể đăng ký bằng API enroll hiện tại.'
-              : 'Ảnh đạt yêu cầu. Có thể đăng ký Face Profile.');
+              ? 'Chưa kiểm tra được chất lượng ảnh, nhưng bạn vẫn có thể tiếp tục đăng ký.'
+              : 'Ảnh đạt yêu cầu. Có thể đăng ký hồ sơ khuôn mặt.');
     }
     final failed = results.where((result) => !result.passed).toList();
     if (failed.isEmpty) {

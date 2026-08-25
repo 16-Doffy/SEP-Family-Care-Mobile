@@ -371,7 +371,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       title: 'Công việc',
       icon: Icons.task_alt_rounded,
       child: Text(
-        'Chưa có API lọc công việc theo từng thành viên. Mục này sẽ được bật khi backend bổ sung endpoint phù hợp.',
+        'Chưa xem được danh sách việc riêng của từng thành viên. Mục này sẽ được mở khi tính năng sẵn sàng.',
         style: GoogleFonts.inter(
           fontSize: 13,
           height: 1.45,
@@ -550,7 +550,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Thiết lập Face Profile',
+                'Thiết lập hồ sơ khuôn mặt',
                 style: GoogleFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -706,7 +706,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(
-                                    'Đã gửi ảnh để tạo Face Profile.',
+                                    'Đã gửi ảnh để tạo hồ sơ khuôn mặt.',
                                   ),
                                 ),
                               );
@@ -734,7 +734,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                             color: AppColors.white,
                           ),
                         )
-                      : const Text('Gửi tạo Face Profile'),
+                      : const Text('Gửi tạo hồ sơ khuôn mặt'),
                 ),
               ),
             ],
@@ -951,7 +951,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Xóa Face Profile?'),
+        title: const Text('Xóa hồ sơ khuôn mặt?'),
         content: Text(
           'Dữ liệu khuôn mặt của ${member.name} sẽ bị xóa và không thể khôi phục.',
         ),

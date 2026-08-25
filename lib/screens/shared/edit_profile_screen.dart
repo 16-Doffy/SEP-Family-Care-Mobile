@@ -350,7 +350,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     icon: Icons.work_outline_rounded,
                     title: 'Nghề nghiệp',
                     message:
-                        'Backend chưa có field lưu nghề nghiệp, nên mục này tạm thời chỉ hiển thị khi có API chính thức.',
+                        'Hệ thống chưa hỗ trợ lưu nghề nghiệp. Mục này sẽ được mở khi tính năng sẵn sàng.',
                   ),
                   const SizedBox(height: 12),
                   _comingSoonCard(

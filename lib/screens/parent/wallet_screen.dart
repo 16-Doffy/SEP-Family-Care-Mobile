@@ -933,7 +933,7 @@ class _WalletScreenState extends State<WalletScreen> {
       'expense',
     ], fallback: state.monthlyExpense);
     return _sectionCard(
-      title: 'Tổng quan Finance API',
+      title: 'Tổng quan tài chính',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

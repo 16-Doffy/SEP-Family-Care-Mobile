@@ -150,7 +150,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   border: Border.all(color: const Color(0xFFFDE68A)),
                 ),
                 child: Text(
-                  'Tạm thời dùng OTP qua email vì backend chưa có API đổi mật khẩu bằng mật khẩu cũ. Sau khi đổi thành công, bạn cần đăng nhập lại.',
+                  'Hiện đổi mật khẩu bằng mã OTP gửi qua email, chưa hỗ trợ đổi bằng mật khẩu cũ. Sau khi đổi thành công, bạn cần đăng nhập lại.',
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     height: 1.45,

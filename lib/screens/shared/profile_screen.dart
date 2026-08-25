@@ -540,7 +540,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           style: GoogleFonts.inter(fontWeight: FontWeight.w700),
         ),
         content: Text(
-          'Ứng dụng đang chờ backend bổ sung API rời gia đình và thông báo cho các thành viên còn lại. Hiện tại chỉ Trưởng nhóm có thể xoá thành viên khỏi gia đình.',
+          'Tính năng tự rời gia đình chưa được hỗ trợ. Hiện tại chỉ Trưởng nhóm mới có thể xoá thành viên khỏi gia đình.',
           style: GoogleFonts.inter(
             fontSize: 14,
             color: AppColors.textSecondary,
