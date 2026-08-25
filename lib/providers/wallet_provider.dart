@@ -278,6 +278,9 @@ class WalletProvider extends ChangeNotifier {
         _fetchReport(),
       ]);
     } catch (e) {
+      // Lỗi ở endpoint tổng quan không được làm app "crash". Giữ log đầy đủ
+      // để truy được lỗi BE/mạng, còn UI chỉ nhận thông báo dễ hiểu.
+      debugPrint('WalletProvider: fetchWallets failed: $e');
       _error = e.toString();
     } finally {
       _loading = false;

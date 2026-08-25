@@ -19,7 +19,6 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/month_start_checklist.dart';
 import '../../widgets/month_switcher.dart';
 import '../../widgets/ring_chart.dart';
-import '../../widgets/retry_state.dart';
 import '../../widgets/waffle_chart.dart';
 import '../../widgets/money_input.dart';
 
@@ -244,10 +243,7 @@ class _WalletScreenState extends State<WalletScreen> {
                       ],
                     )
                   : walletState.error != null
-                  ? RetryState(
-                      message: walletState.error!,
-                      onRetry: () => walletState.fetchWallets(),
-                    )
+                  ? _walletLoadError(walletState)
                   : ListView(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       children: [
@@ -295,6 +291,64 @@ class _WalletScreenState extends State<WalletScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Lỗi mạng/API ở màn Quỹ không phải lỗi làm hỏng dữ liệu hay crash ứng dụng.
+  /// Dùng trạng thái trung tính, có đường quay lại và thử lại rõ ràng thay vì
+  /// màn hình đỏ khiến người dùng nghĩ app đã bị văng.
+  Widget _walletLoadError(WalletProvider walletState) {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const SizedBox(height: 72),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFBFDBFE)),
+          ),
+          child: Column(
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
+                size: 42,
+                color: AppColors.link,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Chưa tải được sổ thu chi',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Kết nối đến dữ liệu Quỹ gia đình đang gián đoạn. Dữ liệu của gia đình không bị thay đổi; bạn có thể thử tải lại.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  height: 1.45,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => walletState.fetchWallets(),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Tải lại'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

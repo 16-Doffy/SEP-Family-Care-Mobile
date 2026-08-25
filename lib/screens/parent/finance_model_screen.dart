@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -145,24 +146,11 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
   /// tình huống badge báo "đủ" mà nút vẫn mờ (hoặc ngược lại).
   bool get _isBalanced => _remainingPercent.abs() < 0.5;
 
-  /// Trần của một thanh trượt: không cho kéo quá phần còn trống, để tổng
-  /// **không bao giờ vượt 100%**. Trước đây thả tự do 1–100 nên người dùng kéo
-  /// xong thấy nút Lưu mờ đi mà không hiểu vì sao. Tối thiểu 1 để slider luôn
-  /// hợp lệ (min của Slider cũng là 1).
-  double _sliderMaxFor(FinanceJarUi jar) {
-    final cap = jar.percent + (_remainingPercent > 0 ? _remainingPercent : 0);
-    return cap.clamp(1, 100).toDouble();
-  }
-
-  /// Dồn phần còn thiếu vào hũ đang có tỷ lệ lớn nhất, hoặc cắt bớt phần vượt
-  /// khỏi hũ lớn nhất. Một chạm là về đúng 100% — không phải kéo lại từng cái.
-  void _autoBalance() {
-    if (_activeJars.isEmpty || _isBalanced) return;
-    final jars = [..._activeJars]..sort((a, b) => b.percent.compareTo(a.percent));
-    final target = jars.first;
-    final fixed = (target.percent + _remainingPercent).clamp(1, 100).toDouble();
+  /// Gia đình tự nhập tỷ lệ cho từng hũ. Không tự dồn phần còn lại vào bất kỳ
+  /// hũ nào vì đó là một quyết định chi tiêu, không phải việc app nên đoán hộ.
+  void _setJarPercent(FinanceJarUi jar, double percent) {
     setState(() {
-      target.percent = fixed;
+      jar.percent = percent.clamp(0, 100).toDouble();
       _hasLocalEdits = true;
       _jarConfigurationChanged = true;
     });
@@ -402,6 +390,8 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                         decoration: BoxDecoration(
                           color: _isBalanced
                               ? const Color(0xFFDCFCE7)
+                              : _remainingPercent < 0
+                              ? const Color(0xFFFEE2E2)
                               : const Color(0xFFFEF3C7),
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -412,6 +402,8 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                             fontWeight: FontWeight.w700,
                             color: _isBalanced
                                 ? const Color(0xFF166534)
+                                : _remainingPercent < 0
+                                ? const Color(0xFFB91C1C)
                                 : const Color(0xFF92400E),
                           ),
                         ),
@@ -424,12 +416,12 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
 
                   if (_model == FinanceModelType.custom) ...[
                     ..._customJars.asMap().entries.map(
-                      (e) => _jarSlider(e.value, e.key, isCustom: true),
+                      (e) => _jarAllocationCard(e.value, e.key, isCustom: true),
                     ),
                     _addCustomJarTile(),
                   ] else
                     ..._activeJars.asMap().entries.map(
-                      (e) => _jarSlider(e.value, e.key),
+                      (e) => _jarAllocationCard(e.value, e.key),
                     ),
 
                   const SizedBox(height: 24),
@@ -506,9 +498,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                         ? null
                         : () {
                             if (_activeJars.isEmpty) {
-                              _toast(
-                                'Mô hình chưa có khoản nào để lưu.',
-                              );
+                              _toast('Mô hình chưa có khoản nào để lưu.');
                               return;
                             }
                             if (!_isBalanced) {
@@ -677,8 +667,8 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       );
   }
 
-  /// Nói rõ đang thừa/thiếu bao nhiêu % và cách sửa, thay vì chỉ tô đỏ con số
-  /// rồi làm mờ nút Lưu — người dùng kéo xong không hiểu vì sao không lưu được.
+  /// Tổng luôn được đối chiếu với 100%, vì đây là tỷ lệ thu nhập của cả gia đình.
+  /// App chỉ chỉ ra phần thiếu/vượt; quyết định chỉnh hũ nào thuộc về người dùng.
   Widget _allocationStatusBar() {
     if (_activeJars.isEmpty) {
       return _statusBox(
@@ -699,28 +689,22 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
       );
     }
     final missing = _remainingPercent;
+    final isOverAllocated = missing < 0;
     return _statusBox(
-      icon: Icons.error_outline_rounded,
-      background: const Color(0xFFFEF3C7),
-      foreground: const Color(0xFF92400E),
+      icon: isOverAllocated
+          ? Icons.warning_amber_rounded
+          : Icons.info_outline_rounded,
+      background: isOverAllocated
+          ? const Color(0xFFFEE2E2)
+          : const Color(0xFFFEF3C7),
+      foreground: isOverAllocated
+          ? const Color(0xFFB91C1C)
+          : const Color(0xFF92400E),
       message: missing > 0
-          ? 'Còn ${missing.round()}% chưa phân bổ. Tổng các khoản phải đúng '
-                '100% mới lưu được.'
-          : 'Đang vượt ${missing.abs().round()}%. Giảm bớt một khoản để tổng '
-                'về đúng 100%.',
-      action: TextButton(
-        onPressed: _autoBalance,
-        style: TextButton.styleFrom(
-          foregroundColor: const Color(0xFF92400E),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          minimumSize: const Size(0, 32),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        child: Text(
-          missing > 0 ? 'Chia nốt' : 'Cắt bớt',
-          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-        ),
-      ),
+          ? 'Còn ${missing.round()}% chưa phân bổ. Nhập tỷ lệ cho các hũ bên dưới '
+                'để tổng thu nhập gia đình đủ 100%.'
+          : 'Tổng đang vượt ${missing.abs().round()}%. Giảm ít nhất '
+                '${missing.abs().round()}% ở một hoặc nhiều hũ để có thể lưu.',
     );
   }
 
@@ -759,7 +743,11 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
     );
   }
 
-  Widget _jarSlider(FinanceJarUi jar, int idx, {bool isCustom = false}) {
+  Widget _jarAllocationCard(
+    FinanceJarUi jar,
+    int idx, {
+    bool isCustom = false,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -797,12 +785,56 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                   ),
                 ),
               ),
-              Text(
-                '${jar.percent.round()}%',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: jar.color,
+              SizedBox(
+                width: 76,
+                child: TextFormField(
+                  key: ValueKey('${_model.name}-${jar.jarCode ?? jar.name}'),
+                  initialValue: jar.percent.round().toString(),
+                  textAlign: TextAlign.center,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    TextInputFormatter.withFunction((oldValue, newValue) {
+                      final value = int.tryParse(newValue.text);
+                      return value == null || value <= 100
+                          ? newValue
+                          : oldValue;
+                    }),
+                  ],
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: jar.color,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    suffixText: '%',
+                    suffixStyle: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: jar.color,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 9,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                        color: jar.color.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: jar.color, width: 1.5),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    final percent = int.tryParse(value);
+                    if (percent != null) {
+                      _setJarPercent(jar, percent.toDouble());
+                    }
+                  },
                 ),
               ),
               if (isCustom) ...[
@@ -822,43 +854,18 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               ],
             ],
           ),
-          Builder(
-            builder: (_) {
-              // Trần động: kéo tối đa tới hết phần còn trống, nên tổng không
-              // bao giờ vượt 100%. Nhờ vậy trạng thái sai duy nhất còn lại là
-              // "chưa chia đủ" — dễ giải thích hơn nhiều so với "vượt quá".
-              final maxValue = _sliderMaxFor(jar);
-              final atCap = jar.percent >= maxValue - 0.5 && !_isBalanced;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Slider(
-                    value: jar.percent.clamp(1, maxValue),
-                    min: 1,
-                    max: maxValue,
-                    activeColor: jar.color,
-                    inactiveColor: jar.color.withValues(alpha: 0.15),
-                    onChanged: (v) => setState(() {
-                      jar.percent = v.roundToDouble();
-                      _hasLocalEdits = true;
-                      _jarConfigurationChanged = true;
-                    }),
-                  ),
-                  if (atCap)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4, bottom: 2),
-                      child: Text(
-                        'Đã kịch trần — giảm khoản khác nếu muốn tăng thêm.',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+          const SizedBox(height: 12),
+          LinearProgressIndicator(
+            value: jar.percent / 100,
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(8),
+            color: jar.color,
+            backgroundColor: jar.color.withValues(alpha: 0.12),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            'Tỷ lệ trên tổng thu nhập gia đình · Nhập từ 0 đến 100%',
+            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
           ),
         ],
       ),
