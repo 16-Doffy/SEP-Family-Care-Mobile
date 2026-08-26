@@ -659,16 +659,37 @@ class TaskProvider extends ChangeNotifier {
 
   // ── Tasks ────────────────────────────────────────────────────────────────
 
+  /// Đã nạp xong `rewardSetting` cho danh sách hiện tại chưa.
+  ///
+  /// Nơi hiển thị phải dựa vào cờ này để phân biệt **"chưa đặt thưởng"** với
+  /// **"chưa biết"**: `rewardSetting == null` lúc chưa hydrate KHÔNG có nghĩa là
+  /// việc đó không có thưởng.
+  bool rewardSettingsHydrated = false;
+
+  /// Lần gần nhất có yêu cầu hydrate hay không — để các lần refresh nội bộ
+  /// (duyệt bài, tạo/sửa/huỷ việc…) **giữ nguyên** lựa chọn của màn đang mở.
+  bool _hydrateRewardSettingsSticky = false;
+
+  /// [hydrateRewardSettings] `null` = giữ nguyên lựa chọn lần trước.
+  ///
+  /// Trước đây 8 chỗ gọi `fetchTasks()` không kèm cờ này (duyệt bài, tạo/sửa/
+  /// huỷ việc…) nên vừa duyệt xong là **toàn bộ chip thưởng biến mất** khỏi màn
+  /// Quản lý nhiệm vụ, phải thoát ra vào lại mới thấy.
   Future<void> fetchTasks({
     String? status,
     String? taskCategoryId,
     String? priority,
     String? taskType,
-    bool hydrateRewardSettings = false,
+    bool? hydrateRewardSettings,
   }) async {
+    if (hydrateRewardSettings != null) {
+      _hydrateRewardSettingsSticky = hydrateRewardSettings;
+    }
+    final hydrate = _hydrateRewardSettingsSticky;
     loading = true;
     error = null;
     tasks = [];
+    rewardSettingsHydrated = false;
     notifyListeners();
     try {
       final qs = _qs({
@@ -683,7 +704,7 @@ class TaskProvider extends ChangeNotifier {
       // The list endpoint currently may omit rewardSetting. Only the task
       // management list needs that detail for its reward badge, so hydrate it
       // there instead of showing the misleading “Chưa đặt thưởng” state.
-      if (hydrateRewardSettings && tasks.isNotEmpty) {
+      if (hydrate && tasks.isNotEmpty) {
         final listedTasks = tasks;
         tasks = await Future.wait(
           listedTasks.map((task) async {
@@ -694,6 +715,7 @@ class TaskProvider extends ChangeNotifier {
                 : task.copyWith(rewardSetting: setting);
           }),
         );
+        rewardSettingsHydrated = true;
       }
     } catch (e) {
       error = e.toString();

@@ -442,13 +442,21 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                           AppColors.neutralBg,
                           AppColors.textSecondary,
                         ),
+                      // `GET /families/{id}/tasks` KHÔNG trả `rewardSetting`
+                      // (đo thật 26/08), FE phải gọi thêm endpoint riêng cho
+                      // từng việc. Nên `rewardSetting == null` chỉ có nghĩa
+                      // "chưa đặt thưởng" **sau khi** đã nạp xong — trước đó là
+                      // "chưa biết". Không phân biệt hai cái này thì mọi nhiệm
+                      // vụ đều hiện "Chưa đặt thưởng" kể cả việc đã có thưởng.
                       if (task.rewardSetting != null)
                         _chip(
                           task.rewardSetting!.label,
                           AppColors.safeLight,
                           AppColors.safe,
                         )
-                      else
+                      else if (context
+                          .watch<TaskProvider>()
+                          .rewardSettingsHydrated)
                         _chip(
                           'Chưa đặt thưởng',
                           AppColors.neutralBg,
