@@ -470,6 +470,9 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 - **[FIX FE 2026-07-28] Tên field analytics — đã đoán sai, gây hiện 0đ âm thầm:**
   - `cash-flow-summary` → `data.totals` dùng **`incomeAmount` / `expenseAmount` / `adjustmentAmount` / `netCashFlow` / `netIncludingAdjustments` / `entryCount`** (`CashFlowTotalsResponseDto`), `data.byMonth[]` dùng cùng bộ key + `month: "2026-06"`. FE trước đó đọc `income`/`totalIncome`/`inflow` → luôn 0đ, trong khi `netCashFlow` khớp nên chỉ Net có số ⇒ card "Dòng tiền vào - ra" hiện Vào 0đ / Ra 0đ / Net 50 tỷ.
   - `member-contribution-summary` → `data.members[]` có tên thành viên ở **`member.displayName`** và **`member.user.fullName`** (`MemberContributionSummaryItemResponseDto`), KHÔNG có `memberName` ở cấp ngoài; số tiền là `sharedContribution` / `goalContribution` / `ledgerContributionTotal` / `totalContribution`. FE đọc `item['memberName']` nên mọi dòng rơi về fallback "Thành viên".
+    - **[ĐÃ SỬA FE 2026-08-26]** Màn mới `family_finance_status_screen.dart` lặp lại đúng lỗi này ở mức nặng hơn: đọc `data['items']` (BE trả **`members`**) nên danh sách luôn rỗng → màn hiện "Chưa có dữ liệu đóng góp theo thành viên" **dù API trả 200 kèm đủ 4 thành viên**. Ngoài ra còn đọc `plannedAmount`/`actualAmount` là hai field **không tồn tại** trong endpoint này. Nay đã sửa: đọc `members` (giữ `items` làm lưới đỡ), tên rơi về `member.user.fullName` khi `displayName` null (dữ liệu thật **luôn null**), và hiển thị đúng nghiệp vụ "Quỹ chung / Mục tiêu / Tổng" thay vì bịa ra chênh lệch kế hoạch–thực tế.
+    - Verify bằng call thật 26/08/2026 (token Deputy, gia đình `NDuy`): `?periodStart=&periodEnd=` **và** không kèm query đều trả 200 với `members` 4 phần tử. ⚠️ Truyền `?month=&year=` bị **400 `Trường "month" không được phép`** — endpoint này chỉ nhận `periodStart`/`periodEnd`.
+    - Gia đình **chưa có đóng góp nào** vẫn trả đủ `members` với mọi số tiền = 0 (verify trên gia đình `Minh Nhut`), **không** trả mảng rỗng → FE phân biệt được "chưa ghi nhận đóng góp" với "lỗi dữ liệu".
   - `category-spending-summary` → `data.byCategory[]` = `{categoryId, name, essentialType, amount}`. Key `name` đã khớp; "Chưa phân loại" là **dữ liệu thật** (ledger entry không có `categoryId`), không phải lỗi parse.
   - **Bài học:** endpoint analytics có schema đầy đủ trong Swagger — phải đọc `components.schemas` thay vì đoán theo tên hợp lý, vì sai tên field không sinh lỗi HTTP nào, chỉ hiện 0.
 - **[MỚI 2026-07-28, wire FE] Phân bổ theo hũ:** `POST /finance/fund-allocations {amount, periodMonth, periodYear, modelId?, note?}` đã được nối tại màn Mô hình tài chính. Dashboard và tab **Theo hũ** nay lấy `GET /reports/jar-target-actual`; file tự tính cũ `jar_allocation.dart` đã bị xóa. Form thu/chi chỉ gửi `categoryId`, không gửi `jarId`, để BE auto-map theo model ACTIVE.
@@ -543,9 +546,19 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 > hay `invite_member_screen.dart`.**
 >
 > **Luồng thật (mã mời 8 ký tự) — `InvitationProvider`, verify code 2026-08-19:**
-> - `GET /families/{familyId}/invite-code` — lấy mã hiện tại của gia đình (Manager).
+> - `GET /families/{familyId}/invite-code` — lấy mã hiện tại của gia đình.
+>   ⚠️ **[LỆCH — đo thật 26/08/2026, cần BE xác nhận]** Trước ghi là "(Manager)" nhưng
+>   thực tế **Deputy và cả Member đều gọi được, trả 200 kèm mã thật**. Test bằng token
+>   thật của 3 vai trên gia đình `NDuy`: Deputy 200, Member 200 (đều nhận cùng mã
+>   `L7B3U4C9`). Chỉ `regenerate` mới chặn đúng (403). Nghĩa là **bất kỳ thành viên nào
+>   cũng lấy được mã mời rồi chia cho người ngoài**, dù `canInviteMembers` là Manager-only.
+>   Chưa phải lỗ hổng nghiêm trọng vì người ngoài vẫn phải chờ Manager duyệt join-request,
+>   nhưng lệch với mô hình quyền đã chốt và làm Manager bị dội yêu cầu tham gia.
+>   **FE không bị ảnh hưởng** — `member_list_screen`/`home_dashboard_screen` đã gate nút
+>   mời bằng `canInviteMembers` nên Deputy/Member không thấy lối vào.
 > - `POST /families/{familyId}/invite-code/regenerate` — tạo mã lần đầu hoặc đổi mã mới
 >   (mã cũ mất hiệu lực). Trả `{ inviteCode }`. `invite_member_screen.dart`.
+>   ✅ Verify 26/08: Deputy 403, Member 403 — chặn đúng.
 > - `GET /invite-codes/{code}` — tra cứu công khai theo mã, **không cần đăng nhập** — trả
 >   thông tin gia đình để preview trước khi gửi yêu cầu. `previewInviteCode()`.
 > - `POST /invite-codes/{code}/join-requests` — gửi yêu cầu tham gia. Body `{ message? }`.

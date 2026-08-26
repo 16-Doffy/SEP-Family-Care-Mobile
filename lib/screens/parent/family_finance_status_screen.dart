@@ -113,9 +113,19 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
         : expense / income > .9
         ? ('Cần chú ý', AppColors.urgent)
         : ('Ổn', AppColors.success);
+    // BE trả danh sách ở key `members`, KHÔNG phải `items` — verify bằng call
+    // thật 26/08/2026 (gia đình NDuy, 4 thành viên). Đọc nhầm key là lý do màn
+    // này luôn hiện "Chưa có dữ liệu đóng góp theo thành viên" dù API trả 200
+    // kèm đủ dữ liệu. Giữ `items` làm lưới đỡ phòng BE đổi tên sau này.
+    final contributionData =
+        wallet.memberContributionSummary ?? const <String, dynamic>{};
     final contributions = _list(
-      (wallet.memberContributionSummary ?? const {})['items'],
+      contributionData['members'] ?? contributionData['items'],
     );
+    final contributionTotals =
+        contributionData['totals'] is Map
+        ? Map<String, dynamic>.from(contributionData['totals'] as Map)
+        : const <String, dynamic>{};
     final atRiskGoals = context.watch<FinanceProvider>().goals.where((g) {
       final progress = g.targetAmount <= 0
           ? 1
@@ -262,40 +272,87 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                         style: _muted,
                       )
                     : Column(
-                        children: contributions.take(5).map((c) {
-                          final planned = _number(
-                            c['plannedAmount'] ?? c['targetAmount'],
-                          );
-                          final actual = _number(
-                            c['actualAmount'] ?? c['contributedAmount'],
-                          );
-                          final name =
-                              c['memberName']?.toString() ??
-                              c['name']?.toString() ??
-                              'Thành viên';
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              name,
-                              style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w600,
+                        children: [
+                          // BE không trả "kế hoạch vs thực tế" cho endpoint này
+                          // mà trả đóng góp theo 2 nguồn: quỹ chung và mục tiêu
+                          // tiết kiệm. Hiển thị đúng thứ BE có, không bịa ra
+                          // con số chênh lệch so với kế hoạch.
+                          ...contributions.take(5).map((c) {
+                            final shared = _number(c['sharedContribution']);
+                            final goal = _number(c['goalContribution']);
+                            final total = _number(
+                              c['totalContribution'] ??
+                                  c['ledgerContributionTotal'],
+                            );
+                            final member = c['member'] is Map
+                                ? Map<String, dynamic>.from(c['member'] as Map)
+                                : const <String, dynamic>{};
+                            final user = member['user'] is Map
+                                ? Map<String, dynamic>.from(
+                                    member['user'] as Map,
+                                  )
+                                : const <String, dynamic>{};
+                            // `displayName` thường null trên dữ liệu thật →
+                            // phải rơi về user.fullName, nếu không sẽ hiện
+                            // trống hàng loạt.
+                            final name =
+                                (member['displayName']?.toString().trim() ?? '')
+                                    .isNotEmpty
+                                ? member['displayName'].toString()
+                                : (user['fullName']?.toString().trim() ?? '')
+                                      .isNotEmpty
+                                ? user['fullName'].toString()
+                                : 'Thành viên';
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                name,
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                            ),
-                            subtitle: Text(
-                              'Kế hoạch ${_money(planned)} · Thực tế ${_money(actual)}',
-                              style: _muted,
-                            ),
-                            trailing: Text(
-                              _money(actual - planned),
-                              style: TextStyle(
-                                color: actual >= planned
-                                    ? AppColors.success
-                                    : AppColors.danger,
-                                fontWeight: FontWeight.w700,
+                              subtitle: Text(
+                                'Quỹ chung ${_money(shared)} · Mục tiêu ${_money(goal)}',
+                                style: _muted,
                               ),
+                              trailing: Text(
+                                _money(total),
+                                style: TextStyle(
+                                  color: total > 0
+                                      ? AppColors.success
+                                      : AppColors.textMuted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            );
+                          }),
+                          if (contributionTotals.isNotEmpty) ...[
+                            const Divider(height: 20),
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Tổng cả nhà',
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  _money(
+                                    _number(
+                                      contributionTotals['totalContribution'],
+                                    ),
+                                  ),
+                                  style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.success,
+                                  ),
+                                ),
+                              ],
                             ),
-                          );
-                        }).toList(),
+                          ],
+                        ],
                       ),
               ),
               const SizedBox(height: 14),

@@ -345,7 +345,11 @@ class WalletProvider extends ChangeNotifier {
           '$base/$path?periodStart=$start&periodEnd=$end',
         );
         return data is Map ? Map<String, dynamic>.from(data) : null;
-      } catch (_) {
+      } catch (e) {
+        // Nuốt lỗi im lặng từng làm mất cả buổi dò: màn "Tình hình tài chính"
+        // hiện "chưa có dữ liệu" y hệt nhau dù là API lỗi hay thật sự rỗng.
+        // Vẫn trả null để không vỡ màn, nhưng phải in ra log.
+        debugPrint('WalletProvider: $path failed — $e');
         return null;
       }
     }
