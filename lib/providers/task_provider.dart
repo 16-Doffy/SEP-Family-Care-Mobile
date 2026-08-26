@@ -230,7 +230,9 @@ class FamilyTask {
     // gửi dữ liệu. Giữ cả 2 key phòng BE đổi lại.
     final cat = j['category'] is Map
         ? j['category'] as Map
-        : (j['taskCategory'] is Map ? j['taskCategory'] as Map : <String, dynamic>{});
+        : (j['taskCategory'] is Map
+              ? j['taskCategory'] as Map
+              : <String, dynamic>{});
     final creator = j['createdByMember'] is Map
         ? j['createdByMember'] as Map
         : (j['createdBy'] is Map
@@ -283,7 +285,7 @@ class TaskAssignment {
   final DateTime? startAt;
   final DateTime? dueAt;
   final String
-  status; // PENDING|ASSIGNED|IN_PROGRESS|SUBMITTED|APPROVED|REJECTED|CANCELED|UNAVAILABLE
+  status; // ASSIGNED|IN_PROGRESS|SUBMITTED|APPROVED|REJECTED|CANCELED|UNAVAILABLE
   final RewardSetting? rewardSetting;
   final FamilyTask? task;
   final String?
@@ -306,7 +308,7 @@ class TaskAssignment {
     this.assignedByName,
     this.startAt,
     this.dueAt,
-    this.status = 'PENDING',
+    this.status = 'ASSIGNED',
     this.rewardSetting,
     this.task,
     this.latestSubmissionId,
@@ -367,7 +369,7 @@ class TaskAssignment {
           _str(j['assignedByName']),
       startAt: _date(j['startAt']),
       dueAt: _date(j['dueAt']),
-      status: _str(j['status']) ?? 'PENDING',
+      status: _str(j['status']) ?? 'ASSIGNED',
       rewardSetting: j['rewardSetting'] is Map
           ? RewardSetting.fromJson(
               Map<String, dynamic>.from(j['rewardSetting']),
@@ -396,7 +398,6 @@ class TaskAssignment {
   /// Nhãn tiếng Việt của một status rời, dùng khi chỉ có chuỗi status trong tay
   /// chứ chưa có cả object assignment (vd sheet giao việc cảnh báo giao trùng).
   static String labelOf(String status) => switch (status) {
-    'PENDING' => 'Chờ kích hoạt',
     'ASSIGNED' => 'Chờ làm',
     'IN_PROGRESS' => 'Đang làm',
     'SUBMITTED' => 'Chờ duyệt',
@@ -957,11 +958,7 @@ class TaskProvider extends ChangeNotifier {
     // từ chối khi assignment vẫn PENDING hoặc đã được bắt đầu ở thiết bị khác.
     final assignment = await getAssignmentDetail(assignmentId);
     if (assignment != null && assignment.status != 'ASSIGNED') {
-      throw StateError(
-        assignment.status == 'PENDING'
-            ? 'Công việc đang chờ được giao, chưa thể bắt đầu.'
-            : 'Công việc không còn ở trạng thái được giao.',
-      );
+      throw StateError('Công việc không còn ở trạng thái được giao.');
     }
     await ApiClient.instance.patch(
       '/families/$_fid/tasks/assignments/$assignmentId/start',

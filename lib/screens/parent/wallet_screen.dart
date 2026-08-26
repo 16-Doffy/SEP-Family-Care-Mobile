@@ -599,6 +599,32 @@ class _WalletScreenState extends State<WalletScreen> {
         : AppColors.safeDark;
 
     return [
+      GestureDetector(
+        onTap: () => context.push('/manager/family-finance-status'),
+        child: _sectionCard(
+          title: 'Tình hình tài chính gia đình',
+          child: Row(
+            children: [
+              const Icon(Icons.insights_rounded, color: AppColors.link),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Xem thu, chi, đóng góp, mục tiêu và tiền dư theo tháng.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 16),
       MonthStartChecklist(
         period: state.period,
         canManageFinance:

@@ -60,6 +60,7 @@ import '../screens/parent/goal_detail_screen.dart';
 import '../screens/parent/reward_management_screen.dart';
 import '../screens/parent/member_finance_screen.dart';
 import '../screens/parent/member_detail_screen.dart';
+import '../screens/parent/family_finance_status_screen.dart';
 
 // Shell
 import 'family_shell.dart';
@@ -501,6 +502,10 @@ GoRouter createRouter(AuthProvider auth) {
       GoRoute(
         path: '/manager/finance-model',
         builder: (_, _) => const FinanceModelScreen(),
+      ),
+      GoRoute(
+        path: '/manager/family-finance-status',
+        builder: (_, _) => const FamilyFinanceStatusScreen(),
       ),
       GoRoute(
         path: '/profile/edit',

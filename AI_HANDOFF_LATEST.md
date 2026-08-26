@@ -31,6 +31,36 @@ BE mới chốt qua Slack 25/08:
 `flutter analyze --no-fatal-infos` → **0 error** (25 info nền cũ).
 `flutter test` → **607/607 pass**.
 
+### Commit thứ 2 trong phiên: dịch nốt tiếng Anh (`a483100`)
+
+Tên hũ tài chính hiện tiếng Anh ở hầu hết màn — **gốc rễ: với mô hình
+`FIVE_JARS`/`EIGHTY_TWENTY`, BE tự tạo hũ kèm `name` tiếng Anh** (`Necessities`,
+`Savings`, `Education`, `Enjoyment`, `Giving`, `Spending`), FE lúc áp mô hình chỉ
+`PATCH allocationPercentage` chứ không đụng `name`. Màn "Mô hình tài chính" hiện
+đúng tiếng Việt vì có **bảng dịch riêng giấu trong file đó**, các màn khác hiện
+tên thô từ BE.
+
+- Thêm `lib/models/finance_jar_label.dart` làm **nguồn dịch dùng chung**:
+  `jarDisplayName(jarCode, name)` + `localizeJarNamesInText(text)` (cho chuỗi BE
+  ghép sẵn kiểu `"Chia quỹ vào hũ Giving"`, khớp **trọn từ**). Tên hũ do gia đình
+  tự đặt **giữ nguyên**, không dịch bừa.
+- Áp dụng: Sổ thu chi (cả Manager + Member), Báo cáo tài chính, Mô hình tài chính.
+  `_jarLabel` cũ nay gọi về bảng chung để không còn 2 bảng lệch nhau.
+- Lịch: `typeLabel` trả `'Task'` → `'Nhiệm vụ'` (hiện trên chip màn Lịch, **app
+  chính chứ không chỉ Wear**). Nhớ `wear_calendar_screen._eventColor` so khớp
+  chuỗi này → đã đổi theo, đổi một bên là mất màu.
+- Sổ thu chi: `'Net'` → `'Còn lại'`. `AppUser` fallback `'User'` → `'Người dùng'`.
+- Wear OS: `Task`/`Calendar`/`Notify` → `Nhiệm vụ`/`Lịch`/`Thông báo`.
+- 9 test mới (`test/finance_jar_label_test.dart`). `flutter test` **616/616 pass**,
+  `analyze` 0 error.
+- `API_DOCS.md` có mục **[CẦN BÁO BE]**: đề nghị BE đặt tên hũ mặc định tiếng Việt
+  hoặc trả `jarCode`/`jarId` kèm mọi response có tên hũ, và **đừng ghép cứng cả
+  câu** vào `description` của ledger entry.
+
+⚠️ **APK chứa bản dịch này đã build xong nhưng CHƯA cài** (user rút USB lúc build).
+File ở `build/app/outputs/flutter-apk/app-debug.apk` — cắm lại USB rồi
+`adb install -r` là xong, không cần build lại.
+
 ### ✅ Máy thật đã có code mới (làm xong cuối phiên)
 
 Build debug + `adb install -r` xong lúc **25/08 15:38:54** (commit fix tạo lúc
@@ -3461,6 +3491,16 @@ Test phủ: router redirect (verify mandatory), auth/role capabilities (+2 test 
 # Snapshot hiện tại — 21/08/2026
 
 > Ưu tiên snapshot này khi tiếp tục công việc. Lịch sử bên dưới chỉ dùng để tham chiếu, không dùng để suy ra branch, commit hoặc trạng thái worktree hiện tại.
+
+## Cập nhật 26/08/2026 — Task, Finance và test máy thật
+
+- Nhánh bàn giao: `NDuy`; thay đổi task/finance đang được commit cùng snapshot này.
+- Task: assignment dùng đúng enum `ASSIGNED`, `IN_PROGRESS`, `SUBMITTED`, `APPROVED`, `REJECTED`, `CANCELED`; không có `PENDING` assignment. Deputy chỉ thấy/giao Member, không tự hưởng lợi trên assignment của mình; Manager có thể giao Member/Deputy/chính mình.
+- Member task list có tab `Quá hạn`; việc quá hạn bị tách khỏi `Chờ làm` và đẩy xuống cuối `Tất cả`. BE là nguồn quyết định `isOverdue`; submission bị chặn bằng `SUBMISSION_OVERDUE`, nên FE khóa bắt đầu/nộp và chỉ dẫn gia hạn/giao lại.
+- Tạo task tự phát bắt buộc deadline. Sau khi tạo, FE mở ngay chi tiết task để tiếp tục phân công hoặc đặt thưởng; vẫn gọi API cũ.
+- Đã test máy thật Manager → Deputy: giao, bắt đầu, nộp, Manager duyệt thành công. Đã xác nhận Member thấy task và bắt đầu được; chưa hoàn tất E2E Member/reward/dispute vì thao tác chọn ảnh minh chứng chưa chạy hết.
+- Reward hiện là external payment record: `PENDING_SETTLEMENT → WAITING_CONFIRMATION → SETTLED`; dispute `DISPUTED`, accept về `PENDING_SETTLEMENT`, reject về `WAITING_CONFIRMATION`. Không hạch toán Ví/Sổ chi tiêu/Hũ. Cần BE scope mới để tạo income transaction cho Member sau confirm-received (và transactionId) nếu product muốn cộng tiền thật; cần cân nhắc thêm resolutionNote cho dispute.
+- Finance: có route/màn `family_finance_status_screen.dart`, chỉ Manager/Deputy, từ Quỹ gia đình. Đã Việt hóa tên hũ qua `finance_jar_label.dart`; test máy thật không crash. Còn thiếu contract so sánh tháng trước và dữ liệu member-contribution đáng tin từ BE.
 
 ## Git và phạm vi FE
 

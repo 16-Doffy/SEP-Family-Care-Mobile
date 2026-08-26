@@ -23,7 +23,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   Timer? _overdueTicker;
 
   String _filter = 'Tất cả';
-  final _filters = ['Tất cả', 'Chờ làm', 'Đã nộp', 'Hoàn thành'];
+  final _filters = ['Tất cả', 'Chờ làm', 'Quá hạn', 'Đã nộp', 'Hoàn thành'];
 
   @override
   void initState() {
@@ -50,25 +50,34 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
   }
 
   List<TaskAssignment> _filtered(List<TaskAssignment> list) {
+    bool overdue(TaskAssignment a) => isAssignmentOverdue(a);
     switch (_filter) {
       case 'Chờ làm':
         // ASSIGNED là assignment mới giao; IN_PROGRESS vẫn nằm trong nhóm việc
-        // cần người dùng xử lý. Giữ PENDING trong danh sách để người nhận thấy
-        // việc đang chờ kích hoạt, nhưng không cho bấm Bắt đầu (contract BE).
+        // cần người dùng xử lý. Việc quá hạn được tách riêng để không che
+        // nhiệm vụ còn có thể hoàn tất.
         return list
             .where(
               (a) =>
-                  a.status == 'ASSIGNED' ||
-                  a.status == 'PENDING' ||
-                  a.status == 'IN_PROGRESS',
+                  !overdue(a) &&
+                  (a.status == 'ASSIGNED' || a.status == 'IN_PROGRESS'),
             )
             .toList();
+      case 'Quá hạn':
+        return list.where(overdue).toList();
       case 'Đã nộp':
         return list.where((a) => a.status == 'SUBMITTED').toList();
       case 'Hoàn thành':
         return list.where((a) => a.status == 'APPROVED').toList();
       default:
-        return list;
+        // Việc còn xử lý được phải đứng trước. Quá hạn được gom về cuối để
+        // không che khuất nhiệm vụ mới; tab "Quá hạn" là nơi xử lý riêng.
+        return [...list]..sort((a, b) {
+          final aOverdue = overdue(a);
+          final bOverdue = overdue(b);
+          if (aOverdue != bOverdue) return aOverdue ? 1 : -1;
+          return 0; // giữ thứ tự BE trong từng nhóm
+        });
     }
   }
 
@@ -787,17 +796,13 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     return '${d.day}/${d.month} ${two(d.hour)}:${two(d.minute)}';
   }
 
-  bool _isOverdue(TaskAssignment a, DateTime? dueAt) {
-    if (dueAt == null) return false;
-    return dueAt.isBefore(DateTime.now()) &&
-        a.status != 'APPROVED' &&
-        a.status != 'CANCELED' &&
-        a.status != 'REJECTED';
-  }
+  bool _isOverdue(TaskAssignment a, DateTime? dueAt) =>
+      // [dueAt] giữ lại ở chữ ký để các call site đang dùng task.dueAt không
+      // phải tự suy luận; nguồn quyết định ưu tiên là isOverdue do BE trả về.
+      isAssignmentOverdue(a);
 
-  /// Quá hạn thì BE chặn nộp bài (400 `SUBMISSION_OVERDUE`) và **không có
-  /// endpoint nào** để người quản lý dời hạn của phân công — đường thoát duy
-  /// nhất là họ giao lại kèm hạn mới.
+  /// Quá hạn thì BE chặn nộp bài (400 `SUBMISSION_OVERDUE`). Người quản lý có
+  /// thể gia hạn đúng assignment bằng PATCH thời hạn, hoặc giao lại kèm hạn mới.
   ///
   /// Để nút "Nộp nhiệm vụ" bấm được rồi mới ăn lỗi là dồn người làm vào ngõ cụt
   /// mà không nói phải làm gì. Khoá nút và nói thẳng.
@@ -912,10 +917,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Nộp trễ thì cảnh báo, KHÔNG chặn: BE không có trạng thái
-                // OVERDUE và vẫn nhận bài nộp quá hạn. Tự chặn ở FE là đặt ra
-                // luật thay BE, và người trễ 5 phút sẽ mắc kẹt vĩnh viễn vì
-                // không còn đường nào đưa phân công về APPROVED.
+                // Chỉ là lớp phòng thủ: card quá hạn không mở được sheet này.
+                // BE là nguồn quyết định và trả SUBMISSION_OVERDUE khi chặn.
                 if (_isOverdue(a, a.dueAt ?? a.task?.dueAt)) ...[
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -934,8 +937,8 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Bài nộp này đã quá hạn. Bạn vẫn nộp được, nhưng '
-                            'người quản lý sẽ thấy là nộp trễ.',
+                            'Nhiệm vụ đã quá hạn. Hãy nhờ người quản lý gia hạn '
+                            'hoặc giao lại trước khi nộp bài.',
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               height: 1.35,
@@ -968,6 +971,14 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                Text(
+                  'Thêm ghi chú hoặc chọn một ảnh minh chứng để nộp bài.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 10),
 
                 GestureDetector(
                   onTap: uploading
@@ -1014,7 +1025,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                           child: Text(
                             pickedImagePath != null
                                 ? 'Đã chọn ảnh minh chứng'
-                                : 'Đính kèm ảnh bằng chứng (tùy chọn)',
+                                : 'Chọn ảnh minh chứng (nếu không ghi chú)',
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               color: pickedImagePath != null

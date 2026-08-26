@@ -1214,7 +1214,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 ),
               // Tự huỷ phân công của mình = né việc → BE 403. Ẩn nút.
               if (!isOwnAssignment &&
-                  (a.status == 'PENDING' || a.status == 'IN_PROGRESS'))
+                  (a.status == 'ASSIGNED' || a.status == 'IN_PROGRESS'))
                 GestureDetector(
                   onTap: () async {
                     final tp = context.read<TaskProvider>();
@@ -1252,7 +1252,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 padding: const EdgeInsets.only(top: 14),
                 child: Column(
                   children: [
-                    if (a.status == 'ASSIGNED')
+                    if (a.status == 'ASSIGNED' && !_isAssignmentOverdue(a))
                       SizedBox(
                         width: double.infinity,
                         height: 40,
@@ -1307,7 +1307,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                           ),
                         ),
                       ),
-                    if (a.status == 'IN_PROGRESS' || a.status == 'REJECTED')
+                    if ((a.status == 'IN_PROGRESS' || a.status == 'REJECTED') &&
+                        !_isAssignmentOverdue(a))
                       Row(
                         children: [
                           Expanded(
@@ -1899,14 +1900,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     final members = familyProvider.members.where((m) {
       if (!m.isActive) return false;
       final isSelf = m.userId == currentUserId || m.id == currentUserId;
-      if (myRole?.isDeputy == true && !isSelf && m.isManager) {
-        return false; // Deputy không giao lên Manager (tự giao vẫn cho phép).
-      }
-      if (myRole?.isManager == true &&
-          !isSelf &&
-          m.isDeputy &&
-          task.taskType != 'RECURRING') {
-        return false; // Manager chỉ giao task định kỳ cho Deputy.
+      if (myRole?.isDeputy == true) {
+        // Deputy chỉ điều phối công việc của Member. Không hiện Manager,
+        // Deputy khác hay bản thân, vì BE hiện cũng từ chối self-assignment.
+        return !isSelf && !m.isManager && !m.isDeputy;
       }
       return true;
     }).toList();
@@ -1965,6 +1962,16 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  myRole?.isDeputy == true
+                      ? 'Phó nhóm chỉ giao việc cho Thành viên.'
+                      : 'Trưởng nhóm có thể tự giao cho mình; việc tự giao cần một người quản lý khác duyệt.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: AppColors.textMuted,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -2139,16 +2146,11 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     final myRole = familyProvider.members
         .where((m) => m.userId == currentUserId || m.id == currentUserId)
         .firstOrNull;
-    final isRecurring = a.task?.isRecurring ?? false;
     final members = familyProvider.members.where((m) {
       if (!m.isActive || m.id == a.assignedToMemberId) return false;
       final isSelf = m.userId == currentUserId || m.id == currentUserId;
-      if (myRole?.isDeputy == true && !isSelf && m.isManager) return false;
-      if (myRole?.isManager == true &&
-          !isSelf &&
-          m.isDeputy &&
-          !isRecurring) {
-        return false;
+      if (myRole?.isDeputy == true) {
+        return !isSelf && !m.isManager && !m.isDeputy;
       }
       return true;
     }).toList();
@@ -2620,6 +2622,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   // ── Create task sheet (AD_HOC / RECURRING) ───────────────────────────────
 
   void _showCreateTaskSheet(BuildContext context) {
+    final parentContext = context;
     final titleCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     String taskType = 'AD_HOC';
@@ -2708,13 +2711,14 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   if (taskType == 'AD_HOC') ...[
                     _deadlineField(
                       dueAt: dueAt,
+                      isRequired: true,
                       onPick: () async {
                         final picked = await _pickDeadline(ctx, dueAt);
                         if (picked != null) setSheet(() => dueAt = picked);
                       },
-                      onClear: dueAt == null
-                          ? null
-                          : () => setSheet(() => dueAt = null),
+                      // Task tự phát không có hạn không thể vào flow quá hạn,
+                      // gia hạn và nhắc việc một cách nhất quán.
+                      onClear: null,
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -2904,10 +2908,22 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         ? null
                         : () async {
                             if (titleCtrl.text.trim().isEmpty) return;
+                            if (taskType == 'AD_HOC' && dueAt == null) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Hãy chọn hạn hoàn thành trước khi tạo nhiệm vụ.',
+                                  ),
+                                  backgroundColor: AppColors.danger,
+                                ),
+                              );
+                              return;
+                            }
                             setSheet(() => submitting = true);
                             final messenger = ScaffoldMessenger.of(context);
                             try {
                               final taskProvider = context.read<TaskProvider>();
+                              FamilyTask? createdTask;
                               if (taskType == 'RECURRING') {
                                 await taskProvider.createRecurringTask(
                                   title: titleCtrl.text.trim(),
@@ -2922,7 +2938,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                   endDate: recurringEndDate,
                                 );
                               } else {
-                                await taskProvider.createTask(
+                                createdTask = await taskProvider.createTask(
                                   title: titleCtrl.text.trim(),
                                   description: descCtrl.text.trim(),
                                   taskCategoryId: categoryId,
@@ -2932,6 +2948,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                 );
                               }
                               if (ctx.mounted) Navigator.pop(ctx);
+                              // Không trả về danh sách rồi bắt người dùng tìm
+                              // task vừa tạo: mở thẳng bước tiếp theo để giao
+                              // việc hoặc đặt thưởng. Hai bước vẫn dùng đúng
+                              // API cũ nên không làm thay đổi nghiệp vụ.
+                              if (createdTask != null &&
+                                  parentContext.mounted) {
+                                _showTaskDetailSheet(
+                                  parentContext,
+                                  createdTask,
+                                );
+                              }
                             } catch (e) {
                               setSheet(() => submitting = false);
                               messenger.showSnackBar(
@@ -2952,7 +2979,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                             ),
                           )
                         : Text(
-                            'Tạo nhiệm vụ',
+                            taskType == 'AD_HOC'
+                                ? 'Tạo và tiếp tục'
+                                : 'Tạo nhiệm vụ định kỳ',
                             style: GoogleFonts.inter(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -3089,11 +3118,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     required DateTime? dueAt,
     required Future<void> Function() onPick,
     VoidCallback? onClear,
+    bool isRequired = false,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(
-        'Hạn hoàn thành (tuỳ chọn)',
+        isRequired ? 'Hạn hoàn thành *' : 'Hạn hoàn thành (tuỳ chọn)',
         style: GoogleFonts.inter(
           fontSize: 12,
           fontWeight: FontWeight.w600,
@@ -3121,7 +3151,11 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  dueAt == null ? 'Chọn ngày và giờ hạn' : _fmtDateTime(dueAt),
+                  dueAt == null
+                      ? (isRequired
+                            ? 'Bắt buộc chọn ngày và giờ hạn'
+                            : 'Chọn ngày và giờ hạn')
+                      : _fmtDateTime(dueAt),
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     color: dueAt == null
@@ -3958,11 +3992,20 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final members = context
-        .watch<FamilyProvider>()
-        .members
-        .where((m) => m.isActive)
-        .toList();
+    final family = context.watch<FamilyProvider>();
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    final myRole = family.members
+        .where((m) => m.userId == currentUserId || m.id == currentUserId)
+        .firstOrNull;
+    final members = family.members.where((m) {
+      if (!m.isActive) return false;
+      final isSelf = m.userId == currentUserId || m.id == currentUserId;
+      if (myRole?.isDeputy == true) {
+        return !isSelf && !m.isManager && !m.isDeputy;
+      }
+      // Đây là task định kỳ, nên Manager có thể tạo lịch cho Deputy.
+      return true;
+    }).toList();
     return Padding(
       padding: EdgeInsets.fromLTRB(
         24,
@@ -4119,6 +4162,15 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textSecondary,
+                ),
+              ),
+              Text(
+                myRole?.isDeputy == true
+                    ? 'Phó nhóm chỉ tạo lịch cho Thành viên.'
+                    : 'Task định kỳ có thể tạo lịch cho Thành viên hoặc Phó nhóm.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
                 ),
               ),
               const SizedBox(height: 6),
