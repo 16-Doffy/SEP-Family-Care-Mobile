@@ -351,6 +351,28 @@ class _SettlementsTab extends StatelessWidget {
                   hintText: 'Ghi chú (tùy chọn)',
                 ),
               ),
+              const SizedBox(height: 12),
+              // Đo thật 26/08: quyết toán xong tới SETTLED vẫn KHÔNG sinh bút
+              // toán nào (sổ quỹ 0 entry REWARD, thu nhập cá nhân member không
+              // đổi). Nói rõ để người dùng khỏi tưởng tiền đã tự vào sổ — xem
+              // DE_XUAT_BE_THUONG_KHONG_VAO_SO_2026-08-26.md.
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Đây chỉ là ghi nhận bạn đã trả tiền bên ngoài ứng dụng. '
+                  'Khoản này chưa được tự động ghi vào Sổ thu chi.',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF92400E),
+                  ),
+                ),
+              ),
             ],
           ),
           actions: [

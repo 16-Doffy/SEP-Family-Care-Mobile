@@ -56,3 +56,4 @@ app.*.map.json
 /.lock
 # Ảnh chụp màn hình tạm khi debug (flutter_01.png, flutter_02.png, ...)
 /flutter_*.png
+.gradle-user-home/
