@@ -1340,7 +1340,9 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                   _ledgerDetailRow(
                     'Số tiền',
-                    '${_fmt(detail.amount.round())} đ',
+                    // _fmt đã kèm sẵn ký hiệu ₫ — nối thêm " đ" thành
+                    // "77,000 ₫ đ" (đo thật 26/08 ở sheet chi tiết giao dịch).
+                    _fmt(detail.amount.round()),
                   ),
                   _ledgerDetailRow(
                     'Danh mục',

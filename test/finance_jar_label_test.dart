@@ -54,6 +54,20 @@ void main() {
       expect(localizeJarNamesInText('Mua đồ ăn'), 'Mua đồ ăn');
     });
 
+    test('sửa mô tả thưởng BE ghi thiếu dấu (đo thật 26/08)', () {
+      expect(
+        localizeJarNamesInText('Thuong nhiem vu: Rửa bát'),
+        'Thưởng nhiệm vụ: Rửa bát',
+      );
+    });
+
+    test('không tự đoán dấu cho chữ lạ', () {
+      expect(
+        localizeJarNamesInText('Thanh toan dien nuoc'),
+        'Thanh toan dien nuoc',
+      );
+    });
+
     test('chuỗi rỗng/null không nổ', () {
       expect(localizeJarNamesInText(''), '');
       expect(localizeJarNamesInText(null), '');

@@ -80,5 +80,26 @@ String localizeJarNamesInText(String? text) {
       (_) => entry.value,
     );
   }
+  return _fixMissingDiacritics(out);
+}
+
+/// Vài câu BE ghép sẵn bị **mất dấu tiếng Việt**, hiện lên giữa app toàn chữ có
+/// dấu trông rất lạc lõng.
+///
+/// Đo thật 26/08/2026: bút toán thưởng (`entryType=REWARD`,
+/// `sourceType=TASK_REWARD_SETTLEMENT`) có `description` là
+/// `"Thuong nhiem vu: {task.title}"`. Chỉ thay **đúng những câu đã biết**, tuyệt
+/// đối không tự đoán thêm dấu cho chữ khác — đoán sai còn tệ hơn để nguyên.
+/// Đã đề nghị BE sửa ở nguồn; khi BE sửa xong thì hàm này thành no-op, không
+/// gây hại.
+const Map<String, String> _missingDiacritics = {
+  'Thuong nhiem vu': 'Thưởng nhiệm vụ',
+};
+
+String _fixMissingDiacritics(String input) {
+  var out = input;
+  for (final entry in _missingDiacritics.entries) {
+    out = out.replaceAll(entry.key, entry.value);
+  }
   return out;
 }
