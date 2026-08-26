@@ -1,5 +1,44 @@
 # Đề xuất BE — Thưởng nhiệm vụ quyết toán xong nhưng KHÔNG vào sổ thu chi
 
+> ## ✅ BE ĐÃ TRẢ LỜI (26/08/2026) — chốt Phase 1
+>
+> BE đồng ý làm **Hướng 1** ở mức Phase 1: khi Member `confirm-received` thành
+> công và settlement chuyển `SETTLED`, BE tự tạo `LedgerEntry` trong **sổ quỹ
+> gia đình**:
+>
+> | Trường | Giá trị |
+> |---|---|
+> | `entryType` | `REWARD` |
+> | `sourceType` | `TASK_REWARD_SETTLEMENT` |
+> | `sourceId` | `settlementId` |
+> | `description` | `Thưởng nhiệm vụ: {task.title}` |
+> | `entryDate` | `confirmedAt` |
+>
+> Có **idempotency** — gọi lại/đồng bộ lại không tạo trùng. Đây chính là thứ FE
+> lo nhất ở mục 3, coi như đã giải quyết.
+>
+> **Khác biệt so với đề xuất ban đầu:** Phase 1 **KHÔNG** cộng vào
+> `MemberMonthlyFinance.actualIncome`, vì BE giải thích `actualIncome` là **số
+> kê khai tài chính tháng của cá nhân**, không phải sổ giao dịch cá nhân. Tức là
+> câu hỏi 3 ở mục 6 đã có đáp án: **ghi vào quỹ chung gia đình**, không vào thu
+> nhập cá nhân.
+>
+> **Trạng thái triển khai:** đo lúc 26/08 sau khi BE trả lời — **chưa deploy**
+> (sổ quỹ vẫn 0 entry `REWARD`, chưa có `sourceType=TASK_REWARD_SETTLEMENT`
+> trong dữ liệu thật; các sourceType hiện có: `GOAL_CONTRIBUTION_PLAN`,
+> `GOAL_QUICK_CONTRIBUTION`, `MONTHLY_SURPLUS_TO_GOAL`, `MODEL_FUND_ALLOCATION`).
+>
+> **FE đã chuẩn bị sẵn:** thêm icon cho `entryType=REWARD` trong sổ thu chi để
+> BE ship phát là hiện đúng ngay; câu cảnh báo ở hộp thoại "Đánh dấu đã trả" đã
+> sửa thành *"không cộng vào thu nhập cá nhân đã khai của thành viên"* — đúng cả
+> trước lẫn sau khi Phase 1 lên.
+>
+> **Còn treo — cần BE chốt thêm:** settlement response có trả thẳng
+> `ledgerEntryId` không? Nếu không, FE phải tự dò ngược bằng
+> `sourceType=TASK_REWARD_SETTLEMENT` + `sourceId=settlementId` để biết khoản
+> nào đã hạch toán. Dò ngược vẫn chạy được nhưng tốn thêm request và không chắc
+> chắn bằng.
+
 **Ngày:** 26/08/2026
 **Mức độ:** **Bắt buộc** (thiếu mảnh nghiệp vụ, không phải thiếu UI)
 **Người kiểm chứng:** FE, test bằng dữ liệu thật trên gia đình `NDuy`

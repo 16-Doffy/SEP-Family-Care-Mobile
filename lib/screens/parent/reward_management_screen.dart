@@ -352,10 +352,13 @@ class _SettlementsTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              // Đo thật 26/08: quyết toán xong tới SETTLED vẫn KHÔNG sinh bút
-              // toán nào (sổ quỹ 0 entry REWARD, thu nhập cá nhân member không
-              // đổi). Nói rõ để người dùng khỏi tưởng tiền đã tự vào sổ — xem
-              // DE_XUAT_BE_THUONG_KHONG_VAO_SO_2026-08-26.md.
+              // BE đã chốt Phase 1 (26/08): confirm-received -> tự sinh
+              // LedgerEntry entryType=REWARD, sourceType=TASK_REWARD_SETTLEMENT
+              // trong SỔ QUỸ GIA ĐÌNH, có idempotency. Nhưng Phase 1 **không**
+              // cộng vào MemberMonthlyFinance.actualIncome (đó là số kê khai
+              // cá nhân, không phải sổ giao dịch) — nên câu này vẫn đúng cả
+              // sau khi BE deploy. Đo 26/08: BE chưa deploy (0 entry REWARD).
+              // Xem DE_XUAT_BE_THUONG_KHONG_VAO_SO_2026-08-26.md.
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -363,8 +366,9 @@ class _SettlementsTab extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  'Đây chỉ là ghi nhận bạn đã trả tiền bên ngoài ứng dụng. '
-                  'Khoản này chưa được tự động ghi vào Sổ thu chi.',
+                  'Đây là ghi nhận bạn đã trả tiền bên ngoài ứng dụng. '
+                  'Khoản này không cộng vào thu nhập cá nhân đã khai của '
+                  'thành viên.',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     height: 1.4,

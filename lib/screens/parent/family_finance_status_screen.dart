@@ -212,7 +212,10 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                       _insight(
                         Icons.pie_chart_rounded,
                         'Chi vượt tỷ trọng',
-                        '${overJars.first.jarName} đang cao hơn tỷ lệ đặt trong mô hình.',
+                        // Tên hũ mặc định của BE là tiếng Anh (Necessities,
+                        // Savings...) — phải dịch như chỗ khác trong file này
+                        // (xem dòng dùng jarDisplayName ở card "Theo hũ").
+                        '${jarDisplayName(overJars.first.jarCode, overJars.first.jarName)} đang cao hơn tỷ lệ đặt trong mô hình.',
                         AppColors.urgent,
                       ),
                     if (atRiskGoals.isNotEmpty)

@@ -867,6 +867,13 @@ class _LedgerCard extends StatelessWidget {
     'EXPENSE': '🧾',
     'TRANSFER_IN': '⬇️',
     'TRANSFER_OUT': '⬆️',
+    // BE Phase 1 (chốt 26/08/2026): quyết toán thưởng xong sẽ sinh entry
+    // entryType=REWARD, sourceType=TASK_REWARD_SETTLEMENT. Thêm sẵn icon để
+    // khi BE deploy là hiện đúng ngay, khỏi rơi về 💰 chung chung.
+    'REWARD': '🎁',
+    'CONTRIBUTION': '🤝',
+    'ALLOWANCE': '👛',
+    'SUPPORT': '🆘',
   };
 
   @override
