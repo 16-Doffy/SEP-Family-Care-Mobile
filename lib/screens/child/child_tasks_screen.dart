@@ -200,38 +200,57 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     );
   }
 
-  void _showRewardDisputeDialog(String settlementId) {
+  Future<void> _showRewardDisputeDialog(String settlementId) async {
     final reasonCtrl = TextEditingController();
-    showDialog(
+    final focusNode = FocusNode();
+    final reason = await showDialog<String>(
       context: context,
-      builder: (dCtx) => AlertDialog(
-        title: const Text('Báo chưa nhận thưởng'),
-        content: TextField(
-          controller: reasonCtrl,
-          decoration: const InputDecoration(
-            hintText: 'Lý do (ví dụ: chưa nhận được tiền)',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final reason = reasonCtrl.text.trim();
-              if (reason.isEmpty) return;
-              Navigator.pop(dCtx);
-              await context.read<TaskProvider>().createDispute(
-                settlementId,
-                reason,
-              );
+      builder: (dCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Báo chưa nhận thưởng'),
+          content: TextField(
+            controller: reasonCtrl,
+            focusNode: focusNode,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) => setDialogState(() {}),
+            onSubmitted: (value) {
+              final reason = value.trim();
+              if (reason.isNotEmpty) Navigator.pop(dCtx, reason);
             },
-            child: const Text('Gửi'),
+            decoration: const InputDecoration(
+              hintText: 'Lý do (ví dụ: chưa nhận được tiền)',
+            ),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dCtx),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: reasonCtrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dCtx, reasonCtrl.text.trim()),
+              child: const Text('Gửi'),
+            ),
+          ],
+        ),
       ),
     );
+    focusNode.dispose();
+    reasonCtrl.dispose();
+    if (reason == null || !mounted) return;
+    try {
+      await context.read<TaskProvider>().createDispute(settlementId, reason);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể gửi báo cáo. Vui lòng thử lại.'),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -649,7 +668,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                     }
                   },
                   child: Text(
-                    'Bắt đầu làm ▶️',
+                    'Bắt đầu làm',
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -1476,7 +1495,7 @@ class _RewardConfirmBarState extends State<_RewardConfirmBar> {
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: AppColors.danger),
                         ),
-                        onPressed: () => _showDisputeDialog(context, s.id),
+                        onPressed: () => _showDisputeDialog(s.id),
                         child: Text(
                           'Chưa nhận',
                           style: GoogleFonts.inter(
@@ -1497,35 +1516,55 @@ class _RewardConfirmBarState extends State<_RewardConfirmBar> {
     );
   }
 
-  void _showDisputeDialog(BuildContext context, String settlementId) {
+  Future<void> _showDisputeDialog(String settlementId) async {
     final reasonCtrl = TextEditingController();
-    showDialog(
+    final focusNode = FocusNode();
+    final reason = await showDialog<String>(
       context: context,
-      builder: (dCtx) => AlertDialog(
-        title: const Text('Báo chưa nhận thưởng'),
-        content: TextField(
-          controller: reasonCtrl,
-          decoration: const InputDecoration(hintText: 'Lý do...'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx),
-            child: const Text('Hủy'),
-          ),
-          TextButton(
-            onPressed: () async {
-              if (reasonCtrl.text.trim().isEmpty) return;
-              await context.read<TaskProvider>().createDispute(
-                settlementId,
-                reasonCtrl.text.trim(),
-              );
-              if (dCtx.mounted) Navigator.pop(dCtx);
-              _load();
+      builder: (dCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Báo chưa nhận thưởng'),
+          content: TextField(
+            controller: reasonCtrl,
+            focusNode: focusNode,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) => setDialogState(() {}),
+            onSubmitted: (value) {
+              final reason = value.trim();
+              if (reason.isNotEmpty) Navigator.pop(dCtx, reason);
             },
-            child: const Text('Gửi báo cáo'),
+            decoration: const InputDecoration(hintText: 'Lý do...'),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dCtx),
+              child: const Text('Hủy'),
+            ),
+            TextButton(
+              onPressed: reasonCtrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dCtx, reasonCtrl.text.trim()),
+              child: const Text('Gửi báo cáo'),
+            ),
+          ],
+        ),
       ),
     );
+    focusNode.dispose();
+    reasonCtrl.dispose();
+    if (reason == null || !mounted) return;
+    try {
+      await context.read<TaskProvider>().createDispute(settlementId, reason);
+      if (mounted) _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể gửi báo cáo. Vui lòng thử lại.'),
+          ),
+        );
+      }
+    }
   }
 }

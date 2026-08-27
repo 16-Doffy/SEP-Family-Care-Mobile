@@ -832,6 +832,7 @@ class _AlbumScreenState extends State<AlbumScreen> {
       _pinnedIds.removeAll(removed);
       await _savePinned();
     }
+    if (!mounted) return;
 
     _exitSelection();
     final ok = ids.length - failures.length;
@@ -1195,6 +1196,14 @@ class _AlbumScreenState extends State<AlbumScreen> {
               style: GoogleFonts.inter(fontSize: 12, color: _photoSecondary),
             ),
           ),
+          const SizedBox(height: 16),
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: () => album.fetchMedia(refresh: true),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Thử lại'),
+            ),
+          ),
         ],
       );
     }
@@ -1220,6 +1229,14 @@ class _AlbumScreenState extends State<AlbumScreen> {
             child: Text(
               'Tải ảnh/video gia đình lên để bắt đầu.',
               style: GoogleFonts.inter(fontSize: 12, color: _photoSecondary),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: FilledButton.icon(
+              onPressed: album.uploading ? null : _showCreateMenu,
+              icon: const Icon(Icons.add_a_photo_outlined, size: 18),
+              label: const Text('Thêm ảnh hoặc video'),
             ),
           ),
         ],
@@ -3208,7 +3225,10 @@ class _AlbumDetailMediaPageState extends State<_AlbumDetailMediaPage> {
                   // khung mặt di chuyển/scale theo đúng ảnh, không cần tự
                   // đồng bộ transform.
                   if (widget.overlay.isNotEmpty)
-                    _FaceOverlay(imageProvider: provider, items: widget.overlay),
+                    _FaceOverlay(
+                      imageProvider: provider,
+                      items: widget.overlay,
+                    ),
                 ],
               ),
             ),
@@ -3499,8 +3519,9 @@ class AlbumMediaThumbState extends State<AlbumMediaThumb> {
     return FutureBuilder<String?>(
       future: _future,
       builder: (_, snap) {
-        if (snap.connectionState != ConnectionState.done)
+        if (snap.connectionState != ConnectionState.done) {
           return _thumbLoading();
+        }
         final resolved = snap.data;
         if (resolved == null || resolved.isEmpty) {
           return _thumbPlaceholder(isVideo: widget.media.isVideo);

@@ -64,12 +64,33 @@ void main() {
       expect(s.status, 'PENDING_SETTLEMENT');
     });
 
-    test('submissionId đọc được để biết bài nộp nào chưa có ghi nhận thưởng', () {
+    test(
+      'submissionId đọc được để biết bài nộp nào chưa có ghi nhận thưởng',
+      () {
+        final s = RewardSettlement.fromJson({
+          'id': 's1',
+          'submissionId': 'sub-1',
+        });
+        expect(s.submissionId, 'sub-1');
+      },
+    );
+
+    test('đọc đúng người nhận từ receiverMember của settlement', () {
       final s = RewardSettlement.fromJson({
         'id': 's1',
-        'submissionId': 'sub-1',
+        'receiverMemberId': 'member-1',
+        'receiverMember': {
+          'id': 'member-1',
+          'userId': 'user-1',
+          'user': {'id': 'user-1', 'fullName': 'Lê Anh Sĩ'},
+        },
+        'task': {'id': 'task-1', 'title': 'Rửa bát'},
       });
-      expect(s.submissionId, 'sub-1');
+
+      expect(s.receiverMemberId, 'member-1');
+      expect(s.receiverUserId, 'user-1');
+      expect(s.memberName, 'Lê Anh Sĩ');
+      expect(s.taskTitle, 'Rửa bát');
     });
   });
 
@@ -119,10 +140,7 @@ void main() {
         'task': {
           'id': 't1',
           'title': 'Dọn phòng',
-          'createdByMember': {
-            'id': 'hoh-1',
-            'displayName': 'Bố',
-          },
+          'createdByMember': {'id': 'hoh-1', 'displayName': 'Bố'},
         },
       });
 
@@ -130,16 +148,19 @@ void main() {
       expect(a.task?.createdByName, 'Bố', reason: 'UI fallback sang task');
     });
 
-    test('chỉ có id (BE không trả tên) — UI sẽ tra tên qua danh sách thành viên', () {
-      final a = TaskAssignment.fromJson({
-        'id': 'as1',
-        'assignedToMemberId': 'mem-1',
-        'assignedByMemberId': 'hoh-1',
-      });
+    test(
+      'chỉ có id (BE không trả tên) — UI sẽ tra tên qua danh sách thành viên',
+      () {
+        final a = TaskAssignment.fromJson({
+          'id': 'as1',
+          'assignedToMemberId': 'mem-1',
+          'assignedByMemberId': 'hoh-1',
+        });
 
-      expect(a.assignedByMemberId, 'hoh-1');
-      expect(a.assignedByName, isNull);
-    });
+        expect(a.assignedByMemberId, 'hoh-1');
+        expect(a.assignedByName, isNull);
+      },
+    );
 
     test('BE không trả gì về người giao thì cả hai đều null', () {
       final a = TaskAssignment.fromJson({

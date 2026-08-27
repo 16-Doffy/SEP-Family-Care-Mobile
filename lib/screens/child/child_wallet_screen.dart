@@ -170,15 +170,22 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
               const SizedBox(height: 20),
               Row(
                 children: [
-                  Text(
-                    '💰 Sổ chi tiêu cá nhân',
-                    style: GoogleFonts.inter(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: context.colors.textPrimary,
+                  const Icon(
+                    Icons.account_balance_wallet_outlined,
+                    size: 26,
+                    color: AppColors.primary500,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Sổ chi tiêu cá nhân',
+                      style: GoogleFonts.inter(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: context.colors.textPrimary,
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   if (_loadingFinance)
                     const SizedBox(
                       width: 16,
@@ -251,7 +258,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     Text(
                       hasData
                           ? (isOver
-                                ? '⚠️ Đã vượt hạn mức ${_fmtNum(-remaining)} ₫'
+                                ? 'Đã vượt hạn mức ${_fmtNum(-remaining)} ₫'
                                 : 'Hạn mức chi tiêu tháng này')
                           : 'Vào Hồ sơ → Tài chính tháng để khai báo',
                       style: GoogleFonts.inter(
@@ -359,7 +366,10 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                     size: 80,
                                   ),
                                   Text(
-                                    '${(_ring.value * 100).round()}%',
+                                    // Giá trị chữ phải khớp ngay với số liệu bên
+                                    // phải; chỉ vòng cung chạy animation. Trước đây
+                                    // có lúc vòng ghi 5% trong khi tiêu đề ghi 44%.
+                                    '${(pct * 100).round()}%',
                                     style: GoogleFonts.inter(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800,
@@ -410,21 +420,42 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                                             .withValues(alpha: 0.14),
                                     borderRadius: BorderRadius.circular(999),
                                   ),
-                                  child: Text(
-                                    isOver
-                                        ? '🔴 Vượt ngưỡng an toàn'
-                                        : isSafe
-                                        ? '✅ Trong ngưỡng an toàn'
-                                        : '⚠️ Gần đến hạn mức',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: isOver
-                                          ? AppColors.danger
-                                          : isSafe
-                                          ? AppColors.safe
-                                          : AppColors.accent500,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isOver
+                                            ? Icons.error_outline_rounded
+                                            : isSafe
+                                            ? Icons.check_circle_outline_rounded
+                                            : Icons.warning_amber_rounded,
+                                        size: 14,
+                                        color: isOver
+                                            ? AppColors.danger
+                                            : isSafe
+                                            ? AppColors.safe
+                                            : AppColors.accent500,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Flexible(
+                                        child: Text(
+                                          isOver
+                                              ? 'Vượt ngưỡng an toàn'
+                                              : isSafe
+                                              ? 'Trong ngưỡng an toàn'
+                                              : 'Gần đến hạn mức',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: isOver
+                                                ? AppColors.danger
+                                                : isSafe
+                                                ? AppColors.safe
+                                                : AppColors.accent500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -448,7 +479,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
                     ),
                   ),
                   onPressed: () => _showRequestMoneyDialog(context),
-                  icon: const Text('💸', style: TextStyle(fontSize: 18)),
+                  icon: const Icon(Icons.payments_outlined, size: 20),
                   label: Text(
                     'Xin tiền từ Trưởng/Phó nhóm',
                     style: GoogleFonts.inter(
@@ -533,7 +564,11 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
   Widget _noAllowanceCard() {
     return Column(
       children: [
-        const Text('📋', style: TextStyle(fontSize: 32)),
+        Icon(
+          Icons.assignment_outlined,
+          size: 36,
+          color: context.colors.textMuted,
+        ),
         const SizedBox(height: 8),
         Text(
           'Chưa khai báo hạn mức ${_period.label.toLowerCase()}',
@@ -582,7 +617,7 @@ class _ChildWalletScreenState extends State<ChildWalletScreen>
             borderRadius: BorderRadius.circular(20),
           ),
           title: Text(
-            '💸 Xin hỗ trợ chi tiêu',
+            'Xin hỗ trợ chi tiêu',
             style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           content: Column(
@@ -862,18 +897,18 @@ class _LedgerCard extends StatelessWidget {
   final LedgerEntry entry;
   const _LedgerCard({required this.entry});
 
-  static const _icons = {
-    'INCOME': '💸',
-    'EXPENSE': '🧾',
-    'TRANSFER_IN': '⬇️',
-    'TRANSFER_OUT': '⬆️',
+  static const Map<String, IconData> _icons = {
+    'INCOME': Icons.south_west_rounded,
+    'EXPENSE': Icons.receipt_long_outlined,
+    'TRANSFER_IN': Icons.arrow_downward_rounded,
+    'TRANSFER_OUT': Icons.arrow_upward_rounded,
     // BE Phase 1 (chốt 26/08/2026): quyết toán thưởng xong sẽ sinh entry
     // entryType=REWARD, sourceType=TASK_REWARD_SETTLEMENT. Thêm sẵn icon để
     // khi BE deploy là hiện đúng ngay, khỏi rơi về 💰 chung chung.
-    'REWARD': '🎁',
-    'CONTRIBUTION': '🤝',
-    'ALLOWANCE': '👛',
-    'SUPPORT': '🆘',
+    'REWARD': Icons.card_giftcard_rounded,
+    'CONTRIBUTION': Icons.volunteer_activism_outlined,
+    'ALLOWANCE': Icons.account_balance_wallet_outlined,
+    'SUPPORT': Icons.request_quote_outlined,
   };
 
   @override
@@ -900,13 +935,14 @@ class _LedgerCard extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.background,
+              color: context.colors.inputFill,
               borderRadius: BorderRadius.circular(12),
             ),
             alignment: Alignment.center,
-            child: Text(
-              _icons[entry.entryType] ?? '💰',
-              style: const TextStyle(fontSize: 22),
+            child: Icon(
+              _icons[entry.entryType] ?? Icons.payments_outlined,
+              size: 22,
+              color: isPos ? AppColors.safe : AppColors.danger,
             ),
           ),
           const SizedBox(width: 12),

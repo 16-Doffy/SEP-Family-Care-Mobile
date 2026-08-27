@@ -499,7 +499,10 @@ DateTime? _dateOrNull(dynamic value) {
 class RewardSettlement {
   final String id;
   final String? submissionId;
+  final String? receiverMemberId;
+  final String? receiverUserId;
   final String? memberName;
+  final String? taskTitle;
   final double amount;
   // Enum thật (verify Swagger 2026-07-08): PENDING_SETTLEMENT |
   // WAITING_CONFIRMATION | SETTLED | DISPUTED | CANCELED — trước đó model
@@ -509,7 +512,10 @@ class RewardSettlement {
   const RewardSettlement({
     required this.id,
     this.submissionId,
+    this.receiverMemberId,
+    this.receiverUserId,
     this.memberName,
+    this.taskTitle,
     this.amount = 0,
     this.status = 'PENDING_SETTLEMENT',
     this.note,
@@ -518,16 +524,23 @@ class RewardSettlement {
   bool get needsMarkPaid => status == 'PENDING_SETTLEMENT';
 
   factory RewardSettlement.fromJson(Map<String, dynamic> j) {
-    final member = j['member'] is Map
-        ? j['member'] as Map
-        : <String, dynamic>{};
+    // API trả người nhận trong `receiverMember`; `member` chỉ là alias của
+    // một số bản BE cũ. Không đọc receiverMember thì card luôn hiện generic
+    // "Thành viên" và không thể biết Deputy có đang tự xử lý tiền của mình.
+    final member = j['receiverMember'] is Map
+        ? j['receiverMember'] as Map
+        : (j['member'] is Map ? j['member'] as Map : <String, dynamic>{});
     final userMap = member['user'] is Map
         ? member['user'] as Map
         : <String, dynamic>{};
+    final taskMap = j['task'] is Map ? j['task'] as Map : const {};
     return RewardSettlement(
       id: _str(j['id']) ?? '',
       submissionId: _str(j['submissionId']) ?? _str(j['taskSubmissionId']),
+      receiverMemberId: _str(j['receiverMemberId']) ?? _str(member['id']),
+      receiverUserId: _str(userMap['id']) ?? _str(member['userId']),
       memberName: _str(userMap['fullName']) ?? _str(j['memberName']),
+      taskTitle: _str(taskMap['title']) ?? _str(j['taskTitle']),
       amount: _num(j['amount'] ?? j['rewardAmount']),
       status: _str(j['status']) ?? 'PENDING_SETTLEMENT',
       note: _str(j['note']) ?? _str(j['resolutionNote']),
@@ -875,9 +888,16 @@ class TaskProvider extends ChangeNotifier {
   /// sách dài. Xem đề xuất BE gộp sẵn vào `GET /tasks` để bỏ hẳn N+1 này.
   static const int _assignmentBatch = 4;
 
-  Future<void> ensureAssignmentsFor(Iterable<String> taskIds) async {
+  Future<void> ensureAssignmentsFor(
+    Iterable<String> taskIds, {
+    bool forceRefresh = false,
+  }) async {
     final missing = taskIds
-        .where((id) => id.isNotEmpty && !_assignmentsByTask.containsKey(id))
+        .where(
+          (id) =>
+              id.isNotEmpty &&
+              (forceRefresh || !_assignmentsByTask.containsKey(id)),
+        )
         .toSet()
         .toList();
     if (missing.isEmpty) return;

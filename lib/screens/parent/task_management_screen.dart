@@ -69,7 +69,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       if (!mounted) return;
       // GET /tasks không trả kèm assignment → nạp thêm để item hiện người làm
       // và thời gian. Chạy sau khi có danh sách để biết cần nạp task nào.
-      await tasks.ensureAssignmentsFor(tasks.tasks.map((t) => t.id));
+      // Provider sống ở app scope nên có thể đang giữ cache rỗng từ trước khi
+      // assignment được tạo ở thiết bị/tài khoản khác. Nạp lại khi mở màn để
+      // card danh sách không nói sai "Chưa giao cho ai".
+      await tasks.ensureAssignmentsFor(
+        tasks.tasks.map((t) => t.id),
+        forceRefresh: true,
+      );
     });
     _overdueTicker = Timer.periodic(
       const Duration(minutes: 1),
@@ -355,8 +361,13 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: () =>
-                      taskState.fetchTasks(),
+                  onRefresh: () async {
+                    await taskState.fetchTasks();
+                    await taskState.ensureAssignmentsFor(
+                      taskState.tasks.map((t) => t.id),
+                      forceRefresh: true,
+                    );
+                  },
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     children: [
@@ -1306,7 +1317,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                             }
                           },
                           child: Text(
-                            'Bắt đầu làm ▶️',
+                            'Bắt đầu làm',
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -3941,10 +3952,11 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
         );
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(
           () => _scheduleError = e.toString().replaceFirst('Exception: ', ''),
         );
+      }
     } finally {
       if (mounted) setState(() => _savingSchedule = false);
     }
@@ -3989,10 +4001,11 @@ class _ScheduleSheetState extends State<_ScheduleSheet> {
         );
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(
           () => _genError = e.toString().replaceFirst('Exception: ', ''),
         );
+      }
     } finally {
       if (mounted) setState(() => _generating = false);
     }

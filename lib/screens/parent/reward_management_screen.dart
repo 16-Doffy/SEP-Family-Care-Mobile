@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../theme/app_colors.dart';
@@ -137,18 +138,18 @@ class _RewardManagementScreenState extends State<RewardManagementScreen>
   }
 }
 
-Widget _emptyView(String text) => Center(
+Widget _emptyView(BuildContext context, String text) => Center(
   child: Text(
     text,
-    style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
+    style: GoogleFonts.inter(fontSize: 13, color: context.colors.textMuted),
   ),
 );
 
-Widget _card({required Widget child}) => Container(
+Widget _card(BuildContext context, {required Widget child}) => Container(
   margin: const EdgeInsets.only(bottom: 12),
   padding: const EdgeInsets.all(16),
   decoration: BoxDecoration(
-    color: AppColors.white,
+    color: context.colors.surface,
     borderRadius: BorderRadius.circular(20),
     boxShadow: [
       BoxShadow(
@@ -171,34 +172,97 @@ class _SettlementsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final tp = context.watch<TaskProvider>();
     final list = tp.rewardSettlements;
-    if (list.isEmpty) return _emptyView('Chưa có khoản thưởng nào');
+    if (list.isEmpty) return _emptyView(context, 'Chưa có khoản thưởng nào');
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchRewardSettlements(),
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-        itemCount: list.length,
-        itemBuilder: (_, i) => _settlementCard(context, list[i]),
+        itemCount: list.length + 1,
+        itemBuilder: (_, i) => i == 0
+            ? _paymentFlowGuide()
+            : _settlementCard(context, list[i - 1]),
       ),
     );
   }
 
+  Widget _paymentFlowGuide() => Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFEFF6FF),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: const Color(0xFFBFDBFE)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.info_outline_rounded,
+          size: 19,
+          color: Color(0xFF2563EB),
+        ),
+        const SizedBox(width: 9),
+        Expanded(
+          child: Text(
+            'Người nhận không tự xử lý khoản thưởng của mình. Tranh chấp chỉ xuất hiện sau khi người quản lý đánh dấu đã trả và người nhận chọn “Chưa nhận”.',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              height: 1.4,
+              color: const Color(0xFF1E3A8A),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+
   Widget _settlementCard(BuildContext context, RewardSettlement s) {
+    final currentUser = context.watch<AuthProvider>().user;
+    final currentMember = context
+        .watch<FamilyProvider>()
+        .members
+        .where((m) => m.userId == currentUser?.id)
+        .firstOrNull;
+    // BE chặn Deputy xác nhận/hủy settlement mà Deputy chính là người nhận.
+    // Đừng hiển thị action chắc chắn trả lỗi 403; Manager vẫn xử lý bình thường.
+    final isDeputyOwnSettlement =
+        currentUser?.familyRoleString == 'DEPUTY_MEMBER' &&
+        (s.receiverUserId == currentUser?.id ||
+            (currentMember != null && s.receiverMemberId == currentMember.id));
     return GestureDetector(
       onTap: () => _showDetail(context, s),
       child: _card(
+        context,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    s.memberName ?? 'Thành viên',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Người nhận: ${s.memberName ?? 'Thành viên'}',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      if (s.taskTitle != null && s.taskTitle!.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          'Nhiệm vụ: ${s.taskTitle}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 Container(
@@ -240,7 +304,18 @@ class _SettlementsTab extends StatelessWidget {
                 ),
               ),
             ],
-            if (s.needsMarkPaid) ...[
+            if (s.needsMarkPaid && isDeputyOwnSettlement) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Bạn là người nhận khoản thưởng này. Trưởng nhóm sẽ thực hiện thanh toán hoặc hủy.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  height: 1.35,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+            if (s.needsMarkPaid && !isDeputyOwnSettlement) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -272,10 +347,9 @@ class _SettlementsTab extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: AppColors.danger),
                         ),
-                        onPressed: () =>
-                            context.read<TaskProvider>().cancelSettlement(s.id),
+                        onPressed: () => _cancelSettlement(context, s),
                         child: Text(
-                          'Hủy',
+                          'Hủy thưởng',
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -292,6 +366,45 @@ class _SettlementsTab extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _cancelSettlement(
+    BuildContext context,
+    RewardSettlement settlement,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hủy khoản thưởng?'),
+        content: const Text(
+          'Thao tác này kết thúc khoản thưởng ngay và người nhận sẽ không thể báo “Chưa nhận”. Đây không phải thao tác tạo tranh chấp.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Quay lại'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Hủy khoản thưởng'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await context.read<TaskProvider>().cancelSettlement(settlement.id);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
   }
 
   // MarkRewardPaidDto: { externalMethod (bắt buộc), externalNote? }.
@@ -366,9 +479,10 @@ class _SettlementsTab extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  'Đây là ghi nhận bạn đã trả tiền bên ngoài ứng dụng. '
-                  'Khoản này không cộng vào thu nhập cá nhân đã khai của '
-                  'thành viên.',
+                  'Ứng dụng không tự chuyển tiền. Chỉ xác nhận sau khi bạn đã '
+                  'trả tiền thật bằng phương thức đã chọn; hệ thống chỉ lưu '
+                  'thông tin đối soát. Sau đó người nhận sẽ chọn “Đã nhận” '
+                  'hoặc “Chưa nhận”.',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     height: 1.4,
@@ -573,7 +687,7 @@ class _DisputesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final list = context.watch<TaskProvider>().rewardDisputes;
-    if (list.isEmpty) return _emptyView('Chưa có tranh chấp nào');
+    if (list.isEmpty) return _emptyView(context, 'Chưa có tranh chấp nào');
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchRewardDisputes(),
       child: ListView.builder(
@@ -587,6 +701,7 @@ class _DisputesTab extends StatelessWidget {
   Widget _disputeCard(BuildContext context, RewardDispute d) {
     final isOpen = d.status == 'OPEN';
     return _card(
+      context,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -733,7 +848,7 @@ class _UnavailabilityTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final list = context.watch<TaskProvider>().unavailabilities;
-    if (list.isEmpty) return _emptyView('Chưa có báo bận nào');
+    if (list.isEmpty) return _emptyView(context, 'Chưa có báo bận nào');
     return RefreshIndicator(
       onRefresh: () => context.read<TaskProvider>().fetchUnavailabilities(),
       child: ListView.builder(
@@ -747,6 +862,7 @@ class _UnavailabilityTab extends StatelessWidget {
   Widget _unavailCard(BuildContext context, TaskUnavailability u) {
     final isOpen = u.isOpen;
     return _card(
+      context,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

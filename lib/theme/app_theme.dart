@@ -8,15 +8,11 @@ import 'app_surface_colors.dart';
 class AppTheme {
   AppTheme._();
 
-  static ThemeData get light => _build(
-    brightness: Brightness.light,
-    surfaces: AppSurfaceColors.light,
-  );
+  static ThemeData get light =>
+      _build(brightness: Brightness.light, surfaces: AppSurfaceColors.light);
 
-  static ThemeData get dark => _build(
-    brightness: Brightness.dark,
-    surfaces: AppSurfaceColors.dark,
-  );
+  static ThemeData get dark =>
+      _build(brightness: Brightness.dark, surfaces: AppSurfaceColors.dark);
 
   static ThemeData _build({
     required Brightness brightness,
@@ -73,10 +69,7 @@ class AppTheme {
       popupMenuTheme: PopupMenuThemeData(
         color: surfaces.surface,
         surfaceTintColor: Colors.transparent,
-        textStyle: GoogleFonts.inter(
-          fontSize: 14,
-          color: surfaces.textPrimary,
-        ),
+        textStyle: GoogleFonts.inter(fontSize: 14, color: surfaces.textPrimary),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       switchTheme: SwitchThemeData(
@@ -99,9 +92,9 @@ class AppTheme {
         trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
       ),
       textTheme: base.copyWith(
-        bodyLarge:  base.bodyLarge?.copyWith(color: surfaces.textPrimary),
+        bodyLarge: base.bodyLarge?.copyWith(color: surfaces.textPrimary),
         bodyMedium: base.bodyMedium?.copyWith(color: surfaces.textPrimary),
-        bodySmall:  base.bodySmall?.copyWith(color: surfaces.textSecondary),
+        bodySmall: base.bodySmall?.copyWith(color: surfaces.textSecondary),
         titleLarge: base.titleLarge?.copyWith(
           color: surfaces.textPrimary,
           fontWeight: FontWeight.w700,
@@ -113,7 +106,10 @@ class AppTheme {
         hintStyle: GoogleFonts.inter(fontSize: 14, color: surfaces.textMuted),
         errorStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.danger),
         errorMaxLines: 2,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: surfaces.divider, width: 1.5),
@@ -139,21 +135,107 @@ class AppTheme {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary500,
           foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.primary500.withValues(alpha: 0.35),
+          disabledForegroundColor: Colors.white.withValues(alpha: 0.75),
           elevation: 0,
-          textStyle: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          textStyle: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary500,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          textStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary500,
+          minimumSize: const Size(48, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          side: BorderSide(color: surfaces.divider, width: 1.4),
+          textStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.primary500,
-          textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
+          minimumSize: const Size(44, 44),
+          textStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
         ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: surfaces.inputFill,
+        selectedColor: AppColors.primary500.withValues(alpha: 0.14),
+        disabledColor: surfaces.divider.withValues(alpha: 0.45),
+        labelStyle: GoogleFonts.inter(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: surfaces.textPrimary,
+        ),
+        secondaryLabelStyle: GoogleFonts.inter(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary600,
+        ),
+        side: BorderSide(color: surfaces.divider),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: AppColors.primary500,
+        linearTrackColor: AppColors.progressTrack,
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: AppColors.primary500,
+        unselectedLabelColor: surfaces.textMuted,
+        indicatorColor: AppColors.primary500,
+        dividerColor: surfaces.divider,
+        labelStyle: GoogleFonts.inter(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+        unselectedLabelStyle: GoogleFonts.inter(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppColors.primary500,
+        foregroundColor: Colors.white,
+        elevation: 2,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: isDark ? surfaces.surface : AppColors.textPrimary,
-        contentTextStyle: GoogleFonts.inter(fontSize: 13.5, color: Colors.white),
+        contentTextStyle: GoogleFonts.inter(
+          fontSize: 13.5,
+          color: Colors.white,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       datePickerTheme: DatePickerThemeData(
@@ -168,6 +250,8 @@ class AppTheme {
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: surfaces.surface,
+        surfaceTintColor: Colors.transparent,
+        modalBarrierColor: Colors.black.withValues(alpha: 0.45),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),

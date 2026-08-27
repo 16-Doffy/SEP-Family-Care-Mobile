@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_surface_colors.dart';
 
 /// Empty state chuẩn: icon minh họa trong vòng tròn pastel brand + tiêu đề +
 /// mô tả + nút hành động gợi ý (tùy chọn).
@@ -30,8 +31,12 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: compact ? 24 : 48, horizontal: 24),
+      padding: EdgeInsets.symmetric(
+        vertical: compact ? 24 : 48,
+        horizontal: 24,
+      ),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -47,16 +52,26 @@ class EmptyState extends StatelessWidget {
               child: Icon(icon, size: compact ? 32 : 40, color: iconColor),
             ),
             const SizedBox(height: 16),
-            Text(title,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                    fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: colors.textPrimary,
+              ),
+            ),
             if (subtitle != null) ...[
               const SizedBox(height: 6),
-              Text(subtitle!,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                      fontSize: 13, color: AppColors.textMuted, height: 1.4)),
+              Text(
+                subtitle!,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: colors.textMuted,
+                  height: 1.4,
+                ),
+              ),
             ],
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 18),
@@ -64,13 +79,23 @@ class EmptyState extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary500,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 onPressed: onAction,
-                child: Text(actionLabel!,
-                    style: GoogleFonts.inter(
-                        fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+                child: Text(
+                  actionLabel!,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ],
           ],
@@ -92,10 +117,12 @@ class SkeletonBox extends StatefulWidget {
   State<SkeletonBox> createState() => _SkeletonBoxState();
 }
 
-class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStateMixin {
+class _SkeletonBoxState extends State<SkeletonBox>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 900))
-    ..repeat(reverse: true);
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
 
   @override
   void dispose() {
@@ -105,14 +132,17 @@ class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return FadeTransition(
-      opacity: Tween(begin: 0.35, end: 0.9).animate(
-          CurvedAnimation(parent: _c, curve: Curves.easeInOut)),
+      opacity: Tween(
+        begin: 0.35,
+        end: 0.9,
+      ).animate(CurvedAnimation(parent: _c, curve: Curves.easeInOut)),
       child: Container(
         height: widget.height,
         width: widget.width,
         decoration: BoxDecoration(
-          color: AppColors.progressTrack,
+          color: colors.divider,
           borderRadius: BorderRadius.circular(widget.radius),
         ),
       ),
@@ -129,31 +159,37 @@ class SkeletonList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Column(
-      children: List.generate(items, (_) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        height: cardHeight,
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(children: [
-          const SkeletonBox(height: 56, width: 56, radius: 28),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                SkeletonBox(height: 14, width: 140),
-                SizedBox(height: 8),
-                SkeletonBox(height: 12, width: 90),
-              ],
-            ),
+      children: List.generate(
+        items,
+        (_) => Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          height: cardHeight,
+          decoration: BoxDecoration(
+            color: colors.surface,
+            borderRadius: BorderRadius.circular(16),
           ),
-        ]),
-      )),
+          child: Row(
+            children: [
+              const SkeletonBox(height: 56, width: 56, radius: 28),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    SkeletonBox(height: 14, width: 140),
+                    SizedBox(height: 8),
+                    SkeletonBox(height: 12, width: 90),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

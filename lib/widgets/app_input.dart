@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_surface_colors.dart';
 import 'money_input.dart';
 
 /// Ô nhập chuẩn của app: label + viền bo tròn + lỗi inline đỏ dưới ô.
@@ -39,6 +39,7 @@ class AppTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -49,7 +50,7 @@ class AppTextField extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
+              color: colors.textSecondary,
             ),
           ),
         ),
@@ -65,12 +66,12 @@ class AppTextField extends StatelessWidget {
               ? const [ThousandsSeparatorInputFormatter()]
               : null,
           autovalidateMode: AutovalidateMode.onUserInteraction,
-          style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
+          style: GoogleFonts.inter(fontSize: 15, color: colors.textPrimary),
           decoration: InputDecoration(
             hintText: hint,
             suffixText: money ? '₫' : null,
             prefixIcon: prefixIcon != null
-                ? Icon(prefixIcon, size: 20, color: AppColors.textMuted)
+                ? Icon(prefixIcon, size: 20, color: colors.textMuted)
                 : null,
             suffixIcon: suffix,
           ),
@@ -156,6 +157,7 @@ class _AppDateFieldState extends State<AppDateField> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -166,7 +168,7 @@ class _AppDateFieldState extends State<AppDateField> {
             style: GoogleFonts.inter(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
+              color: colors.textSecondary,
             ),
           ),
         ),
@@ -178,13 +180,13 @@ class _AppDateFieldState extends State<AppDateField> {
               ? null
               : (_) => widget.validator!(_iso),
           autovalidateMode: AutovalidateMode.onUserInteraction,
-          style: GoogleFonts.inter(fontSize: 15, color: AppColors.textPrimary),
+          style: GoogleFonts.inter(fontSize: 15, color: colors.textPrimary),
           decoration: InputDecoration(
             hintText: widget.hint,
-            suffixIcon: const Icon(
+            suffixIcon: Icon(
               Icons.calendar_month_rounded,
               size: 20,
-              color: AppColors.textMuted,
+              color: colors.textMuted,
             ),
           ),
         ),
