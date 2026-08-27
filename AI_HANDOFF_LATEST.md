@@ -1,6 +1,106 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (25/08/2026 chiều)
+## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (26/08/2026 tối)
+
+`main` = `NDuy` = **`b2805ca`**, cả hai **đã push và đồng bộ** với remote
+(`0 0` cả hai chiều). `origin/giap` = `d05f299`, **đi sau `main` 27 commit**,
+không có gì mới của Giáp.
+
+⚠️ **Lịch sử đã bị viết lại hôm nay** (`push --force-with-lease`): gộp 2 commit
+chỉ-tài-liệu (`e0d79fc`, `8ad88df`) vào commit code liền kề, vì user cấm commit
+riêng cho tài liệu (hội đồng đọc `git log`). Đã kiểm `origin/giap` chưa chứa 2
+commit đó nên Giáp không bị ảnh hưởng. **Quy tắc: tài liệu luôn commit KÈM code,
+không bao giờ đứng riêng** — kể cả file handoff này.
+
+### Phiên này làm gì (6 commit)
+
+Trọng tâm: **test trọn luồng thưởng nhiệm vụ + tranh chấp trên cả 3 vai**, rồi
+sửa những gì lộ ra.
+
+| Commit | Nội dung |
+|---|---|
+| `09e87ad` | Cảnh báo trong hộp thoại "Đánh dấu đã trả" + báo cáo lỗ hổng thưởng không vào sổ |
+| `73c460b` | Màn Tình hình tài chính đọc `items` thay vì `members` → luôn báo "chưa có dữ liệu" |
+| `24ca335` | Tên hũ tiếng Anh khi lùi tháng cũ + chuẩn bị icon `entryType=REWARD` |
+| `15eca1e` | BE deploy Phase 1 → hiển thị bút toán thưởng; sửa `"Thuong nhiem vu"` thiếu dấu + `77,000 ₫ đ` lặp ký hiệu |
+| `aa17c52` | Mô tả giao dịch ở **màn chính** chưa được dịch (sót so với Sổ thu chi) |
+| `b2805ca` | Chip thưởng biến mất sau khi duyệt bài + khẳng định sai "Chưa đặt thưởng" |
+
+### Kết quả test luồng thưởng — đã verify bằng API thật
+
+Gia đình `NDuy` (`b0cc7942-2a29-42f0-a63b-713bc98295f1`), token thật 3 vai.
+Kịch bản đầy đủ + enum/ràng buộc đã verify nằm ở
+**`KICH_BAN_TEST_THUONG_2026-08-26.md`** — chạy lại được không cần AI.
+
+- ✅ Luồng chính 19/19 bước pass (tạo task → thưởng → giao → nộp → duyệt →
+  quyết toán → trả → xác nhận → `SETTLED`)
+- ✅ Tranh chấp **cả 2 nhánh**: chấp nhận → `PENDING_SETTLEMENT`; từ chối →
+  `WAITING_CONFIRMATION`
+- ✅ Phân quyền: Member không tự duyệt bài / không tự đánh dấu đã trả / không tự
+  xử tranh chấp / không tạo task — đều 403
+- ✅ **Phân bổ thưởng vào hũ KHÔNG nhân đôi tiền** (chỗ rủi ro nhất): bản ghi
+  phân bổ có `ledgerEntryId` **trùng id bút toán thưởng** → chỉ liên kết, không
+  tạo mới. Phân bổ vượt số thưởng bị chặn 400
+- ✅ Huỷ quyết toán đã `SETTLED`: BE chặn đúng, bút toán vẫn `ACTIVE`
+- ✅ `POINT` / `OTHER`: 0 bút toán (đúng — chỉ `MONEY_RECORD` mới sinh).
+  **`OTHER` bắt buộc có `rewardDescription`**
+- ✅ `autoCreateSettlement=true`: settlement tự sinh lúc duyệt bài, gọi tạo thủ
+  công lần 2 bị chặn 409
+
+### BE Phase 1 đã deploy (verify 19:50 ngày 26/08, giờ VN)
+
+`confirm-received` → `SETTLED` nay sinh `LedgerEntry`: `entryType=REWARD`,
+`sourceType=TASK_REWARD_SETTLEMENT`, `sourceId=settlementId`, `metadata` đủ
+`taskId`/`receiverMemberId`/`confirmedAt`. Có chống trùng (gọi lại → 400, sổ vẫn
+1 entry). BE **không** trả `ledgerEntryId` trong settlement response → FE dò
+ngược bằng `sourceType`+`sourceId`, đã verify chạy tốt.
+
+BE gom `REWARD` vào nhóm cash-out, FE cũng tính là khoản chi → **khớp nhau**.
+
+### ⚠️ Việc còn dở — LÀM TIẾP TỪ ĐÂY
+
+1. **Test bấm tay vai Member** — chưa làm. Cần đăng xuất tài khoản Manager trên
+   máy (`ngophamnhutduy050302@gmail.com`) rồi đăng nhập Member
+   (`nhatdeptrai281003@gmail.com`). Checklist ở mục 4.2 của
+   `KICH_BAN_TEST_THUONG_2026-08-26.md`: nút Xác nhận/Tranh chấp, nộp bài thiếu
+   minh chứng có báo lỗi rõ không, khoản thưởng có hiện trong Sổ thu chi không.
+   **Máy đang đăng nhập Manager** — hỏi user trước khi đăng xuất.
+2. **Ba mục chờ BE trả lời** (đều đã gửi, chưa có phản hồi):
+   - `description` bút toán thưởng ghi `"Thuong nhiem vu"` **không dấu** — FE đã
+     vá hiển thị, nhưng dữ liệu trong DB vẫn sai
+   - `GET /families/{id}/tasks` thiếu `rewardSetting` → FE phải gọi 50 request
+     (`DE_XUAT_BE_TASK_LIST_REWARD_2026-08-26.md`)
+   - `GET /invite-code` Deputy/Member đều đọc được, lệch mô hình quyền
+3. **So sánh tháng trước** (mũi tên tăng/giảm thu–chi) — chưa làm, **không cần
+   chờ BE**: `cash-flow-summary` đã trả sẵn `byMonth[]` với key `month:"2026-06"`,
+   FE gọi 2-6 tháng rồi tự tính là xong.
+
+### Ràng buộc API đã verify hôm nay (đừng đoán lại)
+
+| Thứ | Đúng | Sai thì bị |
+|---|---|---|
+| Ledger query | chỉ `limit` (≤100) + `page` | `limit=500`/`sortBy`/`entryType` → 400 |
+| `member-contribution-summary` | chỉ `periodStart`/`periodEnd` | `month`/`year` → 400 |
+| `rewardType` | `MONEY_RECORD`/`POINT`/`OTHER` | `MONEY` → 400 |
+| Nộp bài | bắt buộc `proofs[]` | rỗng → 400 |
+| `member-contribution-summary` | trả `data.members[]`, tên ở `member.user.fullName` (`displayName` **luôn null**) | đọc `items`/`memberName` → rỗng |
+
+### Môi trường
+
+- Build APK: **bắt buộc** `GRADLE_USER_HOME="D:/gradle_home_temp"` (cache repo-
+  local `.gradle-user-home` đã xoá + gitignore, giải phóng 6.3GB ổ D).
+- `flutter build apk --release` **không cài được** (`INSTALL_PARSE_FAILED_NO_
+  CERTIFICATES`) — máy không có keystore. Cài lên máy thật phải dùng `--debug`.
+- Máy Oppo CPH2159 đang cài bản `b2805ca`. Kiểm bằng
+  `adb shell dumpsys package com.company.familycare | grep lastUpdateTime`.
+  **Đừng nhìn `versionName`** — `pubspec.yaml` đứng yên ở `1.0.0+1`.
+- Màn hình máy tự tắt giữa các lệnh adb → `adb shell svc power stayon true` rồi
+  `input keyevent KEYCODE_WAKEUP` trước khi `screencap`, nếu không ảnh ra đen.
+- Token JWT sống **15 phút** — script test chạy lâu phải lấy lại token.
+
+---
+
+## Trạng thái phiên trước (25/08/2026 chiều)
 
 Nhánh: **`NDuy`** = `5f2356f`, **đã push lên `origin/NDuy`** (fast-forward sạch,
 không đè gì của ai). `main` local + remote vẫn `acef8d1`, chưa merge.

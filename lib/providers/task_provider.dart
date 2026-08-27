@@ -659,33 +659,24 @@ class TaskProvider extends ChangeNotifier {
 
   // ── Tasks ────────────────────────────────────────────────────────────────
 
-  /// Đã nạp xong `rewardSetting` cho danh sách hiện tại chưa.
+  /// Danh sách task đã kèm `rewardSetting` hay chưa.
   ///
-  /// Nơi hiển thị phải dựa vào cờ này để phân biệt **"chưa đặt thưởng"** với
-  /// **"chưa biết"**: `rewardSetting == null` lúc chưa hydrate KHÔNG có nghĩa là
-  /// việc đó không có thưởng.
+  /// Từ 27/08/2026 **BE trả sẵn `rewardSetting` trong `GET .../tasks`** (verify
+  /// thật: 50/50 item có field, việc chưa đặt thưởng trả `null`), nên luôn đúng
+  /// ngay sau khi tải xong. Giữ lại cờ này để nơi hiển thị không phải sửa, và
+  /// để nếu BE lỡ bỏ field thì màn hình chỉ **thiếu** chip chứ không **nói sai**
+  /// "Chưa đặt thưởng".
   bool rewardSettingsHydrated = false;
 
-  /// Lần gần nhất có yêu cầu hydrate hay không — để các lần refresh nội bộ
-  /// (duyệt bài, tạo/sửa/huỷ việc…) **giữ nguyên** lựa chọn của màn đang mở.
-  bool _hydrateRewardSettingsSticky = false;
-
-  /// [hydrateRewardSettings] `null` = giữ nguyên lựa chọn lần trước.
-  ///
-  /// Trước đây 8 chỗ gọi `fetchTasks()` không kèm cờ này (duyệt bài, tạo/sửa/
-  /// huỷ việc…) nên vừa duyệt xong là **toàn bộ chip thưởng biến mất** khỏi màn
-  /// Quản lý nhiệm vụ, phải thoát ra vào lại mới thấy.
+  /// Bỏ tham số `hydrateRewardSettings` cũ: BE đã trả sẵn `rewardSetting` nên
+  /// không cần N+1 request nữa (trước đây màn Quản lý nhiệm vụ gọi thêm 1
+  /// request cho **mỗi** việc — 50 việc là 50 request).
   Future<void> fetchTasks({
     String? status,
     String? taskCategoryId,
     String? priority,
     String? taskType,
-    bool? hydrateRewardSettings,
   }) async {
-    if (hydrateRewardSettings != null) {
-      _hydrateRewardSettingsSticky = hydrateRewardSettings;
-    }
-    final hydrate = _hydrateRewardSettingsSticky;
     loading = true;
     error = null;
     tasks = [];
@@ -700,23 +691,14 @@ class TaskProvider extends ChangeNotifier {
         'limit': 100,
       });
       final data = await ApiClient.instance.get('/families/$_fid/tasks$qs');
-      tasks = _list(data).map(FamilyTask.fromJson).toList();
-      // The list endpoint currently may omit rewardSetting. Only the task
-      // management list needs that detail for its reward badge, so hydrate it
-      // there instead of showing the misleading “Chưa đặt thưởng” state.
-      if (hydrate && tasks.isNotEmpty) {
-        final listedTasks = tasks;
-        tasks = await Future.wait(
-          listedTasks.map((task) async {
-            if (task.rewardSetting != null) return task;
-            final setting = await fetchRewardSetting(task.id);
-            return setting == null
-                ? task
-                : task.copyWith(rewardSetting: setting);
-          }),
-        );
-        rewardSettingsHydrated = true;
-      }
+      final raw = _list(data);
+      tasks = raw.map(FamilyTask.fromJson).toList();
+      // BE trả sẵn `rewardSetting` trong từng item từ 27/08/2026 (verify thật:
+      // 50/50 item có field, việc chưa đặt thưởng trả `null`). Chỉ coi là đã
+      // biết khi response THỰC SỰ có key đó — nếu BE lỡ bỏ đi thì màn hình chỉ
+      // thiếu chip, không quay lại khẳng định sai "Chưa đặt thưởng".
+      rewardSettingsHydrated =
+          raw.isEmpty || raw.any((e) => e.containsKey('rewardSetting'));
     } catch (e) {
       error = e.toString();
     } finally {

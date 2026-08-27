@@ -1,5 +1,26 @@
 # Đề xuất BE — `GET /families/{id}/tasks` thiếu `rewardSetting`
 
+> ## ✅ ĐÃ XONG — BE deploy 27/08/2026, FE đã gỡ N+1
+>
+> Verify thật bằng token Manager trên gia đình `NDuy`:
+> **50/50 item có field `rewardSetting`**, 25 item có thưởng, việc chưa đặt
+> thưởng trả `null` đúng như đề nghị. Shape khớp endpoint riêng:
+> `id, taskId, rewardType, rewardAmount, rewardDescription, autoCreateSettlement,
+> createdAt, updatedAt`.
+>
+> **FE đã gỡ toàn bộ N+1**: bỏ tham số `hydrateRewardSettings` và khối
+> `Future.wait` gọi `reward-setting` cho từng việc → màn Quản lý nhiệm vụ từ
+> **51 request** (1 danh sách + 50 chi tiết) xuống còn **1 request**.
+>
+> Giữ lại cờ `rewardSettingsHydrated` nhưng nay tính theo việc response **có
+> chứa key** `rewardSetting` hay không — nếu sau này BE lỡ bỏ field thì màn hình
+> chỉ **thiếu** chip chứ không quay lại khẳng định sai "Chưa đặt thưởng".
+>
+> Phần dưới giữ nguyên làm hồ sơ.
+
+---
+
+
 **Ngày:** 26/08/2026 · **Mức độ:** **Nên có** (không chặn nghiệp vụ, nhưng hiển
 thị sai thông tin cho người dùng)
 **Người kiểm chứng:** FE, đo bằng token thật trên gia đình `NDuy`

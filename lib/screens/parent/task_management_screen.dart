@@ -65,7 +65,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       // (assignment.status không đổi thành UNAVAILABLE khi báo bận — verify
       // bằng data thật 24/08 — nên phải tra riêng theo TaskUnavailability).
       tasks.fetchUnavailabilities();
-      await tasks.fetchTasks(hydrateRewardSettings: true);
+      await tasks.fetchTasks();
       if (!mounted) return;
       // GET /tasks không trả kèm assignment → nạp thêm để item hiện người làm
       // và thời gian. Chạy sau khi có danh sách để biết cần nạp task nào.
@@ -257,7 +257,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               Expanded(
                 child: _errorView(
                   taskState.error!,
-                  () => taskState.fetchTasks(hydrateRewardSettings: true),
+                  () => taskState.fetchTasks(),
                 ),
               )
             else ...[
@@ -356,7 +356,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
               Expanded(
                 child: RefreshIndicator(
                   onRefresh: () =>
-                      taskState.fetchTasks(hydrateRewardSettings: true),
+                      taskState.fetchTasks(),
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     children: [
