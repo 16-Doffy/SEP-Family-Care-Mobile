@@ -3395,7 +3395,16 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
   /// chỉ hiện khi BE trả `createdByMember` — Swagger chưa document field này nên
   /// không có thì ẩn hẳn dòng thay vì hiện "Không rõ".
   List<Widget> _taskMetaLines(BuildContext context, FamilyTask task) {
-    final assignments = context.watch<TaskProvider>().assignmentsFor(task.id);
+    final taskState = context.watch<TaskProvider>();
+    final assignments = taskState.assignmentsFor(task.id);
+    // Bắt được trên máy thật 27/08: danh sách nhiệm vụ dài (56 việc) tạo ra
+    // hàng chục request đồng thời để nạp assignment, vài cái bị BE trả lỗi
+    // tạm thời (502/rate-limit) — task đó KẸT VĨNH VIỄN ở "Chưa giao cho ai"
+    // dù thực tế đã giao (mở chi tiết ra vẫn thấy đúng, vì đó là request
+    // riêng lẻ không bị dính lô). Phải phân biệt "chưa tải xong" với "đã tải
+    // và xác nhận không ai làm" — không thì màn Quản lý nhiệm vụ liên tục nói
+    // sai cho các gia đình có nhiều việc.
+    final assignmentsLoaded = taskState.hasLoadedAssignments(task.id);
     final active = assignments
         .where((a) => a.status != 'CANCELED')
         .toList(growable: false);
@@ -3415,13 +3424,18 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
           : name;
     }
     final assigneeNames = assigneesByMemberId.values.toList(growable: false);
-    final assignee = switch (assigneeNames.length) {
-      0 => 'Chưa giao cho ai',
-      1 => assigneeNames.first,
-      2 => '${assigneeNames[0]}, ${assigneeNames[1]}',
-      _ =>
-        '${assigneeNames[0]}, ${assigneeNames[1]} và ${assigneeNames.length - 2} người khác',
-    };
+    // `null` = chưa biết (đang tải hoặc lần tải trước lỗi) — KHÔNG được hiện
+    // "Chưa giao cho ai" trong trường hợp này, đó là khẳng định sai. Chỉ khi
+    // đã tải xong thành công mới có thể kết luận rỗng nghĩa là chưa giao.
+    final assignee = !assignmentsLoaded
+        ? null
+        : switch (assigneeNames.length) {
+            0 => 'Chưa giao cho ai',
+            1 => assigneeNames.first,
+            2 => '${assigneeNames[0]}, ${assigneeNames[1]}',
+            _ =>
+              '${assigneeNames[0]}, ${assigneeNames[1]} và ${assigneeNames.length - 2} người khác',
+          };
 
     // Ưu tiên hạn của assignment (sát thực tế hơn), không có thì lấy hạn task.
     final due = active
@@ -3456,7 +3470,7 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
     final rows = <String>[
       ?(assigner == null ? null : 'Người giao: $assigner'),
-      'Người làm: $assignee',
+      ?(assignee == null ? null : 'Người làm: $assignee'),
       ?(timeParts.isEmpty ? null : timeParts.join(' · ')),
     ];
 

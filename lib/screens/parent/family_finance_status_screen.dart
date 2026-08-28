@@ -85,8 +85,11 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
       ? value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
       : const [];
 
+  // Khoảng trắng KHÔNG NGẮT DÒNG (U+00A0) trước "₫" — số tiền lớn (9 chữ số
+  // trở lên) trong "Đóng góp gia đình" từng bị tách dòng ngay tại dấu cách,
+  // để "đ" trơ trọi rơi xuống dòng dưới một mình.
   static String _money(double value) =>
-      '${value.round().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (m) => '${m[1]},')} ₫';
+      '${value.round().toString().replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (m) => '${m[1]},')} ₫';
 
   @override
   Widget build(BuildContext context) {
@@ -275,60 +278,39 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                         style: _muted,
                       )
                     : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Không hiển thị số đóng góp trần trụi mà không giải
+                          // thích: người xem dễ hiểu nhầm "Quỹ chung" và "Mục
+                          // tiêu" là cùng một khoản, hoặc tưởng cột bên phải là
+                          // tổng cộng của 2 số bên trái (thực ra 2 nguồn độc
+                          // lập, cột phải có thể lớn hơn hoặc nhỏ hơn tổng đó
+                          // tuỳ dữ liệu ledger).
+                          Text(
+                            'Mỗi người có 2 khoản đóng góp độc lập: vào quỹ '
+                            'chung của cả nhà, và vào các mục tiêu tiết kiệm '
+                            'riêng. Cột bên phải là tổng cộng cả hai.',
+                            style: _muted.copyWith(fontSize: 12, height: 1.4),
+                          ),
+                          const SizedBox(height: 12),
                           // BE không trả "kế hoạch vs thực tế" cho endpoint này
                           // mà trả đóng góp theo 2 nguồn: quỹ chung và mục tiêu
                           // tiết kiệm. Hiển thị đúng thứ BE có, không bịa ra
                           // con số chênh lệch so với kế hoạch.
-                          ...contributions.take(5).map((c) {
-                            final shared = _number(c['sharedContribution']);
-                            final goal = _number(c['goalContribution']);
-                            final total = _number(
-                              c['totalContribution'] ??
-                                  c['ledgerContributionTotal'],
-                            );
-                            final member = c['member'] is Map
-                                ? Map<String, dynamic>.from(c['member'] as Map)
-                                : const <String, dynamic>{};
-                            final user = member['user'] is Map
-                                ? Map<String, dynamic>.from(
-                                    member['user'] as Map,
-                                  )
-                                : const <String, dynamic>{};
-                            // `displayName` thường null trên dữ liệu thật →
-                            // phải rơi về user.fullName, nếu không sẽ hiện
-                            // trống hàng loạt.
-                            final name =
-                                (member['displayName']?.toString().trim() ?? '')
-                                    .isNotEmpty
-                                ? member['displayName'].toString()
-                                : (user['fullName']?.toString().trim() ?? '')
-                                      .isNotEmpty
-                                ? user['fullName'].toString()
-                                : 'Thành viên';
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                name,
-                                style: GoogleFonts.inter(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              subtitle: Text(
-                                'Quỹ chung ${_money(shared)} · Mục tiêu ${_money(goal)}',
-                                style: _muted,
-                              ),
-                              trailing: Text(
-                                _money(total),
-                                style: TextStyle(
-                                  color: total > 0
-                                      ? AppColors.success
-                                      : AppColors.textMuted,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            );
-                          }),
+                          for (final (i, c) in contributions.take(5).indexed)
+                            Builder(
+                              builder: (_) {
+                                if (i > 0) {
+                                  return Column(
+                                    children: [
+                                      const Divider(height: 1),
+                                      _contributionRow(c),
+                                    ],
+                                  );
+                                }
+                                return _contributionRow(c);
+                              },
+                            ),
                           if (contributionTotals.isNotEmpty) ...[
                             const Divider(height: 20),
                             Row(
@@ -407,6 +389,65 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Một dòng thành viên trong "Đóng góp gia đình".
+  ///
+  /// Trước dùng `ListTile` (title/subtitle/trailing) — với số tiền 8-9 chữ số,
+  /// `trailing` bị ép sát vào title/subtitle nên chữ tràn ra ngoài card (đo
+  /// thật 27/08). Dựng lại bằng `Column`: dòng 1 luôn đủ chỗ cho tên
+  /// (`Expanded`) + tổng tiền, dòng 2 hiện riêng phần quỹ chung/mục tiêu, tự
+  /// xuống dòng khi dài mà không chèn lên số ở trên.
+  Widget _contributionRow(Map<String, dynamic> c) {
+    final shared = _number(c['sharedContribution']);
+    final goal = _number(c['goalContribution']);
+    final total = _number(c['totalContribution'] ?? c['ledgerContributionTotal']);
+    final member = c['member'] is Map
+        ? Map<String, dynamic>.from(c['member'] as Map)
+        : const <String, dynamic>{};
+    final user = member['user'] is Map
+        ? Map<String, dynamic>.from(member['user'] as Map)
+        : const <String, dynamic>{};
+    // `displayName` thường null trên dữ liệu thật → phải rơi về user.fullName,
+    // nếu không sẽ hiện trống hàng loạt.
+    final name = (member['displayName']?.toString().trim() ?? '').isNotEmpty
+        ? member['displayName'].toString()
+        : (user['fullName']?.toString().trim() ?? '').isNotEmpty
+        ? user['fullName'].toString()
+        : 'Thành viên';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _money(total),
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: total > 0 ? AppColors.success : AppColors.textMuted,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Quỹ chung ${_money(shared)} · Mục tiêu ${_money(goal)}',
+            style: _muted,
+          ),
+        ],
       ),
     );
   }

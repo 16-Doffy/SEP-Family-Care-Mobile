@@ -646,6 +646,16 @@ class TaskProvider extends ChangeNotifier {
   List<TaskCategory> categories = [];
   List<TaskAssignment> myAssignments = [];
   final Map<String, List<TaskAssignment>> _assignmentsByTask = {};
+
+  /// Task đã tải assignment **thành công** ít nhất 1 lần — kể cả khi kết quả là
+  /// rỗng (thật sự chưa giao cho ai). Dùng để phân biệt với "chưa tải xong /
+  /// tải lỗi", vì `_assignmentsByTask[id] ?? []` trả về `[]` giống hệt nhau ở
+  /// cả 2 trường hợp — nơi hiển thị không được suy ra "Chưa giao cho ai" khi
+  /// thực ra chỉ là chưa biết. Xem [ensureAssignmentsFor].
+  final Set<String> _assignmentsLoaded = {};
+
+  bool hasLoadedAssignments(String taskId) =>
+      _assignmentsLoaded.contains(taskId);
   List<RewardSettlement> rewardSettlements = [];
   List<RewardDispute> rewardDisputes = [];
   List<TaskUnavailability> unavailabilities = [];
@@ -864,8 +874,6 @@ class TaskProvider extends ChangeNotifier {
   }
 
   Future<void> fetchTaskAssignments(String taskId, {String? status}) async {
-    _assignmentsByTask[taskId] = [];
-    notifyListeners();
     try {
       final qs = _qs({'status': status, 'limit': 100});
       final data = await ApiClient.instance.get(
@@ -874,6 +882,9 @@ class TaskProvider extends ChangeNotifier {
       _assignmentsByTask[taskId] = _list(
         data,
       ).map(TaskAssignment.fromJson).toList();
+      // Không đánh dấu "đã tải" khi có lọc theo status — kết quả khi đó là
+      // MỘT PHẦN, không đại diện đúng cho "ai đang làm việc này" ở danh sách.
+      if (status == null) _assignmentsLoaded.add(taskId);
       notifyListeners();
     } catch (e) {
       debugPrint('TaskProvider: fetchTaskAssignments failed: $e');
@@ -888,6 +899,21 @@ class TaskProvider extends ChangeNotifier {
   /// sách dài. Xem đề xuất BE gộp sẵn vào `GET /tasks` để bỏ hẳn N+1 này.
   static const int _assignmentBatch = 4;
 
+  /// Task đang có request nạp assignment bay — chặn gọi trùng khi
+  /// [ensureAssignmentsFor] được gọi chồng lên nhau (ví dụ initState +
+  /// pull-to-refresh gần như cùng lúc), không dùng `_assignmentsByTask` để
+  /// dedupe nữa vì nay nó chỉ chứa dữ liệu **đã xác nhận thật**.
+  final Set<String> _assignmentsInFlight = {};
+
+  /// Bắt được trên máy thật 27/08: danh sách 56 nhiệm vụ tạo ra 56 request
+  /// đồng thời (14 lô x 4) để lấy assignment. Vài request bị BE trả 502/rate-
+  /// limit — trước đây lỗi bị nuốt và task đó **kẹt vĩnh viễn** ở "Chưa giao
+  /// cho ai": (1) do đặt sẵn `_assignmentsByTask[id] = []` NGAY trước khi gọi,
+  /// hiện tượng này tự nó đã sai (xoá dữ liệu thật đang có trước khi biết lần
+  /// tải mới có thành công không); (2) do lần gọi sau dùng `containsKey` để
+  /// bỏ qua, nên cái `[]` giả đó khiến task không bao giờ được thử tải lại.
+  /// Nay dùng [_assignmentsLoaded] làm mốc "đã có dữ liệu thật" — không xoá gì
+  /// trước khi có kết quả, và lần gọi sau vẫn thử lại được task từng lỗi.
   Future<void> ensureAssignmentsFor(
     Iterable<String> taskIds, {
     bool forceRefresh = false,
@@ -896,26 +922,29 @@ class TaskProvider extends ChangeNotifier {
         .where(
           (id) =>
               id.isNotEmpty &&
-              (forceRefresh || !_assignmentsByTask.containsKey(id)),
+              !_assignmentsInFlight.contains(id) &&
+              (forceRefresh || !_assignmentsLoaded.contains(id)),
         )
         .toSet()
         .toList();
     if (missing.isEmpty) return;
 
-    // Đặt chỗ trước để lần gọi kế tiếp không nạp trùng cùng một task.
-    for (final id in missing) {
-      _assignmentsByTask[id] = const [];
-    }
-
-    for (var i = 0; i < missing.length; i += _assignmentBatch) {
-      final batch = missing.skip(i).take(_assignmentBatch);
-      await Future.wait(batch.map(_loadAssignmentsQuiet));
-      notifyListeners();
+    _assignmentsInFlight.addAll(missing);
+    try {
+      for (var i = 0; i < missing.length; i += _assignmentBatch) {
+        final batch = missing.skip(i).take(_assignmentBatch);
+        await Future.wait(batch.map(_loadAssignmentsQuiet));
+        notifyListeners();
+      }
+    } finally {
+      _assignmentsInFlight.removeAll(missing);
     }
   }
 
-  /// Nạp assignment của 1 task, lỗi thì bỏ qua — danh sách task vẫn phải hiện
-  /// được dù phần người làm không lấy được.
+  /// Nạp assignment của 1 task. Lỗi thì bỏ qua và **giữ nguyên** dữ liệu cũ
+  /// (nếu có) — danh sách task vẫn phải hiện được dù phần người làm không lấy
+  /// được, nhưng không được biến "chưa tải được" thành khẳng định sai "chưa
+  /// giao cho ai" (xem [hasLoadedAssignments]).
   Future<void> _loadAssignmentsQuiet(String taskId) async {
     try {
       final data = await ApiClient.instance.get(
@@ -924,6 +953,7 @@ class TaskProvider extends ChangeNotifier {
       _assignmentsByTask[taskId] = _list(
         data,
       ).map(TaskAssignment.fromJson).toList();
+      _assignmentsLoaded.add(taskId);
     } catch (e) {
       debugPrint('TaskProvider: assignments of $taskId failed: $e');
     }
