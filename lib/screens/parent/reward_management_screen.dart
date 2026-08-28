@@ -204,7 +204,7 @@ class _SettlementsTab extends StatelessWidget {
         const SizedBox(width: 9),
         Expanded(
           child: Text(
-            'Người nhận không tự xử lý khoản thưởng của mình. Tranh chấp chỉ xuất hiện sau khi người quản lý đánh dấu đã trả và người nhận chọn “Chưa nhận”.',
+            'Người quản lý ghi nhận đã trả hoặc hủy khoản thưởng. Sau khi đã trả, người nhận xác nhận “Đã nhận” hoặc chọn “Chưa nhận” để tạo tranh chấp.',
             style: GoogleFonts.inter(
               fontSize: 12,
               height: 1.4,
@@ -223,12 +223,13 @@ class _SettlementsTab extends StatelessWidget {
         .members
         .where((m) => m.userId == currentUser?.id)
         .firstOrNull;
-    // BE chặn Deputy xác nhận/hủy settlement mà Deputy chính là người nhận.
-    // Đừng hiển thị action chắc chắn trả lỗi 403; Manager vẫn xử lý bình thường.
-    final isDeputyOwnSettlement =
-        currentUser?.familyRoleString == 'DEPUTY_MEMBER' &&
-        (s.receiverUserId == currentUser?.id ||
-            (currentMember != null && s.receiverMemberId == currentMember.id));
+    // Người nhận không được tự ghi nhận đã trả hoặc hủy khoản của mình. Nhưng
+    // sau khi người quản lý mark-paid, chính người nhận (kể cả Deputy) PHẢI có
+    // quyền xác nhận đã nhận hoặc báo chưa nhận. Bản cũ gộp hai quyền này và
+    // khiến Deputy bị kẹt ở nhãn "Đã trả, chờ xác nhận" không có nút bấm.
+    final isOwnSettlement =
+        s.receiverUserId == currentUser?.id ||
+        (currentMember != null && s.receiverMemberId == currentMember.id);
     return GestureDetector(
       onTap: () => _showDetail(context, s),
       child: _card(
@@ -265,21 +266,26 @@ class _SettlementsTab extends StatelessWidget {
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: s.statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    s.statusLabel,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: s.statusColor,
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: s.statusColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      s.statusLabel,
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: s.statusColor,
+                      ),
                     ),
                   ),
                 ),
@@ -304,7 +310,7 @@ class _SettlementsTab extends StatelessWidget {
                 ),
               ),
             ],
-            if (s.needsMarkPaid && isDeputyOwnSettlement) ...[
+            if (s.needsMarkPaid && isOwnSettlement) ...[
               const SizedBox(height: 10),
               Text(
                 'Bạn là người nhận khoản thưởng này. Trưởng nhóm sẽ thực hiện thanh toán hoặc hủy.',
@@ -315,21 +321,25 @@ class _SettlementsTab extends StatelessWidget {
                 ),
               ),
             ],
-            if (s.needsMarkPaid && !isDeputyOwnSettlement) ...[
+            if (s.needsMarkPaid && !isOwnSettlement) ...[
               const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: SizedBox(
-                      height: 36,
+                      // Android có thể cắt nét dấu tiếng Việt khi nút 36px,
+                      // nhất là với Inter đậm trên máy font scale lớn.
+                      height: 42,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.success,
-                          padding: EdgeInsets.zero,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                         ),
                         onPressed: () => _markPaid(context, s),
                         child: Text(
                           'Đánh dấu đã trả',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -342,14 +352,78 @@ class _SettlementsTab extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: SizedBox(
-                      height: 36,
+                      height: 42,
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           side: const BorderSide(color: AppColors.danger),
                         ),
                         onPressed: () => _cancelSettlement(context, s),
                         child: Text(
                           'Hủy thưởng',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.danger,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (s.status == 'WAITING_CONFIRMATION' && isOwnSettlement) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Người quản lý đã ghi nhận đã trả. Hãy xác nhận để hoàn tất, hoặc báo chưa nhận nếu thông tin không đúng.',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  height: 1.35,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 38,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        onPressed: () => _confirmReceived(context, s),
+                        child: Text(
+                          'Đã nhận',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: SizedBox(
+                      height: 38,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          side: const BorderSide(color: AppColors.danger),
+                        ),
+                        onPressed: () => _showDisputeDialog(context, s.id),
+                        child: Text(
+                          'Chưa nhận',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -366,6 +440,93 @@ class _SettlementsTab extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmReceived(
+    BuildContext context,
+    RewardSettlement settlement,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xác nhận đã nhận thưởng?'),
+        content: const Text(
+          'Xác nhận này sẽ hoàn tất khoản thưởng và không thể báo chưa nhận sau đó.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Quay lại'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.success),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Đã nhận'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await context.read<TaskProvider>().confirmRewardReceived(settlement.id);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showDisputeDialog(
+    BuildContext context,
+    String settlementId,
+  ) async {
+    final reasonCtrl = TextEditingController();
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          title: const Text('Báo chưa nhận thưởng'),
+          content: TextField(
+            controller: reasonCtrl,
+            autofocus: true,
+            maxLines: 3,
+            onChanged: (_) => setDialogState(() {}),
+            decoration: const InputDecoration(hintText: 'Lý do...'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: reasonCtrl.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, reasonCtrl.text.trim()),
+              child: const Text('Gửi báo cáo'),
+            ),
+          ],
+        ),
+      ),
+    );
+    reasonCtrl.dispose();
+    if (reason == null || !context.mounted) return;
+    try {
+      await context.read<TaskProvider>().createDispute(settlementId, reason);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceFirst('Exception: ', '')),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _cancelSettlement(

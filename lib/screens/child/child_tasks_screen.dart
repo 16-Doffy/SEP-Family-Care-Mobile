@@ -443,6 +443,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
     final cat = a.task?.taskCategoryName;
     final effectiveDueAt = a.dueAt ?? a.task?.dueAt;
     final isOverdue = _isOverdue(a, effectiveDueAt);
+    final isNotStarted = isAssignmentNotStarted(a);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -639,7 +640,13 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                   a.status == 'REJECTED'))
             _overdueBlockedNote(a),
 
-          if (a.status == 'ASSIGNED' && !isOverdue)
+          if (isNotStarted &&
+              (a.status == 'ASSIGNED' ||
+                  a.status == 'IN_PROGRESS' ||
+                  a.status == 'REJECTED'))
+            _notStartedNote(a),
+
+          if (a.status == 'ASSIGNED' && !isOverdue && !isNotStarted)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: SizedBox(
@@ -679,7 +686,7 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
               ),
             ),
 
-          if (a.status == 'IN_PROGRESS' && !isOverdue)
+          if (a.status == 'IN_PROGRESS' && !isOverdue && !isNotStarted)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: Row(
@@ -850,6 +857,38 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                 fontSize: 12,
                 height: 1.35,
                 color: const Color(0xFF92400E),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _notStartedNote(TaskAssignment a) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.schedule_rounded,
+            size: 16,
+            color: Color(0xFF2563EB),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Nhiệm vụ này bắt đầu từ ${_fmtDateTime(a.startAt!)}. Bạn chưa thể bắt đầu hoặc nộp bài sớm.',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                height: 1.35,
+                color: const Color(0xFF1E3A8A),
               ),
             ),
           ),

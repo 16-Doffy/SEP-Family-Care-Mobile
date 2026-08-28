@@ -24,6 +24,17 @@ bool isAssignmentOverdue(TaskAssignment a, {DateTime? now}) {
   return due != null && due.isBefore(now ?? DateTime.now());
 }
 
+/// Phân công chưa đến thời điểm được phép bắt đầu.
+///
+/// `startAt` là mốc của chính lần phân công (đặc biệt quan trọng với task
+/// định kỳ), không phải ngày tạo task. API có thể vẫn trả `ASSIGNED` cho các
+/// lần ở tương lai; UI không được cho người nhận bắt đầu/nộp sớm chỉ vì status
+/// đó. Đúng mốc bắt đầu thì được làm.
+bool isAssignmentNotStarted(TaskAssignment a, {DateTime? now}) {
+  final start = a.startAt;
+  return start != null && (now ?? DateTime.now()).isBefore(start);
+}
+
 /// Chọn bài nộp nào để hiển thị / đưa ra duyệt.
 ///
 /// Bug gặp trên máy thật 19/08: code cũ lấy `list.last` — **phần tử cuối mảng**,
@@ -666,6 +677,25 @@ class TaskProvider extends ChangeNotifier {
   List<TaskAssignment> assignmentsFor(String taskId) =>
       _assignmentsByTask[taskId] ?? [];
 
+  /// Đồng bộ một assignment vừa đọc/gọi action vào cache của sheet chi tiết.
+  ///
+  /// Màn Quản lý nhiệm vụ giữ danh sách này tách với [myAssignments]. Khi BE
+  /// rate-limit các request danh sách, cache có thể còn `ASSIGNED` trong khi
+  /// GET detail đã trả `IN_PROGRESS`; nếu không thay bản ghi ngay, UI vẫn cho
+  /// bấm "Bắt đầu làm" rồi tự báo trạng thái không hợp lệ. Không đánh dấu
+  /// [_assignmentsLoaded] ở đây vì một bản ghi detail không thay thế cho list
+  /// đầy đủ của task.
+  void _upsertAssignmentInTaskCache(TaskAssignment assignment) {
+    if (assignment.id.isEmpty || assignment.taskId.isEmpty) return;
+    final current = _assignmentsByTask[assignment.taskId];
+    if (current == null) return;
+    final index = current.indexWhere((item) => item.id == assignment.id);
+    if (index < 0) return;
+    final updated = List<TaskAssignment>.from(current);
+    updated[index] = assignment;
+    _assignmentsByTask[assignment.taskId] = updated;
+  }
+
   String get _fid {
     final fid = ApiClient.instance.familyId;
     if (fid == null) throw Exception('Chưa có gia đình');
@@ -798,7 +828,15 @@ class TaskProvider extends ChangeNotifier {
       },
     );
     await fetchTasks();
-    return res.isNotEmpty ? FamilyTask.fromJson(res) : null;
+    // POST /tasks/recurring lồng khác hẳn POST /tasks thường: trả
+    // { task: {...}, schedule: {...} } thay vì task phẳng ở gốc — verify thật
+    // 28/08. Đọc thẳng `res` như trước sẽ ra FamilyTask toàn field rỗng (id
+    // rỗng, title rỗng...) dù BE tạo việc thành công thật. Giữ `res` làm lưới
+    // đỡ phòng BE đổi lại phẳng.
+    final taskJson = res['task'] is Map
+        ? Map<String, dynamic>.from(res['task'] as Map)
+        : res;
+    return taskJson.isNotEmpty ? FamilyTask.fromJson(taskJson) : null;
   }
 
   Future<void> updateSchedule(String taskId, Map<String, dynamic> patch) async {
@@ -874,6 +912,11 @@ class TaskProvider extends ChangeNotifier {
   }
 
   Future<void> fetchTaskAssignments(String taskId, {String? status}) async {
+    // Cùng một task không cần hai GET song song: sheet có thể được mở ngay khi
+    // bulk preload còn chạy, và request thứ hai chỉ làm BE rate-limit sớm hơn.
+    final isFullList = status == null;
+    if (isFullList && _assignmentsInFlight.contains(taskId)) return;
+    if (isFullList) _assignmentsInFlight.add(taskId);
     try {
       final qs = _qs({'status': status, 'limit': 100});
       final data = await ApiClient.instance.get(
@@ -888,6 +931,8 @@ class TaskProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('TaskProvider: fetchTaskAssignments failed: $e');
+    } finally {
+      if (isFullList) _assignmentsInFlight.remove(taskId);
     }
   }
 
@@ -897,7 +942,13 @@ class TaskProvider extends ChangeNotifier {
   /// Vì vậy: bỏ qua task đã có trong cache, và chạy theo lô [_assignmentBatch]
   /// thay vì bắn hết một lượt — tránh dựng hàng chục request cùng lúc khi danh
   /// sách dài. Xem đề xuất BE gộp sẵn vào `GET /tasks` để bỏ hẳn N+1 này.
-  static const int _assignmentBatch = 4;
+  // BE giới hạn endpoint assignment khá chặt. Bốn request song song vẫn bị
+  // chặn hàng loạt trên gia đình có 50+ task (log máy thật 28/08), nên ưu tiên
+  // độ đúng của trạng thái hơn là nạp đồng thời. Đây chỉ là giải pháp tạm cho
+  // N+1 đến khi BE embed assignment vào GET /tasks.
+  static const int _assignmentBatch = 1;
+  static const Duration _assignmentRequestSpacing = Duration(milliseconds: 350);
+  static const int _assignmentRetryCount = 2;
 
   /// Task đang có request nạp assignment bay — chặn gọi trùng khi
   /// [ensureAssignmentsFor] được gọi chồng lên nhau (ví dụ initState +
@@ -935,6 +986,11 @@ class TaskProvider extends ChangeNotifier {
         final batch = missing.skip(i).take(_assignmentBatch);
         await Future.wait(batch.map(_loadAssignmentsQuiet));
         notifyListeners();
+        // Không tạo burst mới ngay khi request trước vừa xong. Đặc biệt quan
+        // trọng sau một lần refresh có hàng chục task.
+        if (i + _assignmentBatch < missing.length) {
+          await Future<void>.delayed(_assignmentRequestSpacing);
+        }
       }
     } finally {
       _assignmentsInFlight.removeAll(missing);
@@ -946,17 +1002,36 @@ class TaskProvider extends ChangeNotifier {
   /// được, nhưng không được biến "chưa tải được" thành khẳng định sai "chưa
   /// giao cho ai" (xem [hasLoadedAssignments]).
   Future<void> _loadAssignmentsQuiet(String taskId) async {
-    try {
-      final data = await ApiClient.instance.get(
-        '/families/$_fid/tasks/$taskId/assignments${_qs({'limit': 100})}',
-      );
-      _assignmentsByTask[taskId] = _list(
-        data,
-      ).map(TaskAssignment.fromJson).toList();
-      _assignmentsLoaded.add(taskId);
-    } catch (e) {
-      debugPrint('TaskProvider: assignments of $taskId failed: $e');
+    for (var attempt = 0; attempt <= _assignmentRetryCount; attempt++) {
+      try {
+        final data = await ApiClient.instance.get(
+          '/families/$_fid/tasks/$taskId/assignments${_qs({'limit': 100})}',
+        );
+        _assignmentsByTask[taskId] = _list(
+          data,
+        ).map(TaskAssignment.fromJson).toList();
+        _assignmentsLoaded.add(taskId);
+        return;
+      } catch (e) {
+        final canRetry =
+            attempt < _assignmentRetryCount &&
+            _isTransientAssignmentListError(e);
+        if (!canRetry) {
+          debugPrint('TaskProvider: assignments of $taskId failed: $e');
+          return;
+        }
+        // Backoff 1s rồi 2s, thay vì tiếp tục dồn endpoint ngay sau 429/502.
+        await Future<void>.delayed(Duration(seconds: attempt + 1));
+      }
     }
+  }
+
+  bool _isTransientAssignmentListError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('thao tác quá nhanh') ||
+        message.contains('rate limit') ||
+        message.contains('429') ||
+        message.contains('502');
   }
 
   Future<void> fetchMyAssignments({
@@ -997,9 +1072,11 @@ class TaskProvider extends ChangeNotifier {
       final data = await ApiClient.instance.get(
         '/families/$_fid/tasks/assignments/$assignmentId',
       );
-      return data is Map<String, dynamic>
-          ? TaskAssignment.fromJson(data)
-          : null;
+      if (data is! Map<String, dynamic>) return null;
+      final assignment = TaskAssignment.fromJson(data);
+      _upsertAssignmentInTaskCache(assignment);
+      notifyListeners();
+      return assignment;
     } catch (e) {
       debugPrint('TaskProvider: getAssignmentDetail failed: $e');
       return null;
@@ -1014,12 +1091,57 @@ class TaskProvider extends ChangeNotifier {
     if (assignment != null && assignment.status != 'ASSIGNED') {
       throw StateError('Công việc không còn ở trạng thái được giao.');
     }
-    await ApiClient.instance.patch(
+    final result = await ApiClient.instance.patch(
       '/families/$_fid/tasks/assignments/$assignmentId/start',
       {},
     );
+    // Một số bản BE trả assignment sau PATCH; dùng ngay response này để sheet
+    // đổi sang "Đang làm" kể cả lúc GET list đang bị rate-limit.
+    TaskAssignment? updated;
+    if (result.isNotEmpty) {
+      final assignmentJson = result['assignment'] is Map
+          ? Map<String, dynamic>.from(result['assignment'] as Map)
+          : result;
+      // Không tin response rỗng/thiếu field của các bản BE cũ: status vừa
+      // PATCH thành công chắc chắn là IN_PROGRESS, còn các field khác giữ từ
+      // GET detail vừa đọc ở trên.
+      final fromResponse = assignmentJson.containsKey('status')
+          ? TaskAssignment.fromJson(assignmentJson)
+          : null;
+      updated =
+          fromResponse?.id.isNotEmpty == true &&
+              fromResponse?.taskId.isNotEmpty == true
+          ? fromResponse
+          : assignment == null
+          ? null
+          : _withAssignmentStatus(assignment, 'IN_PROGRESS');
+    } else if (assignment != null) {
+      updated = _withAssignmentStatus(assignment, 'IN_PROGRESS');
+    }
+    if (updated != null) {
+      _upsertAssignmentInTaskCache(updated);
+      notifyListeners();
+    }
     await fetchMyAssignments();
   }
+
+  TaskAssignment _withAssignmentStatus(TaskAssignment value, String status) =>
+      TaskAssignment(
+        id: value.id,
+        taskId: value.taskId,
+        taskTitle: value.taskTitle,
+        assignedToMemberId: value.assignedToMemberId,
+        assignedToName: value.assignedToName,
+        assignedByMemberId: value.assignedByMemberId,
+        assignedByName: value.assignedByName,
+        startAt: value.startAt,
+        dueAt: value.dueAt,
+        status: status,
+        rewardSetting: value.rewardSetting,
+        task: value.task,
+        latestSubmissionId: value.latestSubmissionId,
+        isOverdueFromServer: value.isOverdueFromServer,
+      );
 
   Future<void> cancelAssignment(String assignmentId) async {
     await ApiClient.instance.patch(

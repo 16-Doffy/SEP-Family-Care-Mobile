@@ -6,6 +6,7 @@ import 'package:family_care/screens/shared/task_submission_recap.dart';
 
 void main() {
   _isOverdueFromServerTests();
+  _notStartedAssignmentTests();
   _overdueAssignmentTests();
   _pickSubmissionTests();
   _overdueContractTests();
@@ -47,6 +48,41 @@ void main() {
       expect(auto('REJECTED'), isTrue);
       expect(auto('SUBMITTED'), isFalse);
       expect(auto('APPROVED'), isFalse);
+    });
+  });
+}
+
+void _notStartedAssignmentTests() {
+  final now = DateTime.parse('2026-08-28T10:00:00Z');
+  TaskAssignment assignment(String? startAt) => TaskAssignment(
+    id: 'a1',
+    taskId: 't1',
+    assignedToMemberId: 'm1',
+    status: 'ASSIGNED',
+    startAt: startAt == null ? null : DateTime.parse(startAt),
+  );
+
+  group('isAssignmentNotStarted', () {
+    test('khóa lần định kỳ ở ngày/giờ tương lai', () {
+      expect(
+        isAssignmentNotStarted(assignment('2026-08-29T08:00:00Z'), now: now),
+        isTrue,
+      );
+    });
+
+    test('đúng mốc bắt đầu và sau đó được làm', () {
+      expect(
+        isAssignmentNotStarted(assignment('2026-08-28T10:00:00Z'), now: now),
+        isFalse,
+      );
+      expect(
+        isAssignmentNotStarted(assignment('2026-08-28T09:59:00Z'), now: now),
+        isFalse,
+      );
+    });
+
+    test('không có startAt vẫn giữ hành vi task cũ', () {
+      expect(isAssignmentNotStarted(assignment(null), now: now), isFalse);
     });
   });
 }

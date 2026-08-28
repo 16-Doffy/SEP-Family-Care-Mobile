@@ -1,10 +1,136 @@
 # Family Care Mobile — AI Handoff (Latest)
 
-## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (26/08/2026 tối)
+## CẬP NHẬT CUỐI PHIÊN 28/08/2026 — FLOW DEPUTY / THƯỞNG
 
-`main` = `NDuy` = **`b2805ca`**, cả hai **đã push và đồng bộ** với remote
-(`0 0` cả hai chiều). `origin/giap` = `d05f299`, **đi sau `main` 27 commit**,
-không có gì mới của Giáp.
+### Trạng thái Git
+
+- HEAD vẫn là `main` tại `04dbc9f`; **chưa commit/push** thay đổi của phiên này.
+- Có thay đổi tracked dở dang từ trước lẫn phiên này ở: `AI_HANDOFF_LATEST.md`,
+  `android/app/build.gradle.kts`, `lib/providers/task_provider.dart`,
+  `lib/screens/child/child_tasks_screen.dart`,
+  `lib/screens/parent/reward_management_screen.dart`,
+  `lib/screens/parent/task_management_screen.dart`,
+  `test/task_submission_visibility_test.dart`.
+- Rất nhiều file `tmp_*`, `.tmp_report_audit/`, `tools/`, report/diagram/script
+  đang untracked: **không add vào commit code** nếu user không chỉ định.
+
+### Đã sửa trong source — chưa test tay trên máy thật
+
+1. **Task định kỳ ở tương lai:** thêm `isAssignmentNotStarted()` dùng `startAt`.
+   Member và Deputy (kể cả Deputy tự nhận task) không còn thấy nút Bắt đầu/Nộp
+   trước giờ bắt đầu; UI hiện thông báo mốc bắt đầu. Đúng thời điểm `startAt`
+   thì được làm.
+2. **Manager trả thưởng → Deputy nhận:** Deputy là người nhận giờ thấy hai nút
+   `Đã nhận` và `Chưa nhận` tại `RewardManagementScreen` khi settlement là
+   `WAITING_CONFIRMATION`. `Đã nhận` gọi `confirm-received`; `Chưa nhận` yêu
+   cầu lý do rồi tạo dispute. Vẫn không cho người nhận tự `mark-paid`/`cancel`
+   khoản của chính mình.
+3. Badge Quản lý phần thưởng ở màn Task tính thêm settlement đang chờ chính
+   Deputy xác nhận, để flow không bị chìm.
+4. UI phần thưởng: tăng chiều cao nút `Đánh dấu đã trả`/`Hủy thưởng` từ 36 lên
+   42px, thêm padding/ellipsis để không cắt chữ tiếng Việt. Status chip co giãn
+   trên màn hẹp.
+5. Snackbar sau khi duyệt task (không có thưởng / tắt tự tạo / có thưởng) dùng
+   floating snackbar, chừa 88px cho bottom navigation, padding + line-height rõ
+   ràng, tối đa 3 dòng: sửa lỗi mất dòng cuối trong ảnh user gửi.
+
+### Verify đã chạy
+
+- `flutter test`: **622/622 pass**.
+- `flutter analyze --no-fatal-infos`: **0 error**, còn 21 info/lint có sẵn;
+  trong đó 4 info `Radio` cũ ở `task_management_screen.dart`.
+- `git diff --check`: pass.
+
+### Việc đầu tiên phiên sau
+
+1. Build/cài APK mới và test tay đúng chuỗi: Manager giao recurring assignment
+   ở ngày/giờ tương lai → Deputy không thể bắt đầu sớm → đến giờ bắt đầu → nộp
+   → Manager duyệt → đánh dấu đã trả → Deputy `Đã nhận` hoặc `Chưa nhận`.
+2. Đối chiếu UI nút `Hủy thưởng` và snackbar duyệt trên máy Android thật.
+3. Không tự đăng xuất để đổi Manager/Deputy/Member; hỏi user trước vì thiết bị
+   có thể đang giữ phiên test.
+4. Nếu lỗi runtime, lưu ảnh + thời điểm + `adb logcat` có `flutter`,
+   `TaskProvider`, `ApiClient`, `Exception` để đối chiếu API/status code.
+
+## CẬP NHẬT CUỐI PHIÊN 27/08/2026 — TIẾP TỤC TỪ ĐÂY
+
+- `main` = `NDuy` = `origin/main` = `origin/NDuy` = **`8e98d86`**.
+- Đã hoàn tất lượt sửa UI/UX cho nhiệm vụ, phần thưởng, tài chính và album;
+  đồng thời chuẩn hóa component dùng chung (button, input, chip, bottom sheet,
+  loading, empty/error state và dark mode).
+- Flow nhiệm vụ/phần thưởng FE đã sửa: refresh phân công, hiển thị người làm/người
+  nhận/task, nhập lý do chưa nhận, làm rõ Hủy thưởng/Đã trả/Tranh chấp, chặn
+  Deputy tự xử lý settlement của chính mình.
+- Toàn bộ test đã chạy: **619/619 pass**. Analyze không có error; còn 4 info do
+  API `Radio` cũ của Flutter trong màn quản lý nhiệm vụ.
+- Lịch sử 9 commit gần nhất đã được đổi tên theo kiểu FE ngắn gọn. Do rewrite
+  history, hash mới nhất hiện là `8e98d86`; không dùng lại các hash cũ trong phần
+  lịch sử bên dưới.
+- **Điện thoại chưa chắc có code mới nhất.** Build APK cuối phiên bị kẹt do nhiều
+  tiến trình Java/Gradle cùng tồn tại. Phiên sau cần chạy lại
+  `flutter run -d cc28c069` hoặc build và `adb install -r` rồi kiểm tra app.
+
+### BE đã deploy — còn regression, không còn chờ deploy
+
+Đã kiểm tra trực tiếp Swagger production ngày 27/08/2026:
+
+1. Thanh toán là tiền trả ngoài ứng dụng (`CASH`, `BANK_TRANSFER`,
+   `THIRD_PARTY_WALLET`, `OTHER`); app chỉ ghi nhận đối soát, không chuyển tiền
+   thật.
+2. Manager và Deputy xem được settlement/tranh chấp; người nhận chỉ xem và xác
+   nhận settlement của mình. Manager hoặc Deputy được xử lý tranh chấp.
+3. `cancel` chỉ hủy settlement đang chờ trả hoặc chờ xác nhận. Đây không phải thao
+   tác tạo tranh chấp.
+4. Phase 1 tạo bút toán `REWARD` sau `confirm-received` đã được test trực tiếp
+   trước đó. Settlement response không cần trả `ledgerEntryId`; FE truy ngược
+   bằng `sourceType` và `sourceId`.
+5. Logic tạo `REWARD` chỉ áp dụng cho lần confirm sau deploy. Settlement đã
+   `SETTLED` trước deploy cần BE backfill nếu product muốn có dữ liệu lịch sử.
+   Verify ở family ledger theo tháng `confirmedAt`, không dùng
+   `MemberMonthlyFinance.actualIncome`.
+6. Settlement list đã embed `assignment` và thông tin người giao/người nhận.
+   Deputy tự xử lý settlement của mình trả code ổn định
+   `CANNOT_MANAGE_OWN_REWARD_SETTLEMENT`.
+7. Mỗi submission có tối đa một settlement; DB unique theo `taskSubmissionId`.
+   Cancel chuyển sang `CANCELED`, chưa có restore và chưa có cancel reason.
+
+Việc còn lại là test regression đủ hai nhánh Manager → Deputy/Member và Deputy →
+Member trên bản app mới. Chỉ báo lại BE nếu runtime vẫn trả 403 sai theo người
+giao/người nhận, hoặc response không khớp contract live.
+
+### Việc đầu tiên ở phiên sau
+
+1. Build/cài bản mới lên máy thật.
+2. Test tay đủ Manager → Deputy/Member và Deputy → Member cho cả
+   nhận thưởng và báo chưa nhận/tranh chấp.
+3. Ghi lại request/status code/payload nếu còn lỗi quyền để đối chiếu với BE.
+
+## 🟢 Trạng thái mới nhất — ĐỌC MỤC NÀY TRƯỚC (27/08/2026)
+
+`main` = `NDuy` = **`3860fc8`**, cả hai **đã push và đồng bộ** với remote.
+`origin/giap` = `d05f299`, đi sau `main`, không có gì mới của Giáp.
+
+### 🔴 Việc dở dang NGAY TRƯỚC KHI DỪNG
+
+**Chưa cài APK mới lên máy thật.** User rút USB đúng lúc build xong commit
+`3860fc8`. APK đã build sẵn ở `build/app/outputs/flutter-apk/app-debug.apk` —
+cắm lại USB rồi `adb install -r <đường dẫn>` là xong, **không cần build lại**.
+Cắm xong nhớ kiểm bằng `lastUpdateTime` (xem mục Môi trường bên dưới).
+
+**Việc test còn lại duy nhất: bấm tay vai Member.** Máy đang đăng nhập Manager
+(`ngophamnhutduy050302@gmail.com`), phải đăng xuất rồi đăng nhập
+`nhatdeptrai281003@gmail.com`. **HỎI USER TRƯỚC KHI ĐĂNG XUẤT.** Checklist ở
+mục 4.2 của `KICH_BAN_TEST_THUONG_2026-08-26.md`.
+
+### BE đã trả `rewardSetting` trong danh sách task (27/08) — đã gỡ N+1
+
+Verify thật: 50/50 item có field, 25 item có thưởng, việc chưa đặt thưởng trả
+`null`. FE đã bỏ tham số `hydrateRewardSettings` + khối `Future.wait` →
+màn Quản lý nhiệm vụ **từ 51 request xuống còn 1**. Lỗi "chip thưởng biến mất
+sau khi duyệt bài" cũng hết theo, vì không còn phân biệt lời gọi có/không
+hydrate. Cờ `rewardSettingsHydrated` giữ lại nhưng nay tính theo việc response
+**có chứa key** `rewardSetting` — BE lỡ bỏ field thì màn chỉ thiếu chip, không
+quay lại khẳng định sai "Chưa đặt thưởng".
 
 ⚠️ **Lịch sử đã bị viết lại hôm nay** (`push --force-with-lease`): gộp 2 commit
 chỉ-tài-liệu (`e0d79fc`, `8ad88df`) vào commit code liền kề, vì user cấm commit

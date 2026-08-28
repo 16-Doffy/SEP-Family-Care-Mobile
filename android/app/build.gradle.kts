@@ -18,7 +18,9 @@ if (hasReleaseSigning) {
 
 android {
     namespace = "com.familycare.family_care"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android hiện yêu cầu compileSdk 37. Chỉ nâng SDK dùng
+    // để biên dịch; minSdk/targetSdk và phạm vi thiết bị hỗ trợ giữ nguyên.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     // Unit test Kotlin nằm ở src/test/kotlin. Không khai dòng này thì AGP chỉ

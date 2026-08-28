@@ -128,10 +128,25 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
     final tasks = taskState.tasks;
     final active = tasks.where((t) => t.status == 'ACTIVE').length;
     final completed = tasks.where((t) => t.status == 'COMPLETED').length;
-    // Settlement cần Manager xử lý: chờ trả (PENDING_SETTLEMENT) + tranh chấp.
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    final currentMemberId = context
+        .read<FamilyProvider>()
+        .members
+        .where((m) => m.userId == currentUserId || m.id == currentUserId)
+        .firstOrNull
+        ?.id;
+    // Settlement cần quản lý xử lý: chờ trả + tranh chấp. Ngoài ra Deputy là
+    // người nhận cần thấy badge khi khoản đã trả và đang chờ chính họ xác nhận;
+    // nếu không có badge, flow mới vẫn rất khó khám phá từ màn nhiệm vụ.
     final pendingRewards = taskState.rewardSettlements
         .where(
-          (s) => s.status == 'PENDING_SETTLEMENT' || s.status == 'DISPUTED',
+          (s) =>
+              s.status == 'PENDING_SETTLEMENT' ||
+              s.status == 'DISPUTED' ||
+              (s.status == 'WAITING_CONFIRMATION' &&
+                  (s.receiverUserId == currentUserId ||
+                      (currentMemberId != null &&
+                          s.receiverMemberId == currentMemberId))),
         )
         .length;
 
@@ -488,6 +503,24 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   bool _isAssignmentOverdue(TaskAssignment a) => isAssignmentOverdue(a);
 
+  bool _isAssignmentNotStarted(TaskAssignment a) => isAssignmentNotStarted(a);
+
+  /// Snackbar sau khi duyệt có nội dung dài. Đặt padding + line-height rõ ràng
+  /// để không bị cắt dòng cuối trên Android khi nó nằm sát bottom navigation.
+  SnackBar _reviewNoticeSnackBar(String message, Color color) => SnackBar(
+    behavior: SnackBarBehavior.floating,
+    margin: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+    backgroundColor: color,
+    duration: const Duration(seconds: 5),
+    content: Text(
+      message,
+      maxLines: 3,
+      softWrap: true,
+      style: GoogleFonts.inter(fontSize: 13, height: 1.35, color: Colors.white),
+    ),
+  );
+
   /// `familyMember.id` của người đang đăng nhập.
   String? _myMemberId(BuildContext context) {
     final userId = context.read<AuthProvider>().user?.id;
@@ -673,6 +706,12 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         builder: (_, scrollCtrl) => Consumer<TaskProvider>(
           builder: (_, taskState, _) {
             final assignments = taskState.assignmentsFor(task.id);
+            // Cùng lỗi đã sửa ở card danh sách (xem _taskMetaLines): sheet này
+            // gọi fetchTaskAssignments() lúc mở, nhưng builder vẽ NGAY LẬP TỨC
+            // trước khi request về kịp — nếu không có cờ này, khoảng trống
+            // "chưa có dữ liệu" bị hiểu nhầm thành "Chưa giao cho ai" trong lúc
+            // đang tải, đúng ảnh user chụp thấy chớp qua rồi mới hiện đúng.
+            final assignmentsLoaded = taskState.hasLoadedAssignments(task.id);
             // BE chặn Deputy tự tư lợi trên task giao cho chính mình — verify live
             // 19/08, cả 5 hành vi đều trả 403 (gia hạn / đặt thưởng / huỷ phân
             // công / giao lại / huỷ task). Nhưng 403 đó KHÔNG có mã lỗi, chỉ có
@@ -856,13 +895,18 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 20),
                     child: Center(
-                      child: Text(
-                        'Chưa giao cho ai',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
+                      child: !assignmentsLoaded
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              'Chưa giao cho ai',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
                     ),
                   )
                 else
@@ -1088,7 +1132,15 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Trước đây avatar + tên + TẤT CẢ nút hành động (Duyệt/Xem bài nộp/
+          // Gia hạn/Phân công lại...) nằm chung 1 Row không có gì chặn bớt —
+          // có lúc 2-3 nút cùng hiện, chiếm hết chỗ, ép cột tên xuống còn vài
+          // chục pixel nên "lê anh sĩ" vỡ dòng dính sát avatar (đo thật trên
+          // máy 28/08). Tách hẳn: hàng đầu chỉ avatar + tên/trạng thái + nút
+          // huỷ nhỏ (luôn đủ chỗ); mọi nút hành động dồn xuống hàng dưới dạng
+          // `Wrap`, thiếu chỗ thì tự xuống dòng thay vì đè lên tên.
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AvatarWidget(
                 initial: (a.assignedToName ?? '?').isNotEmpty
@@ -1125,112 +1177,6 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   ],
                 ),
               ),
-              if (a.status == 'SUBMITTED' && !isOwnAssignment)
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.link,
-                    minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                  ),
-                  onPressed: () => _showReviewSheet(context, a),
-                  child: Text(
-                    'Duyệt',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              if (a.status == 'SUBMITTED' && isOwnAssignment)
-                Text(
-                  // KHÔNG viết "Chờ Manager duyệt": API_DOCS mục
-                  // PATCH .../submissions/{id}/review ghi rõ quyền duyệt là
-                  // Manager **hoặc** Deputy, nên Deputy đọc câu cũ sẽ tưởng
-                  // mình phải chờ Manager.
-                  'Chờ người quản lý duyệt',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              // Xem lại bài nộp (chế độ chỉ xem): sau khi duyệt/từ chối, và cả
-              // lúc còn chờ duyệt cho chính người đã nộp — trước đây người nộp
-              // không có cách nào xem lại mình đã gửi ảnh/ghi chú gì.
-              if (a.status == 'APPROVED' ||
-                  a.status == 'REJECTED' ||
-                  (a.status == 'SUBMITTED' && isOwnAssignment))
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    side: const BorderSide(color: AppColors.progressTrack),
-                  ),
-                  onPressed: () => _showReviewSheet(context, a, readOnly: true),
-                  child: Text(
-                    'Xem bài nộp',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-              // Quá hạn cũng phải mở được "Phân công lại" — không phải chỉ khi
-              // member báo bận. BE chặn nộp bài quá hạn (400 SUBMISSION_OVERDUE)
-              // và KHÔNG có endpoint nào sửa dueAt của phân công, nên giao lại
-              // kèm hạn mới là đường thoát duy nhất; thiếu nút này thì phân công
-              // quá hạn chết cứng: không ai nộp được, không ai duyệt được.
-              // BE bổ sung PATCH .../assignments/{id} { startAt?, dueAt? } ngày
-              // 19/08 → gia hạn được cho CHÍNH người đang giữ việc, không phải
-              // đổi sang người khác như trước.
-              //
-              // Bug tìm thấy 2026-08-24: điều kiện cũ có `!isOwnAssignment` nên
-              // Manager tự giao việc cho chính mình (danh sách chọn người nhận ở
-              // `_showAssignSheet` không loại trừ bản thân) mà để quá hạn thì
-              // KHÔNG thấy nút này — trong khi member-side (`child_tasks_screen`)
-              // lại bảo "nhắn quản lý bấm Gia hạn". Quản lý chính là người đọc câu
-              // đó nhưng không có nút để bấm → phân công chết cứng. Hàm gọi xuống
-              // (`updateAssignmentSchedule`) không phân biệt ai đang xem nên bỏ
-              // hẳn điều kiện `isOwnAssignment` ở đây là an toàn.
-              if (_isAssignmentOverdue(a))
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    side: const BorderSide(color: AppColors.urgent),
-                  ),
-                  onPressed: () => _showExtendDeadlineSheet(context, a),
-                  child: Text(
-                    'Gia hạn',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.urgent,
-                    ),
-                  ),
-                ),
-              if (!isOwnAssignment &&
-                  (hasOpenUnavailability || _isAssignmentOverdue(a)))
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.urgent,
-                    minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                  ),
-                  onPressed: () => _showReassignSheet(context, a),
-                  child: Text(
-                    hasOpenUnavailability
-                        ? 'Phân công lại'
-                        : 'Giao lại + hạn mới',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
               // Tự huỷ phân công của mình = né việc → BE 403. Ẩn nút.
               if (!isOwnAssignment &&
                   (a.status == 'ASSIGNED' || a.status == 'IN_PROGRESS'))
@@ -1254,6 +1200,132 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                 ),
             ],
           ),
+          Builder(
+            builder: (_) {
+              final actions = <Widget>[
+                if (a.status == 'SUBMITTED' && !isOwnAssignment)
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.link,
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    onPressed: () => _showReviewSheet(context, a),
+                    child: Text(
+                      'Duyệt',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                if (a.status == 'SUBMITTED' && isOwnAssignment)
+                  Text(
+                    // KHÔNG viết "Chờ Manager duyệt": API_DOCS mục
+                    // PATCH .../submissions/{id}/review ghi rõ quyền duyệt là
+                    // Manager **hoặc** Deputy, nên Deputy đọc câu cũ sẽ tưởng
+                    // mình phải chờ Manager.
+                    'Chờ người quản lý duyệt',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                // Xem lại bài nộp (chế độ chỉ xem): sau khi duyệt/từ chối, và
+                // cả lúc còn chờ duyệt cho chính người đã nộp — trước đây
+                // người nộp không có cách nào xem lại mình đã gửi ảnh/ghi chú
+                // gì.
+                if (a.status == 'APPROVED' ||
+                    a.status == 'REJECTED' ||
+                    (a.status == 'SUBMITTED' && isOwnAssignment))
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      side: const BorderSide(color: AppColors.progressTrack),
+                    ),
+                    onPressed: () =>
+                        _showReviewSheet(context, a, readOnly: true),
+                    child: Text(
+                      'Xem bài nộp',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                // Quá hạn cũng phải mở được "Phân công lại" — không phải chỉ
+                // khi member báo bận. BE chặn nộp bài quá hạn (400
+                // SUBMISSION_OVERDUE) và KHÔNG có endpoint nào sửa dueAt của
+                // phân công, nên giao lại kèm hạn mới là đường thoát duy
+                // nhất; thiếu nút này thì phân công quá hạn chết cứng: không
+                // ai nộp được, không ai duyệt được. BE bổ sung PATCH
+                // .../assignments/{id} { startAt?, dueAt? } ngày 19/08 → gia
+                // hạn được cho CHÍNH người đang giữ việc, không phải đổi
+                // sang người khác như trước.
+                //
+                // Bug tìm thấy 2026-08-24: điều kiện cũ có `!isOwnAssignment`
+                // nên Manager tự giao việc cho chính mình (danh sách chọn
+                // người nhận ở `_showAssignSheet` không loại trừ bản thân) mà
+                // để quá hạn thì KHÔNG thấy nút này — trong khi member-side
+                // (`child_tasks_screen`) lại bảo "nhắn quản lý bấm Gia hạn".
+                // Quản lý chính là người đọc câu đó nhưng không có nút để
+                // bấm → phân công chết cứng. Hàm gọi xuống
+                // (`updateAssignmentSchedule`) không phân biệt ai đang xem
+                // nên bỏ hẳn điều kiện `isOwnAssignment` ở đây là an toàn.
+                if (_isAssignmentOverdue(a))
+                  OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      side: const BorderSide(color: AppColors.urgent),
+                    ),
+                    onPressed: () => _showExtendDeadlineSheet(context, a),
+                    child: Text(
+                      'Gia hạn',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.urgent,
+                      ),
+                    ),
+                  ),
+                if (!isOwnAssignment &&
+                    (hasOpenUnavailability || _isAssignmentOverdue(a)))
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.urgent,
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    onPressed: () => _showReassignSheet(context, a),
+                    child: Text(
+                      hasOpenUnavailability
+                          ? 'Phân công lại'
+                          : 'Giao lại + hạn mới',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ];
+              if (actions.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 10, left: 46),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: actions,
+                ),
+              );
+            },
+          ),
           _missingSettlementWarning(a),
           Builder(
             builder: (ctx) {
@@ -1266,12 +1338,16 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   ?.id;
               final isMine = a.assignedToMemberId == myMemberId;
               if (!isMine) return const SizedBox();
+              final isNotStarted = _isAssignmentNotStarted(a);
 
               return Padding(
                 padding: const EdgeInsets.only(top: 14),
                 child: Column(
                   children: [
-                    if (a.status == 'ASSIGNED' && !_isAssignmentOverdue(a))
+                    if (isNotStarted) _futureAssignmentNote(a),
+                    if (a.status == 'ASSIGNED' &&
+                        !_isAssignmentOverdue(a) &&
+                        !isNotStarted)
                       SizedBox(
                         width: double.infinity,
                         height: 40,
@@ -1327,7 +1403,8 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                         ),
                       ),
                     if ((a.status == 'IN_PROGRESS' || a.status == 'REJECTED') &&
-                        !_isAssignmentOverdue(a))
+                        !_isAssignmentOverdue(a) &&
+                        !isNotStarted)
                       Row(
                         children: [
                           Expanded(
@@ -1400,6 +1477,34 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
       ),
     );
   }
+
+  Widget _futureAssignmentNote(TaskAssignment a) => Container(
+    width: double.infinity,
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: const Color(0xFFEFF6FF),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: const Color(0xFFBFDBFE)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.schedule_rounded, size: 16, color: Color(0xFF2563EB)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Phân công này bắt đầu từ ${_fmtDateTime(a.startAt!)}. Chưa thể bắt đầu hoặc nộp bài sớm.',
+            style: GoogleFonts.inter(
+              fontSize: 11.5,
+              height: 1.35,
+              color: const Color(0xFF1E3A8A),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   // ── Review submission ─────────────────────────────────────────────────────
 
@@ -1660,12 +1765,9 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                       // sinh settlement — nói rõ, không thì
                                       // thành viên chờ thưởng mãi không có.
                                       sheetMessenger.showSnackBar(
-                                        SnackBar(
-                                          content: const Text(
-                                            'Đã duyệt. Việc này chưa đặt thưởng nên không phát sinh khoản thưởng nào.',
-                                          ),
-                                          backgroundColor: AppColors.textMuted,
-                                          duration: const Duration(seconds: 5),
+                                        _reviewNoticeSnackBar(
+                                          'Đã duyệt. Việc này chưa đặt thưởng nên không phát sinh khoản thưởng nào.',
+                                          AppColors.textMuted,
                                         ),
                                       );
                                     } else if (!setting.autoCreateSettlement) {
@@ -1673,24 +1775,18 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                       // thủ công, nếu không cũng không có gì
                                       // để trả.
                                       sheetMessenger.showSnackBar(
-                                        SnackBar(
-                                          content: const Text(
-                                            'Đã duyệt. Cấu hình thưởng đang TẮT tự tạo — mở Quản lý thưởng để tạo ghi nhận thưởng.',
-                                          ),
-                                          backgroundColor: AppColors.amberDark,
-                                          duration: const Duration(seconds: 5),
+                                        _reviewNoticeSnackBar(
+                                          'Đã duyệt. Cấu hình thưởng đang TẮT tự tạo — mở Quản lý thưởng để tạo ghi nhận thưởng.',
+                                          AppColors.amberDark,
                                         ),
                                       );
                                     } else {
                                       // BE vừa tạo settlement chờ trả; nhắc
                                       // Manager sang màn Quản lý thưởng.
                                       sheetMessenger.showSnackBar(
-                                        SnackBar(
-                                          content: const Text(
-                                            'Đã duyệt — vào Quản lý thưởng ở góc phải màn Nhiệm vụ để trả thưởng',
-                                          ),
-                                          backgroundColor: AppColors.success,
-                                          duration: const Duration(seconds: 4),
+                                        _reviewNoticeSnackBar(
+                                          'Đã duyệt — vào Quản lý thưởng ở góc phải màn Nhiệm vụ để trả thưởng',
+                                          AppColors.success,
                                         ),
                                       );
                                     }
@@ -2944,18 +3040,29 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                               final taskProvider = context.read<TaskProvider>();
                               FamilyTask? createdTask;
                               if (taskType == 'RECURRING') {
-                                await taskProvider.createRecurringTask(
-                                  title: titleCtrl.text.trim(),
-                                  description: descCtrl.text.trim(),
-                                  taskCategoryId: categoryId,
-                                  priority: priority,
-                                  repeatType: repeatType,
-                                  repeatInterval:
-                                      int.tryParse(intervalCtrl.text.trim()) ??
-                                      1,
-                                  startDate: recurringStartDate,
-                                  endDate: recurringEndDate,
-                                );
+                                // Trước KHÔNG bắt lấy kết quả trả về — việc
+                                // định kỳ tạo xong chỉ đóng sheet rồi thả
+                                // người dùng tự đi tìm trong danh sách (có
+                                // thể 50+ việc) để giao người + đặt thưởng,
+                                // khác hẳn trải nghiệm liền mạch của việc
+                                // thường. Nay mở luôn sheet chi tiết như việc
+                                // thường — "Lịch lặp & tạo phân công" và đặt
+                                // thưởng đã có sẵn nút trong đó.
+                                createdTask = await taskProvider
+                                    .createRecurringTask(
+                                      title: titleCtrl.text.trim(),
+                                      description: descCtrl.text.trim(),
+                                      taskCategoryId: categoryId,
+                                      priority: priority,
+                                      repeatType: repeatType,
+                                      repeatInterval:
+                                          int.tryParse(
+                                            intervalCtrl.text.trim(),
+                                          ) ??
+                                          1,
+                                      startDate: recurringStartDate,
+                                      endDate: recurringEndDate,
+                                    );
                               } else {
                                 createdTask = await taskProvider.createTask(
                                   title: titleCtrl.text.trim(),
