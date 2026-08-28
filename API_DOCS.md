@@ -613,6 +613,10 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 
 ### Tasks — Công việc
 - `GET .../tasks` — Danh sách. Query: `page, limit, status, taskCategoryId, priority, taskType`. `status`: `DRAFT | ACTIVE | COMPLETED | CANCELED` · `taskType`: `AD_HOC | RECURRING`.
+  - **Trả kèm `rewardSetting`** từ 26/08 (verify thật 27/08: 50/50 item có field). Chưa đặt thưởng → `rewardSetting: null`. Nhờ vậy FE bỏ được N+1 `hydrateRewardSettings`.
+  - ⚠️ **Không** trả kèm `assignments` → màn Quản lý nhiệm vụ vẫn phải gọi `GET .../tasks/{taskId}/assignments` cho từng task (N+1). BE đã nhận bổ sung assignments summary hoặc cấp bulk endpoint, **chưa deploy** tính đến 28/08.
+  - ⚠️ Swagger vẫn để `"200": {"description": ""}` — hai mục trên verify bằng response thật, không đọc được từ Swagger.
+  - `COMPLETED` ở đây là **`TaskStatus` cấp task**, không phải status của assignment (assignment không có `COMPLETED`).
 - `POST .../tasks` — Tạo task **AD_HOC** (không tạo phân công/thưởng). Body `CreateTaskDto`. 400 nếu cố tạo RECURRING (dùng API lịch lặp).
 - `GET .../tasks/{taskId}` — Chi tiết.
 - `PATCH .../tasks/{taskId}` — Cập nhật (không chuyển sang RECURRING). **[wire FE 2026-07-08]** nút sửa trong task detail sheet.
@@ -631,19 +635,42 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 
 ### Tasks — Phân công
 - `POST .../tasks/{taskId}/assignments` — Giao task (Manager/Deputy). Body `CreateTaskAssignmentDto { assignedToMemberId, startAt?, dueAt? }`. 409 nếu member đã được giao.
-- `GET .../tasks/{taskId}/assignments` — Danh sách phân công của task. Query `page, limit, status`. `status`: `ASSIGNED | IN_PROGRESS | SUBMITTED | APPROVED | REJECTED | CANCELED`.
+- `GET .../tasks/{taskId}/assignments` — Danh sách phân công của task. Query `page, limit, status`. `status`: `ASSIGNED | IN_PROGRESS | SUBMITTED | APPROVED | REJECTED | CANCELED`. Trả `{ items, total, page, limit, totalPages }`; `limit` mặc định **20**, tối đa 100 — FE phải truyền `limit` chứ không dựa mặc định.
 - `GET .../tasks/my-assignments` — Phân công của bản thân. Query `page, limit, status, priority, startFrom, startTo, dueFrom, dueTo`.
-- `GET .../tasks/assignments/{assignmentId}` — Chi tiết. Provider method `getAssignmentDetail()` có sẵn, chưa có UI gọi (còn dư).
-- `PATCH .../tasks/assignments/{assignmentId}/start` — Bắt đầu (ASSIGNED → IN_PROGRESS, chỉ người được giao).
-- `PATCH .../tasks/assignments/{assignmentId}/cancel` — Hủy phân công (Manager/Deputy). **[wire FE 2026-07-08]** nút ✕ trên assignment card (chỉ khi PENDING/IN_PROGRESS).
+- `GET .../tasks/assignments/{assignmentId}` — Chi tiết. `startAssignment()` gọi endpoint này trước mỗi lần bấm "Bắt đầu làm" để đối chiếu trạng thái thật với cache.
+- `PATCH .../tasks/assignments/{assignmentId}/start` — Bắt đầu (ASSIGNED → IN_PROGRESS, chỉ người được giao). Status khác trả **400 `"Chỉ có thể bắt đầu công việc đang ở trạng thái được giao"`, hiện **chưa có** `code`/`errorCode` ổn định (verify Swagger 28/08). BE đã nhận bổ sung `ASSIGNMENT_NOT_STARTABLE` — khi có thì FE bỏ bước tự đoán trạng thái và gọi thẳng endpoint này.
+- `PATCH .../tasks/assignments/{assignmentId}/cancel` — Hủy phân công (Manager/Deputy). **[wire FE 2026-07-08]** nút ✕ trên assignment card (chỉ khi `ASSIGNED`/`IN_PROGRESS` — không có status `PENDING`).
+- `PATCH .../tasks/assignments/{assignmentId}` — Gia hạn / đổi mốc thời gian, **không** đổi người được giao. Body `UpdateTaskAssignmentDto { startAt?, dueAt? }`.
 - `PATCH .../tasks/assignments/{assignmentId}/reassign` — Giao lại. Body `ReassignTaskDto { assignedToMemberId, startAt?, dueAt? }`.
 
+> 🔑 **Lọc theo vai khi ĐỌC phân công** (Swagger 28/08, áp cho **cả** `GET .../tasks/{taskId}/assignments`
+> lẫn `GET .../tasks/assignments/{assignmentId}`): `FAMILY_MANAGER` và `DEPUTY_MEMBER` xem **toàn bộ**
+> phân công của task; `FAMILY_MEMBER` **chỉ xem phân công của chính mình**.
+> Hệ quả cần nhớ: cùng một task, tài khoản Member có thể nhận `[]` từ endpoint danh sách trong khi
+> endpoint chi tiết vẫn trả về phân công của họ — đừng đọc `[]` thành "chưa giao cho ai" mà không xét vai.
+> BE **không** tự lọc bỏ bản ghi `CANCELED` khi FE không truyền `status`.
+
+> 📦 **Schema `TaskAssignmentResponseDto`** (Swagger 28/08 — trước đây trống, nay đã document):
+> `id, taskId, assignedToMemberId, assignedByMemberId, status, assignedAt, startAt, dueAt, createdAt,
+> updatedAt, isOverdue, assignedToMember, assignedByMember, task`.
+> - `status` đúng **6 giá trị**: `ASSIGNED | IN_PROGRESS | SUBMITTED | APPROVED | REJECTED | CANCELED`.
+>   **Không có `PENDING`** (BE tạo thẳng `ASSIGNED`, kể cả khi sinh theo lịch lặp; `startAt` chỉ là mốc
+>   hiển thị/lọc, **không có scheduler** chuyển trạng thái). `UNAVAILABLE` cũng không phải status của
+>   assignment — báo bận nằm ở `TaskUnavailability` riêng.
+> - Quá hạn **không** đổi status; BE trả `isOverdue = true` (field bắt buộc).
+> - `assignedAt` là field **bắt buộc** — dùng làm mốc dự phòng khi phân công không có `startAt`/`dueAt`.
+> - `assignedToMember` / `assignedByMember` **nullable**, shape
+>   `{ id, userId, familyRole, status, user { id, fullName, avatarUrl } }` — tên lấy ở `user.fullName`.
+> - `task` là bản rút gọn `{ id, familyId, taskCategoryId, title, taskType, priority, status, dueAt, category }`
+>   — **không** kèm `createdByMember`/`createdByMemberId`, nên "Người giao" phải lấy từ `assignedByMember`.
+> - **Không** kèm `rewardSetting` và **không** kèm submission.
+
 ### Tasks — Minh chứng
-- `POST .../tasks/assignments/{assignmentId}/submissions` — Nộp minh chứng (chỉ người được giao). Body `CreateTaskSubmissionDto { proofs[], submissionNote? }`.
+- `POST .../tasks/assignments/{assignmentId}/submissions` — Nộp minh chứng (chỉ người được giao). Body `CreateTaskSubmissionDto { proofs[], submissionNote? }`. `proofs` phải có **tối thiểu 1 phần tử** (BE validate; Swagger chưa ghi `minItems`).
   - Với IMAGE/VIDEO/FILE: upload qua `proofs/upload` trước, lấy `fileUrl` bỏ vào body.
-- `GET .../tasks/assignments/{assignmentId}/submissions` — Danh sách minh chứng của phân công. Query `status`: `WAITING_REVIEW | APPROVED | REJECTED`.
+- `GET .../tasks/assignments/{assignmentId}/submissions` — Danh sách minh chứng của phân công. Query `status`: `WAITING_REVIEW | APPROVED | REJECTED`. Sắp xếp **`submittedAt` giảm dần**. Mỗi item có `submittedAt`, `isLate` (true khi nộp sau `dueAt`) và `proofCount`.
 - `GET .../tasks/submissions/{submissionId}` — Chi tiết minh chứng. **[wire FE 2026-07-08]** dùng trong `_SettlementDetailSheet` (`RewardManagementScreen`) khi settlement có `submissionId`.
-- `PATCH .../tasks/submissions/{submissionId}/review` — Duyệt/từ chối (Manager/Deputy). Body `ReviewTaskSubmissionDto { decision, reviewNote? }` (`decision`: `APPROVED | REJECTED`).
+- `PATCH .../tasks/submissions/{submissionId}/review` — Duyệt/từ chối (Manager/Deputy). Body `ReviewTaskSubmissionDto { decision, reviewNote? }` (`decision`: `APPROVED | REJECTED`). **Người duyệt phải khác người thực hiện/người nộp** — trùng thì BE trả **403** (BE harden 26/08). FE vẫn ẩn nút trước cho mượt.
 
 > ⚠️ **`fetchLatestSubmission()` vẫn bắt buộc**: `GET .../tasks/{taskId}/assignments` không trả kèm submission. Phải gọi `GET .../assignments/{id}/submissions` riêng trước khi mở approval sheet.
 
@@ -667,6 +694,8 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 - `POST .../tasks/submissions/{submissionId}/reward-settlement` — Tạo ghi nhận thưởng thủ công cho bài nộp đã duyệt. Provider method có sẵn (`createSettlement`), chưa có UI gọi — có thể do `autoCreateSettlement` trong reward-setting đã tự động tạo, cần hỏi Nghĩa xác nhận trước khi build UI tạo thủ công (tránh trùng).
 - `GET .../tasks/reward-settlements` — Danh sách. Query `page, limit, status, receiverMemberId, taskId`. **[wire FE 2026-07-08]** tab "Thanh toán" trong `RewardManagementScreen` (màn mới — trước đó Manager hoàn toàn không có UI xem/xử lý settlement).
   - `status` **[ĐỔI ENUM]**: `PENDING_SETTLEMENT | WAITING_CONFIRMATION | SETTLED | DISPUTED | CANCELED` — model FE cũ dùng enum sai (`PENDING/AWAITING_PAYMENT/PAID/CONFIRMED`), đã sửa 2026-07-08 (xem cảnh báo đầu mục Tasks).
+  - **Trả kèm `assignment`** từ 27/08: `{ id, assignedToMemberId, assignedByMemberId, status, assignedAt, startAt, dueAt, assignedToMember, assignedByMember }`; hai object member có `userId, displayName, familyRole` + user info. Nhờ vậy không phải gọi thêm từng task để tìm người làm. Swagger chưa document, verify bằng response thật.
+  - Quyền: Manager và Deputy xem tất cả; `FAMILY_MEMBER` chỉ xem ghi nhận thưởng của chính mình.
 - `GET .../tasks/reward-settlements/{settlementId}` — Chi tiết. **[wire FE 2026-07-08]**
 - `PATCH .../tasks/reward-settlements/{settlementId}/mark-paid` — Ghi nhận đã trả ngoài hệ thống. Body `MarkRewardPaidDto { externalMethod, externalNote? }` (`externalMethod`: `CASH | BANK_TRANSFER | THIRD_PARTY_WALLET | OTHER`). **[wire FE 2026-07-08]** — trước đó FE gửi sai body `{ note }`, đã sửa.
 - `PATCH .../tasks/reward-settlements/{settlementId}/confirm-received` — Người nhận xác nhận đã nhận. Đã wire từ trước nhưng **bug điều kiện hiện nút sai** (`child_tasks_screen.dart` check `status == 'PAID'` — giá trị không tồn tại) → nút không bao giờ hiện. Đã sửa thành `WAITING_CONFIRMATION` 2026-07-08.
@@ -676,7 +705,23 @@ FE đã thêm case tương ứng trong `NotificationRouter` → `/finance/suppor
 - `POST .../tasks/reward-settlements/{settlementId}/disputes` — Báo chưa nhận thưởng. Body `CreateRewardDisputeDto { reason }`. Đã wire từ trước (Member), không đổi.
 - `GET .../tasks/reward-disputes` — Danh sách tranh chấp. Query `page, limit, status, rewardSettlementId, reportedByMemberId`. `status`: `OPEN | RESOLVED | REJECTED`. **[wire FE 2026-07-08]** tab "Tranh chấp" trong `RewardManagementScreen` (trước đó Member tạo được dispute nhưng Manager không có UI xem/giải quyết).
 - `GET .../tasks/reward-disputes/{disputeId}` — Chi tiết. Provider method có sẵn, chưa có UI gọi (còn dư).
-- `PATCH .../tasks/reward-disputes/{disputeId}/resolve` — Xử lý tranh chấp. Body `ResolveRewardDisputeDto { action }` (`action`: `ACCEPT_DISPUTE | REJECT_DISPUTE`). **[wire FE 2026-07-08]** — trước đó FE gửi sai body `{ resolutionNote }`, đã sửa; dialog đổi từ ghi chú tự do sang 2 nút Chấp nhận/Từ chối.
+- `PATCH .../tasks/reward-disputes/{disputeId}/resolve` — Xử lý tranh chấp. Body `ResolveRewardDisputeDto { action }` (`action`: `ACCEPT_DISPUTE | REJECT_DISPUTE`). **[wire FE 2026-07-08]** — trước đó FE gửi sai body `{ resolutionNote }`, đã sửa; dialog đổi từ ghi chú tự do sang 2 nút Chấp nhận/Từ chối. DTO **chưa có** `resolutionNote` (verify Swagger 28/08) — BE nói cần chốt contract/migration riêng mới thêm.
+  - `ACCEPT_DISPUTE` → dispute `RESOLVED`, settlement quay về `PENDING_SETTLEMENT`. `REJECT_DISPUTE` → dispute `REJECTED`, settlement quay về `WAITING_CONFIRMATION`.
+
+> 🔒 **Deputy không được tự hưởng lợi trên thưởng của chính mình** (BE harden 26/08): không tự tạo
+> settlement thủ công, không `mark-paid`, không `cancel`, không `resolve` dispute trên settlement mà
+> mình là người nhận. Trả mã ổn định **`CANNOT_MANAGE_OWN_REWARD_SETTLEMENT`**. Manager vẫn override được.
+
+> 💰 **`confirm-received` sinh bút toán sổ quỹ** (BE deploy 27/08): settlement `WAITING_CONFIRMATION`
+> → `SETTLED` thì BE tự tạo `LedgerEntry` nếu `rewardType = MONEY_RECORD` và `amount > 0` —
+> `entryType = REWARD`, `sourceType = TASK_REWARD_SETTLEMENT`, `sourceId = settlementId`,
+> `entryDate = confirmedAt`, `createdByMemberId = receiverMemberId`. Có guard chống tạo trùng theo
+> `sourceType` + `sourceId`.
+> - Response settlement **không** trả `ledgerEntryId` — truy ngược qua `sourceType`/`sourceId`.
+> - **Chỉ áp dụng cho lần confirm phát sinh SAU deploy**; settlement `SETTLED` trước đó cần BE backfill.
+> - **Không** verify qua `MemberMonthlyFinance.actualIncome` — BE cố ý không cộng vào đó. Verify ở
+>   family ledger theo tháng `confirmedAt`.
+> - MONEY_RECORD là **thanh toán ngoài hệ thống**: app không giữ/chuyển tiền thật, không trừ quỹ.
 
 ### AI Chatbot — **[contract BE chốt 2026-08-09, FE wire đủ 10/10]**
 

@@ -293,10 +293,28 @@ class TaskAssignment {
   /// (`task.createdByMember`) — BE trả ở đâu cũng lấy được.
   final String? assignedByMemberId;
   final String? assignedByName;
+  /// Thời điểm BE tạo phân công (`TaskAssignmentResponseDto.assignedAt`, field
+  /// **bắt buộc** theo Swagger 28/08).
+  ///
+  /// Dùng làm mốc dự phòng khi phân công không có `startAt` lẫn `dueAt`: task
+  /// định kỳ sinh 30 phân công thì thiếu mốc là 30 dòng trông y hệt nhau,
+  /// không biết dòng nào của ngày nào.
+  final DateTime? assignedAt;
   final DateTime? startAt;
   final DateTime? dueAt;
-  final String
-  status; // ASSIGNED|IN_PROGRESS|SUBMITTED|APPROVED|REJECTED|CANCELED|UNAVAILABLE
+
+  /// Enum chính thức của BE, đúng **6 giá trị** (`TaskAssignmentStatus`, verify
+  /// Swagger 28/08): `ASSIGNED | IN_PROGRESS | SUBMITTED | APPROVED | REJECTED
+  /// | CANCELED`.
+  ///
+  /// **Không có `PENDING`** — BE tạo assignment thẳng ở `ASSIGNED`, kể cả khi
+  /// sinh theo lịch lặp. `UNAVAILABLE` cũng **không** phải status của
+  /// assignment: báo bận nằm ở `TaskUnavailability` riêng và không đổi status.
+  /// Quá hạn cũng không đổi status, BE trả `isOverdue` riêng.
+  ///
+  /// Chuỗi rỗng nghĩa là BE không trả field (vi phạm contract) — xem
+  /// [hasKnownStatus] trước khi dựng nút hành động.
+  final String status;
   final RewardSetting? rewardSetting;
   final FamilyTask? task;
   final String?
@@ -317,6 +335,7 @@ class TaskAssignment {
     this.assignedToName,
     this.assignedByMemberId,
     this.assignedByName,
+    this.assignedAt,
     this.startAt,
     this.dueAt,
     this.status = 'ASSIGNED',
@@ -378,9 +397,13 @@ class TaskAssignment {
           _str(assignerUser['fullName']) ??
           _str(assigner['displayName']) ??
           _str(j['assignedByName']),
+      assignedAt: _date(j['assignedAt']),
       startAt: _date(j['startAt']),
       dueAt: _date(j['dueAt']),
-      status: _str(j['status']) ?? 'ASSIGNED',
+      // Không mặc định 'ASSIGNED' nữa: thiếu field là vi phạm contract, đoán
+      // thành ASSIGNED sẽ dựng nút "Bắt đầu làm" cho một phân công mà ta không
+      // biết trạng thái — bấm vào chắc chắn ăn 400.
+      status: _str(j['status']) ?? '',
       rewardSetting: j['rewardSetting'] is Map
           ? RewardSetting.fromJson(
               Map<String, dynamic>.from(j['rewardSetting']),
@@ -400,14 +423,34 @@ class TaskAssignment {
     'APPROVED' => const Color(0xFF16A34A),
     'REJECTED' => const Color(0xFFDC2626),
     'CANCELED' => const Color(0xFF6B7280),
-    'UNAVAILABLE' => const Color(0xFFEA580C),
     _ => const Color(0xFF6B7280),
   };
+
+  /// Sáu giá trị hợp lệ theo `TaskAssignmentStatus` của BE. Xem [status].
+  static const Set<String> knownStatuses = {
+    'ASSIGNED',
+    'IN_PROGRESS',
+    'SUBMITTED',
+    'APPROVED',
+    'REJECTED',
+    'CANCELED',
+  };
+
+  /// `false` khi BE trả status ngoài enum hoặc bỏ hẳn field.
+  ///
+  /// Nơi hiển thị phải kiểm cờ này trước khi dựng nút hành động: trạng thái
+  /// không nhận diện được thì mọi phép chuyển đều là phỏng đoán.
+  bool get hasKnownStatus => knownStatuses.contains(status);
 
   String get statusLabel => labelOf(status);
 
   /// Nhãn tiếng Việt của một status rời, dùng khi chỉ có chuỗi status trong tay
   /// chứ chưa có cả object assignment (vd sheet giao việc cảnh báo giao trùng).
+  ///
+  /// Nhánh mặc định **không** được đoán thành "Chờ làm". Enum đã chốt 6 giá trị
+  /// và FE phủ đủ cả 6, nên rơi vào nhánh này chỉ có thể là BE đổi contract —
+  /// nói thật là "không rõ" còn hơn vẽ ra một trạng thái sai rồi mời người dùng
+  /// bấm nút không dùng được.
   static String labelOf(String status) => switch (status) {
     'ASSIGNED' => 'Chờ làm',
     'IN_PROGRESS' => 'Đang làm',
@@ -415,8 +458,7 @@ class TaskAssignment {
     'APPROVED' => 'Hoàn thành',
     'REJECTED' => 'Từ chối',
     'CANCELED' => 'Đã hủy',
-    'UNAVAILABLE' => 'Báo bận',
-    _ => 'Chờ làm',
+    _ => 'Không rõ trạng thái',
   };
 }
 
@@ -645,6 +687,9 @@ class TaskProvider extends ChangeNotifier {
     categories = [];
     myAssignments = [];
     _assignmentsByTask.clear();
+    _assignmentsLoaded.clear();
+    _assignmentsInFlight.clear();
+    _assignmentsPreloadQueued.clear();
     rewardSettlements = [];
     rewardDisputes = [];
     unavailabilities = [];
@@ -914,6 +959,14 @@ class TaskProvider extends ChangeNotifier {
   Future<void> fetchTaskAssignments(String taskId, {String? status}) async {
     // Cùng một task không cần hai GET song song: sheet có thể được mở ngay khi
     // bulk preload còn chạy, và request thứ hai chỉ làm BE rate-limit sớm hơn.
+    //
+    // Chỉ chặn khi task đó **đang thật sự có request bay** ([_assignmentsInFlight]),
+    // KHÔNG chặn theo hàng đợi preload ([_assignmentsPreloadQueued]). Trước đây
+    // hai khái niệm này dùng chung một Set, mà preload lại đánh dấu cả 67 task
+    // ngay từ đầu và chỉ gỡ khi chạy xong (~35-50 giây) — nên suốt cửa sổ đó mọi
+    // lời gọi từ thao tác người dùng đều return ngay mà không làm gì: sheet vẽ
+    // bằng cache cũ, và nút "Bắt đầu làm" bấm lại bao nhiêu lần cũng ăn đúng lỗi
+    // cũ vì dòng không bao giờ được làm mới.
     final isFullList = status == null;
     if (isFullList && _assignmentsInFlight.contains(taskId)) return;
     if (isFullList) _assignmentsInFlight.add(taskId);
@@ -950,11 +1003,21 @@ class TaskProvider extends ChangeNotifier {
   static const Duration _assignmentRequestSpacing = Duration(milliseconds: 350);
   static const int _assignmentRetryCount = 2;
 
-  /// Task đang có request nạp assignment bay — chặn gọi trùng khi
-  /// [ensureAssignmentsFor] được gọi chồng lên nhau (ví dụ initState +
-  /// pull-to-refresh gần như cùng lúc), không dùng `_assignmentsByTask` để
-  /// dedupe nữa vì nay nó chỉ chứa dữ liệu **đã xác nhận thật**.
+  /// Task **đang thật sự có một request GET assignments bay**.
+  ///
+  /// Được thêm ngay trước lời gọi HTTP và gỡ ngay sau đó, nên tối đa chỉ sống
+  /// đúng bằng thời gian một request. Đây là mốc duy nhất được phép dùng để
+  /// chặn gọi trùng — xem [fetchTaskAssignments].
   final Set<String> _assignmentsInFlight = {};
+
+  /// Task đang nằm trong **hàng đợi** của một lượt preload hàng loạt.
+  ///
+  /// Tách hẳn khỏi [_assignmentsInFlight] vì hai thứ này có tuổi thọ khác nhau
+  /// một trời một vực: hàng đợi sống suốt cả lượt preload (hàng chục giây),
+  /// còn request thì vài trăm mili-giây. Set này **chỉ** để [ensureAssignmentsFor]
+  /// tự dedupe với chính nó (initState + pull-to-refresh gần như cùng lúc);
+  /// thao tác của người dùng không bao giờ bị nó chặn.
+  final Set<String> _assignmentsPreloadQueued = {};
 
   /// Bắt được trên máy thật 27/08: danh sách 56 nhiệm vụ tạo ra 56 request
   /// đồng thời (14 lô x 4) để lấy assignment. Vài request bị BE trả 502/rate-
@@ -973,14 +1036,14 @@ class TaskProvider extends ChangeNotifier {
         .where(
           (id) =>
               id.isNotEmpty &&
-              !_assignmentsInFlight.contains(id) &&
+              !_assignmentsPreloadQueued.contains(id) &&
               (forceRefresh || !_assignmentsLoaded.contains(id)),
         )
         .toSet()
         .toList();
     if (missing.isEmpty) return;
 
-    _assignmentsInFlight.addAll(missing);
+    _assignmentsPreloadQueued.addAll(missing);
     try {
       for (var i = 0; i < missing.length; i += _assignmentBatch) {
         final batch = missing.skip(i).take(_assignmentBatch);
@@ -993,7 +1056,7 @@ class TaskProvider extends ChangeNotifier {
         }
       }
     } finally {
-      _assignmentsInFlight.removeAll(missing);
+      _assignmentsPreloadQueued.removeAll(missing);
     }
   }
 
@@ -1002,7 +1065,12 @@ class TaskProvider extends ChangeNotifier {
   /// được, nhưng không được biến "chưa tải được" thành khẳng định sai "chưa
   /// giao cho ai" (xem [hasLoadedAssignments]).
   Future<void> _loadAssignmentsQuiet(String taskId) async {
+    // Thao tác người dùng đang tự nạp task này rồi (mở sheet, vừa huỷ phân
+    // công...) — nhường luôn, kết quả của họ mới hơn và không tốn thêm request.
+    if (_assignmentsInFlight.contains(taskId)) return;
     for (var attempt = 0; attempt <= _assignmentRetryCount; attempt++) {
+      Object? failure;
+      _assignmentsInFlight.add(taskId);
       try {
         final data = await ApiClient.instance.get(
           '/families/$_fid/tasks/$taskId/assignments${_qs({'limit': 100})}',
@@ -1013,16 +1081,22 @@ class TaskProvider extends ChangeNotifier {
         _assignmentsLoaded.add(taskId);
         return;
       } catch (e) {
-        final canRetry =
-            attempt < _assignmentRetryCount &&
-            _isTransientAssignmentListError(e);
-        if (!canRetry) {
-          debugPrint('TaskProvider: assignments of $taskId failed: $e');
-          return;
-        }
-        // Backoff 1s rồi 2s, thay vì tiếp tục dồn endpoint ngay sau 429/502.
-        await Future<void>.delayed(Duration(seconds: attempt + 1));
+        failure = e;
+      } finally {
+        _assignmentsInFlight.remove(taskId);
       }
+      // Backoff nằm NGOÀI khối đánh dấu in-flight: 1-2 giây chờ giữa hai lần
+      // thử không phải là "đang có request bay", để lỡ người dùng mở sheet
+      // đúng lúc mạng chập chờn thì họ vẫn gọi được ngay.
+      final canRetry =
+          attempt < _assignmentRetryCount &&
+          _isTransientAssignmentListError(failure);
+      if (!canRetry) {
+        debugPrint('TaskProvider: assignments of $taskId failed: $failure');
+        return;
+      }
+      // Backoff 1s rồi 2s, thay vì tiếp tục dồn endpoint ngay sau 429/502.
+      await Future<void>.delayed(Duration(seconds: attempt + 1));
     }
   }
 
@@ -1084,12 +1158,22 @@ class TaskProvider extends ChangeNotifier {
   }
 
   Future<void> startAssignment(String assignmentId) async {
-    // BE chỉ cho phép chuyển ASSIGNED -> IN_PROGRESS. Kiểm tra lại trạng thái
-    // mới nhất trước khi gọi endpoint để UI không gửi một yêu cầu chắc chắn bị
-    // từ chối khi assignment vẫn PENDING hoặc đã được bắt đầu ở thiết bị khác.
+    // BE chỉ cho phép chuyển ASSIGNED -> IN_PROGRESS (Swagger 28/08: status
+    // khác trả 400). Đọc lại trạng thái mới nhất trước khi gọi để UI không gửi
+    // một yêu cầu chắc chắn bị từ chối — thường gặp khi phân công đã bị huỷ
+    // hoặc đã được bắt đầu ở thiết bị khác, trong khi cache màn hình còn giữ
+    // ASSIGNED cũ. Lời gọi này cũng đồng bộ luôn bản ghi vào cache sheet.
+    //
+    // Ném `Exception` chứ không `StateError`: nơi hiển thị chỉ cắt tiền tố
+    // 'Exception: ', nên StateError lọt nguyên chuỗi "Bad state: " của Dart ra
+    // toast cho người dùng đọc.
     final assignment = await getAssignmentDetail(assignmentId);
     if (assignment != null && assignment.status != 'ASSIGNED') {
-      throw StateError('Công việc không còn ở trạng thái được giao.');
+      throw Exception(
+        assignment.hasKnownStatus
+            ? 'Không bắt đầu được: phân công đang ở trạng thái "${assignment.statusLabel}".'
+            : 'Không bắt đầu được: phân công đang ở một trạng thái ứng dụng chưa nhận diện được.',
+      );
     }
     final result = await ApiClient.instance.patch(
       '/families/$_fid/tasks/assignments/$assignmentId/start',
@@ -1134,6 +1218,7 @@ class TaskProvider extends ChangeNotifier {
         assignedToName: value.assignedToName,
         assignedByMemberId: value.assignedByMemberId,
         assignedByName: value.assignedByName,
+        assignedAt: value.assignedAt,
         startAt: value.startAt,
         dueAt: value.dueAt,
         status: status,

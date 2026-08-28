@@ -34,6 +34,70 @@ void main() {
         expect(TaskAssignment.labelOf(status), a.statusLabel, reason: status);
       }
     });
+
+    // Enum của BE đã chốt đúng 6 giá trị (Swagger 28/08, `TaskAssignmentStatus`)
+    // và FE phủ đủ cả 6. Nhánh mặc định trước đây trả "Chờ làm" — nghĩa là một
+    // status lạ vừa bị dịch sai, vừa kéo theo nút "Bắt đầu làm" hiện ra rồi
+    // bấm vào ăn 400. Nay phải nói thẳng là không rõ.
+    test('status ngoài enum không còn bị dịch thành "Chờ làm"', () {
+      expect(TaskAssignment.labelOf('PENDING'), 'Không rõ trạng thái');
+      expect(TaskAssignment.labelOf('UNAVAILABLE'), 'Không rõ trạng thái');
+      expect(TaskAssignment.labelOf(''), 'Không rõ trạng thái');
+      expect(TaskAssignment.labelOf('ASSIGNED'), 'Chờ làm');
+    });
+
+    test('hasKnownStatus đúng cho cả 6 giá trị hợp lệ và sai cho phần còn lại', () {
+      for (final status in TaskAssignment.knownStatuses) {
+        final a = TaskAssignment(
+          id: 'a',
+          taskId: 't',
+          assignedToMemberId: 'm',
+          status: status,
+        );
+        expect(a.hasKnownStatus, isTrue, reason: status);
+        expect(a.statusLabel, isNot('Không rõ trạng thái'), reason: status);
+      }
+      for (final status in ['PENDING', 'UNAVAILABLE', '', 'STATUS_LA']) {
+        final a = TaskAssignment(
+          id: 'a',
+          taskId: 't',
+          assignedToMemberId: 'm',
+          status: status,
+        );
+        expect(a.hasKnownStatus, isFalse, reason: status);
+      }
+    });
+  });
+
+  group('TaskAssignment.fromJson — status và assignedAt', () {
+    // BE luôn trả status (field bắt buộc trong TaskAssignmentResponseDto).
+    // Thiếu nó là vi phạm contract; đoán bừa thành ASSIGNED sẽ dựng nút "Bắt
+    // đầu làm" cho một phân công mà ta không biết trạng thái.
+    test('thiếu status thì để rỗng, KHÔNG mặc định ASSIGNED', () {
+      final a = TaskAssignment.fromJson({
+        'id': 'a1',
+        'taskId': 't1',
+        'assignedToMemberId': 'm1',
+      });
+      expect(a.status, '');
+      expect(a.hasKnownStatus, isFalse);
+      expect(a.statusLabel, 'Không rõ trạng thái');
+    });
+
+    test('đọc assignedAt để phân công không mốc vẫn phân biệt được nhau', () {
+      final a = TaskAssignment.fromJson({
+        'id': 'a1',
+        'taskId': 't1',
+        'assignedToMemberId': 'm1',
+        'status': 'ASSIGNED',
+        'assignedAt': '2026-08-28T04:08:00.000Z',
+      });
+      expect(a.assignedAt, isNotNull);
+      expect(a.assignedAt!.toUtc().day, 28);
+      // startAt/dueAt vắng mặt là hợp lệ với phân công AD_HOC không đặt hạn.
+      expect(a.startAt, isNull);
+      expect(a.dueAt, isNull);
+    });
   });
 
   group('TaskSubmissionRecap.autoLoad', () {

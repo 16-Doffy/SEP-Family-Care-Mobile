@@ -566,10 +566,24 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
 
   /// Dòng "khoảng thời gian" của một phân công, `null` khi BE không trả mốc nào
   /// (đừng chiếm chỗ bằng dòng trống).
+  ///
+  /// Không có `startAt` lẫn `dueAt` thì lùi về `assignedAt` (field bắt buộc
+  /// theo Swagger 28/08) — task định kỳ sinh 30 phân công mà dòng này trống thì
+  /// 30 dòng trông y hệt nhau, không biết dòng nào của ngày nào.
   Widget? _assignmentPeriodLine(TaskAssignment a) {
     final start = a.startAt;
     final due = a.dueAt;
-    if (start == null && due == null) return null;
+    if (start == null && due == null) {
+      final assigned = a.assignedAt;
+      if (assigned == null) return null;
+      return Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(
+          'Giao lúc ${_fmtDateTime(assigned)}',
+          style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+        ),
+      );
+    }
     final label = start != null && due != null
         ? '${_fmtDateTime(start)} → ${_fmtDateTime(due)}'
         : (start != null
@@ -705,7 +719,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
         expand: false,
         builder: (_, scrollCtrl) => Consumer<TaskProvider>(
           builder: (_, taskState, _) {
-            final assignments = taskState.assignmentsFor(task.id);
+            // Sheet và card danh sách PHẢI đếm theo cùng một quy tắc. Trước đây
+            // sheet đếm cả phân công đã huỷ còn card lọc bỏ chúng, nên một task
+            // chỉ còn phân công CANCELED hiện đồng thời "Phân công (1)" ở sheet
+            // và "Chưa giao cho ai" ở card — hai màn nói ngược nhau về cùng một
+            // việc (đúng cặp ảnh user chụp 28/08). Phân công đã huỷ không mất
+            // đi, chỉ tách xuống một dòng riêng bên dưới.
+            final allAssignments = taskState.assignmentsFor(task.id);
+            final assignments = allAssignments
+                .where((a) => a.status != 'CANCELED')
+                .toList(growable: false);
+            final canceledCount = allAssignments.length - assignments.length;
             // Cùng lỗi đã sửa ở card danh sách (xem _taskMetaLines): sheet này
             // gọi fetchTaskAssignments() lúc mở, nhưng builder vẽ NGAY LẬP TỨC
             // trước khi request về kịp — nếu không có cờ này, khoảng trống
@@ -911,6 +935,17 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                   )
                 else
                   ...assignments.map((a) => _assignmentCard(context, a)),
+                if (canceledCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '+ $canceledCount phân công đã hủy',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
               ],
             );
           },
