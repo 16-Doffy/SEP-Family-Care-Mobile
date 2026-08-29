@@ -376,7 +376,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Dùng để tính ngân sách gia đình. Trưởng/Phó nhóm có thể xem nếu bạn chọn "Chia sẻ". Số "thực tế" bạn có thể cập nhật lại bất cứ lúc nào trong tháng.',
+                            'Dùng để tính ngân sách gia đình. Trưởng/Phó nhóm có thể xem nếu bạn chọn "Chia sẻ". Số "tự khai" là bạn tự ước tính, có thể cập nhật lại bất cứ lúc nào trong tháng — số chính thức của quỹ gia đình sẽ tính theo sổ quỹ, xem ở "Tài chính tháng của tôi".',
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               color: const Color(0xFF92400E),
@@ -401,7 +401,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                       _inputField(
                         ctrl: _actualIncomeCtrl,
-                        label: 'Thu nhập thực tế / tháng (₫)',
+                        label: 'Thu nhập tự khai / tháng (₫)',
                         hint: 'VD: 9.500.000',
                         icon: Icons.trending_up_rounded,
                         keyboardType: TextInputType.number,
@@ -427,7 +427,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                       _inputField(
                         ctrl: _actualExpenseCtrl,
-                        label: 'Chi tiêu cá nhân thực tế / tháng (₫)',
+                        label: 'Chi tiêu cá nhân tự khai / tháng (₫)',
                         hint: 'VD: 2.700.000',
                         icon: Icons.trending_down_rounded,
                         keyboardType: TextInputType.number,
@@ -453,7 +453,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                       _inputField(
                         ctrl: _actualSharedCtrl,
-                        label: 'Đóng góp chung thực tế / tháng (₫)',
+                        label: 'Đóng góp chung tự khai / tháng (₫)',
                         hint: 'VD: 1.000.000',
                         icon: Icons.savings_outlined,
                         keyboardType: TextInputType.number,

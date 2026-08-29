@@ -348,7 +348,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               'Đóng góp chung dự kiến',
               _money(monthly.expectedSharedContribution, 'FAMILY'),
             ),
-            _row('Ghi nhận quỹ gia đình', '${_fmt(summary.fundActual)} ₫'),
+            if (summary.fundDeclared != null)
+              _row('Đóng góp chung tự khai', '${_fmt(summary.fundDeclared!)} ₫'),
+            _row(
+              'Đóng góp quỹ (thực tế, chính thức)',
+              '${_fmt(summary.fundActual)} ₫',
+            ),
           ],
           const SizedBox(height: 10),
           SizedBox(
