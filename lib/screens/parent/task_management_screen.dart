@@ -1383,59 +1383,104 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                     if (a.status == 'ASSIGNED' &&
                         !_isAssignmentOverdue(a) &&
                         !isNotStarted)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 40,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.link,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed: () async {
-                            final tp = context.read<TaskProvider>();
-                            try {
-                              await tp.startAssignment(a.id);
-                              // startAssignment() chỉ tự refresh myAssignments
-                              // (dùng ở màn Member), sheet "Phân công" này đọc
-                              // theo _assignmentsByTask[taskId] riêng — không
-                              // refetch thì dòng vừa bấm vẫn hiện "Chờ làm" dù
-                              // đã IN_PROGRESS, bấm lại lần 2 ăn ngay lỗi "Bad
-                              // state" (đo trên máy thật 24/08).
-                              if (context.mounted) {
-                                await tp.fetchTaskAssignments(a.taskId);
-                              }
-                            } catch (e) {
-                              // Trạng thái lệch (vd đã bắt đầu ở phiên khác) —
-                              // làm mới danh sách để dòng cập nhật đúng, tránh
-                              // người dùng bấm lại và ăn lỗi y hệt lần nữa.
-                              await tp.fetchTaskAssignments(a.taskId);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      e.toString().replaceFirst(
-                                        'Exception: ',
-                                        '',
-                                      ),
-                                    ),
-                                    backgroundColor: AppColors.danger,
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: SizedBox(
+                              height: 40,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.link,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                );
-                              }
-                            }
-                          },
-                          child: Text(
-                            'Bắt đầu làm',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                                ),
+                                onPressed: () async {
+                                  final tp = context.read<TaskProvider>();
+                                  try {
+                                    await tp.startAssignment(a.id);
+                                    // startAssignment() chỉ tự refresh
+                                    // myAssignments (dùng ở màn Member), sheet
+                                    // "Phân công" này đọc theo
+                                    // _assignmentsByTask[taskId] riêng — không
+                                    // refetch thì dòng vừa bấm vẫn hiện "Chờ
+                                    // làm" dù đã IN_PROGRESS, bấm lại lần 2 ăn
+                                    // ngay lỗi "Bad state" (đo trên máy thật
+                                    // 24/08).
+                                    if (context.mounted) {
+                                      await tp.fetchTaskAssignments(a.taskId);
+                                    }
+                                  } catch (e) {
+                                    // Trạng thái lệch (vd đã bắt đầu ở phiên
+                                    // khác) — làm mới danh sách để dòng cập
+                                    // nhật đúng, tránh người dùng bấm lại và
+                                    // ăn lỗi y hệt lần nữa.
+                                    await tp.fetchTaskAssignments(a.taskId);
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            e.toString().replaceFirst(
+                                              'Exception: ',
+                                              '',
+                                            ),
+                                          ),
+                                          backgroundColor: AppColors.danger,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                                child: Text(
+                                  'Bắt đầu làm',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          // Báo bận ngay từ lúc mới nhận việc, chưa cần bấm
+                          // "Bắt đầu làm" trước — đây mới là lúc hợp lý nhất
+                          // để báo không làm được. BE (POST .../unavailability)
+                          // không giới hạn theo status hay loại task, giới
+                          // hạn cũ "chỉ khi IN_PROGRESS + chỉ task lặp" là FE
+                          // tự đặt khi wire màn hình, không phải yêu cầu BE.
+                          Expanded(
+                            flex: 2,
+                            child: SizedBox(
+                              height: 40,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(
+                                    color: AppColors.urgent,
+                                    width: 1.5,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                onPressed: () =>
+                                    _reportUnavailable(context, a),
+                                child: Text(
+                                  'Bận',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.urgent,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     if ((a.status == 'IN_PROGRESS' || a.status == 'REJECTED') &&
                         !_isAssignmentOverdue(a) &&
@@ -1470,8 +1515,10 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                               ),
                             ),
                           ),
-                          if (a.task?.isRecurring == true &&
-                              a.status == 'IN_PROGRESS') ...[
+                          // Bỏ giới hạn "chỉ task lặp" — vẫn giữ chỉ hiện ở
+                          // IN_PROGRESS (đã REJECTED thì phải nộp lại, không
+                          // còn hợp lý để báo bận nữa).
+                          if (a.status == 'IN_PROGRESS') ...[
                             const SizedBox(width: 8),
                             Expanded(
                               flex: 2,

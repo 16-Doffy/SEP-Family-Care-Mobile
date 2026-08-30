@@ -649,40 +649,79 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
           if (a.status == 'ASSIGNED' && !isOverdue && !isNotStarted)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              child: SizedBox(
-                width: double.infinity,
-                height: 40,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.link,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () async {
-                    try {
-                      await context.read<TaskProvider>().startAssignment(a.id);
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(e.toString()),
-                            backgroundColor: AppColors.danger,
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: SizedBox(
+                      height: 40,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.link,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        );
-                      }
-                    }
-                  },
-                  child: Text(
-                    'Bắt đầu làm',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                        ),
+                        onPressed: () async {
+                          try {
+                            await context.read<TaskProvider>().startAssignment(
+                              a.id,
+                            );
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(e.toString()),
+                                  backgroundColor: AppColors.danger,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                        child: Text(
+                          'Bắt đầu làm',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  // Báo bận ngay lúc mới nhận việc — không cần bắt đầu làm
+                  // trước, cũng không giới hạn chỉ nhiệm vụ lặp. BE (POST
+                  // .../unavailability) không đặt giới hạn này, đây là do
+                  // FE tự gate khi wire màn hình trước đó.
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 40,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                            color: Color(0xFFEA580C),
+                            width: 1.5,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: () => _reportUnavailable(context, a),
+                        child: Text(
+                          'Bận',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFFEA580C),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
 
@@ -715,35 +754,35 @@ class _ChildTasksScreenState extends State<ChildTasksScreen> {
                       ),
                     ),
                   ),
-                  if (a.task?.isRecurring == true) ...[
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 2,
-                      child: SizedBox(
-                        height: 40,
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                              color: Color(0xFFEA580C),
-                              width: 1.5,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                  const SizedBox(width: 8),
+                  // Bỏ giới hạn "chỉ task lặp" — BE không yêu cầu, và task
+                  // thường cũng cần đường báo không làm được.
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 40,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(
+                            color: Color(0xFFEA580C),
+                            width: 1.5,
                           ),
-                          onPressed: () => _reportUnavailable(context, a),
-                          child: Text(
-                            'Bận',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFEA580C),
-                            ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        onPressed: () => _reportUnavailable(context, a),
+                        child: Text(
+                          'Bận',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFFEA580C),
                           ),
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
