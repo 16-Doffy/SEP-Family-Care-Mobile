@@ -599,6 +599,15 @@ class _WalletScreenState extends State<WalletScreen> {
         : AppColors.safeDark;
 
     return [
+      // Ví là màn tổng quan quỹ chung — nhưng các mảnh Tài chính (mô hình hũ,
+      // ngân sách, mục tiêu, cảnh báo, báo cáo, hỗ trợ chi tiêu) trước đây chỉ
+      // vào được qua "Tôi", tách rời khỏi Ví nên người dùng không thấy chúng
+      // liên quan tới nhau. Thêm dải lối tắt ngay dưới Quỹ gia đình để đi
+      // xuyên suốt 1 luồng mà không phải thoát ra "Tôi" giữa chừng.
+      if (context.watch<AuthProvider>().user?.canManageFinance == true) ...[
+        _financeQuickLinks(context),
+        const SizedBox(height: 16),
+      ],
       GestureDetector(
         onTap: () => context.push('/manager/family-finance-status'),
         child: _sectionCard(
@@ -2283,6 +2292,89 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  static const _financeQuickLinkItems = <({
+    IconData icon,
+    String label,
+    String path,
+  })>[
+    (
+      icon: Icons.account_balance_outlined,
+      label: 'Mô hình\ntài chính',
+      path: '/manager/finance-model',
+    ),
+    (
+      icon: Icons.receipt_long_outlined,
+      label: 'Kế hoạch\nngân sách',
+      path: '/manager/budget-plans',
+    ),
+    (
+      icon: Icons.track_changes_rounded,
+      label: 'Mục tiêu\ntiết kiệm',
+      path: '/manager/financial-goals',
+    ),
+    (
+      icon: Icons.notifications_active_outlined,
+      label: 'Cảnh báo\ntài chính',
+      path: '/manager/finance-alerts',
+    ),
+    (
+      icon: Icons.bar_chart_rounded,
+      label: 'Báo cáo\ntài chính',
+      path: '/manager/finance-reports',
+    ),
+    (
+      icon: Icons.support_agent_rounded,
+      label: 'Hỗ trợ\nchi tiêu',
+      path: '/finance/support-requests',
+    ),
+  ];
+
+  Widget _financeQuickLinks(BuildContext context) => _sectionCard(
+    title: 'Tài chính liên quan',
+    child: SizedBox(
+      height: 84,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.only(top: 8),
+        itemCount: _financeQuickLinkItems.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final item = _financeQuickLinkItems[i];
+          return GestureDetector(
+            onTap: () => context.push(item.path),
+            child: Container(
+              width: 74,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(item.icon, size: 20, color: AppColors.link),
+                  const SizedBox(height: 6),
+                  Text(
+                    item.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    ),
+  );
 
   Widget _sectionCard({required String title, required Widget child}) =>
       AppCard(

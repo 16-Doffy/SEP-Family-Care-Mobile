@@ -339,7 +339,10 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
-              height: 46,
+              // 2 dòng chữ (tiêu đề + mô tả) không đủ chỗ trong 46px — đo
+              // thật 30/08 tràn 8px ở cả 2 nút loại này. 58px đủ cho cả 2
+              // dòng + padding mặc định của ElevatedButton/OutlinedButton.
+              height: 58,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.link,
@@ -351,6 +354,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                 icon: const Icon(Icons.savings_rounded, size: 18),
                 label: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       'Góp tiền cá nhân (Tiền túi)',
@@ -376,7 +380,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
               const SizedBox(height: 10),
               SizedBox(
                 width: double.infinity,
-                height: 46,
+                height: 58,
                 child: OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.link,
@@ -392,6 +396,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                   ),
                   label: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         'Trích từ số dư quỹ chung',
