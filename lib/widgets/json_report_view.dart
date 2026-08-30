@@ -192,6 +192,10 @@ class JsonReportView extends StatelessWidget {
     'rewardAmount': 'Số tiền thưởng',
     'rewardDescription': 'Mô tả thưởng',
     'autoCreateSettlement': 'Tự tạo ghi nhận thưởng',
+    // Bổ sung 2026-08-31 — đo thật màn "Xem báo cáo kế hoạch vs thực tế"
+    // (Kế hoạch ngân sách): group "Created By Member" lộ tiếng Anh vì chưa
+    // có trong bảng nhãn.
+    'createdByMember': 'Người tạo',
   };
 
   /// Field luôn ẩn dù ở mode nào — dữ liệu kỹ thuật thuần, không có ý nghĩa
