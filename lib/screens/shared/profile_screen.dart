@@ -133,7 +133,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _tile(
                 Icons.receipt_long_outlined,
                 'Tài chính tháng của tôi',
-                onTap: () => context.push('/profile/edit'),
+                // Bug thật đo trên máy 31/08: copy-paste từ tile "Chỉnh sửa
+                // hồ sơ" phía trên, bấm vào luôn mở nhầm màn edit-profile
+                // thay vì xem tài chính tháng. Route đúng: memberId rỗng =
+                // xem của chính mình (MemberFinanceScreen._isMe).
+                onTap: () => context.push('/manager/member-finance'),
               ),
               _tile(
                 Icons.lock_outline_rounded,
