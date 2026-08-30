@@ -1839,7 +1839,23 @@ class _TaskManagementScreenState extends State<TaskManagementScreen> {
                                           taskId: a.taskId,
                                         );
                                     if (ctx.mounted) Navigator.pop(ctx);
+                                    // `a` là snapshot Assignment lúc mở sheet
+                                    // — nếu thưởng được đặt SAU thời điểm đó,
+                                    // `a.rewardSetting`/`a.task?.rewardSetting`
+                                    // vẫn null vì setRewardSetting() chỉ cập
+                                    // nhật `tasks[]`, không đụng cache
+                                    // assignment. Ưu tiên đọc từ `tasks[]`
+                                    // (nguồn luôn mới nhất) trước khi kết
+                                    // luận "chưa đặt thưởng".
+                                    final freshTask = context.mounted
+                                        ? context
+                                              .read<TaskProvider>()
+                                              .tasks
+                                              .where((t) => t.id == a.taskId)
+                                              .firstOrNull
+                                        : null;
                                     final setting =
+                                        freshTask?.rewardSetting ??
                                         a.rewardSetting ??
                                         a.task?.rewardSetting;
                                     if (setting == null) {
