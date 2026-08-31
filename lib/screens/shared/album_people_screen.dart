@@ -689,6 +689,10 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
             initial: widget.member.avatarInitials,
             color: Color(widget.member.avatarColor),
             size: 58,
+            onTap: profile.previewImageUrl == null
+                ? null
+                : () =>
+                      showFaceProfilePreview(context, profile.previewImageUrl!),
           ),
           const SizedBox(width: 14),
           Expanded(

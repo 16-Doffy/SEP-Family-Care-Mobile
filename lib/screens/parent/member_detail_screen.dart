@@ -416,6 +416,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   initial: member.avatarInitials,
                   color: Color(member.avatarColor),
                   size: 32,
+                  onTap: () =>
+                      showFaceProfilePreview(context, current.previewImageUrl!),
                 ),
                 const SizedBox(width: 10),
               ],
