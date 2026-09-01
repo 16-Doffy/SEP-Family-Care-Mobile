@@ -379,6 +379,18 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                       child: SizedBox(
                         height: 36,
                         child: OutlinedButton(
+                          // Trước đây không set style/màu gì cả — thừa hưởng
+                          // theme mặc định (cùng tông hồng/đỏ như nút "Hủy"
+                          // cạnh bên nhưng tương phản kém hơn), chữ "Đóng"
+                          // nhìn mất nét ngang trông như "Dóng" (đo thật
+                          // 31/08). "Đóng" là hành động trung tính, khác
+                          // "Hủy" (nguy hiểm) nên đặt màu xám riêng, không
+                          // dùng chung đỏ.
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                           onPressed: () =>
                               _runPlanAction(context, plan, 'close'),
                           child: Text(
@@ -386,6 +398,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
+                              color: AppColors.textSecondary,
                             ),
                           ),
                         ),
