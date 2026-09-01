@@ -64,6 +64,17 @@ String formatAiPreviewValue(String key, dynamic value) {
     final parsed = DateTime.tryParse(value);
     if (parsed != null) return formatAiPreviewDateTime(parsed.toLocal());
   }
+  // Đo thật 01/09: field "Loại" của đề xuất "Tạo giao dịch" hiện nguyên văn
+  // "EXPENSE"/"INCOME" — BE trả enum tiếng Anh, chưa có bảng nhãn nào dịch.
+  final lowerKey = key.toLowerCase();
+  if (lowerKey == 'type' || lowerKey == 'entrytype') {
+    final translated = switch (value.toString().toUpperCase()) {
+      'EXPENSE' => 'Chi tiêu',
+      'INCOME' => 'Thu nhập',
+      _ => null,
+    };
+    if (translated != null) return translated;
+  }
   return value.toString();
 }
 
