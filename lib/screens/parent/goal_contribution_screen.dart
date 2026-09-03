@@ -93,6 +93,14 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
     return '${ThousandsSeparatorInputFormatter.formatThousands(v.round().toString())} ₫';
   }
 
+  static String _formatDeadline(String raw) {
+    final date = DateTime.tryParse(raw);
+    if (date == null) return raw;
+    final local = date.isUtc ? date.toLocal() : date;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.day)}/${two(local.month)}/${local.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final goal = context
@@ -421,7 +429,11 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
           _metaRow(
             deadline == null
                 ? 'Cần góp / tháng để đạt mục tiêu'
-                : 'Cần góp / tháng để kịp $deadline',
+                // deadline là chuỗi ISO thô từ BE ("2026-10-31T00:00:00.000Z")
+                // — đo thật 31/08 hiện nguyên văn ngay trên UI thay vì ngày
+                // dd/MM/yyyy. Định dạng lại, giữ nguyên chuỗi gốc nếu lỡ
+                // không parse được.
+                : 'Cần góp / tháng để kịp ${_formatDeadline(deadline)}',
             _fmt(s.recommended),
             emphasize: true,
           ),
@@ -586,7 +598,7 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
             Padding(
               padding: const EdgeInsets.only(bottom: 3),
               child: Text(
-                '• $w',
+                '• ${_translateWarning(w)}',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   color: AppColors.textSecondary,
@@ -596,6 +608,23 @@ class _GoalContributionScreenState extends State<GoalContributionScreen> {
         ],
       ),
     );
+  }
+
+  /// `warnings[]` là câu tiếng Anh tự do do BE viết (không phải mã enum) —
+  /// đo thật 31/08: "Some active members were excluded because monthly
+  /// finance data is missing, private, or has no remaining available
+  /// amount." hiện nguyên văn trên UI. Dịch đúng câu đã verify; câu lạ (BE
+  /// đổi wording) thì hiện nguyên văn thay vì đoán sai, theo đúng quy ước
+  /// dự án cho text tự do BE chưa document.
+  static String _translateWarning(String warning) {
+    final normalized = warning.trim().toLowerCase();
+    if (normalized.contains('excluded') &&
+        normalized.contains('monthly finance data')) {
+      return 'Một số thành viên đang hoạt động bị loại khỏi gợi ý vì chưa '
+          'có dữ liệu tài chính tháng này, đã ẩn (riêng tư), hoặc không còn '
+          'khả dụng sau chi phí.';
+    }
+    return warning;
   }
 
   Widget _skippedCard(List<SkippedContributionMember> skipped) {

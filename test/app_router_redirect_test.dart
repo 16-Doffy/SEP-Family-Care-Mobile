@@ -4,6 +4,7 @@ import 'package:family_care/navigation/app_router.dart';
 
 void main() {
   _financeAlertsAccessTests();
+  _memberGoalAccessTests();
   group('computeRedirect', () {
     test('while restoring, stays on /splash regardless of target', () {
       expect(
@@ -493,6 +494,33 @@ void main() {
         ),
         '/manager/home',
       );
+    });
+  });
+}
+
+/// Member cần xem mục tiêu chung và nộp phần góp của chính mình. Hai route
+/// dùng namespace /manager vì tái sử dụng UI, nhưng không được bị router đá về
+/// Trang chủ; các nút quản trị được UI/BE gate riêng.
+void _memberGoalAccessTests() {
+  group('Member access to contribution goals', () {
+    String? redirect(String loc) => computeRedirect(
+      restoring: false,
+      loggedIn: true,
+      hasFamily: true,
+      role: UserRole.member,
+      loc: loc,
+    );
+
+    test('can open the read-only goal list', () {
+      expect(redirect('/manager/financial-goals'), isNull);
+    });
+
+    test('can submit their monthly contribution', () {
+      expect(redirect('/manager/goal-contribution'), isNull);
+    });
+
+    test('still cannot open the administrative goal detail', () {
+      expect(redirect('/manager/goal-detail'), '/member/home');
     });
   });
 }

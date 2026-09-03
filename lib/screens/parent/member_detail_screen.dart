@@ -15,6 +15,7 @@ import '../../services/api_client.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
 import '../../widgets/avatar_widget.dart';
+import '../../widgets/face_profile_avatar.dart';
 
 /// 8 giá trị `relationship` mà BE chấp nhận (`UpdateMemberRelationshipDto`).
 ///
@@ -348,7 +349,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               'Đóng góp chung dự kiến',
               _money(monthly.expectedSharedContribution, 'FAMILY'),
             ),
-            _row('Ghi nhận quỹ gia đình', '${_fmt(summary.fundActual)} ₫'),
+            if (summary.fundDeclared != null)
+              _row(
+                'Đóng góp chung tự khai',
+                '${_fmt(summary.fundDeclared!)} ₫',
+              ),
+            _row(
+              'Đóng góp quỹ (thực tế, chính thức)',
+              '${_fmt(summary.fundActual)} ₫',
+            ),
           ],
           const SizedBox(height: 10),
           SizedBox(
@@ -401,6 +410,17 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         children: [
           Row(
             children: [
+              if (current?.previewImageUrl != null) ...[
+                FaceProfileAvatar(
+                  profile: current!,
+                  initial: member.avatarInitials,
+                  color: Color(member.avatarColor),
+                  size: 32,
+                  onTap: () =>
+                      showFaceProfilePreview(context, current.previewImageUrl!),
+                ),
+                const SizedBox(width: 10),
+              ],
               Icon(Icons.circle, size: 10, color: color),
               const SizedBox(width: 8),
               Expanded(

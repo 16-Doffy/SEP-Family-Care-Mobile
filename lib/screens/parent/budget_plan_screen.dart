@@ -377,15 +377,32 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                   if (plan.status == 'ACTIVE')
                     Expanded(
                       child: SizedBox(
-                        height: 36,
+                        height: 40,
                         child: OutlinedButton(
+                          // Trước đây không set style/màu gì cả — thừa hưởng
+                          // theme mặc định (cùng tông hồng/đỏ như nút "Hủy"
+                          // cạnh bên nhưng tương phản kém hơn), chữ "Đóng"
+                          // nhìn mất nét ngang trông như "Dóng" (đo thật
+                          // 31/08). "Đóng" là hành động trung tính, khác
+                          // "Hủy" (nguy hiểm) nên đặt màu xám riêng, không
+                          // dùng chung đỏ. Đổi màu xong vẫn còn mất nét —
+                          // nghi do bó chiều cao 36 + cỡ chữ 12 bold cắt mất
+                          // đúng hàng pixel nét ngang chữ Đ trên 1 số máy
+                          // (đo thật 03/09, OPPO ColorOS); nới chiều cao lên
+                          // 40 + cỡ chữ 13 để có dư khoảng render.
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                           onPressed: () =>
                               _runPlanAction(context, plan, 'close'),
                           child: Text(
                             'Đóng',
                             style: GoogleFonts.inter(
-                              fontSize: 12,
+                              fontSize: 13,
                               fontWeight: FontWeight.w700,
+                              color: AppColors.textSecondary,
                             ),
                           ),
                         ),
@@ -394,7 +411,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: SizedBox(
-                      height: 36,
+                      height: 40,
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: AppColors.danger),
@@ -404,7 +421,7 @@ class _BudgetPlanScreenState extends State<BudgetPlanScreen> {
                         child: Text(
                           'Hủy',
                           style: GoogleFonts.inter(
-                            fontSize: 12,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: AppColors.danger,
                           ),

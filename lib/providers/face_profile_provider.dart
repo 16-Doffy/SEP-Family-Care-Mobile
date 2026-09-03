@@ -14,6 +14,12 @@ enum FaceProfileStatus {
 class FaceProfile {
   final String memberId;
   final FaceProfileStatus status;
+
+  /// Contract GET face-profile mới. Member cũ có thể đã enrolled nhưng chưa
+  /// có ảnh preview, nên các field này được xử lý độc lập với status.
+  final bool isEnrolledByServer;
+  final int registeredImageCount;
+  final String? previewImageUrl;
   final String? message;
   final DateTime? updatedAt;
   final Map<String, dynamic> raw;
@@ -21,16 +27,27 @@ class FaceProfile {
   const FaceProfile({
     required this.memberId,
     required this.status,
+    this.isEnrolledByServer = false,
+    this.registeredImageCount = 0,
+    this.previewImageUrl,
     this.message,
     this.updatedAt,
     this.raw = const {},
   });
 
   factory FaceProfile.fromJson(String memberId, Map<String, dynamic> json) {
+    final rawEnrolled = json['isEnrolled'];
+    final hasServerEnrollmentFlag = rawEnrolled != null;
+    final serverEnrolled = switch (rawEnrolled) {
+      bool value => value,
+      num value => value != 0,
+      String value => value.trim().toLowerCase() == 'true' || value == '1',
+      _ => false,
+    };
     final value = (json['status'] ?? json['profileStatus'] ?? '')
         .toString()
         .toUpperCase();
-    final status = switch (value) {
+    var status = switch (value) {
       'NOT_ENROLLED' || 'NONE' || '' => FaceProfileStatus.notEnrolled,
       'PROCESSING' || 'PENDING' || 'ENROLLING' => FaceProfileStatus.processing,
       'READY' || 'ACTIVE' || 'ENROLLED' => FaceProfileStatus.ready,
@@ -38,9 +55,30 @@ class FaceProfile {
       'DISABLED' || 'INACTIVE' => FaceProfileStatus.disabled,
       _ => FaceProfileStatus.unknown,
     };
+    if (hasServerEnrollmentFlag && !serverEnrolled) {
+      status = FaceProfileStatus.notEnrolled;
+    } else if (hasServerEnrollmentFlag &&
+        serverEnrolled &&
+        (status == FaceProfileStatus.notEnrolled ||
+            status == FaceProfileStatus.unknown)) {
+      status = FaceProfileStatus.ready;
+    }
+    final preview = json['previewImage'];
+    final previewUrl = preview is Map
+        ? preview['url']?.toString().trim()
+        : null;
     return FaceProfile(
       memberId: memberId,
       status: status,
+      isEnrolledByServer: hasServerEnrollmentFlag
+          ? serverEnrolled
+          : status != FaceProfileStatus.notEnrolled &&
+                status != FaceProfileStatus.unknown,
+      registeredImageCount:
+          (json['registeredImageCount'] as num?)?.toInt() ?? 0,
+      previewImageUrl: previewUrl == null || previewUrl.isEmpty
+          ? null
+          : previewUrl,
       message: (json['message'] ?? json['errorMessage'])?.toString(),
       updatedAt: DateTime.tryParse(
         (json['updatedAt'] ?? json['createdAt'] ?? '').toString(),
@@ -58,10 +96,8 @@ class FaceProfile {
     FaceProfileStatus.unknown => 'Không rõ trạng thái',
   };
 
-  // Compat cho lưới Thành viên (Ảnh): suy ra enroll/enabled từ status.
-  bool get isEnrolled =>
-      status != FaceProfileStatus.notEnrolled &&
-      status != FaceProfileStatus.unknown;
+  // Compat cho UI cũ, nhưng ưu tiên cờ isEnrolled từ contract BE mới.
+  bool get isEnrolled => isEnrolledByServer;
   bool get enabled => status == FaceProfileStatus.ready;
   bool get isDisabled => status == FaceProfileStatus.disabled;
 }

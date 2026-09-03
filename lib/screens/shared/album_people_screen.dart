@@ -11,7 +11,7 @@ import '../../providers/face_profile_provider.dart';
 import '../../providers/family_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
-import '../../widgets/avatar_widget.dart';
+import '../../widgets/face_profile_avatar.dart';
 import 'album_screen.dart' show AlbumMediaThumb;
 
 /// "Thành viên" — chia ảnh theo từng thành viên (tham khảo Google Photos).
@@ -208,7 +208,7 @@ class _AlbumPeopleScreenState extends State<AlbumPeopleScreen> {
       ),
       child: Column(
         children: [
-          _memberCover(member, cover, ConnectionState.done),
+          _memberCover(member, preview.profile, cover, ConnectionState.done),
           const SizedBox(height: 8),
           Text(
             name,
@@ -288,6 +288,7 @@ class _AlbumPeopleScreenState extends State<AlbumPeopleScreen> {
 
   Widget _memberCover(
     FamilyMember member,
+    FaceProfile profile,
     AlbumMedia? cover,
     ConnectionState state,
   ) {
@@ -298,7 +299,8 @@ class _AlbumPeopleScreenState extends State<AlbumPeopleScreen> {
         children: [
           ClipOval(
             child: cover == null
-                ? AvatarWidget(
+                ? FaceProfileAvatar(
+                    profile: profile,
                     initial: member.avatarInitials,
                     color: Color(member.avatarColor),
                     size: 78,
@@ -682,10 +684,15 @@ class _FaceEnrollScreenState extends State<FaceEnrollScreen> {
       ),
       child: Row(
         children: [
-          AvatarWidget(
+          FaceProfileAvatar(
+            profile: profile,
             initial: widget.member.avatarInitials,
             color: Color(widget.member.avatarColor),
             size: 58,
+            onTap: profile.previewImageUrl == null
+                ? null
+                : () =>
+                      showFaceProfilePreview(context, profile.previewImageUrl!),
           ),
           const SizedBox(width: 14),
           Expanded(

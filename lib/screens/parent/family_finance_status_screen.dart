@@ -26,6 +26,15 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
   SurplusAvailability? _surplus;
   bool _loadingDetails = false;
 
+  /// Số tiền đã CHIA vào từng hũ trong đúng kỳ đang xem (GET
+  /// /finance/fund-allocations?periodMonth&periodYear — khoá chống trùng
+  /// familyId+kỳ nên mỗi kỳ chỉ có tối đa 1 bản ghi chia quỹ). Dùng làm mẫu
+  /// số thật thay cho "% mô hình × tổng chi" — đo thật 03/09: user chia quỹ
+  /// 7.500.000đ vào hũ rồi chi 7.600.000đ (thật sự đã vượt số đã chia), màn
+  /// cũ chỉ nói "99% / 50%" không cho biết điều đó, còn dễ hiểu lầm % gắn
+  /// với số tiền chia quỹ trong khi 2 con số tính hoàn toàn khác nhau.
+  Map<String, double> _jarAllocated = {};
+
   @override
   void initState() {
     super.initState();
@@ -59,10 +68,29 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
               ),
         finance.fetchSurplusAvailability(selected.month, selected.year),
       ]);
+      // Gọi riêng, best-effort: chưa từng chia quỹ kỳ này thì BE trả rỗng,
+      // card vẫn hoạt động bình thường bằng % như cũ (fallback), không chặn
+      // 2 lời gọi chính ở trên.
+      Map<String, double> allocated = {};
+      try {
+        final page = await finance.fetchFundAllocations(
+          periodMonth: selected.month,
+          periodYear: selected.year,
+        );
+        if (page.items.isNotEmpty) {
+          for (final item in page.items.first.items) {
+            allocated[item.jarId] = (allocated[item.jarId] ?? 0) + item.amount;
+          }
+        }
+      } catch (_) {
+        // Không có/không tải được lịch sử chia quỹ — giữ map rỗng, các hũ
+        // rơi về hiển thị % như trước.
+      }
       if (mounted) {
         setState(() {
           _jarReport = values[0] as JarTargetActualReport?;
           _surplus = values[1] as SurplusAvailability?;
+          _jarAllocated = allocated;
         });
       }
     } catch (_) {
@@ -125,8 +153,7 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
     final contributions = _list(
       contributionData['members'] ?? contributionData['items'],
     );
-    final contributionTotals =
-        contributionData['totals'] is Map
+    final contributionTotals = contributionData['totals'] is Map
         ? Map<String, dynamic>.from(contributionData['totals'] as Map)
         : const <String, dynamic>{};
     final atRiskGoals = context.watch<FinanceProvider>().goals.where((g) {
@@ -214,11 +241,11 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                     if (overJars.isNotEmpty)
                       _insight(
                         Icons.pie_chart_rounded,
-                        'Chi vượt tỷ trọng',
+                        'Cơ cấu chi cần xem lại',
                         // Tên hũ mặc định của BE là tiếng Anh (Necessities,
                         // Savings...) — phải dịch như chỗ khác trong file này
                         // (xem dòng dùng jarDisplayName ở card "Theo hũ").
-                        '${jarDisplayName(overJars.first.jarCode, overJars.first.jarName)} đang cao hơn tỷ lệ đặt trong mô hình.',
+                        '${jarDisplayName(overJars.first.jarCode, overJars.first.jarName)} đang cao hơn tỷ lệ đặt trong mô hình. Đây là chỉ báo cơ cấu chi, không phải cảnh báo ngân sách.',
                         AppColors.urgent,
                       ),
                     if (atRiskGoals.isNotEmpty)
@@ -247,19 +274,33 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
               ),
               const SizedBox(height: 14),
               _card(
-                'Chi theo kế hoạch',
+                _jarAllocated.isEmpty
+                    ? 'Cơ cấu chi thực tế theo hũ'
+                    : 'Đã chi so với quỹ đã chia',
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Chi tiêu đã được gán danh mục/hũ; không phải tiền thật đã chia vào quỹ.',
+                      // Đo thật 03/09: hũ nào ĐÃ chia quỹ kỳ này thì so trực
+                      // tiếp "đã chi / đã chia" (số tiền thật, dễ hiểu nhất —
+                      // 7.600.000 > 7.500.000 nghĩa là thật sự đã tiêu quá số
+                      // dành cho hũ đó). Hũ CHƯA chia quỹ kỳ này thì không có
+                      // gì để so, mới rơi về "% trong tổng chi" như trước
+                      // (chỉ là tín hiệu cơ cấu, không phải hạn mức tiền).
+                      _jarAllocated.isEmpty
+                          ? '% dưới đây = (tiền đã CHI của hũ) ÷ (tổng tiền đã chi mọi hũ trong kỳ) — '
+                                'ví dụ 100.000 đ / 145.000 đ = 69%. Chưa chia quỹ kỳ này nên không có số tiền để so sánh trực tiếp.'
+                          : 'Hũ đã chia quỹ kỳ này: so trực tiếp "đã chi / đã chia". '
+                                'Hũ chưa chia quỹ: chỉ hiện % trong tổng chi (không phải hạn mức tiền).',
                       style: _muted,
                     ),
                     const SizedBox(height: 12),
                     if (_loadingDetails) const LinearProgressIndicator(),
                     ...(_jarReport?.items ?? const <JarTargetActualItem>[])
                         .take(5)
-                        .map((j) => _jarRow(j)),
+                        .map(
+                          (j) => _jarRow(j, allocated: _jarAllocated[j.jarId]),
+                        ),
                     if ((_jarReport?.items ?? const []).isEmpty &&
                         !_loadingDetails)
                       Text(
@@ -314,8 +355,7 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                           if (contributionTotals.isNotEmpty) ...[
                             const Divider(height: 20),
                             Row(
-                              mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
                                   'Tổng cả nhà',
@@ -403,7 +443,9 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
   Widget _contributionRow(Map<String, dynamic> c) {
     final shared = _number(c['sharedContribution']);
     final goal = _number(c['goalContribution']);
-    final total = _number(c['totalContribution'] ?? c['ledgerContributionTotal']);
+    final total = _number(
+      c['totalContribution'] ?? c['ledgerContributionTotal'],
+    );
     final member = c['member'] is Map
         ? Map<String, dynamic>.from(c['member'] as Map)
         : const <String, dynamic>{};
@@ -548,8 +590,20 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
           ],
         ),
       );
-  Widget _jarRow(JarTargetActualItem j) {
-    final over = !j.isSavingLike && j.actualPercentage > j.targetPercentage;
+
+  /// [allocated] = tổng đã chia quỹ vào đúng hũ này trong kỳ đang xem (từ
+  /// `GET /finance/fund-allocations`), null/0 nếu kỳ này chưa chia quỹ.
+  ///
+  /// Có allocated > 0 thì so trực tiếp actualAmount vs allocated — số tiền
+  /// thật, `over` ở nhánh này là tiêu vượt tiền đã chia THẬT nên vẫn tô đỏ
+  /// (khác nhánh %, chỉ là tín hiệu cơ cấu nên tô cam).
+  Widget _jarRow(JarTargetActualItem j, {double? allocated}) {
+    final hasAllocation = allocated != null && allocated > 0;
+    final actualAmount = j.actualAmount ?? 0;
+    final moneyOver =
+        hasAllocation && !j.isSavingLike && actualAmount > allocated;
+    final pctOver = !j.isSavingLike && j.actualPercentage > j.targetPercentage;
+    final over = hasAllocation ? moneyOver : pctOver;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -564,17 +618,28 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                 ),
               ),
               Text(
-                '${j.actualPercentage.toStringAsFixed(0)}% / ${j.targetPercentage.toStringAsFixed(0)}%',
+                hasAllocation
+                    ? '${_money(actualAmount)} / ${_money(allocated)}'
+                    : '${j.actualPercentage.toStringAsFixed(0)}% / ${j.targetPercentage.toStringAsFixed(0)}%',
                 style: TextStyle(
-                  color: over ? AppColors.danger : AppColors.textMuted,
+                  // Nhánh có số tiền chia quỹ: vượt là cảnh báo THẬT (đỏ).
+                  // Nhánh chỉ có %: chỉ là tín hiệu cơ cấu chi, không phải
+                  // cảnh báo tài chính thật (đo thật 03/09) — tô cam.
+                  color: !over
+                      ? AppColors.textMuted
+                      : (hasAllocation ? AppColors.danger : AppColors.urgent),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 5),
           LinearProgressIndicator(
-            value: (j.actualPercentage / 100).clamp(0.0, 1.0),
-            color: over ? AppColors.danger : AppColors.link,
+            value: hasAllocation
+                ? (actualAmount / allocated).clamp(0.0, 1.0)
+                : (j.actualPercentage / 100).clamp(0.0, 1.0),
+            color: !over
+                ? AppColors.link
+                : (hasAllocation ? AppColors.danger : AppColors.urgent),
           ),
         ],
       ),

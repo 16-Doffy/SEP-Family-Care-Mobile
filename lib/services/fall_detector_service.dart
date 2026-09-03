@@ -20,7 +20,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 ///  |m|
 ///   ~9.8 ┤───────╮                      ╭──── (nằm yên sau khi ngã)
 ///        │       │      va đập ──▶ ╱╲   │
-///   ~25  ┤       │               ╱   ╲  │
+///   ~19  ┤       │               ╱   ╲  │
 ///        │       ╰──────╮       ╱     ╲╱
 ///   ~0   ┤   rơi tự do  ╰──────╯
 ///        └──────────────────────────────────▶ t
@@ -55,14 +55,25 @@ class FallDetectionTuning {
   /// Dart (app đang mở) và bản native (chạy nền) cho kết quả khác nhau thì
   /// không thể chẩn đoán được gì.
   ///
-  /// Ngưỡng rơi tự do nới 3.0 → 6.0 m/s² ngày 2026-08-17: người ngã khi điện
-  /// thoại nằm trong túi quần chỉ tụt xuống khoảng 4–7 m/s², không về gần 0
-  /// như lúc thả rơi máy. Xem giải thích đầy đủ trong `FallDetector.kt`.
+  /// Ngưỡng rơi tự do nới 3.0 → 6.0 m/s² ngày 2026-08-17, rồi 6.0 → 7.0 ngày
+  /// 2026-09-03: người ngã khi điện thoại nằm trong túi quần chỉ tụt xuống
+  /// khoảng 4–7 m/s², không về gần 0 như lúc thả rơi máy.
+  ///
+  /// Ngưỡng va đập hạ 25.0 → 19.0 m/s² và cửa sổ va đập nới 900 → 1200ms cùng
+  /// ngày 2026-09-03: 25.0 (≈2.55g) đòi hỏi phải đập máy khá mạnh nên cú ngã
+  /// xuống bề mặt mềm (đệm, thảm) lúc bắt được lúc không. Xem giải thích đầy
+  /// đủ trong `FallDetector.kt`.
+  ///
+  /// Lưu ý về [minFreeFall]: [FallDetectorService] lấy mẫu mỗi 50ms nên khoảng
+  /// rơi đo được chỉ nhận giá trị 50, 100, 150ms… Ở phía Dart, 60ms và 80ms
+  /// loại/nhận y hệt nhau (đều loại 50ms, đều nhận 100ms) — con số này chỉ
+  /// thực sự có tác dụng ở bản native, nơi `SENSOR_DELAY_GAME` cho lưới mẫu
+  /// ~20ms. Vẫn giữ bằng nhau để hai bản không lệch cấu hình.
   const FallDetectionTuning({
-    this.freeFallThreshold = 6.0,
-    this.minFreeFall = const Duration(milliseconds: 80),
-    this.impactThreshold = 25.0,
-    this.impactWindow = const Duration(milliseconds: 900),
+    this.freeFallThreshold = 7.0,
+    this.minFreeFall = const Duration(milliseconds: 60),
+    this.impactThreshold = 19.0,
+    this.impactWindow = const Duration(milliseconds: 1200),
     this.cooldown = const Duration(seconds: 30),
   });
 }

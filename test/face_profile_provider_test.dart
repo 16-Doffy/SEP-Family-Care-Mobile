@@ -33,6 +33,49 @@ void main() {
     });
   });
 
+  group('Face profile GET contract', () {
+    test('old enrolled member without preview falls back safely', () {
+      final profile = FaceProfile.fromJson('member-old', {
+        'isEnrolled': true,
+        'registeredImageCount': 3,
+        'previewImage': null,
+      });
+
+      expect(profile.isEnrolled, isTrue);
+      expect(profile.status, FaceProfileStatus.ready);
+      expect(profile.registeredImageCount, 3);
+      expect(profile.previewImageUrl, isNull);
+    });
+
+    test('re-enrolled member exposes preview image URL', () {
+      final profile = FaceProfile.fromJson('member-new', {
+        'isEnrolled': true,
+        'registeredImageCount': 5,
+        'previewImage': {'url': 'https://cdn.example.test/face-preview.jpg'},
+      });
+
+      expect(profile.isEnrolled, isTrue);
+      expect(profile.registeredImageCount, 5);
+      expect(
+        profile.previewImageUrl,
+        'https://cdn.example.test/face-preview.jpg',
+      );
+    });
+
+    test('not-enrolled or deleted response resets profile values', () {
+      final profile = FaceProfile.fromJson('member-none', {
+        'isEnrolled': false,
+        'registeredImageCount': 0,
+        'previewImage': null,
+      });
+
+      expect(profile.isEnrolled, isFalse);
+      expect(profile.status, FaceProfileStatus.notEnrolled);
+      expect(profile.registeredImageCount, 0);
+      expect(profile.previewImageUrl, isNull);
+    });
+  });
+
   group('FaceValidationResponse.fromJson', () {
     test('maps canEnroll and per-image reason codes', () {
       final response = FaceValidationResponse.fromJson({

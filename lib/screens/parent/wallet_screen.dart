@@ -50,13 +50,6 @@ class _JarOverviewRow {
   /// Chỉ hũ **chi tiêu** vượt tỷ lệ mới đáng báo động. Tiết kiệm nhiều hơn dự
   /// định mà tô đỏ như tiêu quá tay là gán sai ý nghĩa cho dữ liệu.
   bool get isOverBudget => isAboveTarget && !isSavingLike;
-
-  /// Nhãn ngắn cho phần chênh lệch so với mô hình.
-  String? get deltaLabel {
-    if (pct <= 0) return null;
-    if (isAboveTarget) return isSavingLike ? 'trên mức' : 'vượt mức';
-    return null;
-  }
 }
 
 class WalletScreen extends StatefulWidget {
@@ -599,6 +592,15 @@ class _WalletScreenState extends State<WalletScreen> {
         : AppColors.safeDark;
 
     return [
+      // Ví là màn tổng quan quỹ chung — nhưng các mảnh Tài chính (mô hình hũ,
+      // ngân sách, mục tiêu, cảnh báo, báo cáo, hỗ trợ chi tiêu) trước đây chỉ
+      // vào được qua "Tôi", tách rời khỏi Ví nên người dùng không thấy chúng
+      // liên quan tới nhau. Thêm dải lối tắt ngay dưới Quỹ gia đình để đi
+      // xuyên suốt 1 luồng mà không phải thoát ra "Tôi" giữa chừng.
+      if (context.watch<AuthProvider>().user?.canManageFinance == true) ...[
+        _financeQuickLinks(context),
+        const SizedBox(height: 16),
+      ],
       GestureDetector(
         onTap: () => context.push('/manager/family-finance-status'),
         child: _sectionCard(
@@ -648,9 +650,12 @@ class _WalletScreenState extends State<WalletScreen> {
       ..._carryOverCard(context, state),
 
       _sectionCard(
+        // Card này lấy trực tiếp từ ledger (thu, chi, số dư), không phải
+        // Budget Plan. Gọi là "Ngân sách" khiến người dùng tưởng mức chi ở
+        // đây đang bị so với hạn mức kế hoạch.
         title: state.period.isCurrent
-            ? 'Ngân sách tháng này'
-            : 'Ngân sách ${state.period.label.toLowerCase()}',
+            ? 'Thu chi thực tế tháng này'
+            : 'Thu chi thực tế ${state.period.label.toLowerCase()}',
         child: Column(
           children: [
             Row(
@@ -770,7 +775,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     // hạn mức — và số bên phải TĂNG THEO mức chi, đúng như
                     // người dùng thấy và tưởng app tính sai.
                     Text(
-                      'Tỷ trọng chi tiêu theo hũ',
+                      'Cơ cấu chi thực tế theo hũ',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -784,10 +789,10 @@ class _WalletScreenState extends State<WalletScreen> {
                       // — nói rõ điều đó thay vì áp dụng nguyên văn giải
                       // thích cho trường hợp có dữ liệu thật.
                       jarInfo.note ??
-                          'So sánh tiền đã chi ở mỗi hũ với tỷ lệ của mô hình, tính '
-                              'trên TỔNG CHI trong kỳ (${_fmt(jarInfo.trackedAmount.round())}) '
-                              '— không phải hạn mức lấy từ thu nhập. Chi càng nhiều thì '
-                              'cả hai số đều tăng; điều đáng nhìn là tỷ lệ phần trăm.',
+                          'Mẫu số của % là tổng chi đã ghi nhận '
+                              '(${_fmt(jarInfo.trackedAmount.round())}), KHÔNG phải số tiền '
+                              'đã chia quỹ. Đây là chỉ báo cơ cấu chi, không phải hạn mức '
+                              'ngân sách.',
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         height: 1.35,
@@ -819,9 +824,9 @@ class _WalletScreenState extends State<WalletScreen> {
                     border: Border.all(color: const Color(0xFFFDBA74)),
                   ),
                   child: Text(
-                    'Vượt tỷ lệ hũ chỉ được báo ở đây, KHÔNG tạo cảnh báo tài '
-                    'chính. Muốn được nhắc khi vượt chi thì đặt hạn mức trong '
-                    '"Kế hoạch ngân sách" cho đúng kỳ đang chi.',
+                    'Tỷ trọng cao hơn mô hình chỉ là tín hiệu để xem lại cơ cấu '
+                    'chi, KHÔNG phải cảnh báo tài chính. Muốn được nhắc khi vượt '
+                    'một số tiền cụ thể, hãy đặt hạn mức trong "Kế hoạch ngân sách".',
                     style: GoogleFonts.inter(
                       fontSize: 10.5,
                       height: 1.4,
@@ -2284,6 +2289,86 @@ class _WalletScreenState extends State<WalletScreen> {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
+  static const _financeQuickLinkItems =
+      <({IconData icon, String label, String path})>[
+        (
+          icon: Icons.account_balance_outlined,
+          label: 'Mô hình\ntài chính',
+          path: '/manager/finance-model',
+        ),
+        (
+          icon: Icons.receipt_long_outlined,
+          label: 'Kế hoạch\nngân sách',
+          path: '/manager/budget-plans',
+        ),
+        (
+          icon: Icons.track_changes_rounded,
+          label: 'Mục tiêu\ntiết kiệm',
+          path: '/manager/financial-goals',
+        ),
+        (
+          icon: Icons.notifications_active_outlined,
+          label: 'Cảnh báo\ntài chính',
+          path: '/manager/finance-alerts',
+        ),
+        (
+          icon: Icons.bar_chart_rounded,
+          label: 'Báo cáo\ntài chính',
+          path: '/manager/finance-reports',
+        ),
+        (
+          icon: Icons.support_agent_rounded,
+          label: 'Hỗ trợ\nchi tiêu',
+          path: '/finance/support-requests',
+        ),
+      ];
+
+  Widget _financeQuickLinks(BuildContext context) => _sectionCard(
+    title: 'Tài chính liên quan',
+    child: SizedBox(
+      height: 84,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.only(top: 8),
+        itemCount: _financeQuickLinkItems.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final item = _financeQuickLinkItems[i];
+          return GestureDetector(
+            onTap: () => context.push(item.path),
+            child: Container(
+              width: 74,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(item.icon, size: 20, color: AppColors.link),
+                  const SizedBox(height: 6),
+                  Text(
+                    item.label,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    ),
+  );
+
   Widget _sectionCard({required String title, required Widget child}) =>
       AppCard(
         child: Column(
@@ -3019,8 +3104,9 @@ class _WalletScreenState extends State<WalletScreen> {
     return palette[index % palette.length];
   }
 
-  /// 1 dòng hũ: tên + % , số thực chi trên số kế hoạch, thanh tiến độ. Vượt kế
-  /// hoạch thì đổi sang màu cảnh báo để nhìn ra ngay hũ nào đang quá tay.
+  /// 1 dòng hũ: tỷ trọng thực tế trong tổng chi và tỷ trọng mục tiêu của mô
+  /// hình. Không hiển thị `actual / targetAmount` vì targetAmount cũng được
+  /// suy ra từ tổng chi và dễ bị hiểu nhầm là hạn mức tiền.
   /// Tỷ trọng THỰC TẾ của một hũ trong tổng chi, đúng công thức BE
   /// (`actualPercentage = actualAmount / trackedAmount * 100`).
   int _actualPct(_JarOverviewRow row, double trackedAmount) =>
@@ -3028,12 +3114,18 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _jarRow(_JarOverviewRow row, Color color, {double trackedAmount = 0}) {
     final over = row.isOverBudget;
-    final ratio = row.target > 0
-        ? (row.actual / row.target).clamp(0.0, 1.0)
-        : (row.actual > 0 ? 1.0 : 0.0);
     // Tỷ trọng thực tế của hũ này trong tổng chi — đúng công thức BE:
     // actualPercentage = actualAmount / trackedAmount.
     final ratioActual = trackedAmount > 0 ? row.actual / trackedAmount : 0.0;
+    final actualPct = (ratioActual * 100).round();
+    final targetPct = row.pct.round();
+    final comparison = row.pct <= 0
+        ? null
+        : row.isAboveTarget
+        ? row.isSavingLike
+              ? 'cao hơn tỷ trọng đã đặt'
+              : 'cao hơn tỷ trọng mục tiêu'
+        : null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -3060,10 +3152,9 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
               ),
-              // Tỷ lệ thực tế mới là con số đáng so với mô hình. Hai số tiền
-              // cùng tăng mỗi lần chi thêm (vì mẫu số là tổng chi) nên nhìn
-              // vào chúng không kết luận được gì — xem giải thích ở phần đầu
-              // mục "Tỷ trọng chi tiêu theo hũ".
+              // Hiện nguyên phép chia để người dùng không nhầm tỷ trọng này
+              // với tiền đã chia quỹ của mô hình (ví dụ 100k / 145k, không
+              // phải 100k / 7,5 triệu).
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -3071,27 +3162,43 @@ class _WalletScreenState extends State<WalletScreen> {
                     Text(
                       // Hũ tích luỹ vượt mô hình thì tô XANH: tiết kiệm nhiều
                       // hơn dự định là chuyện tốt, không phải cảnh báo.
-                      '${(ratioActual * 100).round()}% thực tế'
-                      '${row.deltaLabel == null ? '' : ' · ${row.deltaLabel}'}',
+                      'Thực tế $actualPct% · Mục tiêu $targetPct%',
                       style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
+                        // `over` chỉ là tín hiệu cơ cấu chi (xem hộp giải
+                        // thích bên dưới), KHÔNG phải cảnh báo tài chính thật
+                        // — trước dùng chung AppColors.danger (đỏ) với đúng
+                        // màu Cảnh báo tài chính, khiến 1 khoản chi rất nhỏ
+                        // (100k/145k tổng chi) bị tô đỏ như sắp vỡ ngân sách,
+                        // mâu thuẫn với câu chữ ngay bên dưới. Đổi sang cam
+                        // (urgent) — cùng tông với hộp giải thích, mức độ
+                        // "để ý" chứ không phải "báo động" (đo thật 01/09).
                         color: over
-                            ? AppColors.danger
+                            ? AppColors.urgent
                             : (row.isAboveTarget && row.isSavingLike
                                   ? AppColors.safe
                                   : AppColors.textPrimary),
                       ),
                     ),
                   Text(
-                    row.target > 0
-                        ? '${_fmt(row.actual.round())} / ${_fmt(row.target.round())}'
-                        : _fmt(row.actual.round()),
+                    '${_fmt(row.actual.round())} / '
+                    '${_fmt(trackedAmount.round())} tổng chi',
                     style: GoogleFonts.inter(
                       fontSize: 10,
                       color: AppColors.textMuted,
                     ),
                   ),
+                  if (comparison != null && row.isAboveTarget)
+                    Text(
+                      comparison,
+                      style: GoogleFonts.inter(
+                        fontSize: 9.5,
+                        color: row.isSavingLike
+                            ? AppColors.safe
+                            : AppColors.urgent,
+                      ),
+                    ),
                 ],
               ),
             ],
@@ -3100,11 +3207,13 @@ class _WalletScreenState extends State<WalletScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
-              value: ratio,
+              // Thanh thể hiện phần của hũ trong tổng chi, cùng mẫu số với
+              // số phần trăm bên trên; không còn là actual/targetAmount.
+              value: ratioActual.clamp(0.0, 1.0),
               minHeight: 6,
               backgroundColor: AppColors.progressTrack,
               valueColor: AlwaysStoppedAnimation(
-                over ? AppColors.danger : color,
+                over ? AppColors.urgent : color,
               ),
             ),
           ),

@@ -101,8 +101,10 @@ phải bug).
   bật `FallDetectorService.instance.start(onFall: () => _raise(_Trigger.fall))`
   ([dòng 136-144](lib/wear/screens/wear_sensor_sos_screen.dart#L136)). Dịch vụ này
   ([fall_detector_service.dart](lib/services/fall_detector_service.dart)) đọc gia tốc kế thật (50ms/mẫu),
-  chạy máy trạng thái **rơi tự do → va đập** (`freeFallThreshold=6.0 m/s²`, `impactThreshold=25.0
-  m/s²`, cửa sổ va đập 900ms, cooldown 30s — [dòng 61-67](lib/services/fall_detector_service.dart#L61)).
+  chạy máy trạng thái **rơi tự do → va đập**. Bộ ngưỡng đã được nới ngày 2026-09-03 thành
+  `freeFallThreshold=7.0 m/s²`, `minFreeFall=60ms`, `impactThreshold=19.0 m/s²`, cửa sổ va đập
+  1200ms, cooldown 30s ([dòng 72-78](lib/services/fall_detector_service.dart#L72)) — trước đó là
+  6.0 / 80ms / 25.0 / 900ms.
   Đây là logic thật, có test riêng (`test/fall_detection_test.dart`), **không phải phần cần sửa**.
 - **3 nút "Giả lập (demo)"** ([dòng 401-418](lib/wear/screens/wear_sensor_sos_screen.dart#L401)): mỗi
   nút gọi thẳng `onTap: () => _raise(t)` — **giống hệt cách `FallDetectorService` gọi `_raise` khi

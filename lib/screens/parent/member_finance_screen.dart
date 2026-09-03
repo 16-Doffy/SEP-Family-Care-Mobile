@@ -261,7 +261,7 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
                         ),
                       ),
                       _row(
-                        'Thu nhập thực tế',
+                        'Thu nhập tự khai',
                         _money(
                           mf.actualIncome,
                           privateWhenNull: mf.incomeVisibility == 'PRIVATE',
@@ -275,7 +275,7 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
                         ),
                       ),
                       _row(
-                        'Chi tiêu thực tế',
+                        'Chi tiêu tự khai',
                         _money(
                           mf.actualPersonalExpense,
                           privateWhenNull: mf.expenseVisibility == 'PRIVATE',
@@ -289,7 +289,7 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
                         ),
                       ),
                       _row(
-                        'Đóng góp chung thực tế',
+                        'Đóng góp chung tự khai',
                         _money(
                           mf.actualSharedContribution,
                           privateWhenNull: false,
@@ -327,7 +327,19 @@ class _MemberFinanceScreenState extends State<MemberFinanceScreen> {
                   _money(s.fundDeclared, privateWhenNull: false),
                 ),
                 _row('Ghi nhận sổ quỹ', '${_fmtNum(s.fundLedgerActual)} ₫'),
-                _row('Thực tế', '${_fmtNum(s.fundActual)} ₫', bold: true),
+                _row('Thực tế (chính thức)', '${_fmtNum(s.fundActual)} ₫', bold: true),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '"Thực tế" là số chính thức của quỹ, ưu tiên tính theo sổ quỹ — có thể khác số tự khai ở trên nếu member chưa đóng đủ hoặc đóng qua kênh khác.',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

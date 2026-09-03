@@ -100,7 +100,6 @@ class JsonReportView extends StatelessWidget {
     'riskSeverity': 'Mức độ rủi ro',
     'alerts': 'Cảnh báo',
     'note': 'Ghi chú',
-    'displayName': 'Người tạo',
     'alertType': 'Loại cảnh báo',
     'type': 'Loại cảnh báo',
     'severity': 'Mức độ',
@@ -165,7 +164,48 @@ class JsonReportView extends StatelessWidget {
     'address': 'Địa chỉ',
     'phone': 'Số điện thoại',
     'email': 'Email',
+    // Bổ sung 2026-08-30 — "Chi tiết khoản thưởng" (RewardSettlement) và các
+    // object liên quan (assignment, dispute, member/user) lộ nhãn tiếng Anh
+    // vì JsonReportView dùng chung cho các endpoint này nhưng bảng nhãn chưa
+    // phủ hết field. `displayName` đổi từ "Người tạo" sang "Tên hiển thị" vì
+    // key này còn dùng cho object không phải "người tạo" (vd receiverMember).
+    'displayName': 'Tên hiển thị',
+    'fullName': 'Họ tên',
+    'familyRole': 'Vai trò trong gia đình',
+    'externalMethod': 'Phương thức trả',
+    'externalNote': 'Ghi chú khi trả',
+    'settledAt': 'Đã trả lúc',
+    'confirmedAt': 'Xác nhận lúc',
+    'assignedAt': 'Giao việc lúc',
+    'startAt': 'Bắt đầu lúc',
+    'dueAt': 'Hạn chót',
+    'receiverMember': 'Người nhận thưởng',
+    'settledByMember': 'Người trả thưởng',
+    'assignedToMember': 'Người thực hiện',
+    'assignedByMember': 'Người giao việc',
+    'reportedByMember': 'Người báo cáo',
+    'resolvedByMember': 'Người xử lý',
+    'assignment': 'Phân công',
+    'user': 'Tài khoản',
+    'action': 'Hành động xử lý',
+    'rewardType': 'Loại thưởng',
+    'rewardAmount': 'Số tiền thưởng',
+    'rewardDescription': 'Mô tả thưởng',
+    'autoCreateSettlement': 'Tự tạo ghi nhận thưởng',
+    // Bổ sung 2026-08-31 — đo thật màn "Xem báo cáo kế hoạch vs thực tế"
+    // (Kế hoạch ngân sách): group "Created By Member" lộ tiếng Anh vì chưa
+    // có trong bảng nhãn.
+    'createdByMember': 'Người tạo',
   };
+
+  /// Field luôn ẩn dù ở mode nào — dữ liệu kỹ thuật thuần, không có ý nghĩa
+  /// với người dùng gia đình (khác `_technicalKeys` chỉ ẩn khi
+  /// `financeReportMode`).
+  static const _alwaysHiddenKeys = <String>{'avatarUrl'};
+
+  static final _uuidExact = RegExp(
+    r'^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$',
+  );
 
   static const _technicalKeys = <String>{
     'id',
@@ -275,8 +315,44 @@ class JsonReportView extends StatelessWidget {
     'GOAL_AT_RISK' => 'Mục tiêu có nguy cơ không đạt',
     'NON_ESSENTIAL_TOO_HIGH' => 'Chi không thiết yếu quá cao',
     'ACHIEVED' => 'Đã hoàn thành',
+    // Reward settlement (xem API_DOCS.md mục Tasks — Thưởng).
+    'PENDING_SETTLEMENT' => 'Chờ trả thưởng',
+    'WAITING_CONFIRMATION' => 'Đã trả, chờ xác nhận',
+    'SETTLED' => 'Đã hoàn tất',
+    'DISPUTED' => 'Đang tranh chấp',
+    // Assignment.
+    'ASSIGNED' => 'Đã giao',
+    'IN_PROGRESS' => 'Đang làm',
+    'SUBMITTED' => 'Đã nộp',
+    'APPROVED' => 'Đã duyệt',
+    'REJECTED' => 'Bị từ chối',
+    // Dispute status + action.
+    'OPEN' => 'Đang mở',
+    'ACCEPT_DISPUTE' => 'Chấp nhận tranh chấp',
+    'REJECT_DISPUTE' => 'Từ chối tranh chấp',
+    // externalMethod (MarkRewardPaidDto).
+    'CASH' => 'Tiền mặt',
+    'BANK_TRANSFER' => 'Chuyển khoản',
+    'THIRD_PARTY_WALLET' => 'Ví điện tử',
+    'OTHER' => 'Khác',
+    // familyRole.
+    'FAMILY_MANAGER' => 'Trưởng nhóm',
+    'DEPUTY_MEMBER' => 'Phó nhóm',
+    'FAMILY_MEMBER' => 'Thành viên',
     _ => value,
   };
+
+  /// Field tên dạng "...Id"/"id" mà giá trị là một UUID nguyên vẹn — đây
+  /// luôn là khóa nội bộ, không có nghĩa với người xem. Trước đây các field
+  /// này vẫn được hiển thị (ngoài `financeReportMode`) nhưng `_sanitizeText`
+  /// xoá sạch UUID khỏi chuỗi nên dòng hiện ra **trống trơn**, nhìn như thiếu
+  /// dữ liệu (báo cáo 30/08 ở "Chi tiết khoản thưởng"). Ẩn hẳn dòng thay vì
+  /// hiện nhãn với giá trị rỗng.
+  static bool _isBareIdField(String key, dynamic value) {
+    final lower = key.toLowerCase();
+    if (lower != 'id' && !lower.endsWith('id')) return false;
+    return value is String && _uuidExact.hasMatch(value);
+  }
 
   static String _labelize(String key) {
     // camelCase / snake_case → "Camel Case"
@@ -299,9 +375,11 @@ class JsonReportView extends StatelessWidget {
         children: map.entries
             .where(
               (e) =>
-                  !financeReportMode ||
-                  (!_technicalKeys.contains(e.key) &&
-                      !(_depth > 0 && e.key == 'lines')),
+                  !_alwaysHiddenKeys.contains(e.key) &&
+                  !_isBareIdField(e.key, e.value) &&
+                  (!financeReportMode ||
+                      (!_technicalKeys.contains(e.key) &&
+                          !(_depth > 0 && e.key == 'lines'))),
             )
             .map((e) => _entryRow(e.key, e.value))
             .toList(),
@@ -410,7 +488,10 @@ class JsonReportView extends StatelessWidget {
               lowerKey == 'essentialtype' ||
               lowerKey == 'riskseverity' ||
               lowerKey == 'severity' ||
-              lowerKey == 'alerttype'
+              lowerKey == 'alerttype' ||
+              lowerKey == 'externalmethod' ||
+              lowerKey == 'familyrole' ||
+              lowerKey == 'action'
         ? _fmtStatus(raw)
         : _sanitizeText(raw);
     return _valueRow(key, display);
