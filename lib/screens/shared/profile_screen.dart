@@ -260,6 +260,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onTap: () => context.push('/manager/members'),
                 ),
                 _tile(
+                  Icons.savings_outlined,
+                  'Mục tiêu tiết kiệm',
+                  subtitle: 'Xem phần góp của tôi và xác nhận đã đóng góp',
+                  onTap: () => context.push('/manager/financial-goals'),
+                ),
+                _tile(
                   Icons.photo_library_outlined,
                   'Ảnh gia đình',
                   onTap: () => context.push('/album'),

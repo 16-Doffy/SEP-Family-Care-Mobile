@@ -130,6 +130,10 @@ const _managerOnlyPaths = {
 const _memberSharedPaths = {
   '/manager/members',
   '/manager/member/:memberId',
+  // Member xem mục tiêu chung và chỉ xác nhận phần đóng góp của chính mình.
+  // Hai màn này tự gate thao tác tạo/hủy/xét duyệt theo canManageFinance.
+  '/manager/financial-goals',
+  '/manager/goal-contribution',
   // Member nhận được notification BUDGET_ALERT nhưng trước đây bấm vào KHÔNG
   // ĐI ĐÂU CẢ (router trả null cho non-manager). Cho vào đọc; màn hình tự ẩn
   // nút Tính lại / Đã xem / Đánh dấu đã xử lý theo canManageFinance, và BE

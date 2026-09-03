@@ -737,7 +737,7 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
               ),
             ),
           ),
-          if (action != null) action,
+          ?action,
         ],
       ),
     );
@@ -1284,6 +1284,16 @@ class _FinanceModelScreenState extends State<FinanceModelScreen> {
                 '${modelName == null || modelName.isEmpty ? 'Mô hình không còn dữ liệu' : modelName} • $period • $amount'
                 '${result.createdAt == null ? '' : '\nThực hiện lúc ${_formatAllocationDateTime(result.createdAt)}'}',
                 style: const TextStyle(color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Đây là tiền được phân bổ theo mô hình. Không phải tiền đã chi; '
+                'màn Ví dùng tổng chi thực tế làm mẫu số riêng để tính tỷ trọng hũ.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
               ),
               if (result.note != null && result.note!.trim().isNotEmpty) ...[
                 const SizedBox(height: 6),

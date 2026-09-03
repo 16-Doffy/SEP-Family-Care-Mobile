@@ -775,7 +775,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     // hạn mức — và số bên phải TĂNG THEO mức chi, đúng như
                     // người dùng thấy và tưởng app tính sai.
                     Text(
-                      'Cơ cấu chi tiêu theo hũ',
+                      'Cơ cấu chi thực tế theo hũ',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -789,10 +789,10 @@ class _WalletScreenState extends State<WalletScreen> {
                       // — nói rõ điều đó thay vì áp dụng nguyên văn giải
                       // thích cho trường hợp có dữ liệu thật.
                       jarInfo.note ??
-                          'Mỗi hũ cho biết tỷ trọng trong tổng chi đã ghi nhận '
-                              '(${_fmt(jarInfo.trackedAmount.round())}). Đây là chỉ báo '
-                              'cơ cấu chi, không phải hạn mức ngân sách hay tiền đã chia '
-                              'sẵn vào từng hũ.',
+                          'Mẫu số của % là tổng chi đã ghi nhận '
+                              '(${_fmt(jarInfo.trackedAmount.round())}), KHÔNG phải số tiền '
+                              'đã chia quỹ. Đây là chỉ báo cơ cấu chi, không phải hạn mức '
+                              'ngân sách.',
                       style: GoogleFonts.inter(
                         fontSize: 10,
                         height: 1.35,
@@ -3123,9 +3123,9 @@ class _WalletScreenState extends State<WalletScreen> {
         ? null
         : row.isAboveTarget
         ? row.isSavingLike
-              ? 'vượt tỷ trọng mục tiêu $targetPct%'
-              : 'cao hơn tỷ trọng mục tiêu $targetPct%'
-        : 'mục tiêu $targetPct%';
+              ? 'cao hơn tỷ trọng đã đặt'
+              : 'cao hơn tỷ trọng mục tiêu'
+        : null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -3152,10 +3152,9 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
               ),
-              // Tỷ lệ thực tế mới là con số đáng so với mô hình. Hai số tiền
-              // cùng tăng mỗi lần chi thêm (vì mẫu số là tổng chi) nên nhìn
-              // vào chúng không kết luận được gì — xem giải thích ở phần đầu
-              // mục "Tỷ trọng chi tiêu theo hũ".
+              // Hiện nguyên phép chia để người dùng không nhầm tỷ trọng này
+              // với tiền đã chia quỹ của mô hình (ví dụ 100k / 145k, không
+              // phải 100k / 7,5 triệu).
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -3163,8 +3162,7 @@ class _WalletScreenState extends State<WalletScreen> {
                     Text(
                       // Hũ tích luỹ vượt mô hình thì tô XANH: tiết kiệm nhiều
                       // hơn dự định là chuyện tốt, không phải cảnh báo.
-                      '$actualPct% tổng chi'
-                      '${comparison == null ? '' : ' · $comparison'}',
+                      'Thực tế $actualPct% · Mục tiêu $targetPct%',
                       style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
@@ -3184,12 +3182,23 @@ class _WalletScreenState extends State<WalletScreen> {
                       ),
                     ),
                   Text(
-                    'Đã chi ${_fmt(row.actual.round())}',
+                    '${_fmt(row.actual.round())} / '
+                    '${_fmt(trackedAmount.round())} tổng chi',
                     style: GoogleFonts.inter(
                       fontSize: 10,
                       color: AppColors.textMuted,
                     ),
                   ),
+                  if (comparison != null && row.isAboveTarget)
+                    Text(
+                      comparison,
+                      style: GoogleFonts.inter(
+                        fontSize: 9.5,
+                        color: row.isSavingLike
+                            ? AppColors.safe
+                            : AppColors.urgent,
+                      ),
+                    ),
                 ],
               ),
             ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/finance_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_surface_colors.dart';
@@ -36,6 +37,8 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<FinanceProvider>();
     final goals = provider.goals;
+    final canManage =
+        context.watch<AuthProvider>().user?.canManageFinance ?? false;
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -80,17 +83,21 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
                       ),
                     ),
                   ),
-                  GestureDetector(
-                    onTap: () => _showCreateSheet(context),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.link,
-                      ),
-                      child: const Icon(Icons.add, color: Colors.white),
-                    ),
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: canManage
+                        ? GestureDetector(
+                            onTap: () => _showCreateSheet(context),
+                            child: Container(
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.link,
+                              ),
+                              child: const Icon(Icons.add, color: Colors.white),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
                   ),
                 ],
               ),
@@ -150,7 +157,8 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     itemCount: goals.length,
-                    itemBuilder: (_, i) => _goalCard(context, goals[i]),
+                    itemBuilder: (_, i) =>
+                        _goalCard(context, goals[i], canManage: canManage),
                   ),
                 ),
               ),
@@ -207,10 +215,18 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
     }
   }
 
-  Widget _goalCard(BuildContext context, FinancialGoal goal) {
+  Widget _goalCard(
+    BuildContext context,
+    FinancialGoal goal, {
+    required bool canManage,
+  }) {
     final pct = ((goal.progressPercent ?? 0) / 100).clamp(0.0, 1.0);
     return GestureDetector(
-      onTap: () => context.push('/manager/goal-detail?goalId=${goal.id}'),
+      onTap: () => context.push(
+        canManage
+            ? '/manager/goal-detail?goalId=${goal.id}'
+            : '/manager/goal-contribution?goalId=${goal.id}',
+      ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
@@ -288,7 +304,7 @@ class _FinancialGoalScreenState extends State<FinancialGoalScreen> {
                 color: AppColors.textMuted,
               ),
             ),
-            if (goal.canContribute) ...[
+            if (goal.canContribute && canManage) ...[
               const SizedBox(height: 12),
               Row(
                 children: [

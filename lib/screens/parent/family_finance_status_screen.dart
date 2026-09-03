@@ -274,7 +274,9 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
               ),
               const SizedBox(height: 14),
               _card(
-                'Chi theo kế hoạch',
+                _jarAllocated.isEmpty
+                    ? 'Cơ cấu chi thực tế theo hũ'
+                    : 'Đã chi so với quỹ đã chia',
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -287,7 +289,7 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                       // (chỉ là tín hiệu cơ cấu, không phải hạn mức tiền).
                       _jarAllocated.isEmpty
                           ? '% dưới đây = (tiền đã CHI của hũ) ÷ (tổng tiền đã chi mọi hũ trong kỳ) — '
-                                'chưa chia quỹ kỳ này nên không có số tiền để so sánh trực tiếp.'
+                                'ví dụ 100.000 đ / 145.000 đ = 69%. Chưa chia quỹ kỳ này nên không có số tiền để so sánh trực tiếp.'
                           : 'Hũ đã chia quỹ kỳ này: so trực tiếp "đã chi / đã chia". '
                                 'Hũ chưa chia quỹ: chỉ hiện % trong tổng chi (không phải hạn mức tiền).',
                       style: _muted,
@@ -296,7 +298,9 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
                     if (_loadingDetails) const LinearProgressIndicator(),
                     ...(_jarReport?.items ?? const <JarTargetActualItem>[])
                         .take(5)
-                        .map((j) => _jarRow(j, allocated: _jarAllocated[j.jarId])),
+                        .map(
+                          (j) => _jarRow(j, allocated: _jarAllocated[j.jarId]),
+                        ),
                     if ((_jarReport?.items ?? const []).isEmpty &&
                         !_loadingDetails)
                       Text(
@@ -586,6 +590,7 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
           ],
         ),
       );
+
   /// [allocated] = tổng đã chia quỹ vào đúng hũ này trong kỳ đang xem (từ
   /// `GET /finance/fund-allocations`), null/0 nếu kỳ này chưa chia quỹ.
   ///
@@ -595,7 +600,8 @@ class _FamilyFinanceStatusScreenState extends State<FamilyFinanceStatusScreen> {
   Widget _jarRow(JarTargetActualItem j, {double? allocated}) {
     final hasAllocation = allocated != null && allocated > 0;
     final actualAmount = j.actualAmount ?? 0;
-    final moneyOver = hasAllocation && !j.isSavingLike && actualAmount > allocated;
+    final moneyOver =
+        hasAllocation && !j.isSavingLike && actualAmount > allocated;
     final pctOver = !j.isSavingLike && j.actualPercentage > j.targetPercentage;
     final over = hasAllocation ? moneyOver : pctOver;
     return Padding(

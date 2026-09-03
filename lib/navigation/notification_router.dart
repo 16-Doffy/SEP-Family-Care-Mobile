@@ -80,7 +80,7 @@ class NotificationRouter {
             ? (id.isNotEmpty
                   ? '/manager/goal-detail?goalId=$id'
                   : '/manager/financial-goals')
-            : null;
+            : '/manager/financial-goals';
       case 'CONVERSATION':
         return '/$shell/chat';
       case 'CALL':
